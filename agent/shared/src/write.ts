@@ -31,6 +31,7 @@ import {
 } from "./policyGate.ts";
 import { SigningGuardError } from "./signingGuard.ts";
 import { checkAndRecordVcNonce } from "./vcNonce.ts";
+import { checkCredentialStatus } from "./vcStatus.ts";
 import { redactSecrets } from "./redact.ts";
 
 const ZERO = "0x0000000000000000000000000000000000000000";
@@ -115,6 +116,8 @@ export interface WriteResult {
   reasonCode?: string;
   /** 停在哪一道閘（config / vc / policy / risk / precheck / signing / submit）。 */
   guardStage?: GuardStage;
+  /** 不影響結果、但呼叫端應顯示的提醒（例如 VC 狀態清單即將到期，ADR-016）。 */
+  warnings?: string[];
 }
 
 /**
@@ -214,8 +217,9 @@ function resolveSession():
 
 /**
  * 驗證使用者簽發的授權 VC：驗簽 + 比對「持有者=本 agent」、「sessionId 相符」、
- * 並與鏈上 session 交叉比對（issuer==session.user、agent==session.agent）。
- * 回 null 代表通過；回 `{ degraded }` 代表平倉在降級模式通過；回字串代表拒絕原因。
+ * 撤銷狀態（ADR-016），並與鏈上 session 交叉比對（issuer==session.user、agent==session.agent）。
+ * 回 null 代表通過；回 `{ degraded }` 代表平倉在降級模式通過；回字串代表拒絕原因；
+ * 回 `{ status }` 代表撤銷狀態檢查未過（被撤銷或狀態未知——寫入一律 fail-closed）。
  */
 async function verifyVcAgainstChain(
   vc: AuthorizationVC,
@@ -223,14 +227,33 @@ async function verifyVcAgainstChain(
   agentAddress: string,
   mgr: ethers.Contract,
   action: "open" | "close",
-): Promise<string | null | { degraded: string }> {
+  out: { warnings: string[] } = { warnings: [] },
+): Promise<string | null | { degraded: string } | { status: VcStatusRejection }> {
   // v2 VC 的 domain 綁 session manager 位址：必須等於本 agent 實際呼叫的那一顆。
-  const res = verifyAuthorizationVC(vc, { expectedVerifyingContract: await mgr.getAddress() });
+  const mgrAddress = await mgr.getAddress();
+  const res = verifyAuthorizationVC(vc, { expectedVerifyingContract: mgrAddress });
   if (!res.valid) return `授權憑證(VC)驗證失敗（${res.reasonCode ?? "VC_INVALID"}）：${res.reason}`;
   if (res.sessionId !== sessionId)
     return `VC sessionId(${res.sessionId}) 與請求(${sessionId}) 不符`;
   if (res.agent && ethers.getAddress(res.agent) !== ethers.getAddress(agentAddress))
     return `VC 授權的 agent(${res.agent}) 非本 session key(${agentAddress})`;
+
+  // 撤銷狀態（ADR-016）：開倉與平倉都是寫入 → 被撤銷、拿不到或驗不過狀態一律拒絕，沒有降級。
+  // 放在鏈上讀取之前：被撤銷的憑證不必花一次 RPC。
+  const st = await checkCredentialStatus(res, { action: "write", verifyingContract: mgrAddress });
+  if (!st.ok) {
+    return {
+      status: {
+        reasonCode: st.status === "revoked" ? "VC_REVOKED" : "VC_STATUS_UNVERIFIED",
+        detail: st.reasonCode,
+        message: st.message,
+      },
+    };
+  }
+  for (const w of st.warnings ?? []) {
+    out.warnings.push(w);
+    console.warn(`[write] ⚠ ${w}`);
+  }
 
   // 交叉比對鏈上 session：VC 的 issuer 必須是 session.user、agent 必須是 session.agent。
   try {
@@ -269,6 +292,14 @@ async function verifyVcAgainstChain(
     return { degraded: d.code };
   }
   return d.kind === "reject" ? d.reason : null;
+}
+
+/** 撤銷狀態檢查未過（被撤銷 → VC_REVOKED；狀態拿不到／驗不過 → VC_STATUS_UNVERIFIED）。 */
+export interface VcStatusRejection {
+  reasonCode: "VC_REVOKED" | "VC_STATUS_UNVERIFIED";
+  /** vcStatus.ts 的細部原因代碼（STATUS_UNAVAILABLE、STATUS_LIST_REPLAYED…）。 */
+  detail: string;
+  message: string;
 }
 
 /**
@@ -337,6 +368,7 @@ export async function openPositionForSession(params: {
   }
 
   // VC/SSI 閘門：帶了授權憑證就必須驗證通過（驗簽 + 鏈上 session 交叉比對）才下單。
+  const vcNotes = { warnings: [] as string[] };
   if (params.authVc) {
     const reason = await verifyVcAgainstChain(
       params.authVc,
@@ -344,9 +376,13 @@ export async function openPositionForSession(params: {
       signer.address,
       mgr,
       "open",
+      vcNotes,
     );
     if (typeof reason === "string") {
       return reject(req, "vc", "VC_INVALID", `拒絕下單（VC 驗證未過）：${reason}`);
+    }
+    if (reason && "status" in reason) {
+      return reject(req, "vc", reason.status.reasonCode, `拒絕下單（VC 撤銷狀態 ${reason.status.detail}）：${reason.status.message}`);
     }
 
     // caps 預檢（省 gas、錯誤更清楚）：單筆保證金 / 槓桿不得超過 VC 授權上限。
@@ -428,6 +464,7 @@ export async function openPositionForSession(params: {
       marginUsdc: params.marginUsdc,
       leverage: params.leverage,
     },
+    ...(vcNotes.warnings.length ? { warnings: vcNotes.warnings } : {}),
   };
 }
 
@@ -619,6 +656,7 @@ export async function closePositionForSession(params: {
     console.warn("[write] ⚠ 平倉的 VC 閘門已被明確關閉，僅限測試環境。");
   }
 
+  const vcNotes = { warnings: [] as string[] };
   if (params.authVc) {
     const reason = await verifyVcAgainstChain(
       params.authVc,
@@ -626,11 +664,20 @@ export async function closePositionForSession(params: {
       signer.address,
       mgr,
       "close",
+      vcNotes,
     );
     if (typeof reason === "string") {
       return reject(req, "vc", "VC_INVALID", `拒絕平倉（VC 驗證未過）：${reason}。${CLOSE_ONCHAIN_HINT}`);
     }
-    if (reason?.degraded) {
+    if (reason && "status" in reason) {
+      return reject(
+        req,
+        "vc",
+        reason.status.reasonCode,
+        `拒絕平倉（VC 撤銷狀態 ${reason.status.detail}）：${reason.status.message}。${CLOSE_ONCHAIN_HINT}`,
+      );
+    }
+    if (reason && "degraded" in reason) {
       auditStage(req, "vc", "VC_OK_DEGRADED", true, `VC nonce 狀態故障（${reason.degraded}），平倉僅以 VC 驗章＋鏈上比對放行`);
     }
   }
@@ -695,6 +742,7 @@ export async function closePositionForSession(params: {
     positionId: String(params.positionId),
     agent: signer.address,
     sessionId: params.sessionId,
+    ...(vcNotes.warnings.length ? { warnings: vcNotes.warnings } : {}),
   };
 }
 

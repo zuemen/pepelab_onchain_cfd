@@ -24,6 +24,7 @@ import {
   getSessionManagerAddress,
   agentDid,
   verifyAuthorizationVC,
+  checkCredentialStatus,
   parseOracleBody,
   parseSignalsBody,
   type AuthorizationVC,
@@ -156,6 +157,13 @@ async function executeOrSimulate(
     console.log(`  （正反對照：竄改 VC 或換 agent 即無法下單）`);
     return;
   }
+  // 撤銷狀態（ADR-016）：下單是寫入 → 被撤銷或狀態未知一律不下單（write 層送單前也會再查一次）。
+  const st = await checkCredentialStatus(v, { action: "write" });
+  if (!st.ok || st.status === "unknown") {
+    console.log(`🛑 授權憑證${st.status === "revoked" ? "已被簽發者撤銷" : "撤銷狀態無法確認"}（${st.reasonCode}）→ 拒絕下單：${st.message}`);
+    return;
+  }
+  for (const w of st.warnings ?? []) console.log(`⚠ ${w}`);
 
   console.log(`送出：${wouldBe}（session #${SESSION_ID}）…`);
   const res = await openPositionForSession({

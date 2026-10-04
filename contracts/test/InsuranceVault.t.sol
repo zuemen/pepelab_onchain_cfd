@@ -16,6 +16,11 @@ contract InsuranceVaultTest is Test {
     address exch    = makeAddr("exchange");
     address stranger = makeAddr("stranger");
 
+    /// @dev P1-05: 10 ** DECIMALS_OFFSET. One whole USDC (1e18) still mints one
+    ///      whole pIV, but pIV now has 24 decimals, so the raw share count is
+    ///      the USDC amount × V.
+    uint256 constant V = 1e6;
+
     function setUp() public {
         usdc  = new MockUSDC();
         vault = new InsuranceVault(address(usdc));
@@ -40,10 +45,11 @@ contract InsuranceVaultTest is Test {
         vm.prank(alice);
         uint256 shares = vault.deposit(1_000e18);
 
-        assertEq(shares, 1_000e18);
-        assertEq(vault.balanceOf(alice), 1_000e18);
+        assertEq(shares, 1_000e18 * V);
+        assertEq(vault.balanceOf(alice), 1_000e18 * V);
         assertEq(vault.totalAssets(), 1_000e18);
-        assertEq(vault.totalSupply(), 1_000e18);
+        assertEq(vault.totalSupply(), 1_000e18 * V);
+        assertEq(vault.decimals(), 24);
     }
 
     function test_deposit_sharePriceRises_afterProtocolDeposit() public {
@@ -55,13 +61,15 @@ contract InsuranceVaultTest is Test {
         vm.prank(feeRtr);
         vault.depositFromProtocol(500e18);
 
-        // Bob deposits 1500 → should get 1500 * 1000 / 1500 = 1000 shares
+        // Bob deposits 1500 → 1500 * (supply + V) / (1500 + 1) shares: the
+        // same 1000 whole pIV as alice, to within one wei of value.
         vm.prank(bob);
         uint256 bobShares = vault.deposit(1_500e18);
 
-        assertEq(bobShares, 1_000e18);
+        assertEq(bobShares, 1_500e18 * (1_000e18 * V + V) / (1_500e18 + 1));
+        assertApproxEqAbs(bobShares, 1_000e18 * V, V);
         assertEq(vault.totalAssets(), 1_000e18 + 500e18 + 1_500e18);
-        assertEq(vault.totalSupply(), 2_000e18);
+        assertEq(vault.totalSupply(), 1_000e18 * V + bobShares);
     }
 
     // ── withdraw ──────────────────────────────────────────────────────────────
@@ -74,14 +82,15 @@ contract InsuranceVaultTest is Test {
         vm.prank(feeRtr);
         vault.depositFromProtocol(1_000e18);
 
-        // Alice withdraws all 1000 shares → gets 2000 USDC
+        // Alice withdraws all 1000 whole shares → gets 2000 USDC, less the
+        // 1 wei the virtual shares hold back (rounding is toward the vault).
         uint256 balBefore = usdc.balanceOf(alice);
         vm.prank(alice);
-        uint256 usdcOut = vault.withdraw(1_000e18);
+        uint256 usdcOut = vault.withdraw(1_000e18 * V);
 
-        assertEq(usdcOut, 2_000e18);
-        assertEq(usdc.balanceOf(alice), balBefore + 2_000e18);
-        assertEq(vault.totalAssets(), 0);
+        assertEq(usdcOut, 2_000e18 - 1);
+        assertEq(usdc.balanceOf(alice), balBefore + 2_000e18 - 1);
+        assertEq(vault.totalAssets(), 1);
         assertEq(vault.totalSupply(), 0);
     }
 
@@ -147,12 +156,15 @@ contract InsuranceVaultTest is Test {
         vm.prank(alice);
         vault.deposit(1);                       // 1 share for 1 wei
         vm.prank(feeRtr);
-        vault.depositFromProtocol(1_000e18);    // share price pushed to ~1e21
+        vault.depositFromProtocol(1_000e18);    // one share unit now ~5e14 wei
         uint256 aliceShares = vault.balanceOf(alice);
 
+        // P1-05: with virtual shares only a deposit worth less than one share
+        // unit rounds to 0 (a 500e18 deposit now gets fair shares, see
+        // InsuranceVaultShares.t.sol). Such a deposit is still refused.
         vm.prank(bob);
         vm.expectRevert(InsuranceVault.ZeroShares.selector);
-        vault.deposit(500e18);                  // would round to 0 shares
+        vault.deposit(500e12);                  // would round to 0 shares
 
         assertEq(vault.balanceOf(bob), 0);
         assertEq(vault.balanceOf(alice), aliceShares);

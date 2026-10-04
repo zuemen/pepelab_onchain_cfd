@@ -46,13 +46,14 @@ was not, the reason is given rather than glossed over.
 | 22 | Guardian pause expiry bounds each pause, not the number of pauses | **By design** — owner rotates a misbehaving guardian |
 | 23 | Global pause blocks exits and liquidations | **By design** — deposits stay open; funding/borrow frozen; grace period after |
 | 24 | Portfolio margin has no account-level net liquidation | **Open** — `portfolioMarginEnabled` must stay **off** in production until implemented and audited (off on the live deployment) |
-| 25 | InsuranceVault has no virtual shares (first-depositor inflation) | **Mitigated** — zero-share deposits revert; attack profitability not removed |
+| 25 | InsuranceVault had no virtual shares (first-depositor inflation) | **Fixed in source, not deployed** (2026-10-02, P1-05) — virtual shares + decimals offset 6; inflating the share price is unprofitable in source (net ≤ 1 wei against a single later depositor; with N later deposits/withdrawals a holder collects < one share unit's price + 1 wei per operation, while raising the price costs ~10^6× that). Deployed vaults are the old version until redeployed; a new vault must be seeded before any inflow is wired (docs/INSURANCE_VAULT_SHARES.md §3.3, §5) |
 | 26 | Portfolio (cross) margin removed | **Resolved by removal** (2026-09-30) — supersedes #24; isolated margin only |
 | 27 | Exchange guardian's per-asset brake stops at ReduceOnly; only the owner can Halt | **By design** (2026-09-30, PR #198, source only) — the *exchange* guardian cannot freeze exits by asset mode. The GuardedOracle guardian's freeze and pause are **bounded in source** (2026-10-01, `contracts/oracle-freeze-expiry-checkin`: 72h expiry, 24h cooldown) but **not deployed**: the live oracle `0x8E9e…` still has no expiry (see §27 below) |
 | 28 | After the timelock handover, recovery actions wait 48h and depend on one Safe | **By design** — losing the Safe freezes governance permanently |
 | 29 | V2.5 unpriced exemption values a closed dead-feed asset at an arbitrarily old price | **Accepted** — closed assets only, never below its last recorded price, dust-only without one |
 | 30 | Daily check-in still transfers PEPE on the deployed PepeIncentives, against the #101 decision | **Fixed in source** (2026-10-01, issue #169) — check-ins credit non-transferable achievement points; **not deployed**, the live contract is unchanged |
 | 31 | Equities, ETFs and gold can be opened against the last close while their market is closed | **Open on the live exchange** (2026-10-02) — the keeper refreshes `updatedAt` through closures so exits keep working; the ReduceOnly switch that stops opens needs the not-yet-deployed exchange. Keeper side fixed in source (w36) |
+| 32 | Agent authorization VCs are revoked through an issuer-signed, off-chain status list; the list host is trusted to say whether an issuer *has* a list | **Mitigated in source** (2026-10-02, ADR-016) — writes fail closed; a verifier that never saw an issuer's list can be told "no list" with no time bound; an expired list blocks that issuer's opens and closes; on-chain registry is follow-up |
 
 ---
 
@@ -103,10 +104,28 @@ into MockOracle, falling back to the public price APIs only for assets the
 adapters do not cover (most equities on testnet). The exchange then settles on
 Chainlink/Pyth data at one remove.
 
-Be precise about the deployment status too: **the relay has never been switched
-on in CI.** Neither keeper workflow sets `RELAY_SOURCE`, so both chains are
-currently fed from the public APIs. The code path exists and is wired; the
-configuration is not. Turning it on is a workflow env change, not a code change.
+Be precise about the deployment status too: **the relay is switched off in CI.**
+`base-sepolia-keeper.yml` did set `KEEPER_RELAY_SOURCE` to the aggregator from
+2026-08 until 2026-10-03, when it was removed; the Sepolia keeper never set it.
+Both chains are fed from the public APIs. The code path exists and is wired; the
+configuration is not. Turning it back on is a workflow env change, not a code
+change — but see the next paragraph and `docs/RUNBOOK_KEEPER.md` («relay 來源»)
+for the preconditions.
+
+**Why it was switched off, and what that means for monitoring.** The owner of the
+Chainlink, Pyth and Aggregator adapters on Base Sepolia is still the leaked
+deployer key `0xE80A…Eb93` (its private key is in public git history; see
+`docs/RUNBOOK_FREEZE_LEGACY.md`). That owner can point a feed at a contract it
+controls. The keeper preferred the relay price and does not ask for a second
+source when a move stays under the breaker threshold, so a compromised owner
+could have walked the live exchange's price a few percent per round. When the
+relay was removed the aggregator reverted `NoLiveSource` for every asset, so
+nothing was lost. The same aggregator is the reference price of the monitoring
+rule `oracle-deviation` (`ops/monitoring/monitors.json`): **that reference is
+currently unusable (every read reverts) and, until the adapters leave the leaked
+key, could be manipulated by it** — a manipulated reference would make the
+deviation alert go blind rather than fire. The rule is left as is; treat its
+silence as «not monitored», not as «no deviation».
 
 Be precise about what that is: a **trusted relay, not a trustless integration**.
 The keeper key can still write whatever it likes. It removes the dependency on a
@@ -859,14 +878,36 @@ removed from the contract altogether.
 
 ## 25. InsuranceVault has no virtual shares
 
-The vault mints `shares = amount × supply / totalAssets` with no virtual
-shares or dead-share offset. A first depositor who mints 1 share and then
-inflates `totalAssets` (any protocol inflow counts) can make later deposits
-round down. Since 2026-09-29 a deposit that would mint **0 shares reverts**
-(`ZeroShares`), so a victim's USDC can no longer be silently absorbed; a
+**Status (2026-10-02, P1-05): fixed in source, not deployed.**
+
+*Deployed vaults (unchanged until redeployed):* the vault mints
+`shares = amount × supply / totalAssets` with no virtual shares or dead-share
+offset. A first depositor who mints 1 share and then inflates `totalAssets`
+(any protocol inflow counts) can make later deposits round down. Since
+2026-09-29 a deposit that would mint **0 shares reverts** (`ZeroShares`), but a
 deposit that rounds to a *small* number of shares still loses the rounding
-remainder to existing holders. Virtual shares (ERC-4626-style offset) would
-remove the attack's profitability and are the intended follow-up.
+remainder to existing holders.
+
+*Source (`contracts/src/InsuranceVault.sol`):* shares are priced with
+10^6 virtual shares and 1 virtual asset (the OpenZeppelin ERC-4626
+decimals-offset construction), both conversions round toward the vault, and
+share decimals become asset decimals + 6. Proven and fuzzed bounds: against a
+single later depositor, whoever raises the share price on a small supply nets
+at most 1 wei (≤ 0 when exiting first), the later depositor loses less than one
+share unit's price, and the raiser loses about 10^6 times what they can make
+the later depositor lose. In general each other holder's deposit or withdrawal
+can hand a large holder less than one share unit's price + 1 wei of rounding
+(about N wei over N operations at a normal price); raising the price to farm
+that still loses money, because the raise itself costs ~10^6 times the price.
+
+Two side effects to know about: the virtual shares act as a permanent LP
+nobody controls (assets that arrive while the supply is 0 belong to them for
+good and they take their pro-rata share of later fees and bailouts), so a new
+vault must be seeded before any inflow is wired; and if bailouts twice leave
+only dust, large deposits can overflow until the owner recapitalizes.
+Design, derivation and the migration plan (the vault is not upgradeable and
+the FeeRouters hold it immutably; ADR-012 may supersede it):
+`docs/INSURANCE_VAULT_SHARES.md`.
 
 ## 26. Portfolio (cross) margin removed
 
@@ -1274,6 +1315,63 @@ tenant asset list, old exchange, per-asset clock, tighten before the price
 write, no loosening of a refused asset, closed versus protected) and
 `agent/keeper/round.test.ts` (heartbeat still written while closed; `priced`
 excludes refused and unreadable assets).
+
+## 32. VC revocation is an off-chain signed list (added 2026-10-02)
+
+Before ADR-016 an authorization VC could not be revoked on its own: the only
+options were waiting for `validUntil`, revoking the whole on-chain session, or
+re-issuing (which supersedes the old VC only on an agent that has already seen
+the new one). Now the VC's issuer (the user's wallet) signs an
+`AgentCredentialStatusList` with the same key and EIP-712 domain as the VC;
+`write.ts` checks it before every open and close, and rejects revoked VCs and
+any VC whose status cannot be fetched or verified (`VC_REVOKED`,
+`VC_STATUS_UNVERIFIED`).
+
+**Trust assumption.** The signature stops the host from forging or editing a
+list, but the host (or whoever manages the verifier's list directory) is trusted
+to answer *whether an issuer has published a list at all*:
+
+- A verifier that has **never** accepted an issuer's list — a new agent, a
+  rebuilt container, a lost state file, another replica — treats a plain 404 as
+  "no revocations", and there is **no time bound** on that.
+- A verifier that **has** seen a list remembers its sequence and every
+  revocation in it: an older list is rejected as a replay, a missing one as
+  withheld. Withholding then only works until the old list expires (default 30
+  days, at most 90), after which writes are refused.
+- Configuration mistakes no longer fail open: both the local directory and the
+  HTTP source require an `index.json` directory marker (created by
+  `vc-status init`), HTTP redirects are not followed, and only a direct 404 means
+  "no list". A missing marker means *unknown*, so every write is refused.
+
+Until the on-chain registry (ADR-016 §6) exists, the list host must be inside
+the operator's own trust boundary. The strongest immediate stop is still
+`AgentSessionManager.revokeSession`.
+
+**Expiry blocks writes.** Once an issuer publishes a list, it has to be
+re-signed (same content, sequence + 1) before it expires; an expired list makes
+every open **and close** for that issuer fail closed. Checks start carrying a
+warning 7 days before expiry (shown by MCP results, the Telegram bot, demo-agent,
+the x402 agent and the SDK). The operator is responsible for monitoring: run
+`npx tsx examples/vc-status.ts expiring --days 7` on a schedule against the
+verifier's list directory and notify the issuer. `ops/monitoring` cannot read
+that directory and does not cover this. Users can always close positions
+directly on-chain (`PerpetualExchange.closePosition` needs no VC).
+
+**How to stop using revocation.** Deleting the list does not work: a verifier
+that has seen it reports `STATUS_LIST_WITHHELD` and refuses writes. The issuer
+signs an empty list with sequence + 1 (`revokedBefore` stays as it was) and keeps
+re-signing it. Removing the issuer entirely requires deleting both the list file
+and the issuer's record in **every** verifier's state file, which forgets past
+revocations — safe only after every revoked VC has passed its `validUntil` or the
+on-chain session has been revoked.
+
+Other limits: verifier state is a single-host file by default; replicas must
+inject a shared `StatusStateStore` (`setVcStatusStateStore`). "Revoke all"
+(`revokeAllCutoff`) covers devices whose clock runs up to 300 s fast, so VCs
+signed in the 5–10 minutes after it are also revoked; users should wait that long
+before re-issuing (the Telegram bot says so when it refuses). Before the first open
+or close after upgrading, run `npm run vc-status:init` once on persistent storage
+(never from a container entrypoint), or every write is refused.
 
 ## Frontend
 

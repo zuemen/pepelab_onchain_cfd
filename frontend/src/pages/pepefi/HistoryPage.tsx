@@ -4,7 +4,8 @@ import { MONO } from 'src/components/pepefi/brandKit'
 import { useRef, useState, useEffect, useCallback, type ReactNode } from 'react'
 import { useContracts } from 'src/hooks/useContracts'
 import { useV2Contracts } from 'src/hooks/useV2Contracts'
-import { isDeployed } from 'src/lib/pepefi/safeRead'
+import { isDeployed, safeRead } from 'src/lib/pepefi/safeRead'
+import { LEGACY_SHARE_DECIMALS, formatShares } from 'src/lib/pepefi/vaultShares'
 import { usePepefiWallet } from 'src/layouts/pepefi'
 import { explorerTx } from 'src/lib/pepefi/notify'
 import { TableSkeleton } from 'src/components/pepefi/Skeleton'
@@ -582,10 +583,10 @@ function renderDetails(e: ChainEvent): ReactNode {
       })}</span>
 
     case 'VaultDeposit':
-      return <Box component="span" sx={{ color: 'success.main' }}>{interpolate(t.history.detail.vaultDeposit, { usdc: f18(d.usdcAmount as bigint), shares: f18(d.shares as bigint) })}</Box>
+      return <Box component="span" sx={{ color: 'success.main' }}>{interpolate(t.history.detail.vaultDeposit, { usdc: f18(d.usdcAmount as bigint), shares: formatShares(d.shares as bigint, (d.shareDecimals as number | undefined) ?? LEGACY_SHARE_DECIMALS) })}</Box>
 
     case 'VaultWithdraw':
-      return <Box component="span" sx={{ color: 'warning.main' }}>{interpolate(t.history.detail.vaultWithdraw, { usdc: f18(d.usdcAmount as bigint), shares: f18(d.shares as bigint) })}</Box>
+      return <Box component="span" sx={{ color: 'warning.main' }}>{interpolate(t.history.detail.vaultWithdraw, { usdc: f18(d.usdcAmount as bigint), shares: formatShares(d.shares as bigint, (d.shareDecimals as number | undefined) ?? LEGACY_SHARE_DECIMALS) })}</Box>
 
     default:
       return <Typography variant="caption" color="text.secondary">{JSON.stringify(d).slice(0, 80)}</Typography>
@@ -767,6 +768,18 @@ export default function HistoryPage() {
         const ev = toChainEvent(r.key, log)
         if (ev) evs.push(ev)
       }
+    }
+
+    // P1-05: pIV decimals differ between vault versions (18 legacy, 24 after
+    // the virtual-share redeploy). Read them once from the vault the events
+    // came from, instead of formatting share amounts as 18-decimal.
+    const vaultRows = evs.filter(e => e.type === 'VaultDeposit' || e.type === 'VaultWithdraw')
+    if (vaultRows.length > 0) {
+      const shareDecimals = Number(await safeRead(
+        contracts.insuranceVault.decimals() as Promise<bigint>,
+        BigInt(LEGACY_SHARE_DECIMALS),
+      ))
+      for (const e of vaultRows) e.details.shareDecimals = shareDecimals
     }
 
     // Batch-fetch timestamps for events without embedded timestamp

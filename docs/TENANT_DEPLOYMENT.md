@@ -89,6 +89,7 @@
      （`PerpetualExchange` 寫死 18 位，6 位小數的代幣會讓每個部位的尺度錯誤且無法修正；preflight 會擋）。
      **Base 主網的原生 USDC 是 6 位小數，不能直接當結算幣**；平台在主網還沒有任何共用元件，所以今天任何一份
      `network.chainId: 8453` 的設定都過不了白名單——要先決定主網的結算幣（例如 18 位的包裝幣）與共用元件。
+     建議方案（每租戶一顆 1:1 包裝幣＋存入 router）與尚未完成的整合項目見 [ADR-011](ADR-011-settlement-token-decimals.md)。
    - `priceSource`：只在部署當下被讀一次，用來替租戶自己的 oracle 取初始價；之後租戶的 exchange 只讀租戶
      自己的 oracle。只能是平台的 `MockOracle`／`GuardedOracle`／`AggregatorOracle`。每一檔註冊資產都必須有
      **1 小時內**更新過的報價。
@@ -298,7 +299,10 @@ TENANT=<id> TENANT_RECORD=cache/tenants/<id>.deployed.json TENANT_PRIVILEGE_SCAN
 6. 租戶 admin 之後要做的事（都經過 multisig，不在部署腳本裡）：
    - 指派 KYC verifier（`KYCRegistry.setVerifier`）。在那之前所有 RWA 市場對所有人關閉。
    - 指派碳分級見證人（`ESGRegistryV2` 的 `ATTESTOR_ROLE`）。在那之前每檔資產都是 Unrated——槓桿 1 倍、費率最高那一級（fail-closed）。
-   - 注入保險金（`InsuranceVault.deposit`／`recapitalize`）。新租戶的保險金是 0。
+   - 注入保險金：**部署完成後立刻用 `InsuranceVault.deposit` 存入種子（至少 1 USDC，份額保留到金庫停用）**。DeployTenant 部署完非 RWA 市場就能交易，沒有另外的「開放交易」步驟；讓腳本自動存種子（`SEED_AMOUNT`＋VerifyTenant 檢查 `totalSupply() > 0`）列為後續。新租戶的保險金是 0。
+     P1-05 之後的 InsuranceVault 用 virtual shares：供給為 0 時進來的資產（手續費分成、清算殘值，或在沒有份額時呼叫 `recapitalize`）
+     會永久歸 virtual 份額，之後按比例分走 LP 的收益。所以 `recapitalize` 只在已有種子份額之後使用。
+     部署腳本目前在建構當下就接好 FeeRouter／exchange，種子要在開放交易之前存（[`INSURANCE_VAULT_SHARES.md`](INSURANCE_VAULT_SHARES.md) §3.3、§5.2）。
    - 金庫的每檔資產上限預設是 0（關閉鑄造），由 risk 金鑰逐檔開放，並 `fundVault` 注入兌付準備。
    - 若要把所有權放到 Timelock 後面，由 admin 自行部署並轉移；之後跑 `VerifyTenant` 要加 `EXPECTED_OWNER=<timelock>`
      （CI 的 `tenant-verify.yml` 目前以 `roles.admin` 為 owner；移到 Timelock 時要同步改設定或腳本）。
