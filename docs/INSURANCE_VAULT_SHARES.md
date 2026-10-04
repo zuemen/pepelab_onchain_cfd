@@ -107,7 +107,7 @@ InsuranceVault **不可升級**（`new InsuranceVault(usdc)`，非 proxy），�
 |---|---|---|
 | 是否換新版 | 換（見 §5.0） | **不換**，理由見下 |
 | 種子由誰出 | 平台金庫地址（部署者 EOA 或平台 Safe）。`deposit` 不需要權限，不必經 timelock；若改由 timelock 出資，要提案 `approve` + `deposit`，多等 48 小時 | 平台金庫地址 |
-| 金額 | 至少 1 USDC，**用新資金**，不可從舊金庫提領：舊金庫在 `setInsuranceVault` 執行前仍在保護交易（§5.3 第 4 步）。協議在舊金庫的部位等 `setInsuranceVault` 執行後才搬（§5.3 第 5.3 步） | 至少 1 USDC |
+| 金額 | 至少 1 USDC，**用新資金**，不可從舊金庫提領：舊金庫在 `setInsuranceVault` 執行前仍在保護交易（§5.3 第 4 步）。協議在舊金庫的部位等 `setInsuranceVault` 執行後才搬（§5.3 第 5 步的第 3 小步） | 至少 1 USDC |
 | 能否取回 | 能。種子就是一般份額，按比例分收益與 bailout，隨時可 `withdraw`。但**要保留到金庫停用**：全部提光會讓供給回到 0，之後的流入又會永久歸 virtual 份額 | 能，同左 |
 
 **x402 金庫不換新版的理由：** 它的 `exchange` 是 0 位址（`DeployX402Router.s.sol` 只呼叫 `setFeeRouter`，ADR-012 §1.3 也寫明它不替 exchange 吸收缺口），不做 bailout，也沒有外部 LP。virtual shares 保護的是「後續存款者」，在這顆金庫上帶不來好處；反而在 `exchange == 0` 時，供給為 0 的流入會永久鎖死（§3.3）。建議維持舊版，由平台存入種子、持有份額，讓 x402 收入的 10% 歸平台份額並可提回。若將來 x402 金庫要開放外部 LP，屆時依 §5.3 的順序換新版（先種子、再 `setFeeRouter`）。
