@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import { execSync } from 'child_process';
 import checker from 'vite-plugin-checker';
 import { loadEnv, defineConfig } from 'vite';
 import react from '@vitejs/plugin-react-swc';
@@ -13,6 +14,7 @@ import {
   dedicatedSignalApiProblem,
 } from './src/contracts/tenantDeployment.node';
 import { LOCALES, pickLocale } from './src/locales/catalogs';
+import { buildInfoDefine, resolveBuildInfo } from './src/lib/pepefi/buildMeta';
 
 // ----------------------------------------------------------------------
 
@@ -79,7 +81,23 @@ export default defineConfig(({ mode, command }) => {
     if (problem) throw new Error(`\n[pepefi-csp] ${problem}\n`);
   }
 
+  // 頁尾版本列：commit 短 SHA 與 build 時間（src/lib/pepefi/buildMeta.ts）。Vercel 有
+  // VERCEL_GIT_COMMIT_SHA；本機用 git rev-parse；都拿不到時畫面顯示「本機開發」。
+  // 只注入這兩個欄位，不注入任何環境變數的內容。
+  const buildInfo = resolveBuildInfo({
+    vercelSha: process.env.VERCEL_GIT_COMMIT_SHA,
+    gitSha: () =>
+      execSync('git rev-parse HEAD', {
+        cwd: process.cwd(),
+        stdio: ['ignore', 'pipe', 'ignore'],
+        timeout: 5000,
+      })
+        .toString()
+        .trim(),
+  });
+
   return {
+    define: buildInfoDefine(buildInfo),
     plugins: [
       react(),
       {

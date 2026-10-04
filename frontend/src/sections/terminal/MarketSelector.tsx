@@ -1,4 +1,5 @@
 import type { AssetId } from './types'
+import type { MarketStatus } from 'src/lib/pepefi/marketStatus'
 
 import Box from '@mui/material/Box'
 
@@ -6,6 +7,7 @@ import { assetPolicy } from 'src/tenant'
 import { ASSETS_LIST } from 'src/lib/pepefi/assetMeta'
 
 import { C, monoCss } from './terminal-theme'
+import { MarketStatusBadge } from './MarketStatusBadge'
 
 /**
  * 可選標的只列白標租戶白名單內的資產（src/tenant/assetPolicy.ts）。這裡只影響「新開
@@ -13,13 +15,18 @@ import { C, monoCss } from './terminal-theme'
  */
 const SELECTABLE = assetPolicy.selectable(ASSETS_LIST)
 
-/** 標的分頁列。受管制標的（需 KYC）前面掛鎖頭。 */
+/**
+ * 標的分頁列。受管制標的（需 KYC）前面掛鎖頭；休市、只能減倉、暫停的標的在代號後面
+ * 掛短標籤（開盤與 24/7 不掛，見 MarketStatusBadge）。
+ */
 export function MarketSelector({
   selAsset,
   onSelect,
+  statusFor,
 }: {
   selAsset: AssetId
   onSelect: (id: AssetId) => void
+  statusFor?: (id: AssetId) => MarketStatus
 }) {
   return (
     <Box
@@ -56,6 +63,11 @@ export function MarketSelector({
           >
             {a.regulated ? '🔒 ' : ''}
             {a.symbol}
+            {statusFor && (
+              <Box component="span" sx={{ ml: 0.8, verticalAlign: 'middle' }}>
+                <MarketStatusBadge status={statusFor(a.id as AssetId)} variant="short" onAccent={on} />
+              </Box>
+            )}
           </Box>
         )
       })}

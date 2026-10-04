@@ -22,6 +22,7 @@ import { useSettingsContext } from 'src/components/settings';
 import WalletButton from 'src/components/pepefi/WalletButton';
 import { PepeAvatar } from 'src/components/pepefi/PepeAvatar';
 import { TenantFooter } from 'src/components/pepefi/TenantFooter';
+import { BuildInfoFooter } from 'src/components/pepefi/BuildInfoFooter';
 import PaperTradingBadge from 'src/components/pepefi/PaperTradingBadge';
 
 import { NavMobile } from './nav-mobile';
@@ -272,7 +273,13 @@ export function DashboardLayout({
   );
 
   // 白標租戶的客服與法律連結；租戶沒設定（default 租戶）時 TenantFooter 回傳 null。
-  const renderFooter = () => <TenantFooter />;
+  // 版本列（鏈、commit、build 時間）所有租戶都顯示，見 BuildInfoFooter。
+  const renderFooter = () => (
+    <>
+      <TenantFooter />
+      <BuildInfoFooter chainId={wallet.chainId} />
+    </>
+  );
 
   const renderMain = () => <MainSection {...slotProps?.main}>{children}</MainSection>;
 
