@@ -42,7 +42,7 @@
     "typescript": "^5.6.3"
   },
   "dependencies": {
-    "node-telegram-bot-api": "^1.1.0"
+    "node-telegram-bot-api": "^2.1.0"
   },
   "//overrides": "Dependabot #2/#3/#4/#103（2026-10-02）。弱點副本全部來自 x402@0.5.3 → wagmi → @wagmi/connectors 這棵樹；x402 只拿 wagmi 在發版時預先打包 paywall 頁面（存成字串），執行期沒有任何程序載入這棵樹，signal-api 的 Vercel bundle 也沒有內聯它們（esbuild metafile 查證）。ws@^8 只抓 8.x 副本（viem@2.23.2 的 8.18.0）；ws 7.5.11 已是 7.x 修補版，不動。uuid 給 @metamask/*，只用 v4／validate，11.x 仍有 CJS。query-string 只有 @walletconnect/utils 2.21.x 宣告、dist 從未 import，換成 9.x 才能帶到 decode-uri-component 0.5.0（7.x 會 require 它，而 0.5.0 是 ESM-only）。詳見 SECURITY_NOTES.md §8。",
   "overrides": {
