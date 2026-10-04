@@ -5,6 +5,13 @@ libs = ["lib"]
 via_ir = true
 optimizer = true
 optimizer_runs = 200
+# 釘選 solc。沒釘時 forge 會挑本機已安裝、符合 pragma 的最新版：2026-10-04 CI 自動選到 0.8.36、
+# 本機是 0.8.30，PerpetualExchange 剛好同為 23,911 B，但主合約大小門檻（scripts/check-contract-size.mjs）
+# 的餘裕是 0 B，scripts/check-deployment-status.mjs 的鏈上比對也依賴編譯器——編譯器升級必須是看得見的 commit。
+# 選 0.8.36：CI 已用它通過全部 forge test 與大小門檻。現行 Base Sepolia 部署（CBOR 記錄）是 0.8.35 編的，
+# 0.8.36 對其中 12 個一致的元件產生相同的程式碼（只差 CBOR metadata）；改用 0.8.30 比對時 AgentSessionManager、
+# StrategyRegistry、SustainabilityBadge 會被誤判成不一致——鏈上比對必須用釘選的版本。
+solc_version = "0.8.36"
 remappings = [
     "@openzeppelin/contracts/=lib/openzeppelin-contracts/contracts/",
     "@openzeppelin/contracts-upgradeable/=lib/openzeppelin-contracts-upgradeable/contracts/",

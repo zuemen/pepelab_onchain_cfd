@@ -116,6 +116,32 @@ jobs:
       - name: Check monitoring config
         run: node scripts/check-monitoring.mjs
 
+  release-status:
+    # 發布狀態（docs/RELEASE_STATUS.md）：「已合併」不等於「已部署、鏈上＝原始碼」。這支 job
+    # 不連網，只確認那份文件沒有過期或被手改——它必須是 docs/release-status.json 的渲染結果、
+    # 位址等於 frontend/src/contracts/**、標成「鏈上＝原始碼」的元件原始碼沒有在產生之後被改、
+    # 展示驗收引用的證據檔都存在、外洩地址名單讀得到。鏈上比對本身要以唯讀 RPC 在本機重跑
+    # node scripts/check-deployment-status.mjs（見 docs/OWNER_ACTIONS.md 第 7 步）。
+    # 同一個 job 也跑部署後 smoke test 的自我測試（腳本本身唯讀、不需要私鑰）。
+    name: release status ↔ addresses.ts
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '20'
+
+      # 先證明檢查器會抓錯（手改報告、位址變更、原始碼在「鏈上＝原始碼」之後被改…），再檢查 repo。
+      - name: Self-test
+        run: node --test scripts/check-deployment-status.test.mjs scripts/post-deploy-smoke.test.mjs
+
+      - name: Check release status (offline)
+        run: node scripts/check-deployment-status.mjs --offline
+
   workflow-guards:
     # 持有鏈上私鑰的 job 靠「私鑰只放 environment secret＋只有特定 job 綁那個 environment＋
     # admin 呼叫先經人工核准」保護，而這些都只是 workflow 檔裡的幾行 YAML。這支檢查把規則

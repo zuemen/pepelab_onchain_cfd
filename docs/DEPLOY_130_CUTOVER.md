@@ -22,7 +22,7 @@ PR #191 已合併進 master，但只有原始碼。鏈上現行 exchange `0x827e
 | 項目 | 檢查 |
 |---|---|
 | master 含 PR #191 以及本分支（`contracts/p1-cutover-periphery`） | `forge test` 全綠 |
-| 部署者金鑰 | `cast wallet address --private-key "$PRIVATE_KEY"` 的結果要等於 `0x27C2…A585` |
+| 部署者金鑰 | 匯入 Foundry keystore（`cast wallet import <名稱> --interactive`），`cast wallet address --account <名稱>` 的結果要等於 `0x27C2…A585`。私鑰不要出現在指令列 |
 | guardian 熱錢包 | **另外一把 key**。腳本會強制檢查：guardian 不能等於 `MARKET_OPERATOR`、不能等於 keeper `0x540a…`、不能等於 owner。只有單一 key 的演練（anvil、拋棄式 fork）可以設 `ALLOW_GUARDIAN_IS_OWNER=true` 放行 owner 那一項。guardian 只能暫停，最多把資產收緊到 ReduceOnly，不能解除暫停，也不能改參數（SEAL 建議） |
 | 凍結時窗 | 挑沒有 demo 的時段，後面要留兩天緩衝 |
 | 餘額 | 模擬估算約 16.09M gas，以 0.011 gwei 計約 0.0002 ETH。錢包多備一些 |
@@ -76,6 +76,35 @@ RWA（其餘 8 檔）             : C_rwa = C × 50%
 
 ## 5. 執行
 
+### 5.0 先 dispatch keeper，確認價格新鮮
+
+開始前（§5.2 預檢之前）先手動觸發一次 keeper，確認 11 檔價格都是剛寫的：
+
+```bash
+SINCE=$(date -u -d '-60 seconds' +%Y-%m-%dT%H:%M:%SZ)       # 往前 60 秒，容許本機時鐘比 GitHub 快
+gh workflow run base-sepolia-keeper.yml --ref master
+# dispatch 後要幾秒才查得到這個 run；沒指定 id 的 gh run watch 會要求互動選擇，所以先輪詢取得 id（最多 5 分鐘）
+RUN=""; for i in $(seq 1 60); do sleep 5; RUN=$(gh run list --workflow base-sepolia-keeper.yml --event workflow_dispatch \
+  --limit 5 --json databaseId,createdAt --jq "[.[] | select(.createdAt >= \"$SINCE\")][0].databaseId // empty"); [ -n "$RUN" ] && break; done
+[ -n "$RUN" ] || echo "5 分鐘內找不到這次 dispatch 的 run：到 Actions 頁面確認，不要往下做"
+gh run watch "$RUN" --exit-status                            # run 失敗時非 0
+node scripts/post-deploy-smoke.mjs --skip-http --fresh-since "$SINCE" --max-age 21600
+# 唯讀：exchange 讀的 oracle 與 V2 金庫讀的 oracle，最近一次寫價都必須晚於 dispatch（證明 keeper 真的跑了），
+# 而且 11 檔都不超過 6 小時。
+# keeper 只重寫有變動或超過 heartbeat 的資產，所以不要求每一檔都在 dispatch 之後寫過。
+```
+
+為什麼：
+
+- **新 exchange 一上線就套用 6 小時的 `maxPriceAge`**。cutover 從預檢、broadcast 到 `Verify130` 加上 §7 的 commit 要好幾個小時，
+  GitHub cron 的實測間隔最長約 169 分鐘（`RUNBOOK_KEEPER.md`）；從舊價格開始做，很容易在驗收時剛好過期，新 exchange 的開倉、
+  平倉、清算全部 revert `StalePrice`，看起來像 cutover 失敗。
+- **keeper 要到 §7 第 6 項才改指向新 exchange**。在那之前 keeper 仍照舊 exchange 的設定運作，寫價本身不受影響（預設 MockOracle 時新舊 exchange 讀同一顆 oracle），
+  但休市切換等針對 exchange 的動作還不會作用在新 exchange 上——起點的價格越新，這段空窗越不容易出事。
+- **`ORACLE_KIND=guarded` 或同一輪要做 §10 的 GuardedOracle 重部署時**：preflight 要求 11 檔都能報價，`RedeployGuardedOracle.s.sol`
+  只要有任何一檔超過 `min(金庫 maxPriceAge, 6h, ORACLE_MAX_PRICE_AGE)` 就拒絕執行。先寫價可以避免做到一半被擋下。
+- `Verify130` 對超過 6 小時的價格只警告、不失敗（見 §5.4）；事前確認新鮮，才不會把「價格過期」誤當成「部署正確」放過。
+
 ### 5.1 清空舊 exchange
 
 腳本會掃描舊 exchange 的倉位：**只要有未平倉就 revert**，除非刻意設定 `ALLOW_OPEN_POSITIONS=true`。舊 exchange 上的保證金（目前 500 USDC）不會被搬走，使用者隨時可以 `withdrawMargin` 領回，然後存進新的 exchange。執行費 ETH 由 owner 呼叫 `withdrawExecutionFees` 取回。
@@ -115,8 +144,10 @@ forge script script/Redeploy130Hardened.s.sol:Redeploy130Hardened \
 ### 5.3 正式 broadcast（人工執行）
 
 ```bash
+# 金鑰用 keystore（§2），不要用 --private-key：展開後的私鑰會出現在程序參數與 shell history 裡。
 forge script script/Redeploy130Hardened.s.sol:Redeploy130Hardened \
-  --rpc-url "$BASE_SEPOLIA_RPC_URL" --private-key "$PRIVATE_KEY" --broadcast --slow -vv
+  --rpc-url https://sepolia.base.org --account <keystore 名稱> --sender 0x27C21324D101e867E0634bf2ebe3F9Dcf3ACA585 \
+  --broadcast --slow -vv
 ```
 
 - 一定要加 `--slow`。加了之後，forge 會等上一筆交易的收據回來才送下一筆，理由有兩個：
@@ -142,7 +173,7 @@ forge script script/Redeploy130Hardened.s.sol:Redeploy130Hardened \
 ```bash
 EXCHANGE_NEW=… COPYTRACKER_NEW=… STRATEGY_REGISTRY_NEW=… SESSION_MANAGER_NEW=… GUARDIAN=… \
 OI_CAP_NON_RWA_USDC=1499 OI_CAP_RWA_USDC=749 \
-forge script script/Verify130.s.sol:Verify130 --rpc-url "$BASE_SEPOLIA_RPC_URL" -vv
+forge script script/Verify130.s.sol:Verify130 --rpc-url https://sepolia.base.org -vv   # Base Sepolia（84532）
 ```
 
 OI 上限在腳本裡已經取整到整數 USDC，所以這裡填的數字就是 cutover 最後印出的 `OI_CAP_*_USDC`；以 2026-09-30 的資料為例是 1499 和 749。fork 測試會用同樣的指令跑一次 `Verify130`，已確認能通過。
@@ -195,7 +226,7 @@ oracle 價格新鮮度只會發出警告，不會 revert。如果看到 `WARN �
   步驟：
   1. 在 `contracts` 目錄執行 `bash script/check-vault-storage-layout.sh`。腳本會先 `forge clean`，再用 `forge inspect … storage-layout` 比對，確認只有在尾端追加欄位：`_lastGood` 放在 slot 12，`_unpricedExempt` 放在 slot 13，`__gap` 從 43 變成 41（起點 slot 14），結尾 slot 仍是 55。
   2. 用 fork 模擬 `forge script script/UpgradeVaultToV2_5.s.sol:UpgradeVaultToV2_5 --fork-url https://sepolia.base.org --sender 0x27C2…A585`。
-  3. 人工加上 `--broadcast --slow`。
+  3. 把 `--fork-url` 換成 `--rpc-url https://sepolia.base.org`（Base Sepolia），人工加上 `--account <keystore 名稱> --broadcast --slow`（不要用 `--private-key`）。
   4. 用 `jq .abi out/AssetVaultV2_5.sol/AssetVaultV2_5.json > ../frontend/src/contracts/abi/AssetVaultV2.json` 更新前端 ABI。
 
   **這一步要在治理 phase 2 之前做**；phase 2 之後就只能走 timelock 提案。
@@ -221,7 +252,8 @@ jq -r '.transactions[] | select(.transactionType=="CREATE") | "\(.contractName) 
 ```bash
 RESUME_EXCHANGE=0x… RESUME_STRATEGY_REGISTRY=0x… RESUME_COPY_TRACKER=0x… RESUME_SESSION_MANAGER=0x… \
 GUARDIAN=0x… forge script script/Redeploy130Hardened.s.sol:Redeploy130Hardened \
-  --rpc-url "$BASE_SEPOLIA_RPC_URL" --private-key "$PRIVATE_KEY" --broadcast --slow -vv
+  --rpc-url https://sepolia.base.org --account <keystore 名稱> --sender 0x27C21324D101e867E0634bf2ebe3F9Dcf3ACA585 \
+  --broadcast --slow -vv
 ```
 
 - 沒部署到的合約就不要設，腳本會補部署。

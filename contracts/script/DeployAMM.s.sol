@@ -10,8 +10,11 @@ import "../src/PepeAMM.sol";
 ///
 ///         Usage:
 ///   forge script script/DeployAMM.s.sol \
-///     --rpc-url $SEPOLIA_RPC_URL --private-key $PRIVATE_KEY \
+///     --rpc-url https://sepolia.base.org \
 ///     --broadcast --skip-simulation --slow -v
+///   (Base Sepolia. PRIVATE_KEY is read in-script — 0x-prefixed, set only in the current shell with
+///   `read -rs PRIVATE_KEY && export PRIVATE_KEY`, `unset` afterwards; no --private-key on the command
+///   line. A keystore (--account) cannot be used until the script is rewritten; docs/OWNER_ACTIONS.md step 5.)
 ///
 ///   Required env vars: MOCK_USDC, MOCK_ORACLE
 ///   Optional:          SEED_ETH (wei, default 1e18), SEED_USDC (18-dec, default 2300e18)

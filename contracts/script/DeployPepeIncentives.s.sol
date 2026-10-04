@@ -8,7 +8,10 @@ import "../src/PepeIncentives.sol";
 /// @notice Deploy PepeIncentives and print the address.
 ///
 ///   Required env vars:
-///     PRIVATE_KEY          deployer private key
+///     PRIVATE_KEY          deployer private key, 0x-prefixed (vm.envUint reads a bare hex string as decimal
+///                          and fails). Read in-script, so a keystore (--account) cannot be used yet: set it
+///                          only in the current shell with `read -rs PRIVATE_KEY && export PRIVATE_KEY`,
+///                          then `unset PRIVATE_KEY` (docs/OWNER_ACTIONS.md step 5).
 ///     PEPE_TOKEN           deployed PepeToken address
 ///     PERPETUAL_EXCHANGE   deployed PerpetualExchange address
 ///     COPY_TRACKER         deployed CopyTracker address
@@ -16,9 +19,9 @@ import "../src/PepeIncentives.sol";
 ///
 ///   Usage:
 ///     forge script script/DeployPepeIncentives.s.sol \
-///       --rpc-url $SEPOLIA_RPC_URL \
-///       --private-key $PRIVATE_KEY \
+///       --rpc-url https://sepolia.base.org \
 ///       --broadcast --slow -v
+///     (Base Sepolia. No --private-key on the command line: the script reads PRIVATE_KEY itself.)
 ///
 ///   After deployment:
 ///     1. Update frontend/src/contracts/addresses.ts -> PepeIncentives
@@ -26,7 +29,7 @@ import "../src/PepeIncentives.sol";
 ///        (trade mining, tier, copy and ESG-hold rewards; the daily check-in
 ///        credits non-transferable achievement points and needs no pool):
 ///          cast send $PEPE_TOKEN "transfer(address,uint256)" $PEPE_INCENTIVES 100000000000000000000000 \
-///            --rpc-url $SEPOLIA_RPC_URL --private-key $PRIVATE_KEY
+///            --rpc-url https://sepolia.base.org --account <keystore name>
 contract DeployPepeIncentives is Script {
     function run() external {
         uint256 deployerPk  = vm.envUint("PRIVATE_KEY");

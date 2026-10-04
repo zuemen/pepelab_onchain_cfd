@@ -1,0 +1,530 @@
+{
+  "$comment": "docs/RELEASE_STATUS.md 的元件清單。scripts/check-deployment-status.mjs 依這份清單讀鏈上 runtime bytecode、比對 contracts/out 的編譯產物、讀關鍵 getter。位址不寫在這裡：一律由 frontend/src/contracts/**（addresses.ts、sessionManager.ts、x402.ts）解析。acceptance（展示驗收）只能引用 repo 內存在的證據檔，沒有證據就是「未驗收」；--offline 會檢查每個證據路徑都存在。順序有意義：同一條鏈上兩個元件解析到同一個位址時，先出現的那個負責比對，後面的標成「同一位址」。",
+  "chains": {
+    "84532": {
+      "name": "Base Sepolia",
+      "role": "正式測試網（交易、agent session、x402 都在這條鏈）",
+      "rpc": "https://sepolia.base.org"
+    },
+    "11155111": {
+      "name": "Sepolia",
+      "role": "legacy 展示鏈（不是產品路徑；合約未做金鑰輪替）",
+      "rpc": "https://ethereum-sepolia-rpc.publicnode.com"
+    }
+  },
+  "denylist": {
+    "file": "agent/shared/src/payoutSafety.ts",
+    "export": "COMPROMISED_ADDRESSES"
+  },
+  "components": [
+    {
+      "id": "PerpetualExchange",
+      "label": "交易引擎",
+      "ref": "PerpetualExchange",
+      "artifacts": [
+        "PerpetualExchange.sol:PerpetualExchange"
+      ],
+      "sources": [
+        "contracts/src/PerpetualExchange.sol",
+        "contracts/src/PerpetualExchangeLens.sol"
+      ],
+      "reads": [
+        "owner()",
+        "guardian()",
+        "marketOperator()"
+      ],
+      "denyChecks": [
+        "authorizedAgents(address)"
+      ]
+    },
+    {
+      "id": "MockOracle",
+      "label": "現行價格來源（exchange 讀的 oracle；owner 即 keeper）",
+      "ref": "MockOracle",
+      "artifacts": [
+        "MockOracle.sol:MockOracle"
+      ],
+      "sources": [
+        "contracts/src/MockOracle.sol"
+      ],
+      "reads": [
+        "owner()"
+      ]
+    },
+    {
+      "id": "GuardedOracle",
+      "label": "強化 oracle（多 keeper、偏離上限）",
+      "ref": "GuardedOracle",
+      "artifacts": [
+        "GuardedOracle.sol:GuardedOracle"
+      ],
+      "sources": [
+        "contracts/src/v2/GuardedOracle.sol"
+      ],
+      "roles": [
+        "DEFAULT_ADMIN_ROLE",
+        "KEEPER_ROLE",
+        "GUARDIAN_ROLE"
+      ]
+    },
+    {
+      "id": "InsuranceVault",
+      "label": "保險金庫",
+      "ref": "InsuranceVault",
+      "artifacts": [
+        "InsuranceVault.sol:InsuranceVault"
+      ],
+      "sources": [
+        "contracts/src/InsuranceVault.sol"
+      ],
+      "reads": [
+        "owner()"
+      ]
+    },
+    {
+      "id": "FeeRouter",
+      "label": "平台 FeeRouter（MockUSDC；treasury 為 immutable）",
+      "ref": "FeeRouter",
+      "artifacts": [
+        "FeeRouter.sol:FeeRouter"
+      ],
+      "sources": [
+        "contracts/src/FeeRouter.sol"
+      ],
+      "reads": [
+        "owner()",
+        "platformTreasury()"
+      ]
+    },
+    {
+      "id": "X402FeeRouter",
+      "label": "x402 FeeRouter（官方 USDC；treasury 為 immutable）",
+      "ref": "X402FeeRouter",
+      "artifacts": [
+        "FeeRouter.sol:FeeRouter"
+      ],
+      "sources": [
+        "contracts/src/FeeRouter.sol",
+        "frontend/src/contracts/x402.ts"
+      ],
+      "reads": [
+        "owner()",
+        "platformTreasury()"
+      ]
+    },
+    {
+      "id": "AgentSessionManager",
+      "label": "agent session（自主交易授權）",
+      "ref": "AgentSessionManager",
+      "artifacts": [
+        "AgentSessionManager.sol:AgentSessionManager"
+      ],
+      "sources": [
+        "contracts/src/AgentSessionManager.sol"
+      ]
+    },
+    {
+      "id": "TraderStake",
+      "label": "交易員質押",
+      "ref": "TraderStake",
+      "artifacts": [
+        "TraderStake.sol:TraderStake"
+      ],
+      "sources": [
+        "contracts/src/TraderStake.sol"
+      ],
+      "reads": [
+        "owner()"
+      ]
+    },
+    {
+      "id": "CopyTracker",
+      "label": "跟單",
+      "ref": "CopyTracker",
+      "artifacts": [
+        "CopyTracker.sol:CopyTracker"
+      ],
+      "sources": [
+        "contracts/src/CopyTracker.sol"
+      ],
+      "reads": [
+        "owner()"
+      ]
+    },
+    {
+      "id": "StrategyRegistry",
+      "label": "策略登錄",
+      "ref": "StrategyRegistry",
+      "artifacts": [
+        "StrategyRegistry.sol:StrategyRegistry"
+      ],
+      "sources": [
+        "contracts/src/StrategyRegistry.sol"
+      ]
+    },
+    {
+      "id": "KYCRegistry",
+      "label": "KYC 登錄",
+      "ref": "KYCRegistry",
+      "artifacts": [
+        "KYCRegistry.sol:KYCRegistry"
+      ],
+      "sources": [
+        "contracts/src/KYCRegistry.sol"
+      ],
+      "reads": [
+        "owner()"
+      ],
+      "denyChecks": [
+        "verifiers(address)"
+      ]
+    },
+    {
+      "id": "ESGRegistryV2",
+      "label": "碳分級見證登錄（V2）",
+      "ref": "ESGRegistryV2",
+      "artifacts": [
+        "ESGRegistryV2.sol:ESGRegistryV2"
+      ],
+      "sources": [
+        "contracts/src/ESGRegistryV2.sol"
+      ],
+      "roles": [
+        "DEFAULT_ADMIN_ROLE",
+        "ATTESTOR_ROLE"
+      ]
+    },
+    {
+      "id": "ESGRegistry",
+      "label": "ESG 登錄（V1）",
+      "ref": "ESGRegistry",
+      "artifacts": [
+        "ESGRegistry.sol:ESGRegistry"
+      ],
+      "sources": [
+        "contracts/src/ESGRegistry.sol"
+      ],
+      "reads": [
+        "owner()"
+      ]
+    },
+    {
+      "id": "SustainabilityBadge",
+      "label": "永續成就徽章",
+      "ref": "SustainabilityBadge",
+      "artifacts": [
+        "SustainabilityBadge.sol:SustainabilityBadge"
+      ],
+      "sources": [
+        "contracts/src/SustainabilityBadge.sol"
+      ],
+      "roles": [
+        "DEFAULT_ADMIN_ROLE",
+        "MINTER_ROLE"
+      ]
+    },
+    {
+      "id": "AssetVaultV2",
+      "label": "強化代幣化金庫（UUPS proxy，比對的是實作）",
+      "ref": "AssetVaultV2",
+      "proxy": true,
+      "artifacts": [
+        "AssetVaultV2_5.sol:AssetVaultV2_5",
+        "AssetVaultV2_4.sol:AssetVaultV2_4",
+        "AssetVaultV2_3.sol:AssetVaultV2_3",
+        "AssetVaultV2_2.sol:AssetVaultV2_2",
+        "AssetVaultV2_1.sol:AssetVaultV2_1",
+        "AssetVaultV2.sol:AssetVaultV2"
+      ],
+      "sources": [
+        "contracts/src/v2/AssetVaultV2_5.sol"
+      ],
+      "roles": [
+        "DEFAULT_ADMIN_ROLE",
+        "RISK_ROLE",
+        "PAUSER_ROLE"
+      ]
+    },
+    {
+      "id": "SyntheticAssetV2",
+      "label": "強化金庫的合成資產代幣",
+      "group": "V2_STACK.tokens",
+      "artifacts": [
+        "SyntheticAssetV2.sol:SyntheticAssetV2"
+      ],
+      "sources": [
+        "contracts/src/v2/SyntheticAssetV2.sol"
+      ],
+      "roles": [
+        "DEFAULT_ADMIN_ROLE",
+        "MINTER_ROLE"
+      ]
+    },
+    {
+      "id": "AssetVault",
+      "label": "代幣化金庫 V1（legacy 路徑）",
+      "ref": "AssetVault",
+      "artifacts": [
+        "AssetVault.sol:AssetVault"
+      ],
+      "sources": [
+        "contracts/src/AssetVault.sol"
+      ],
+      "reads": [
+        "owner()"
+      ]
+    },
+    {
+      "id": "SyntheticAsset",
+      "label": "V1 合成資產代幣",
+      "group": "SYNTH_TOKENS",
+      "artifacts": [
+        "SyntheticAsset.sol:SyntheticAsset"
+      ],
+      "sources": [
+        "contracts/src/SyntheticAsset.sol"
+      ]
+    },
+    {
+      "id": "PepeAMM",
+      "label": "PEPE AMM",
+      "ref": "PepeAMM",
+      "artifacts": [
+        "PepeAMM.sol:PepeAMM"
+      ],
+      "sources": [
+        "contracts/src/PepeAMM.sol"
+      ],
+      "reads": [
+        "owner()"
+      ]
+    },
+    {
+      "id": "PepeIncentives",
+      "label": "PEPE 獎勵",
+      "ref": "PepeIncentives",
+      "artifacts": [
+        "PepeIncentives.sol:PepeIncentives"
+      ],
+      "sources": [
+        "contracts/src/PepeIncentives.sol"
+      ],
+      "reads": [
+        "owner()"
+      ]
+    },
+    {
+      "id": "PepeToken",
+      "label": "PEPE 代幣",
+      "ref": "PepeToken",
+      "artifacts": [
+        "PepeToken.sol:PepeToken"
+      ],
+      "sources": [
+        "contracts/src/PepeToken.sol"
+      ],
+      "reads": [
+        "owner()"
+      ]
+    },
+    {
+      "id": "PepeStaking",
+      "label": "PEPE 質押",
+      "ref": "PepeStaking",
+      "artifacts": [
+        "PepeStaking.sol:PepeStaking"
+      ],
+      "sources": [
+        "contracts/src/PepeStaking.sol"
+      ],
+      "reads": [
+        "owner()"
+      ]
+    },
+    {
+      "id": "PepeClaim",
+      "label": "PEPE 領取",
+      "ref": "PepeClaim",
+      "artifacts": [
+        "PepeClaim.sol:PepeClaim"
+      ],
+      "sources": [
+        "contracts/src/PepeClaim.sol"
+      ],
+      "reads": [
+        "owner()"
+      ]
+    },
+    {
+      "id": "EsgRewardDistributor",
+      "label": "ESG 獎勵分配",
+      "ref": "EsgRewardDistributor",
+      "artifacts": [
+        "EsgRewardDistributor.sol:EsgRewardDistributor"
+      ],
+      "sources": [
+        "contracts/src/EsgRewardDistributor.sol"
+      ],
+      "reads": [
+        "owner()"
+      ]
+    },
+    {
+      "id": "AggregatorOracle",
+      "label": "Chainlink＋Pyth 聚合 oracle（展示用，keeper 的參考來源）",
+      "ref": "AggregatorOracle",
+      "artifacts": [
+        "AggregatorOracleAdapter.sol:AggregatorOracleAdapter"
+      ],
+      "sources": [
+        "contracts/src/AggregatorOracleAdapter.sol"
+      ],
+      "reads": [
+        "owner()"
+      ]
+    },
+    {
+      "id": "ChainlinkAdapter",
+      "label": "Chainlink 轉接",
+      "ref": "ChainlinkAdapter",
+      "artifacts": [
+        "ChainlinkOracleAdapter.sol:ChainlinkOracleAdapter"
+      ],
+      "sources": [
+        "contracts/src/ChainlinkOracleAdapter.sol"
+      ],
+      "reads": [
+        "owner()"
+      ]
+    },
+    {
+      "id": "PythAdapter",
+      "label": "Pyth 轉接",
+      "ref": "PythAdapter",
+      "artifacts": [
+        "PythOracleAdapter.sol:PythOracleAdapter"
+      ],
+      "sources": [
+        "contracts/src/PythOracleAdapter.sol"
+      ],
+      "reads": [
+        "owner()"
+      ]
+    },
+    {
+      "id": "MockUSDC",
+      "label": "測試結算幣 MockUSDC",
+      "ref": "MockUSDC",
+      "artifacts": [
+        "MockUSDC.sol:MockUSDC"
+      ],
+      "sources": [
+        "contracts/src/MockUSDC.sol"
+      ],
+      "reads": [
+        "owner()"
+      ]
+    },
+    {
+      "id": "MockUSDT",
+      "label": "測試幣 MockUSDT",
+      "ref": "MockUSDT",
+      "artifacts": [
+        "MockUSDT.sol:MockUSDT"
+      ],
+      "sources": [
+        "contracts/src/MockUSDT.sol"
+      ],
+      "reads": [
+        "owner()"
+      ]
+    },
+    {
+      "id": "MockSwapRouter",
+      "label": "測試兌換路由",
+      "ref": "MockSwapRouter",
+      "artifacts": [
+        "MockSwapRouter.sol:MockSwapRouter"
+      ],
+      "sources": [
+        "contracts/src/MockSwapRouter.sol"
+      ]
+    }
+  ],
+  "offchain": [
+    {
+      "id": "signal-api",
+      "label": "x402 付費 API（Vercel）",
+      "sources": [
+        "agent/signal-api/src",
+        "agent/shared/src"
+      ],
+      "deployed": "已部署：Vercel 分支網域（agent/sdk/src/signalApi.ts 的 SIGNAL_API_TESTNET_URL）；健康與付費端點狀態由 scripts/post-deploy-smoke.mjs 檢查"
+    },
+    {
+      "id": "keeper",
+      "label": "寫價 keeper（GitHub Actions 排程）",
+      "sources": [
+        ".github/workflows/base-sepolia-keeper.yml",
+        "agent/keeper"
+      ],
+      "deployed": "已上線：master 上的 base-sepolia-keeper.yml 排程；最近寫價時間由 scripts/post-deploy-smoke.mjs 讀鏈上 oracle"
+    },
+    {
+      "id": "keeper-trigger",
+      "label": "keeper 觸發 Worker（Cloudflare）",
+      "sources": [
+        "ops/keeper-trigger"
+      ],
+      "deployed": "未部署（ops/keeper-trigger/README.md「現況」，2026-10-02）"
+    },
+    {
+      "id": "monitoring",
+      "label": "鏈上監控 Worker（Cloudflare）",
+      "sources": [
+        "ops/monitoring"
+      ],
+      "deployed": "未部署（ops/monitoring/README.md；2026-10-01 只做過唯讀試跑）"
+    }
+  ],
+  "acceptance": {
+    "X402FeeRouter": {
+      "status": "部分驗收",
+      "date": "2026-07-15",
+      "evidence": [
+        "docs/VERIFICATION_REPORT.md",
+        "docs/COST_MODEL.md"
+      ],
+      "note": "2026-06-15 部署驗證與 2026-06-15～07-15 四筆 routeExternalRevenue 實際結算 tx；x402 v2 從未實付（docs/ADR-010-x402-v2-migration.md）"
+    },
+    "signal-api": {
+      "status": "部分驗收",
+      "date": "2026-07-15",
+      "evidence": [
+        "docs/VERIFICATION_REPORT.md",
+        "docs/COST_MODEL.md"
+      ],
+      "note": "x402 v1 付費呼叫有實際 tx；v2 從未實付；現行 payTo 被判為不安全，付費端點 fail-closed 回 503"
+    },
+    "PerpetualExchange": {
+      "status": "未驗收",
+      "note": "docs/DEPLOY_130_CUTOVER.md §11 的畫面驗收（開倉、平倉、跟單、agent session 下單）未勾；docs/VERIFICATION_REPORT.md B2 待錢包"
+    },
+    "AgentSessionManager": {
+      "status": "未驗收",
+      "note": "只有部署腳本建立的 session #0，沒有 agent 實際下單的 tx 紀錄（docs/VERIFICATION_REPORT.md D 項待貼）"
+    },
+    "AssetVaultV2": {
+      "status": "未驗收",
+      "note": "公開鏈上沒有 mint／redeem 走查紀錄；只有 fork 測試"
+    },
+    "monitoring": {
+      "status": "未驗收",
+      "note": "Worker 未部署；2026-10-01 的唯讀試跑不是展示流程"
+    },
+    "keeper-trigger": {
+      "status": "未驗收",
+      "note": "Worker 未部署；GitHub App 路徑未在 GitHub 上實測"
+    }
+  }
+}
