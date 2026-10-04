@@ -275,9 +275,8 @@ GuardedOracle 的 `GUARDIAN_ROLE`(理由見上)。在 cutover 之前,停單只�
 - 三顆 adapter(ChainlinkOracleAdapter `0x37DC…`、PythOracleAdapter `0x551C…`、
   AggregatorOracleAdapter `0x8215…`)的 owner 仍是公開外洩的舊部署者金鑰 `0xE80A…Eb93`。
   owner 能 `setFeed`／`setPriceId` 把來源指向自己控制的合約。
-- `agent/keeper/round.ts` 有 relay 時**優先採用**,而單輪變動不超過有效熔斷門檻(Base 實際
-  +10% / −9.09%)時**不查第二來源**。每一輪又以前一輪的鏈上價為基準,所以被換掉的 feed 可以
-  一輪推幾個百分點、逐輪累積,進到現行交易所讀的 MockOracle。
+- `agent/keeper/round.ts` 有 relay 時**優先採用**，而小幅變動不會另外向第二來源確認，
+  所以 relay 來源一旦不可信，就可能影響現行交易所讀的 MockOracle。
 - 移除當下 Aggregator 對所有資產都 revert `NoLiveSource`,keeper 本來就退回外部 API,
   所以**沒有功能損失**,只切斷了這條路徑。
 
