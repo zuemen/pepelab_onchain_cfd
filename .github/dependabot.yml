@@ -77,10 +77,13 @@ updates:
     # x402 與 x402-hono 只能一起動；v1 付款路徑的後續方向是 X402_PROTOCOL=v2（@x402/*，
     # ADR-010），不是升這兩個 v1 套件。
     # 兩者的 patch（0.5.x）仍照常進 agent-minor-patch group。
+    # x402-fetch（demo-agent 的 v1 付款 client）屬同一家族，0.x minor／1.x 同樣會把 x402 分成兩份，比照擋下。
     ignore:
       - dependency-name: "x402-hono"
         update-types: ["version-update:semver-major", "version-update:semver-minor"]
       - dependency-name: "x402"
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
+      - dependency-name: "x402-fetch"
         update-types: ["version-update:semver-major", "version-update:semver-minor"]
     commit-message:
       prefix: "chore(agent-deps)"
