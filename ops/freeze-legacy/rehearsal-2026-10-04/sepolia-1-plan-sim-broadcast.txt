@@ -1,0 +1,18 @@
+### 計畫（檢查 0x0c64/0x4cC7 的 setFeeRouter→renounce 相鄰）###
+     項目數 68  保留檢查數 15
+    [1] PENDING  PerpetualExchange (current 0x0c64) setFeeRouter(0) 0x0c6459d38617E60017bDc4ed69ec26137DA5c32b  setFeeRouter(address(0))
+    [2] PENDING  PerpetualExchange (current 0x0c64) renounce 0x0c6459d38617E60017bDc4ed69ec26137DA5c32b  renounceOwnership()
+    [3] PENDING  PerpetualExchange (old 0x4cC7) setFeeRouter(0) 0x4cC711AEa7c6D7E19e99676b51b7A69ee08c31Eb  setFeeRouter(address(0))
+    [4] PENDING  PerpetualExchange (old 0x4cC7) renounce 0x4cC711AEa7c6D7E19e99676b51b7A69ee08c31Eb  renounceOwnership()
+     待處理 68 筆
+### 模擬 ###
+     AssetVaultV2 implementation（執行前）未被更換 ✓
+  == 已送出（或模擬）68 筆交易；開始讀回驗證
+     AssetVaultV2 implementation（執行後）未被更換 ✓
+     保留清單（執行後）全部成立：15 項
+  == 讀回完成：外洩地址在 68 個項目上都已無權限，owner 全部落在計畫內
+### 廣播（帶 nonce 對帳 LEAKED_NONCE_BEFORE=1231）###
+  == 已送出（或模擬）68 筆交易；開始讀回驗證
+     nonce 對帳 ✓：1231 + 68 = 1299
+  == 讀回完成：外洩地址在 68 個項目上都已無權限，owner 全部落在計畫內
+ONCHAIN EXECUTION COMPLETE & SUCCESSFUL.

@@ -30,7 +30,7 @@ reach. It does put the oracle the V1 exchange reads behind a key stored in GitHu
 Actions, and MockOracle has no deviation cap: whoever holds that key can set any
 price. That exposure is limitation #3 and is the reason GuardedOracle exists.
 
-Deployer `0xE80A81360608C1342e66743F70a00f75d792Eb93` **still holds every role**.
+Deployer `0xE80A81360608C1342e66743F70a00f75d792Eb93` **截至 2026-10-02 仍持有每一個角色；凍結程序見 [RUNBOOK_FREEZE_LEGACY.md](RUNBOOK_FREEZE_LEGACY.md)**.
 The handover ran with `REVOKE_DEPLOYER=false` on purpose — see "What is still
 open".
 
