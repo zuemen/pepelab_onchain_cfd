@@ -163,6 +163,8 @@ npm run mcp-server      # 本機啟動 MCP server（stdio）
 
 | 文件 | 內容 |
 |---|---|
+| [`docs/RELEASE_STATUS.md`](docs/RELEASE_STATUS.md) | 發布狀態：每個元件的已合併／已部署／鏈上驗證（bytecode 比對）／展示驗收。由 `scripts/check-deployment-status.mjs` 以唯讀 RPC 產生，不手寫。**已合併不等於使用者受保護** |
+| [`docs/OWNER_ACTIONS.md`](docs/OWNER_ACTIONS.md) | 擁有者操作包：只有擁有者能做的 7 個步驟（GitHub 設定、Worker 部署、凍結舊部署、換收款地址、cutover、VC 清單、部署後重驗），每步附驗證與失敗處置 |
 | [`docs/INTEGRATION_GUIDE.md`](docs/INTEGRATION_GUIDE.md) | 給持牌機構的整合說明（草案） |
 | [`docs/TENANT_DEPLOYMENT.md`](docs/TENANT_DEPLOYMENT.md) | 白標租戶：前端租戶設定、隔離模型（ADR-008）、部署設定、dry-run 與新增租戶步驟（廣播由擁有者執行） |
 | [`docs/TENANT_OPERATIONS.md`](docs/TENANT_OPERATIONS.md) | 白標租戶部署之後：每租戶的 keeper 金鑰與 workflow、signal-api 與收款、SDK 指向租戶部署 |
