@@ -298,7 +298,7 @@ TENANT=<id> TENANT_RECORD=cache/tenants/<id>.deployed.json TENANT_PRIVILEGE_SCAN
 6. 租戶 admin 之後要做的事（都經過 multisig，不在部署腳本裡）：
    - 指派 KYC verifier（`KYCRegistry.setVerifier`）。在那之前所有 RWA 市場對所有人關閉。
    - 指派碳分級見證人（`ESGRegistryV2` 的 `ATTESTOR_ROLE`）。在那之前每檔資產都是 Unrated——槓桿 1 倍、費率最高那一級（fail-closed）。
-   - 注入保險金：**先用 `InsuranceVault.deposit` 存入種子（至少 1 USDC，份額保留到金庫停用），再開放交易**。新租戶的保險金是 0。
+   - 注入保險金：**部署完成後立刻用 `InsuranceVault.deposit` 存入種子（至少 1 USDC，份額保留到金庫停用）**。DeployTenant 部署完非 RWA 市場就能交易，沒有另外的「開放交易」步驟；讓腳本自動存種子（`SEED_AMOUNT`＋VerifyTenant 檢查 `totalSupply() > 0`）列為後續。新租戶的保險金是 0。
      P1-05 之後的 InsuranceVault 用 virtual shares：供給為 0 時進來的資產（手續費分成、清算殘值，或在沒有份額時呼叫 `recapitalize`）
      會永久歸 virtual 份額，之後按比例分走 LP 的收益。所以 `recapitalize` 只在已有種子份額之後使用。
      部署腳本目前在建構當下就接好 FeeRouter／exchange，種子要在開放交易之前存（[`INSURANCE_VAULT_SHARES.md`](INSURANCE_VAULT_SHARES.md) §3.3、§5.2）。

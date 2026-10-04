@@ -107,7 +107,7 @@ InsuranceVault **不可升級**（`new InsuranceVault(usdc)`，非 proxy），�
 |---|---|---|
 | 是否換新版 | 換（見 §5.0） | **不換**，理由見下 |
 | 種子由誰出 | 平台金庫地址（部署者 EOA 或平台 Safe）。`deposit` 不需要權限，不必經 timelock；若改由 timelock 出資，要提案 `approve` + `deposit`，多等 48 小時 | 平台金庫地址 |
-| 金額 | 至少 1 USDC。實務上就是協議自有、要從舊金庫搬過來的那部分保險金（現行主金庫 `totalAssets` 約 150 USDC，各持有人份額以鏈上為準） | 至少 1 USDC |
+| 金額 | 至少 1 USDC，**用新資金**，不可從舊金庫提領：舊金庫在 `setInsuranceVault` 執行前仍在保護交易（§5.3 第 4 步）。協議在舊金庫的部位等 `setInsuranceVault` 執行後才搬（§5.3 第 5.3 步） | 至少 1 USDC |
 | 能否取回 | 能。種子就是一般份額，按比例分收益與 bailout，隨時可 `withdraw`。但**要保留到金庫停用**：全部提光會讓供給回到 0，之後的流入又會永久歸 virtual 份額 | 能，同左 |
 
 **x402 金庫不換新版的理由：** 它的 `exchange` 是 0 位址（`DeployX402Router.s.sol` 只呼叫 `setFeeRouter`，ADR-012 §1.3 也寫明它不替 exchange 吸收缺口），不做 bailout，也沒有外部 LP。virtual shares 保護的是「後續存款者」，在這顆金庫上帶不來好處；反而在 `exchange == 0` 時，供給為 0 的流入會永久鎖死（§3.3）。建議維持舊版，由平台存入種子、持有份額，讓 x402 收入的 10% 歸平台份額並可提回。若將來 x402 金庫要開放外部 LP，屆時依 §5.3 的順序換新版（先種子、再 `setFeeRouter`）。
@@ -119,6 +119,10 @@ InsuranceVault **不可升級**（`new InsuranceVault(usdc)`，非 proxy），�
 - V1 FeeRouter 的 `routeExternalRevenue` **不需要任何權限**：新金庫一旦 `setFeeRouter`，任何人都能讓錢流進來。所以接線一定要在存完種子之後（§3.3）。
 - `recapitalize` 只在新金庫已有種子份額之後才使用；供給為 0 時呼叫，錢會永久歸 virtual 份額。
 
+前提（續）：
+- 本流程用到 `setAssetMode`、`marketOperator`、`setMaxOpenInterest`。現行鏈上 exchange（`0x827e…`）的 bytecode 沒有這些函式，**本流程要等 #130 cutover 之後的新 exchange 才能使用**。
+- **部署者金鑰風險**：第 2 步存入種子後、第 3 步移交 timelock 前，新金庫的 owner 是部署者；這段期間部署者金鑰若外洩，可以 `setExchange` 換成自己的地址，再呼叫 `bailout` 提走種子。所以第 1～3 步與 `transferOwnership` 要在**同一次 script broadcast** 內完成，結束後立刻讀回核對 `owner()`、`exchange()`、`feeRouter()`。
+
 步驟：
 
 1. **部署新金庫**（與需要重部署的 FeeRouter／CopyTracker 同一批）。此時 `feeRouter`、`exchange` 都留 0，沒有任何流入來源。新金庫的 owner 先是部署者。
@@ -128,7 +132,7 @@ InsuranceVault **不可升級**（`new InsuranceVault(usdc)`，非 proxy），�
 5. **遷移窗口**（排程到期當下開始）：
    1. 市場操作員（`marketOperator`，或 guardian）把各資產切到 **ReduceOnly**：不能開新倉，平倉與清算照常。這一步不經 timelock，可以即時執行。或者改用第 4 步排程好的較低 OI 上限。
    2. 執行第 4 步排程的 `setInsuranceVault`、`setFeeRouter`。
-   3. 舊金庫的份額由各持有人自行在舊金庫 `withdraw`，再到新金庫 `deposit`。協議自有部位由平台金庫地址處理。**合約沒有任何一方能替持有人搬份額**，第三方 LP 只能自行搬。若第三方部位短期搬不完，owner 可以在新金庫（已有種子份額）`recapitalize`。這是贈與，不發份額，按比例歸所有持有人。
+   3. **協議自有部位緊接在第 2 小步之後搬**（同一批交易或立即接續）：ReduceOnly 只擋新倉，`setInsuranceVault` 執行後到錢搬過去之前，既有部位出事只有種子能賠。也可以在第 4 步一併排程 `recapitalize`，與 `setInsuranceVault` 同時執行。第三方 LP 的份額由各持有人自行在舊金庫 `withdraw`，再到新金庫 `deposit`。**合約沒有任何一方能替持有人搬份額**，第三方 LP 只能自行搬。若第三方部位短期搬不完，owner 可以在新金庫（已有種子份額）`recapitalize`。這是贈與，不發份額，按比例歸所有持有人。
    4. 新金庫的 `totalAssets` 達到 OI 上限所依據的水準後，才切回 Active（並恢復 OI 上限）。
 6. **舊金庫**：不要把 `exchange` 設成 0 位址，舊 exchange 若仍有部位，清算時會 revert，同 DEPLOY_130 §5.1。改指向之後舊金庫不再被 bailout，持有人可以隨時 `withdraw`，不設期限。若 CopyTracker 沒有一起重部署，跟單費仍會經舊 FeeRouter 流進舊金庫（ADR-012 §4.4），舊金庫要長期保留。
 
