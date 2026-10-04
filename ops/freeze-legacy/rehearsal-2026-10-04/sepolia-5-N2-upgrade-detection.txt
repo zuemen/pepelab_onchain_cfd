@@ -1,0 +1,4 @@
+# N2：凍結前以外洩金鑰對 AssetVaultV2 代理 upgradeToAndCall（升級到已知實作，模擬『升級到他處再升回來』留下的額外事件）
+# readback（帶 LOGS_RPC）事件掃描：Upgraded 4（預期 3）、區塊 11360076 之後出現 1 筆 → 可疑 2、exit 1 ✓
+  區塊 11360076 之後的 Upgraded 0x3a37… → impl 0xa8a5b0…（block 11839677）
+  0x3a37… 的 Upgraded 共 4 筆，預期 3 筆——升級史被動過

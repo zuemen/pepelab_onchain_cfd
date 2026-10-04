@@ -68,6 +68,11 @@ contract FreezeLegacyDeployments is Script {
     address constant B_PYTH      = 0x551C0B2e75a9129fe697210223F1Ca6e64F3C6d5;
     address constant B_AGGREGATOR = 0x8215158642350a3f329aB9597186d21f957A813D;
 
+    // L3：Base adapter 移交的預設新 owner（2026-08-07 輪替後的 Base 部署者）。要改須設 ADAPTER_NEW_OWNER_OVERRIDE=1。
+    address constant EXPECTED_NEW_OWNER = 0x27C21324D101e867E0634bf2ebe3F9Dcf3ACA585;
+    // L1：7702 委派允許清單——MetaMask EIP7702StatelessDeleGator 1.3.0（外洩地址在 Base 的委派目標）。
+    address constant METAMASK_DELEGATOR = 0x63c0c19a282a1B52b07dD5a65b58948A07DAE32B;
+
     enum Action { RenounceOwnership, TransferOwnership, RenounceRole, GrantAdminToV2, DisableFeeRouter }
     enum State { Pending, Done, NotHeld }
 
@@ -106,6 +111,9 @@ contract FreezeLegacyDeployments is Script {
     error BadNewOwner(address newOwner, string why);
     error NewOwnerUnconfirmed();
     error V2AdminNotProven();
+    error NonceMismatch(uint256 before, uint256 sent, uint256 actual);
+    error NewOwnerNotHardcoded(address got, address expected);
+    error DelegateNotAllowed(address newOwner, address delegate);
 
     // ════════════════════════════════════════════════════════════════════════
     // 入口
@@ -124,8 +132,13 @@ contract FreezeLegacyDeployments is Script {
             return;
         }
 
-        // M3：放棄 V2_ADMIN 控制的 admin（或把 admin 授給它）前，必須先證明那把金鑰可用。
-        if (requiresV2AdminProof && !vm.envOr("V2_ADMIN_PROVEN", false)) revert V2AdminNotProven();
+        // M3／L4：放棄 V2_ADMIN 控制的 admin（或把 admin 授給它）前，必須先證明那把金鑰可用。
+        //   旗標 V2_ADMIN_PROVEN 是自我聲明；再加一道鏈上客觀檢查——runbook §7.0 要求用 V2_ADMIN
+        //   送一筆 0 值交易，送完它的 nonce 會從 2 變成 >= 3。兩者都要成立。
+        if (requiresV2AdminProof) {
+            if (!vm.envOr("V2_ADMIN_PROVEN", false)) revert V2AdminNotProven();
+            if (vm.getNonce(V2_ADMIN) < 3) revert V2AdminNotProven();
+        }
 
         // M1：只要在廣播（或 resume）情境，一律要求確認字串，不論用哪種簽署方式。模擬（dry-run）不要求。
         bool broadcasting = vm.isContext(VmSafe.ForgeContext.ScriptBroadcast)
@@ -164,6 +177,17 @@ contract FreezeLegacyDeployments is Script {
 
         console.log("");
         console.log(string.concat(unicode"== 已送出（或模擬）", vm.toString(sent), unicode" 筆交易；開始讀回驗證"));
+
+        // N2：nonce 對帳。設了 LEAKED_NONCE_BEFORE 時，執行後外洩地址的 nonce 必須恰好 = 前值 + 送出筆數。
+        //   多出來的交易＝有人在空窗期用了這把公開金鑰。Sepolia 上外洩地址沒有 7702 code，它發出的任何
+        //   交易（含 7702 授權）都會讓 nonce +1，所以這招能封住事件掃描看不到的那些路徑。Base 有 7702／
+        //   4337 可繞過 nonce，對帳僅供參考——但 Base 只有 3 顆 adapter、且是移交可事後修正（見 runbook）。
+        uint256 nonceBefore = vm.envOr("LEAKED_NONCE_BEFORE", type(uint256).max);
+        if (nonceBefore != type(uint256).max) {
+            uint256 nonceAfter = vm.getNonce(LEAKED);
+            if (nonceAfter != nonceBefore + sent) revert NonceMismatch(nonceBefore, sent, nonceAfter);
+            console.log(string.concat(unicode"   nonce 對帳 ✓：", vm.toString(nonceBefore), " + ", vm.toString(sent), " = ", vm.toString(nonceAfter)));
+        }
         _verifyAll();
     }
 
@@ -200,12 +224,16 @@ contract FreezeLegacyDeployments is Script {
     function _planSepolia() internal {
         requiresV2AdminProof = true;
 
-        // ── 0. C1/M6：兩顆 82c68d9 版 exchange 有已知會計缺陷，放棄 owner 前必須先停用 FeeRouter。──
-        //     這一步排在批次最前面；verify 會檢查 feeRouter()==0。其餘舊 exchange 是 907a6b6 版，
-        //     沒有這個缺陷，也不碰它們的 FeeRouter（原始碼未逐行審，貿然清掉可能使平倉 revert）。
+        // ── 0. C1/M6/N1：兩顆 82c68d9 版 exchange 有已知會計缺陷，放棄 owner 前必須先停用 FeeRouter。──
+        //     N1：setFeeRouter(0) 與同一顆的 renounceOwnership **相鄰**送出（--slow 下只隔 1 個區塊），
+        //     把「停用後、放棄前」的空窗壓到最小——否則任何人都能在空窗把 router 改回去。
+        //     這組排在批次最前面；verify 會檢查這兩顆 feeRouter()==0 且 owner()==0。其餘舊 exchange
+        //     是 907a6b6 版，沒有這個缺陷，不碰它們的 FeeRouter（原始碼未逐行審，貿然清掉可能使平倉 revert）。
         string memory r0 = "known accounting defect in this exchange build (82c68d9); FeeRouter must be disabled before owner is renounced, after which the fix is impossible";
-        _feeRouter("PerpetualExchange (current) setFeeRouter(0)", 0x0c6459d38617E60017bDc4ed69ec26137DA5c32b, r0);
+        _feeRouter("PerpetualExchange (current 0x0c64) setFeeRouter(0)", 0x0c6459d38617E60017bDc4ed69ec26137DA5c32b, r0);
+        _own("PerpetualExchange (current 0x0c64) renounce", 0x0c6459d38617E60017bDc4ed69ec26137DA5c32b, r0);
         _feeRouter("PerpetualExchange (old 0x4cC7) setFeeRouter(0)", 0x4cC711AEa7c6D7E19e99676b51b7A69ee08c31Eb, r0);
+        _own("PerpetualExchange (old 0x4cC7) renounce", 0x4cC711AEa7c6D7E19e99676b51b7A69ee08c31Eb, r0);
 
         // ── 1. V2 硬化金庫：外洩金鑰能升級代理（UUPS）、改風控、改價，最危險，先處理 ──
         //     另一個 DEFAULT_ADMIN（V2_ADMIN）仍在，所以兩顆都不會變成無 admin。
@@ -243,7 +271,7 @@ contract FreezeLegacyDeployments is Script {
         // ── 3. 前端 Sepolia（legacy demo）現行 V1 合約：renounce ──
         //     使用者的提領／平倉／贖回／解除質押都不需要 owner；owner 只剩改參數與接線的能力。
         string memory r3 = "current Sepolia V1 (legacy demo); user exit paths are permissionless; owner powers only retune/rewire";
-        _own("PerpetualExchange", 0x0c6459d38617E60017bDc4ed69ec26137DA5c32b, r3);
+        // 0x0c64 的 renounce 已在 §0（緊跟 setFeeRouter(0)）處理，這裡不重複。
         _own("InsuranceVault",    0x8bDE83dBC2CA450B539346e224E7819348C7b091, r3);
         _own("FeeRouter",         0x2297e580166aF35dd0065379286f782933653079, r3);
         _own("TraderStake",       0x3fe1dbC82eA267085CAB5eb67C6b7d3E68A7d673, r3);
@@ -264,7 +292,7 @@ contract FreezeLegacyDeployments is Script {
         _own("PerpetualExchange (2026-05 #1)", 0x00f6cf0113399a7A451c7f85fe094a28092d3e0c, r4);
         _own("PerpetualExchange (old)", 0xb3e978E96e36FeDa703827D9dfE142d502C3bd1d, r4);
         _own("PerpetualExchange (old)", 0xc100f942366305E2917d5a7B5eD0F5F1E930a49c, r4);
-        _own("PerpetualExchange (old 0x4cC7)", 0x4cC711AEa7c6D7E19e99676b51b7A69ee08c31Eb, r4);
+        // 0x4cC7 的 renounce 已在 §0（緊跟 setFeeRouter(0)）處理，這裡不重複。
         _own("PerpetualExchange (never wired)", 0xdC5cc6Ab502d8D8F648eCc2D9F130F68F7C306b4, r4);
         _own("PerpetualExchange (old)", 0xF2A6F7B684BEB8554df34A4463143B6408FB6F84, r4);
         _own("FeeRouter (old)",   0x0FfA7f279fED4E19b3018A4461A8F387aA6c16C2, r4);
@@ -322,18 +350,32 @@ contract FreezeLegacyDeployments is Script {
         _keepOwner("Base MockOracle owner = keeper (price-keeper-base)", B_MOCK_ORACLE, V2_KEEPER);
     }
 
-    /// M2：adapter 新 owner 必須是 EOA（或 7702 委派）、不得在拒絕清單、且要二次確認。
+    /// M2／L1／L3：adapter 新 owner 的檢查。
+    ///   - 預設**寫死** EXPECTED_NEW_OWNER（0x27C2…）。要用別的位址必須 ADAPTER_NEW_OWNER_OVERRIDE=1，
+    ///     腳本會把預期值印出來讓人比對（L3：避免「選錯位址」而不只是「打錯字」）。
+    ///   - 必須是 EOA（code 長度 0）；7702 帳戶只有委派目標在允許清單（MetaMask DeleGator）時才接受（L1）。
+    ///   - 不得在拒絕清單；ADAPTER_NEW_OWNER_CONFIRM 必須逐字相符（二次確認）。
     function _validateNewOwner(address a) internal view {
         if (a == address(0)) revert BadNewOwner(a, "zero");
-        if (_rejected(a)) revert BadNewOwner(a, "on reject list (leaked/adapter/platform/anvil default)");
+
+        bool override_ = vm.envOr("ADAPTER_NEW_OWNER_OVERRIDE", false);
+        if (!override_ && a != EXPECTED_NEW_OWNER) revert NewOwnerNotHardcoded(a, EXPECTED_NEW_OWNER);
+        if (override_) console.log(unicode"   注意：ADAPTER_NEW_OWNER_OVERRIDE=1，預期寫死值為", EXPECTED_NEW_OWNER);
+
+        if (_rejected(a)) revert BadNewOwner(a, "on reject list (leaked/adapter/platform/keeper/guardian/risk/anvil)");
+
         uint256 size = a.code.length;
-        // EOA = 0；EIP-7702 委派帳戶 = 23 bytes 且以 0xef0100 開頭，另外允許。
         if (size != 0) {
+            // 7702 委派帳戶 = 23 bytes、以 0xef0100 開頭、後接 20-byte 委派目標。只接受目標在允許清單的。
             if (size != 23 || a.code[0] != 0xef || a.code[1] != 0x01 || a.code[2] != 0x00) {
-                revert BadNewOwner(a, "has contract code (must be EOA or EIP-7702 account)");
+                revert BadNewOwner(a, "has contract code (must be EOA or allow-listed EIP-7702 account)");
             }
+            bytes memory code = a.code;
+            address delegate;
+            assembly { delegate := shr(96, mload(add(code, 0x23))) } // bytes[3..23]
+            if (delegate != METAMASK_DELEGATOR) revert DelegateNotAllowed(a, delegate);
         }
-        // 二次確認：ADAPTER_NEW_OWNER_CONFIRM 必須等於 ADAPTER_NEW_OWNER。
+
         address confirm = vm.envOr("ADAPTER_NEW_OWNER_CONFIRM", address(0));
         if (confirm != a) revert NewOwnerUnconfirmed();
     }
@@ -341,6 +383,8 @@ contract FreezeLegacyDeployments is Script {
     function _rejected(address a) internal pure returns (bool) {
         if (a == LEAKED || a == B_CHAINLINK || a == B_PYTH || a == B_AGGREGATOR) return true;
         if (a == S_GUARDED_ORACLE || a == S_ASSET_VAULT_V2 || a == S_MOCK_ORACLE || a == B_MOCK_ORACLE) return true;
+        // L2：營運熱錢包／角色金鑰不得兼任 oracle 來源的 owner（把寫價與改來源合進同一把熱錢包）。
+        if (a == V2_KEEPER || a == V2_GUARDIAN || a == V2_RISK) return true;
         // anvil 預設助記詞帳號 0–9（公開私鑰）
         if (a == 0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266) return true;
         if (a == 0x70997970C51812dc3A010C7d01b50e0d17dc79C8) return true;
@@ -396,7 +440,12 @@ contract FreezeLegacyDeployments is Script {
             return IFeeRouterSettable(it.target).feeRouter() == address(0) ? State.Done : State.Pending;
         }
         if (it.action == Action.GrantAdminToV2) {
-            return IAccessControlMin(it.target).hasRole(DEFAULT_ADMIN, V2_ADMIN) ? State.Done : State.Pending;
+            // L5：Done 有兩種最終狀態——(1) V2_ADMIN 已持有 admin（phase 1 完成，phase 2 未做）；
+            // (2) phase 2 也完成：leaked 與 V2_ADMIN 都不再持有 admin（刻意無主）。兩者都不是待處理。
+            IAccessControlMin c = IAccessControlMin(it.target);
+            if (c.hasRole(DEFAULT_ADMIN, V2_ADMIN)) return State.Done;
+            if (!c.hasRole(DEFAULT_ADMIN, LEAKED)) return State.Done; // phase 2 後的無主最終態
+            return State.Pending;
         }
         if (it.action == Action.RenounceRole) {
             return IAccessControlMin(it.target).hasRole(it.role, LEAKED) ? State.Pending : State.Done;
@@ -485,7 +534,11 @@ contract FreezeLegacyDeployments is Script {
             } else if (it.action == Action.RenounceRole) {
                 if (IAccessControlMin(it.target).hasRole(it.role, LEAKED)) revert StillHeld(it.label, it.target);
             } else if (it.action == Action.GrantAdminToV2) {
-                if (!IAccessControlMin(it.target).hasRole(DEFAULT_ADMIN, V2_ADMIN)) revert KeepBroken(it.label, it.target, V2_ADMIN);
+                // L5：接受兩種最終狀態——phase 1（V2_ADMIN 持有 admin）或 phase 2（leaked 與 V2_ADMIN 都不持有）。
+                IAccessControlMin c = IAccessControlMin(it.target);
+                bool phase1 = c.hasRole(DEFAULT_ADMIN, V2_ADMIN);
+                bool phase2 = !phase1 && !c.hasRole(DEFAULT_ADMIN, LEAKED);
+                if (!phase1 && !phase2) revert KeepBroken(it.label, it.target, V2_ADMIN);
             } else {
                 address o = IOwnable(it.target).owner();
                 if (o == LEAKED) revert StillHeld(it.label, it.target);

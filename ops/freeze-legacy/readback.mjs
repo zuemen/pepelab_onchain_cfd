@@ -84,14 +84,22 @@ function dieRpc(what, err) {
   console.error(`RPC 錯誤（${what}）：${JSON.stringify(err)} — 無法判定權限，請換節點重跑。`);
   process.exit(2);
 }
-const isRevert = (err) => {
-  const s = JSON.stringify(err).toLowerCase();
-  return err.code === 3 || /execution reverted|revert|out of gas|invalid opcode/.test(s);
+// L6：「函式不存在」判斷要嚴格。只認兩種：
+//   (1) JSON-RPC code 3，且 data 為空（0x 或缺）——真正的 empty-revert（沒有這個 selector）；
+//   (2) ethers 風格 CALL_EXCEPTION 且 data === "0x"。
+// 其他一律視為 RPC 故障（公共節點的 eth_call gas 上限會回「out of gas」、訊息含 revert 的雜訊等），exit 2。
+const isNoSuchFunction = (err) => {
+  if (err && err.code === 3) {
+    const d = err.data;
+    return d == null || d === "0x" || d === "";
+  }
+  if (err && (err.code === "CALL_EXCEPTION") && (err.data === "0x" || err.data == null)) return true;
+  return false;
 };
 const call = async (to, data) => {
   const { result, error } = await rpc("eth_call", [{ to, data }, "latest"]);
   if (error) {
-    if (isRevert(error)) return undefined;   // 合約沒有這個函式
+    if (isNoSuchFunction(error)) return undefined;   // 合約沒有這個函式
     dieRpc(`eth_call ${to} ${data.slice(0, 10)}`, error);
   }
   okCalls++;
@@ -155,6 +163,8 @@ if (process.env.LOGS_RPC) {
   const UPGRADED = "0xbc7cd75a20ee27fd9adebab32041f755214dbc6bffa90cc0225b39da2e5c2d3b";       // ERC1967 Upgraded(address)
   const ADMIN_CHANGED = "0x7e644d79422f17c01e4894b5f4f588d331ebfa28653d42ae832dc59e38c9798f"; // AdminChanged(address,address)
   const KNOWN_IMPL = "0xa8a5b0e9c062e0bb1ab3a15788ae823251c41ac1"; // AssetVaultV2 已知實作
+  const KNOWN_UPGRADE_COUNT = 3;        // N2：0x3a37 歷史上恰好 3 次 Upgrade（V2.1→V2.5 的升級鏈）
+  const LAST_KNOWN_UPGRADE_BLOCK = 11360076; // 最後一次（升到已知實作）的區塊；之後不得再有任何一筆
   const pad = "0x" + leakWord;
   const grants = await logsRpc({ topics: [RG, null, null, pad] });
   const transfers = await logsRpc({ topics: [OT, pad] });
@@ -169,10 +179,20 @@ if (process.env.LOGS_RPC) {
   if (PROXIES.length) {
     upgrades = await logsRpc({ address: PROXIES, topics: [UPGRADED] });
     adminChanges = await logsRpc({ address: PROXIES, topics: [ADMIN_CHANGED] });
-    // 只看「最後一次」升級：代理歷經多版是正常的（slot pin 已保證目前實作正確）。
-    // 若最後一次升級的實作不是已知值，才是異常（配合 script 的 impl-slot pin 雙重確認）。
+    // N2：嚴格化。這顆代理的升級史是固定的——恰好 3 筆，最後一筆在區塊 11360076（升到已知實作）。
+    //   (a) 11360076 之後出現任何一筆 Upgraded → 一定是計畫外升級（含「升到惡意實作再升回來」）；
+    //   (b) 總數 ≠ 3 → 升級史被動過；
+    //   (c) 最後一筆實作 ≠ 已知值 → 目前跑在未知實作上。
+    for (const l of upgrades) {
+      if (Number(l.blockNumber) > LAST_KNOWN_UPGRADE_BLOCK) {
+        bad.push(`區塊 ${LAST_KNOWN_UPGRADE_BLOCK} 之後的 Upgraded ${l.address} → impl 0x${l.topics[1].slice(26)}（block ${Number(l.blockNumber)}）`);
+      }
+    }
+    if (upgrades.length !== KNOWN_UPGRADE_COUNT) {
+      bad.push(`${PROXIES[0]} 的 Upgraded 共 ${upgrades.length} 筆，預期 ${KNOWN_UPGRADE_COUNT} 筆——升級史被動過`);
+    }
     const lastUp = upgrades.slice().sort((a, b) => Number(a.blockNumber) - Number(b.blockNumber)).pop();
-    if (lastUp) { const impl = "0x" + lastUp.topics[1].slice(26); if (impl !== KNOWN_IMPL) bad.push(`最後一次 Upgraded ${lastUp.address} → impl ${impl}（block ${Number(lastUp.blockNumber)}）`); }
+    if (lastUp) { const impl = "0x" + lastUp.topics[1].slice(26); if (impl !== KNOWN_IMPL) bad.push(`最後一次 Upgraded 的實作 ${impl} ≠ 已知值（block ${Number(lastUp.blockNumber)}）`); }
     for (const l of adminChanges) { bad.push(`AdminChanged ${l.address}（block ${Number(l.blockNumber)}）— 代理 admin 換手，需人工確認`); }
   }
   unexpected = bad.length;

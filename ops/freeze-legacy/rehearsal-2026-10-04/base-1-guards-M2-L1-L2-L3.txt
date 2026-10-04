@@ -1,0 +1,9 @@
+### L3: 非 0x27C2 且未開 override → NewOwnerNotHardcoded ###
+    └─ ← [Revert] NewOwnerNotHardcoded(0x0000000000000000000000000000000000001234, 0x27C21324D101e867E0634bf2ebe3F9Dcf3ACA585)
+### L2: keeper 熱錢包被拒 ###
+    └─ ← [Revert] BadNewOwner(0x540aECD37E7A7885824e7b7e996eBddfb842ef17, "on reject list (leaked/adapter/platform/keeper/guardian/risk/anvil)")
+### L1: 7702 委派目標不在允許清單 → DelegateNotAllowed ###
+    └─ ← [Revert] DelegateNotAllowed(0x00000000000000000000000000000000DeaDBeef, 0x000000000000000000000000000000000000dEaD)
+### happy path: 0x27C2（寫死值）計畫 ###
+     adapter 新 owner 0x27C21324D101e867E0634bf2ebe3F9Dcf3ACA585
+     待處理 3 筆

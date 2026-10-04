@@ -1,6 +1,0 @@
-[base-sepolia] 注意：未設 LOGS_RPC，略過事件掃描（計畫外授權／升級無法偵測）。驗收時必須設 LOGS_RPC（見 runbook §7.4）。
-[base-sepolia] 讀回 80 顆合約（盤點全集，不只凍結計畫）；成功 eth_call 277 次
-外洩地址已不持有任何 owner／pendingOwner／guardian／marketOperator／authorizedAgents／verifiers／已知角色
-platformTreasury（immutable，凍結無法處理，只能重部署）= 外洩地址：2 顆
-  0x00f6cf0113399a7A451c7f85fe094a28092d3e0c
-  0x29e5732AC62254d9b92A1C7d3F38EbFA8809B57d

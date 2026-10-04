@@ -121,7 +121,7 @@ owner-only setter 改成 $NEW_ADDR」，但 `FeeRouter` 沒有這種 setter—�
 
 | 對象 | 處理 | 理由 |
 |---|---|---|
-| **（最前）0x0c64、0x4cC7 的 FeeRouter** | **`setFeeRouter(address(0))`，排在批次最前面** | 這兩顆是同一份 build（82c68d9），有一個已知的會計缺陷，只能在**放棄 owner 之前**由 owner 停用 FeeRouter 來封堵；一旦 renounce 就永遠修不了，所以必須最先做。缺陷細節不在本公開文件描述，見內部審查。其餘舊 exchange 是另一份 build（907a6b6，無此缺陷），不碰它們的 FeeRouter。腳本 `verify()` 會檢查 `feeRouter()==0`。 |
+| **（最前）0x0c64、0x4cC7：先 `setFeeRouter(0)`、立刻 renounce** | **每顆的 `setFeeRouter(address(0))` 與 `renounceOwnership()` 相鄰送出（N1）** | 這兩顆是同一份 build（82c68d9），有一個已知的會計缺陷，必須在**放棄 owner 之前**由 owner 停用 FeeRouter；一旦 renounce 就永遠修不了，所以排在批次最前面。N1：兩步相鄰（`--slow` 下只隔 1 個區塊），把「停用後、放棄前」任何人能把 router 改回去的空窗壓到最小。缺陷細節不在本公開文件（凍結完成前不公開）。其餘舊 exchange 是另一份 build（907a6b6，無此缺陷），不碰它們的 FeeRouter。`verify()` 會檢查這兩顆 `feeRouter()==0` 且 `owner()==0`。 |
 | Base 三顆 oracle adapter | **移交**給 `ADAPTER_NEW_OWNER`（建議 `0x27C21324D101e867E0634bf2ebe3F9Dcf3ACA585`，2026-08-07 輪替後的 Base 部署者，已是所有 Base 現行合約的 owner，不增加新的信任對象） | keeper 與監控都依賴它；參考價目前 `NoLiveSource`，之後要有人 `setFeed`／`setPriceId` 修好。放棄會讓這條依賴永遠修不了。腳本要求新 owner 是 EOA、不在拒絕清單、並以 `ADAPTER_NEW_OWNER_CONFIRM` 二次確認。 |
 | GuardedOracle、AssetVaultV2 的外洩角色 | **renounceRole**：先非 admin 角色，DEFAULT_ADMIN 最後 | 另一個 admin `0x2a58…` 仍在（腳本放棄前會確認，否則中止；執行前另需 `V2_ADMIN_PROVEN=1`，見 §7.0），所以兩顆都不會變成無 admin；keeper／guardian／risk 由獨立金鑰持有，外洩那份純屬風險。 |
 | 8 顆 SyntheticAssetV2 的 DEFAULT_ADMIN | **兩階段（M4）**：① 腳本以外洩金鑰 `grantRole(admin, V2_ADMIN)` 再 `renounceRole(admin, leaked)`；② 確認無後門後，由 **V2_ADMIN 自己** `renounceRole(admin, V2_ADMIN)`（見 §7.4 phase 2） | 外洩地址是唯一 admin。若一步放棄成永久無主，執行期間被插入的後門就再也無法撤銷；兩階段讓 V2_ADMIN 在空窗期保有撤銷能力。最終仍是無 admin（phase 2 後），MINTER 永遠只在金庫代理手上。 |
@@ -179,13 +179,24 @@ MockOracle 與 GuardedOracle。建議：
    （`0x63c0…E32B`；Sepolia 上沒有 code）。目前帳上仍有約 2.06 ETH（Sepolia）與約 0.00996 ETH（Base），
    沒有被掃空的跡象，但委派一旦被用來簽名就可能動用，所以不要再入金。
    不需要補 gas：模擬估計 Sepolia 需約 0.0045 ETH、Base 需約 0.0000013 ETH，餘額都夠。
-2. **（M3）證明 `0x2a58…`（V2_ADMIN）金鑰可用**：用它在 Sepolia 送一筆 0 值自轉帳或簽一則訊息。
-   確認 `contracts/.env.roles` 有**離線備份**（本步驟不要去讀或動那個檔案的內容）。做完後執行才設 `V2_ADMIN_PROVEN=1`；
-   沒設時腳本在 Sepolia 執行會以 `V2AdminNotProven` 中止。
-3. **（M2）證明 `ADAPTER_NEW_OWNER`（建議 `0x27C2…`）金鑰可用**：用它在 Base 送一筆 0 值自轉帳或簽一則訊息。
-   腳本會要求它是 EOA、不在拒絕清單、且 `ADAPTER_NEW_OWNER_CONFIRM` 與它逐字相符。若改成放棄，設 `ADAPTER_RENOUNCE=true`（先讀 §4）。
-4. 通知會收到監控告警的人：Base 的 `owner-transferred`（SEV-1）會對三顆 adapter 各響一次。
-5. 在 `contracts/` 執行 `forge build`。
+2. **（M3／L4）證明 `0x2a58…`（V2_ADMIN）金鑰可用**：先記下它目前的 nonce（`cast nonce 0x2a588AeA3271B159c9188d95E0d10614711f83e3 --rpc-url "$SEPOLIA_RPC_URL"`，目前是 2），
+   用它在 Sepolia 送一筆 0 值自轉帳，再確認 nonce 變成 ≥ 3：
+   ```bash
+   cast send 0x2a588AeA3271B159c9188d95E0d10614711f83e3 --value 0 --private-key "$V2_ADMIN_PK" --rpc-url "$SEPOLIA_RPC_URL"
+   cast nonce 0x2a588AeA3271B159c9188d95E0d10614711f83e3 --rpc-url "$SEPOLIA_RPC_URL"   # 應 ≥ 3
+   ```
+   確認 `contracts/.env.roles` 有**離線備份**（本步驟不要去讀或動那個檔案的內容）。做完後執行才設 `V2_ADMIN_PROVEN=1`——
+   腳本除了看這個旗標，還會鏈上檢查 `vm.getNonce(0x2a58…) >= 3`，兩者都不成立就以 `V2AdminNotProven` 中止。
+3. **（M2）證明 `ADAPTER_NEW_OWNER`（預設寫死 `0x27C2…`）金鑰可用**：用它在 Base 送一筆 0 值自轉帳或簽一則訊息。
+   腳本已**寫死**預期新 owner 為 `0x27C2…`；要改用別的位址必須 `ADAPTER_NEW_OWNER_OVERRIDE=1`，且仍要 EOA（或委派目標在允許清單的 7702 帳戶）、
+   不在拒絕清單、`ADAPTER_NEW_OWNER_CONFIRM` 逐字相符。若改成放棄，設 `ADAPTER_RENOUNCE=true`（先讀 §4）。
+4. **（N2）記下外洩地址的 nonce** 作為執行後對帳基準：
+   ```bash
+   cast nonce 0xE80A81360608C1342e66743F70a00f75d792Eb93 --rpc-url "$SEPOLIA_RPC_URL"       # 目前 1231
+   cast nonce 0xE80A81360608C1342e66743F70a00f75d792Eb93 --rpc-url "$BASE_SEPOLIA_RPC_URL"  # 目前 1962
+   ```
+5. 通知會收到監控告警的人：Base 的 `owner-transferred`（SEV-1）會對三顆 adapter 各響一次。
+6. 在 `contracts/` 執行 `forge build`。
 
 ### 7.1 執行前的唯讀確認（不需要金鑰）
 
@@ -234,13 +245,14 @@ FREEZE_CHAIN=base-sepolia forge script script/FreezeLegacyDeployments.s.sol --rp
 FREEZE_CHAIN=base-sepolia FREEZE_EXECUTE=true forge script script/FreezeLegacyDeployments.s.sol \
   --rpc-url "$BASE_SEPOLIA_RPC_URL" --sender 0xE80A81360608C1342e66743F70a00f75d792Eb93
 
-# (c) 執行：私鑰只放在這個 shell 的環境變數，不要寫進檔案、不要出現在指令列
+# (c) 執行：私鑰只放在這個 shell 的環境變數，不要寫進檔案、不要出現在指令列。
+#     LEAKED_NONCE_BEFORE 帶入 §7.0 第 4 步記下的值，腳本會做 nonce 對帳（N2）。
 read -rs LEAKED_PRIVATE_KEY && export LEAKED_PRIVATE_KEY
-FREEZE_CHAIN=base-sepolia FREEZE_EXECUTE=true FREEZE_CONFIRM=FREEZE-84532 \
+FREEZE_CHAIN=base-sepolia FREEZE_EXECUTE=true FREEZE_CONFIRM=FREEZE-84532 LEAKED_NONCE_BEFORE=1962 \
   forge script script/FreezeLegacyDeployments.s.sol --rpc-url "$BASE_SEPOLIA_RPC_URL" --broadcast --slow
 
 # Sepolia：同樣 (a)(b)(c)，但要 FREEZE_CHAIN=sepolia、FREEZE_CONFIRM=FREEZE-11155111、
-# 並加 V2_ADMIN_PROVEN=1（見 §7.0 第 2 步）、--rpc-url "$SEPOLIA_RPC_URL"
+# V2_ADMIN_PROVEN=1（§7.0 第 2 步）、LEAKED_NONCE_BEFORE=1231、--rpc-url "$SEPOLIA_RPC_URL"
 unset LEAKED_PRIVATE_KEY
 ```
 
@@ -248,6 +260,10 @@ unset LEAKED_PRIVATE_KEY
   forge 預設批次送出會被拒。`--slow` 逐筆等收據，自然滿足。（Sepolia 外洩地址沒有委派，不需要，但加了無害。）
 - 廣播（或 `--resume`）情境下**一律**要求 `FREEZE_CONFIRM=FREEZE-<chainId>`，不論用 `--private-key`／`--account`／`--ledger`
   或環境變數簽署；不符會 `NotConfirmed` 中止。模擬（不加 `--broadcast`）不要求。
+- **N2 nonce 對帳**：帶 `LEAKED_NONCE_BEFORE` 時，執行後外洩地址的 nonce 必須恰好 = 前值 + 送出筆數，否則 `NonceMismatch` 中止；
+  多出來的交易就是有人在空窗期用了這把公開金鑰。Sepolia 上外洩地址沒有 7702 code，它發出的任何交易（含 7702 授權）都會讓
+  nonce +1，所以這招能封住事件掃描看不到的路徑；Base 有 7702／4337 可繞過 nonce，對帳僅供參考，但 Base 只有 3 顆 adapter、
+  且為移交可事後修正。
 - 腳本會檢查私鑰推導出的地址是 `0xE80A…Eb93`，不是就 `KeyMismatch` 中止。
 - 腳本是冪等的：已完成的項目顯示 `done` 並跳過，中途失敗可直接重跑。
 
@@ -260,9 +276,10 @@ ADAPTER_NEW_OWNER=$ADAPTER_NEW_OWNER LOGS_RPC=https://base-sepolia.gateway.tende
   node ops/freeze-legacy/readback.mjs base-sepolia "$BASE_SEPOLIA_RPC_URL"
 
 # 2) 腳本自己的讀回（含保留清單、impl-slot pin、owner 計畫外即 revert）
+#    I2：Base 的 verify() 也會跑 _validateNewOwner，所以同樣要帶 ADAPTER_NEW_OWNER_CONFIRM，否則 NewOwnerUnconfirmed。
 cd contracts
 FREEZE_CHAIN=sepolia forge script script/FreezeLegacyDeployments.s.sol --sig "verify()" --rpc-url "$SEPOLIA_RPC_URL"
-FREEZE_CHAIN=base-sepolia ADAPTER_NEW_OWNER=$ADAPTER_NEW_OWNER \
+FREEZE_CHAIN=base-sepolia ADAPTER_NEW_OWNER=$ADAPTER_NEW_OWNER ADAPTER_NEW_OWNER_CONFIRM=$ADAPTER_NEW_OWNER \
   forge script script/FreezeLegacyDeployments.s.sol --sig "verify()" --rpc-url "$BASE_SEPOLIA_RPC_URL"
 ```
 
@@ -277,9 +294,12 @@ FREEZE_CHAIN=base-sepolia ADAPTER_NEW_OWNER=$ADAPTER_NEW_OWNER \
 |---|---|
 | 中途中斷（RPC、nonce、gas） | 直接用同一條指令重跑。已完成的項目會跳過，只送剩下的。 |
 | `NotConfirmed(...)` | 廣播但沒給（或給錯）`FREEZE_CONFIRM=FREEZE-<chainId>`。 |
-| `V2AdminNotProven()` | Sepolia 執行前沒設 `V2_ADMIN_PROVEN=1`。先做 §7.0 第 2 步證明金鑰可用，再設。 |
-| `BadNewOwner(a, why)` | Base 的 `ADAPTER_NEW_OWNER` 是 0、在拒絕清單、或有合約 code（必須是 EOA 或 7702 帳戶）。 |
-| `NewOwnerUnconfirmed()` | `ADAPTER_NEW_OWNER_CONFIRM` 與 `ADAPTER_NEW_OWNER` 不相符。 |
+| `V2AdminNotProven()` | 沒設 `V2_ADMIN_PROVEN=1`，**或** `0x2a58…` 的 nonce 還 < 3（§7.0 第 2 步那筆 0 值交易沒送出）。做完再執行。 |
+| `BadNewOwner(a, why)` | Base 的 `ADAPTER_NEW_OWNER` 是 0、在拒絕清單（含 keeper／guardian／risk／anvil 帳號）、或有非 7702 的合約 code。 |
+| `NewOwnerNotHardcoded(got, exp)` | 新 owner 不是寫死的 `0x27C2…`。要用別的位址須 `ADAPTER_NEW_OWNER_OVERRIDE=1`（L3）。 |
+| `DelegateNotAllowed(a, delegate)` | 新 owner 是 7702 帳戶，但委派目標不在允許清單（只接受 MetaMask DeleGator）。換一個乾淨 EOA。 |
+| `NewOwnerUnconfirmed()` | `ADAPTER_NEW_OWNER_CONFIRM` 與 `ADAPTER_NEW_OWNER` 不相符（Base 的 `verify()` 也要帶，見 §7.4）。 |
+| `NonceMismatch(before, sent, actual)` | 外洩地址 nonce ≠ before+sent：有人在空窗期用了這把公開金鑰。**停**，用帶 `LOGS_RPC` 的 readback 找出那筆做了什麼，依本表其餘列處理後重跑。 |
 | `ImplChanged(...)` | AssetVaultV2 代理的實作 slot 與已知值不符——執行期間（或之前）被換過實作。**停**，查 `Upgraded` 事件。 |
 | `FeeRouterNotDisabled(...)` | 0x0c64／0x4cC7 的 `setFeeRouter(0)` 沒生效。重跑；仍失敗代表 owner 已不在外洩地址手上。 |
 | `KeepBroken(...)` | 保留清單中的某個角色已不在預期持有人手上（有人先動過）。**停**，查該合約的 `RoleGranted`／`RoleRevoked`，更新腳本的保留清單後再跑。 |
@@ -302,10 +322,9 @@ FREEZE_CHAIN=base-sepolia ADAPTER_NEW_OWNER=$ADAPTER_NEW_OWNER \
 | `verify()` | 通過；impl pin（前後）成立、owner 全部落在計畫內 | 通過 |
 | 重跑（冪等） | 0 筆待處理 | 0 筆待處理 |
 | 盤點全集讀回（exit 0） | 118 顆合約；外洩地址無任何權限；帶 `LOGS_RPC`：可疑 0 | 80 顆合約；外洩地址無權限（owner 已是 0x27C2） |
-| C1 修補 | 凍結後 0x0c64／0x4cC7 `feeRouter()==0`；跟單部位平倉後 freeMargin 維持合理範圍（缺陷觸發前提被移除） | — |
-| M4 後門偵測 | 另跑一次：凍結「前」先插入 0xbEEF 後門（grant admin on sBTC 與 AssetVaultV2）→ 腳本 verify 仍過（看不到），但帶 `LOGS_RPC` 的 readback 標出 2 筆可疑、exit 1 ✓ | — |
-| 使用者路徑與無誤傷 | 23/23 PASS（§5；keeper 寫 MockOracle 與 GuardedOracle、guardian setPaused 都成功；外洩地址 6 種操作＋ feeRouter 檢查全部符合預期） | 7/7 PASS（新 owner 能 setFeed／setPriceId／setMaxDeviationBps；外洩地址不能；keeper 能寫 Base MockOracle） |
+| C1 修補 | 凍結後 0x0c64／0x4cC7 `feeRouter()==0`、且 owner 已放棄（兩步相鄰送出，見 N1） | — |
+| M4 後門偵測 | 另跑一次：凍結「前」先插入 0xbEEF 後門（取得兩顆合約的 admin）→ 腳本 verify 仍過（看不到），但帶 `LOGS_RPC` 的 readback 標出 2 筆可疑、exit 1 ✓；另測「升級到他處實作再升回來」「空窗期多送一筆」皆被抓到（見 N2） | — |
+| 使用者路徑與無誤傷 | 23/23 PASS（§5；keeper 寫 MockOracle 與 GuardedOracle、guardian setPaused 都成功；外洩地址各項操作＋ feeRouter 檢查全部符合預期） | 7/7 PASS（新 owner 能管理三顆 adapter；外洩地址不能；keeper 能寫 Base MockOracle） |
 
-C1 補充：這兩顆 exchange 的會計缺陷觸發前提需要部位處於特定虧損型態；凍結把 `feeRouter` 設為 0，使那段**只在
-`feeRouter != 0` 時才執行**的績效費扣減永遠不執行，觸發前提被結構性移除。缺陷的完整重現在內部審查（`scratchpad/w38r/REVIEW.md`），
-本公開文件不列手法。
+C1 補充：這兩顆 exchange 有一個**已知的會計缺陷，必須在放棄 owner 之前由 owner 停用 FeeRouter**。
+手法細節不在本公開文件（在凍結完成前都不公開）。
