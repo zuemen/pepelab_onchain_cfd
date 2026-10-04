@@ -4,6 +4,8 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { join } from "node:path";
 
 import { BUDGETS, EIP170_LIMIT, checkAppendOnly, checkBudgetTable, checkSizes, loadBaseBudgets, loadBudgets, runtimeSize } from "./check-contract-size.mjs";
@@ -126,4 +128,24 @@ test("釘選表在 JSON；--base 讀 git 的 base 版本（讀不到時回 null�
   assert.equal(loadBaseBudgets("no-such-ref-xyz", () => { throw new Error("bad ref"); }), null);
   const fake = () => JSON.stringify({ budgets: budget(100) });
   assert.equal(loadBaseBudgets("HEAD", fake).X.maxRuntimeBytes, 100);
+});
+
+test("只能追加：artifact 換成別的合約 → 擋下", () => {
+  const base = budget(100);
+  const cur = clone(base);
+  cur.X.artifact = "Small.sol/Small.json";
+  assert.ok(checkAppendOnly(base, cur).some((x) => x.includes("門檻量的合約不能換")));
+});
+
+test("contract-size.yml：沒有路徑過濾；判斷是否 build 時不把 git diff 接到 pipe（SIGPIPE 會 fail-open）", () => {
+  const wf = readFileSync(fileURLToPath(new URL("../.github/workflows/contract-size.yml", import.meta.url)), "utf8");
+  const lines = wf.split(/\r?\n/);
+  const onStart = lines.findIndex((l) => l.startsWith("on:"));
+  const onEnd = lines.findIndex((l, i) => i > onStart && /^[a-z]/.test(l));
+  const on = lines.slice(onStart, onEnd).join("\n");
+  assert.equal(/\bpaths(-ignore)?:/.test(on), false, "有路徑過濾就不能設成 required check");
+  const code = lines.filter((l) => !/^\s*#/.test(l));
+  assert.ok(code.some((l) => l.includes('if ! git diff --quiet "$base" HEAD --')), "要用 git diff --quiet 判斷");
+  assert.equal(code.some((l) => /git diff/.test(l) && l.includes("|")), false, "git diff 的輸出不可接到 pipe");
+  assert.ok(code.some((l) => l.includes("build=true")));
 });

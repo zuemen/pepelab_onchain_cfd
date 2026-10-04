@@ -81,14 +81,16 @@ RWA（其餘 8 檔）             : C_rwa = C × 50%
 開始前（§5.2 預檢之前）先手動觸發一次 keeper，確認 11 檔價格都是剛寫的：
 
 ```bash
-SINCE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+SINCE=$(date -u -d '-60 seconds' +%Y-%m-%dT%H:%M:%SZ)       # 往前 60 秒，容許本機時鐘比 GitHub 快
 gh workflow run base-sepolia-keeper.yml --ref master
-# dispatch 後要幾秒才查得到這個 run；沒指定 id 的 gh run watch 會要求互動選擇，所以先輪詢取得 id
-RUN=""; until [ -n "$RUN" ]; do sleep 5; RUN=$(gh run list --workflow base-sepolia-keeper.yml --event workflow_dispatch \
-  --limit 5 --json databaseId,createdAt --jq "[.[] | select(.createdAt >= \"$SINCE\")][0].databaseId // empty"); done
+# dispatch 後要幾秒才查得到這個 run；沒指定 id 的 gh run watch 會要求互動選擇，所以先輪詢取得 id（最多 5 分鐘）
+RUN=""; for i in $(seq 1 60); do sleep 5; RUN=$(gh run list --workflow base-sepolia-keeper.yml --event workflow_dispatch \
+  --limit 5 --json databaseId,createdAt --jq "[.[] | select(.createdAt >= \"$SINCE\")][0].databaseId // empty"); [ -n "$RUN" ] && break; done
+[ -n "$RUN" ] || echo "5 分鐘內找不到這次 dispatch 的 run：到 Actions 頁面確認，不要往下做"
 gh run watch "$RUN" --exit-status                            # run 失敗時非 0
 node scripts/post-deploy-smoke.mjs --skip-http --fresh-since "$SINCE" --max-age 21600
-# 唯讀：最近一次寫價必須晚於 dispatch（證明 keeper 真的跑了），而且 11 檔都不超過 6 小時。
+# 唯讀：exchange 讀的 oracle 與 V2 金庫讀的 oracle，最近一次寫價都必須晚於 dispatch（證明 keeper 真的跑了），
+# 而且 11 檔都不超過 6 小時。
 # keeper 只重寫有變動或超過 heartbeat 的資產，所以不要求每一檔都在 dispatch 之後寫過。
 ```
 

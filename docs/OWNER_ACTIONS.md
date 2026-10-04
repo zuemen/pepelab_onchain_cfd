@@ -85,6 +85,9 @@ master 上的守門（precheck、人工核准、`check-workflow-guards.mjs`）�
      前兩項是 `ops/keeper-trigger/README.md` 點名的最低要求；Consistency 其餘五項沒有路徑過濾、每個 PR 都會跑，一起設。
      `contract size budget` 是主合約成長門檻（PerpetualExchange runtime 不得超過 `scripts/contract-size-budget.json`）：
      刻意做成沒有路徑過濾、在 job 內判斷是否需要 build，所以可以設成 required，門檻紅燈才擋得住合併。
+     它只能機械地擋「放寬卻沒追加紀錄」「改舊紀錄」「換掉量的合約」；放寬理由寫得好不好仍靠人審。建議（本 PR 未加）：
+     用 CODEOWNERS 指定 `scripts/check-contract-size.mjs`、`scripts/contract-size-budget.json`、
+     `.github/workflows/contract-size.yml` 的審查者，並在 ruleset 勾選 Require review from Code Owners。
      `VerifyTenant (public RPC fork)` 也沒有路徑過濾，`tenant-verify.yml` 檔頭與 `TENANT_OPERATIONS.md` §1.6 都要求設成 required；
      它依賴公開 RPC，偶爾因節點逾時失敗時重跑即可，不要因此把它移出 required。
    - **不要**把有路徑過濾的 check 設成 required：`forge build + test`、`slither static analysis`、`gas snapshot`（Contracts CI）、
@@ -344,14 +347,15 @@ PepeAMM 的修正都只存在於原始碼；平台 FeeRouter 的 `platformTreasu
   `DEPLOYER=0x27C21324D101e867E0634bf2ebe3F9Dcf3ACA585`。`cast chain-id --rpc-url $RPC` 必須是 84532。
 - **先 dispatch keeper，確認價格是新的**（理由見 `DEPLOY_130_CUTOVER.md` §5.0）。第 2、3 項開始前各再做一次：
   ```bash
-  SINCE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+  SINCE=$(date -u -d '-60 seconds' +%Y-%m-%dT%H:%M:%SZ)   # 往前 60 秒，容許本機時鐘比 GitHub 快
   gh workflow run base-sepolia-keeper.yml --ref master
-  # dispatch 後要幾秒才查得到這個 run：輪詢到它出現，取它的 id
-  RUN=""; until [ -n "$RUN" ]; do sleep 5; RUN=$(gh run list --workflow base-sepolia-keeper.yml --event workflow_dispatch \
-    --limit 5 --json databaseId,createdAt --jq "[.[] | select(.createdAt >= \"$SINCE\")][0].databaseId // empty"); done
+  # dispatch 後要幾秒才查得到這個 run：最多輪詢 5 分鐘，取它的 id
+  RUN=""; for i in $(seq 1 60); do sleep 5; RUN=$(gh run list --workflow base-sepolia-keeper.yml --event workflow_dispatch \
+    --limit 5 --json databaseId,createdAt --jq "[.[] | select(.createdAt >= \"$SINCE\")][0].databaseId // empty"); [ -n "$RUN" ] && break; done
+  [ -n "$RUN" ] || echo "5 分鐘內找不到這次 dispatch 的 run：到 Actions 頁面確認，不要往下做"
   gh run watch "$RUN" --exit-status          # run 失敗時非 0
   node scripts/post-deploy-smoke.mjs --skip-http --fresh-since "$SINCE" --max-age 21600
-  # 「最近一次寫價」必須晚於 dispatch，而且 11 檔都不超過 6 小時
+  # exchange 讀的 oracle 與 V2 金庫讀的 oracle：「最近一次寫價」都必須晚於 dispatch，而且 11 檔都不超過 6 小時
   ```
 
 **私鑰處理：**
@@ -360,7 +364,8 @@ PepeAMM 的修正都只存在於原始碼；平台 FeeRouter 的 `platformTreasu
 - `DeployPepeIncentives`、`DeployAMM` 在腳本內讀 `vm.envUint("PRIVATE_KEY")`，**目前無法改用 keystore**。在改寫之前
   （後續待辦：改成 `vm.startBroadcast()` 讓 `--account` 生效），把風險壓到最小：
   ```bash
-  read -rs PRIVATE_KEY && export PRIVATE_KEY   # 不回顯、不進 history；不要寫在指令列或任何檔案裡
+  read -rs PRIVATE_KEY && export PRIVATE_KEY   # 不回顯、不進 history；貼上時要含 0x 前綴（vm.envUint 會把不帶 0x 的
+                                               # 十六進位字串當十進位解析而失敗）；不要寫在指令列或任何檔案裡
   forge script …                               # 下面第 5、6 項的指令，本身不帶 --private-key
   unset PRIVATE_KEY                            # 用完立刻清掉
   ```
@@ -387,6 +392,24 @@ PepeAMM 的修正都只存在於原始碼；平台 FeeRouter 的 `platformTreasu
      `OLD_GUARDED_ORACLE`、`VAULT_PROXY`、`EXCHANGE_NEW` 有預設值時核對一次。
    - broadcast：`forge script script/RedeployGuardedOracle.s.sol:RedeployGuardedOracle --rpc-url $RPC --account $ACCOUNT --sender $DEPLOYER --broadcast --slow -vv`
    - **要在治理 phase 2 之前做**；`ORACLE_KIND=guarded` 時見上方方框，提前到第 1 項之前。
+   - **broadcast 之後 keeper 必須改寫新 oracle，而且要在 `ORACLE_MAX_PRICE_AGE`（預設 6 小時）內完成。** 腳本會把 V2 金庫的
+     `oracle` 改指向新 oracle，但 keeper 仍照 `KEEPER_GUARDED_ORACLE` 寫舊的那顆：新 oracle 只有搬過去的那一筆價格，
+     6 小時後 V2 金庫的報價全部過期。依序：
+     1. 改 `.github/workflows/base-sepolia-keeper.yml` 的 `KEEPER_GUARDED_ORACLE` 為新 oracle。這是**持鑰、整檔 sha256 釘選**的
+        workflow：人工審過整份 diff 後，用 `node scripts/check-workflow-guards.mjs --print-pins` 印出新值，更新
+        `scripts/check-workflow-guards.mjs` 的 `PINNED_WORKFLOWS["base-sepolia-keeper.yml"]`；否則 CI 的
+        `workflow guards (environment / secrets / triggers)` 會紅。
+     2. 改 `frontend/src/contracts/addresses.ts` 的 `V2_STACK[84532].GuardedOracle`（`node scripts/check-addresses.mjs` 會核對它與
+        workflow 的 `KEEPER_GUARDED_ORACLE` 一致），並照 `ops/monitoring/README.md` 重產 `monitors.json`／`deployed.json`。
+        各 agent 主機 `agent/.env` 的 `KEEPER_GUARDED_ORACLE` 也一起改。
+     3. 上面兩項放在同一個 PR，合併。
+     4. dispatch keeper（照前置條件的指令；`--fresh-since` 會同時檢查 V2 金庫讀的 oracle）。
+     5. 讀回**新 oracle** 的價格時間：
+        `cast call <新 oracle> "peek(bytes32)(uint256,uint256,bool,bool)" $(cast keccak "sBTC") --rpc-url $RPC`，第二個值
+        （updatedAt）必須晚於 dispatch；smoke 的「V2 金庫 oracle 最近一次寫價」必須是 PASS。
+     6. 舊 oracle 停止寫價：依腳本結尾的提示，由 guardian 對**舊** oracle `setPaused(true)`（鏈上現行的舊版沒有期限）。
+        例外：若 #130 用了 `ORACLE_KIND=guarded` 而且 exchange 讀的仍是舊 oracle，**不要暫停**——那時 keeper 必須同時寫兩顆
+        （`DEPLOY_130_CUTOVER.md` §10）。
 3. **AssetVaultV2 升級到 V2_5**（`DEPLOY_130_CUTOVER.md` §8；**要在治理 phase 2 之前做**，phase 2 之後只能走 timelock）。
    這次升級帶的是安全修正（審查 C12–C16、M1）：即時報價有效期上限 `min(maxPriceAge, 6h)`、任何資產 unpriced 時 mint revert、
    feed 永久失效時的豁免流程。漏做時金庫照常運作、接線也都對，只有版本號與 bytecode 比對看得出來（第 7 步會抓）。

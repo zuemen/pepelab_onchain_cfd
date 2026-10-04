@@ -60,7 +60,11 @@ jobs:
             exit 0
           fi
           echo "base=$base" >> "$GITHUB_OUTPUT"
-          if git diff --name-only "$base" HEAD -- contracts/ scripts/check-contract-size.mjs scripts/contract-size-budget.json .github/workflows/contract-size.yml | grep -q .; then
+          # 不可寫成 `git diff --name-only … | grep -q .`：grep -q 讀到第一行就結束，變更清單大於 pipe 緩衝時
+          # git diff 收到 SIGPIPE（141），在 pipefail 下整條 pipeline 判為失敗，if 走到 else → 跳過 build、綠燈
+          # （大 PR 夾帶主合約膨脹時靜默通過）。`git diff --quiet` 不經 pipe：沒有差異 exit 0、有差異 exit 1、
+          # 出錯（例如 base 不存在）exit 128——後兩者都走「照常 build」，屬 fail-closed。
+          if ! git diff --quiet "$base" HEAD -- contracts/ scripts/check-contract-size.mjs scripts/contract-size-budget.json .github/workflows/contract-size.yml; then
             echo "build=true" >> "$GITHUB_OUTPUT"
           else
             echo "沒有改到 contracts/ 或門檻本身：跳過 build（門檻結果與 base 相同）"

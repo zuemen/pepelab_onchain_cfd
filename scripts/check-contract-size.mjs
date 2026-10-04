@@ -9,6 +9,7 @@
 // 規則（釘選值在 scripts/contract-size-budget.json）：
 //   - 要提高預算，**同一個 PR** 修改 maxRuntimeBytes，並在 history 尾端追加一筆
 //     { bytes, date, reason }。history 最後一筆的 bytes 必須等於 maxRuntimeBytes，每一筆都要有 reason。
+//   - artifact（量的是哪一顆合約）不得更改。
 //   - history 只能追加（--base <git ref>，CI 用 PR 的 base）：既有紀錄不得被改或刪；放寬預算時
 //     必須有新的紀錄，而且新紀錄的 reason 不得沿用舊的——「改數字、沿用舊理由」會被擋下。
 //   - 預算不得超過 EIP-170（24,576 B）。
@@ -20,6 +21,8 @@
 //
 // 零依賴，只讀檔案（--base 時另外呼叫 `git show`），不連網。
 // CI：.github/workflows/contract-size.yml（沒有路徑過濾、每個 PR 都跑，可設為 required check）。
+// 「不得沿用舊理由」只擋完全相同的字串；理由寫得好不好仍要靠人審。建議（未實作）：以 CODEOWNERS 指定
+// 這支腳本、scripts/contract-size-budget.json 與 contract-size.yml 的審查者。
 // 用法：
 //   node scripts/check-contract-size.mjs [--out <contracts/out 路徑>] [--base <git ref>]
 //   node scripts/check-contract-size.mjs --history-only --base <git ref>   # 只檢查釘選表（不需要 forge build）
@@ -92,6 +95,9 @@ export function checkAppendOnly(base, current) {
     if (!c) {
       problems.push(`${name}：預算被整筆刪除（base 有、現在沒有）——門檻不能靠刪除放寬`);
       continue;
+    }
+    if (c.artifact !== b.artifact) {
+      problems.push(`${name}：artifact 從 ${b.artifact} 改成 ${c.artifact}——門檻量的合約不能換（換成小合約就能讓主合約的門檻失效）`);
     }
     const bh = b.history ?? [];
     const ch = c.history ?? [];

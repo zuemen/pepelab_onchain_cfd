@@ -24,7 +24,8 @@ interface IUpgradeable25 {
 ///             --fork-url https://sepolia.base.org --sender 0x27C21324D101e867E0634bf2ebe3F9Dcf3ACA585 -vv
 ///           # broadcast (user only; needs DEFAULT_ADMIN_ROLE on the proxy — after the
 ///           # timelock handover this must go through a timelock proposal instead):
-///           forge script … --rpc-url "$BASE_SEPOLIA_RPC_URL" --private-key "$PRIVATE_KEY" --broadcast --slow -vv
+///           forge script … --rpc-url https://sepolia.base.org --account <keystore name> \
+///             --sender 0x27C21324D101e867E0634bf2ebe3F9Dcf3ACA585 --broadcast --slow -vv
 ///
 ///         Same broadcast, second call: `setRiskParams` (RISK_ROLE) lowers
 ///         `maxPriceAge` to VAULT_MAX_PRICE_AGE (default 21600 = 6h). The live

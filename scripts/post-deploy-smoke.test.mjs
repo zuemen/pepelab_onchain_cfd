@@ -23,7 +23,7 @@ const abiString = (t) => {
 const word = (v) => "0x" + String(v).replace(/^0x/, "").toLowerCase().padStart(64, "0");
 
 /** 一條「部署正確」的假鏈＋假 signal-api；overrides 用來注入錯誤。 */
-function world({ calls = {}, http = {}, priceAge = {}, noCode = [], vaultVersion = "2.5.0" } = {}) {
+function world({ calls = {}, http = {}, priceAge = {}, noCode = [], vaultVersion = "2.5.0", vaultPriceAge = {} } = {}) {
   const { frontend } = loadSources(REPO);
   const roles = frontend[PRIMARY_CHAIN].roles;
   const state = new Map();
@@ -37,6 +37,8 @@ function world({ calls = {}, http = {}, priceAge = {}, noCode = [], vaultVersion
   for (const sym of stale.assets) {
     const age = priceAge[sym] ?? 60;
     set(roles.MockOracle, selector("getPrice(bytes32)") + stale.assetIds[sym].slice(2), "0x" + word(100).slice(2) + word((NOW - age).toString(16)).slice(2));
+    const vAge = vaultPriceAge[sym] ?? 60;
+    set(roles.GuardedOracle, selector("getPrice(bytes32)") + stale.assetIds[sym].slice(2), "0x" + word(100).slice(2) + word((NOW - vAge).toString(16)).slice(2));
   }
   for (const [k, v] of Object.entries(calls)) {
     const [ref, data] = k.split("|");
@@ -179,4 +181,24 @@ test("外洩檢查有讀不到的項目 → 摘要是 WARN，不宣稱全部沒�
   assert.equal(summary.length, 1);
   assert.equal(summary[0].level, "WARN");
   assert.ok(roles.PerpetualExchange);
+});
+
+const ALL = ["sBTC", "sETH", "sAAPL", "sTSLA", "sGOLD", "sBOND", "sNVDA", "sMSFT", "sGOOGL", "sICLN", "sESGU"];
+
+test("V2 金庫的 oracle 也要新鮮：exchange 的價格新、金庫的舊（keeper 沒改指向新 GuardedOracle）→ --fresh-since FAIL", async () => {
+  const w = world({ vaultPriceAge: Object.fromEntries(ALL.map((k) => [k, 2 * 3600])) });
+  const loose = await run(w);
+  assert.equal(loose.find((r) => r.name === "V2 金庫 oracle 最近一次寫價").level, "PASS");
+  const strict = await run(w, { freshSince: NOW - 600 });
+  assert.equal(strict.find((r) => r.name === "最近一次寫價").level, "PASS", "exchange 的 oracle 是新的");
+  const v = strict.find((r) => r.name === "V2 金庫 oracle 最近一次寫價");
+  assert.equal(v.level, "FAIL");
+  assert.ok(v.detail.includes("KEEPER_GUARDED_ORACLE"));
+});
+
+test("V2 金庫 oracle：超過 --max-age → FAIL；超過 6 小時 → WARN", async () => {
+  const strict = await run(world({ vaultPriceAge: { sAAPL: 8 * 3600 } }), { maxAgeSec: 21600 });
+  assert.ok(fails(strict).some((r) => r.name === "V2 金庫 oracle 價格年齡" && r.detail.includes("sAAPL")));
+  const loose = await run(world({ vaultPriceAge: { sAAPL: 8 * 3600 } }));
+  assert.equal(loose.find((r) => r.name === "V2 金庫 oracle 價格年齡").level, "WARN");
 });

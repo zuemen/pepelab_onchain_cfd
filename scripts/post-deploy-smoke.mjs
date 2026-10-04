@@ -14,7 +14,9 @@
 //      逐一查；命中即 FAIL。輸出只寫縮寫。讀不到的項目給 WARN，摘要也不會宣稱「全部沒問題」。
 //   3. keeper：exchange 實際讀的 oracle 上每個資產的 updatedAt，與 exchange.maxPriceAge()
 //      比（門檻與加密資產清單取自 monitors.json 的 oracle-stale 規則與參數預設值，與監控相同）；
-//      keeper 錢包（oracle owner）的 gas 餘額。--fresh-since：最近一次寫價必須晚於該時間；--max-age：每一檔的年齡上限。
+//      keeper 錢包（oracle owner）的 gas 餘額。V2 金庫讀的 oracle（AssetVaultV2.oracle()）同樣檢查——它由 keeper 的
+//      KEEPER_GUARDED_ORACLE 另外寫入，重部署 GuardedOracle 後最容易漏改。
+//      --fresh-since：兩顆 oracle 的最近一次寫價都必須晚於該時間；--max-age：每一檔的年齡上限。
 //   4. signal-api：GET /healthz、GET /（payTo 與 payToSafety）、未付款的 GET /oracle/sBTC
 //      必須回 402 付款要求——回 503 payto_unsafe 代表付費端點 fail-closed。
 //
@@ -42,6 +44,8 @@ const wordToAddr = (hex) => "0x" + String(hex).replace(/^0x/, "").padStart(64, "
 export const SMOKE_RPC_METHODS = new Set(["eth_chainId", "eth_blockNumber", "eth_getBlockByNumber", "eth_getBalance", "eth_getCode", "eth_getStorageAt", "eth_call"]);
 /** keeper 錢包低於這個 ETH 數量時 WARN（與監控 keeper-gas 規則同一個方向；這裡只是部署後的粗檢）。 */
 export const KEEPER_MIN_WEI = 10n ** 15n; // 0.001 ETH
+/** V2_5 金庫的即時報價有效期上限 min(maxPriceAge, 6h)（DEPLOY_130_CUTOVER.md §8）。 */
+export const VAULT_PRICE_CAP_SEC = 6 * 3600;
 
 export function signalApiUrl(root) {
   const src = readFileSync(join(root, "agent/sdk/src/signalApi.ts"), "utf8");
@@ -262,6 +266,41 @@ export async function runSmoke({ root, rpcUrl, apiUrl, fetchImpl = fetch, sleep,
     if (freshSince !== null && newest < freshSince) {
       add("keeper", "最近一次寫價", "FAIL", `${newest ? new Date(newest * 1000).toISOString() : "沒有"}，早於 --fresh-since ${new Date(freshSince * 1000).toISOString()}：dispatch 之後 keeper 沒有寫任何一檔（oracle ${oracle}）`);
     } else if (newest) add("keeper", "最近一次寫價", "PASS", `${new Date(newest * 1000).toISOString()}（oracle ${oracle}）`);
+
+    // V2 金庫讀的是另一顆 oracle（AssetVaultV2.oracle()，GuardedOracle）。keeper 用 KEEPER_GUARDED_ORACLE
+    // 另外寫它；重部署 GuardedOracle 後若忘了改 keeper，exchange 的價格照樣新鮮、金庫的卻停在部署當下——
+    // 只看 exchange 的 oracle 會給出錯誤的「可以繼續」。
+    if (roles.AssetVaultV2 && lc(roles.AssetVaultV2) !== ZERO) {
+      const vo = await call(roles.AssetVaultV2, selector("oracle()"));
+      if (vo.error) add("keeper", "V2 金庫 oracle", "WARN", `AssetVaultV2.oracle() 讀不到：${vo.error}`);
+      else {
+        const vaultOracle = wordToAddr(vo.value);
+        let vNewest = 0;
+        const stale6h = [];
+        const tooOld = [];
+        for (const sym of stale.assets) {
+          const id = stale.assetIds[sym];
+          let r = await call(vaultOracle, selector("getPrice(bytes32)") + pad32(id));
+          if (r.error) r = await call(vaultOracle, selector("peek(bytes32)") + pad32(id)); // 過期時 getPrice revert
+          if (r.error || !r.value || r.value.length < 130) {
+            add("keeper", `V2 金庫 oracle ${sym}`, "FAIL", `讀不到（${r.error ?? "回傳長度不對"}）`);
+            continue;
+          }
+          const updatedAt = Number(BigInt("0x" + r.value.slice(66, 130)));
+          vNewest = Math.max(vNewest, updatedAt);
+          const age = now - updatedAt;
+          if (maxAgeSec !== null && age > maxAgeSec) tooOld.push(`${sym} ${hours(age)}`);
+          else if (age >= VAULT_PRICE_CAP_SEC) stale6h.push(`${sym} ${hours(age)}`);
+        }
+        const where = `（oracle ${vaultOracle}）`;
+        if (freshSince !== null && vNewest < freshSince) {
+          add("keeper", "V2 金庫 oracle 最近一次寫價", "FAIL",
+            `${vNewest ? new Date(vNewest * 1000).toISOString() : "沒有"}，早於 --fresh-since：dispatch 之後 keeper 沒有寫這顆 oracle——KEEPER_GUARDED_ORACLE 還指向舊的？${where}`);
+        } else if (vNewest) add("keeper", "V2 金庫 oracle 最近一次寫價", "PASS", `${new Date(vNewest * 1000).toISOString()}${where}`);
+        if (tooOld.length) add("keeper", "V2 金庫 oracle 價格年齡", "FAIL", `超過 --max-age：${tooOld.join("、")}`);
+        if (stale6h.length) add("keeper", "V2 金庫 oracle 價格年齡", "WARN", `超過 6 小時（V2_5 金庫會視為 unpriced、停止 mint）：${stale6h.join("、")}`);
+      }
+    }
     const owner = await call(oracle, selector("owner()"));
     if (!owner.error) {
       const keeper = wordToAddr(owner.value);
