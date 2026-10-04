@@ -118,6 +118,7 @@ export const history: Catalog['history'] = {
       "On-chain events could not be read (or were only partly read) — an empty list here does not mean there was no activity. Press Refresh to retry.",
   },
   fetchFailed: 'Failed to fetch events',
+  timeoutRetry: 'Read failed (node timed out) — press Refresh to retry.',
   fetchOlderFailed: 'Failed to fetch older events',
 
   /** 每一種事件明細的敘述。 */

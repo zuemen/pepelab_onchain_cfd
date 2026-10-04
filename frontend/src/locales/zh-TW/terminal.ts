@@ -117,6 +117,8 @@ export const terminal = {
     unrealizedPnl: '未實現 PnL',
     /** 有部位讀不出數字時，權益與未實現 PnL 都顯示「—」，下面加這一句。 */
     pnlPartial: '有部位目前無法估值（讀取失敗或價格不可用），合計不顯示。',
+    /** 審查 N1：getPosition 讀不到的部位不在持倉表裡，合計也不顯示。 */
+    positionsUnread: '{count} 個部位讀取失敗，總額不完整。',
     wallet: '錢包 {token}',
     marginNote: '保證金以 USDC 結算 · USDT 僅供持有/兌換',
 

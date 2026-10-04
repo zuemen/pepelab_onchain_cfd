@@ -22,7 +22,8 @@ import {
   totalPnl,
   totalValue,
   toPortfolioRow,
-  readMaxPriceAge,
+  chainNowSec,
+  cachedMaxPriceAge,
   readPosition,
   type PnlStatus,
   type PortfolioPositionRow,
@@ -324,10 +325,14 @@ export default function PortfolioPage() {
       // 每個部位一個 readOpenPosition（getPosition 之後四個 view 併發，各自隔離）。
       // 終端機的持倉表也走同一個函式，所以同一個部位兩頁的未實現損益一定一樣：
       // 合約 getPositionValue − 保證金。見 lib/pepefi/positionPnl.ts。
-      const maxPriceAgeSec = await readMaxPriceAge(contracts.exchange);
+      // maxPriceAge 有 10 分鐘快取；判斷價格過期用最新區塊時間（與合約一致）。兩者並行讀。
+      const [maxPriceAgeSec, nowSec] = await Promise.all([
+        cachedMaxPriceAge(contracts.exchange),
+        chainNowSec(contracts.exchange),
+      ]);
       const results = await Promise.all(
         // 投資組合不顯示標記價，不讀 getMarkPrice（每個部位省一次 RPC）。
-        posIds.map((id) => readPosition(contracts, id, { withMarkPrice: false, maxPriceAgeSec })),
+        posIds.map((id) => readPosition(contracts, id, { withMarkPrice: false, maxPriceAgeSec, nowSec })),
       );
       // getPosition 本身讀不到的部位：不能悄悄從列表與淨資產裡消失（審查 L5）。
       setPositionsUnread(results.filter((r) => r.kind === 'failed').length);

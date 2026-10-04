@@ -1,6 +1,14 @@
 import { it, expect, describe } from 'vitest';
 
-import { totalPnl, totalValue, positionPnl } from './positionPnl';
+import {
+  totalPnl,
+  totalValue,
+  chainNowSec,
+  positionPnl,
+  terminalTotals,
+  cachedMaxPriceAge,
+  MAX_PRICE_AGE_TTL_MS,
+} from './positionPnl';
 
 const E18 = 10n ** 18n;
 const NOW = 1_790_000_000;
@@ -76,5 +84,79 @@ describe('totals', () => {
   it('are unknown, not a smaller sum, when any row has no figure', () => {
     expect(totalPnl([{ pnl: 1n }, { pnl: null }])).toBeNull();
     expect(totalValue([{ value: 5n }, { value: null }])).toBeNull();
+  });
+});
+
+// 審查 N1：getPosition 讀不到的部位不在列表裡；合計不能只加剩下的列。
+describe('terminalTotals', () => {
+  const rows = [
+    { pnl: -240n, value: 79_760n },
+    { pnl: 100n, value: 1_100n },
+  ];
+
+  it('equity is free margin plus every position’s close value', () => {
+    expect(terminalTotals({ positions: rows, freeMargin: 1_000n, unreadCount: 0 })).toEqual({
+      totalPnl: -140n,
+      equity: 1_000n + 79_760n + 1_100n,
+    });
+  });
+
+  it('a position whose getPosition failed makes both totals unknown, not a smaller number', () => {
+    expect(terminalTotals({ positions: rows, freeMargin: 1_000n, unreadCount: 1 })).toEqual({
+      totalPnl: null,
+      equity: null,
+    });
+  });
+
+  it('a listed position with no figure also makes both totals unknown', () => {
+    expect(
+      terminalTotals({ positions: [...rows, { pnl: null, value: null }], freeMargin: 1n, unreadCount: 0 })
+    ).toEqual({ totalPnl: null, equity: null });
+  });
+});
+
+// 審查 N4：與合約 _requireFresh 一致。
+describe('freshness follows the contract', () => {
+  it('an oracle that was never written (updatedAt = 0) has no usable price', () => {
+    expect(
+      positionPnl({ margin: 1n, positionValue: 1n, oracle: [276055000000n, 0n], nowSec: 1_790_000_000 })
+        .status
+    ).toBe('noPrice');
+  });
+
+  it('chainNowSec uses the latest block’s timestamp, not the user’s clock', async () => {
+    const contract = { runner: { provider: { getBlock: async () => ({ timestamp: 1_234_567 }) } } };
+    expect(await chainNowSec(contract)).toBe(1_234_567);
+    const signerless = { runner: { getBlock: async () => ({ timestamp: 42n }) } };
+    expect(await chainNowSec(signerless)).toBe(42);
+  });
+
+  it('chainNowSec falls back to the local clock when the block cannot be read', async () => {
+    const hung = { runner: { provider: { getBlock: () => new Promise<never>(() => {}) } } };
+    const before = Math.floor(Date.now() / 1000);
+    const now = await chainNowSec(hung, 20);
+    expect(now).toBeGreaterThanOrEqual(before);
+  });
+});
+
+// 審查 N6：maxPriceAge 不每輪都讀。
+describe('cachedMaxPriceAge', () => {
+  it('reads the contract once per TTL', async () => {
+    let calls = 0;
+    const exchange = {
+      maxPriceAge: async () => {
+        calls += 1;
+        return 3_600n;
+      },
+    };
+    let t = 0;
+    const now = () => t;
+    expect(await cachedMaxPriceAge(exchange, now)).toBe(3_600);
+    t = MAX_PRICE_AGE_TTL_MS - 1;
+    expect(await cachedMaxPriceAge(exchange, now)).toBe(3_600);
+    expect(calls).toBe(1);
+    t = MAX_PRICE_AGE_TTL_MS + 1;
+    await cachedMaxPriceAge(exchange, now);
+    expect(calls).toBe(2);
   });
 });

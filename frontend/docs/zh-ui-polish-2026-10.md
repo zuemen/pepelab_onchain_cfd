@@ -71,3 +71,14 @@
 ## 7. ADL 狀態
 
 揭露框原本寫死「本測試網部署目前預設關閉」。2026-10-02 以公開 RPC 唯讀呼叫 Base Sepolia `PerpetualExchange`（`0x827e…124D`）：`adlEnabled()` = true、`portfolioMarginEnabled()` = false、`markPremiumCapBps()` = 0。改成頁面載入時讀鏈上兩個旗標代入文案（`lib/pepefi/solvencyFlags.ts`），catalog 不再含任何開關狀態。
+
+## 複審追加（PR #239 REVIEW2）
+
+- **N1 終端機合計少算部位**：`useTerminalAccount` 回傳 `unreadCount`（`getPosition` 本身讀不到、因此不在持倉表裡的部位數）。大於 0 時權益與未實現 PnL 都顯示「—」，帳戶區寫「N 個部位讀取失敗，總額不完整。」，與投資組合頁一致。合計集中在 `terminalTotals()`，有測試。
+- **N2 歷史頁 loading 卡住**：`getBlockNumber()` 與 `fetchPositionEvents`（`getUserPositions`／`nextPositionId`／`getPosition`）都加 10 秒逾時；`withRetry` 新增每次嘗試的逾時參數。逾時後 loading 結束，顯示「讀取失敗（節點逾時），可按『重新整理』重試」；單一部位逾時算進「讀不到的部位」。
+- **N3 輪詢防重疊**：每輪 refresh 有序號，只有最新一輪能寫入 state；換錢包或換合約時序號前進、持倉清空，舊位址晚回來的結果一律丟棄。上一輪還沒回來時，輪詢與切回前景的補讀都跳過。
+- **N4 價格過期判斷**：
+  - `updatedAt == 0` 視為沒有價格（`noPrice`），與合約 `_requireFresh` 一致。
+  - 「現在」改用最新區塊的 timestamp（`chainNowSec()`，與合約的 `block.timestamp` 同一個時鐘），每輪讀一次、與持倉讀取並行。讀不到最新區塊（5 秒逾時）才退回使用者電腦的時鐘，這時的誤差就是使用者時鐘與鏈上時間的差。
+- **N5**：資料讀取失敗或過期時，持倉表的標記價也一起變灰。
+- **N6**：`maxPriceAge` 以 exchange 為鍵快取 10 分鐘（`cachedMaxPriceAge()`），並與持倉 id、最新區塊時間並行讀，不再排在讀持倉之前。終端機、投資組合、市場動態共用。

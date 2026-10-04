@@ -1,6 +1,6 @@
 import { useRef, useState, useEffect, useCallback } from 'react'
 
-import { readMaxPriceAge } from 'src/lib/pepefi/positionPnl'
+import { chainNowSec, cachedMaxPriceAge } from 'src/lib/pepefi/positionPnl'
 import { mapLimit, withRetry, RPC_CONCURRENCY } from 'src/lib/pepefi/rpcBatch'
 
 // 鏈上實際部位活動：某個標的最近有誰開了什麼倉、平掉了沒、賺賠多少。
@@ -62,6 +62,8 @@ export interface ActivityRow {
   oracle?: readonly [bigint, bigint] | null
   /** 合約 maxPriceAge（秒），判斷過期用。 */
   maxPriceAgeSec?: number
+  /** 讀取當下最新區塊的 timestamp（秒），判斷過期用（與合約一致）。 */
+  nowSec?: number
 }
 
 export interface MarketActivity {
@@ -148,8 +150,9 @@ async function scanAll(contracts: Contracts): Promise<ScanResult> {
   // 未平倉部位的標的價格：每個標的讀一次 oracle（不是每個部位一次）。
   const openAssets = [...new Set(rows.filter((r) => r.isOpen).map((r) => r.asset))]
   if (openAssets.length) {
-    const [maxPriceAgeSec, quotes] = await Promise.all([
-      readMaxPriceAge(ex),
+    const [maxPriceAgeSec, nowSec, quotes] = await Promise.all([
+      cachedMaxPriceAge(ex),
+      chainNowSec(ex),
       mapLimit(openAssets, RPC_CONCURRENCY, async (asset) => {
         try {
           const q = (await withRetry(() => contracts.oracle.getPrice(asset))) as [bigint, bigint]
@@ -164,6 +167,7 @@ async function scanAll(contracts: Contracts): Promise<ScanResult> {
       if (!r.isOpen) continue
       r.oracle = byAsset.get(r.asset) ?? null
       r.maxPriceAgeSec = maxPriceAgeSec
+      r.nowSec = nowSec
     }
   }
 

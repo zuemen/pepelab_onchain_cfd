@@ -108,6 +108,7 @@ export const terminal: Catalog['terminal'] = {
     freeMargin: 'Free Margin',
     unrealizedPnl: 'Unrealised PnL',
     pnlPartial: 'Some positions cannot be valued right now (read failed or no usable price), so the total is not shown.',
+    positionsUnread: '{count} position(s) could not be read — the totals are incomplete.',
     wallet: 'Wallet {token}',
     marginNote: 'margin settles in USDC · USDT is hold/swap only',
 

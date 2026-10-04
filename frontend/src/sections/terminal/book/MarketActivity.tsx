@@ -31,7 +31,7 @@ const hhmm = (unix: bigint) => {
  * 在投資組合會是三個數字。讀不到、價格為 0 或過期就是 null（顯示「—」＋原因），不補 0，
  * 也不讓 oracle 價格為 0 時把所有人的部位畫成「保證金全虧」。
  */
-export function unrealised(p: ActivityRow, nowSec = Math.floor(Date.now() / 1000)) {
+export function unrealised(p: ActivityRow, nowSec = p.nowSec ?? Math.floor(Date.now() / 1000)) {
   return positionPnl({
     margin: p.margin,
     positionValue: p.positionValue ?? null,

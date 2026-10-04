@@ -23,6 +23,7 @@ export function AccountPanel({
   totalPnl,
   freshness,
   freshnessLabel,
+  unreadCount,
   usdcBal,
   usdtBal,
   stable,
@@ -38,6 +39,8 @@ export function AccountPanel({
   totalPnl: bigint | null
   freshness: DataFreshness
   freshnessLabel: string
+  /** getPosition 讀不到的部位數；> 0 時合計是 null，並明講少了幾個部位。 */
+  unreadCount: number
   usdcBal: bigint
   usdtBal: bigint
   stable: Stable
@@ -100,7 +103,12 @@ export function AccountPanel({
         v={pnl === null ? '—' : fNum(pnl, { dp: 4, signed: true })}
         color={pnl === null || dim ? C.mut : pnl >= 0 ? C.green : C.red}
       />
-      {(dim || pnl === null) && (
+      {unreadCount > 0 && (
+        <Box sx={{ fontSize: 10.5, color: C.red, lineHeight: 1.4 }}>
+          {interpolate(t.terminal.account.positionsUnread, { count: unreadCount })}
+        </Box>
+      )}
+      {unreadCount === 0 && (dim || pnl === null) && (
         <Box sx={{ fontSize: 10.5, color: C.red, lineHeight: 1.4 }}>
           {pnl === null && !dim ? t.terminal.account.pnlPartial : freshnessLabel}
         </Box>

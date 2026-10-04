@@ -52,7 +52,10 @@ export interface PositionChainReads {
   positionValue: bigint | null;
   /** oracle `getPrice(asset)` 的 [價格(8 dp), 更新時間]；讀取失敗為 null。 */
   oracle: readonly [bigint, bigint] | null;
-  /** 判斷過期用的現在時間（秒）。 */
+  /**
+   * 判斷過期用的現在時間（秒）。呼叫端應傳最新區塊的 timestamp（合約用 block.timestamp
+   * 判斷），讀不到才退回使用者電腦的時鐘。見 chainNowSec。
+   */
   nowSec: number;
   /** 合約的 maxPriceAge（秒）。 */
   maxPriceAgeSec?: number;
@@ -75,9 +78,10 @@ export function positionPnl({
 }: PositionChainReads): PositionPnl {
   const none = (status: PnlStatus): PositionPnl => ({ status, pnl: null, value: null });
   if (oracle === null) return none('unreadable');
-  if (oracle[0] <= 0n) return none('noPrice');
+  // 價格 0，或從來沒寫過（updatedAt = 0，合約的 _requireFresh 一定判過期）：沒有可用價格。
+  if (oracle[0] <= 0n || oracle[1] <= 0n) return none('noPrice');
   const updatedAt = Number(oracle[1]);
-  if (updatedAt > 0 && nowSec - updatedAt > maxPriceAgeSec) return none('stale');
+  if (nowSec - updatedAt > maxPriceAgeSec) return none('stale');
   if (positionValue === null) return none('unreadable');
   return { status: 'ok', pnl: positionValue - margin, value: positionValue };
 }
@@ -141,7 +145,7 @@ export interface ReadOptions {
   withMarkPrice?: boolean;
   /** 合約的 maxPriceAge（秒），讀不到就用後備值。 */
   maxPriceAgeSec?: number;
-  /** 測試用。 */
+  /** 判斷過期用的現在時間（秒）；建議傳 chainNowSec() 的結果。省略時用使用者電腦的時鐘。 */
   nowSec?: number;
 }
 
@@ -241,6 +245,55 @@ export async function readMaxPriceAge(exchange: object | null | undefined, ms = 
   if (!ex?.maxPriceAge) return FALLBACK_MAX_PRICE_AGE_SEC;
   const v = await settle<bigint>(() => ex.maxPriceAge!(), ms);
   return v !== null && v > 0n ? Number(v) : FALLBACK_MAX_PRICE_AGE_SEC;
+}
+
+/** maxPriceAge 幾乎不會變：同一個 exchange 快取 10 分鐘，輪詢時不必每次多打一次 RPC。 */
+export const MAX_PRICE_AGE_TTL_MS = 10 * 60_000;
+const maxAgeCache = new WeakMap<object, { value: number; at: number }>();
+
+export async function cachedMaxPriceAge(
+  exchange: object | null | undefined,
+  now: () => number = Date.now
+): Promise<number> {
+  if (!exchange) return FALLBACK_MAX_PRICE_AGE_SEC;
+  const hit = maxAgeCache.get(exchange);
+  if (hit && now() - hit.at < MAX_PRICE_AGE_TTL_MS) return hit.value;
+  const value = await readMaxPriceAge(exchange);
+  maxAgeCache.set(exchange, { value, at: now() });
+  return value;
+}
+
+/**
+ * 判斷價格過期用的「現在」：最新區塊的 timestamp，跟合約 `_requireFresh` 用的
+ * block.timestamp 一致。讀不到（逾時、沒有 provider）才退回使用者電腦的時鐘——
+ * 誤差就是使用者時鐘與鏈上時間的差（一般幾秒；anvil fork 這類可調時間的環境會更大）。
+ */
+export async function chainNowSec(contract: object | null | undefined, ms = 5000): Promise<number> {
+  const runner = (contract as { runner?: { provider?: unknown; getBlock?: unknown } } | null)?.runner;
+  const provider = (runner && typeof runner.getBlock === 'function' ? runner : runner?.provider) as
+    | { getBlock?: (tag: 'latest') => Promise<{ timestamp: number | bigint } | null> }
+    | undefined;
+  if (provider?.getBlock) {
+    const b = await settle<{ timestamp: number | bigint } | null>(() => provider.getBlock!('latest'), ms);
+    if (b && Number(b.timestamp) > 0) return Number(b.timestamp);
+  }
+  return Math.floor(Date.now() / 1000);
+}
+
+/**
+ * 終端機帳戶區的合計（審查 N1）：任何一個部位沒有數字、或有部位的 getPosition 本身
+ * 讀不到（unreadCount > 0，不在列表裡），權益與未實現 PnL 都是 null（顯示「—」）。
+ * 權益 = 可用保證金 + Σ 各部位平倉價值。
+ */
+export function terminalTotals(a: {
+  positions: readonly { pnl: bigint | null; value: bigint | null }[];
+  freeMargin: bigint;
+  unreadCount: number;
+}): { totalPnl: bigint | null; equity: bigint | null } {
+  if (a.unreadCount > 0) return { totalPnl: null, equity: null };
+  const pnl = totalPnl(a.positions);
+  const value = totalValue(a.positions);
+  return { totalPnl: pnl, equity: value === null ? null : a.freeMargin + value };
 }
 
 /**

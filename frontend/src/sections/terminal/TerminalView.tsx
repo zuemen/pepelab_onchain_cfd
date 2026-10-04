@@ -21,12 +21,12 @@ import { assetPolicy } from 'src/tenant'
 import { ASSET_IDS } from 'src/contracts/addresses'
 import { usePepefiWallet } from 'src/layouts/pepefi'
 import { ASSET_META } from 'src/lib/pepefi/assetMeta'
+import { terminalTotals } from 'src/lib/pepefi/positionPnl'
 import { stalenessNotice } from 'src/lib/pepefi/priceFreshness'
 import { fundingIntervalOf } from 'src/lib/pepefi/fundingInterval'
 import { staticTradingParams } from 'src/lib/pepefi/tradingParams'
 import { type Interval, DEFAULT_INTERVAL } from 'src/lib/pepefi/candles'
 import { freshnessText, dataFreshness } from 'src/lib/pepefi/positionFreshness'
-import { totalPnl as totalPositionPnl, totalValue as totalPositionValue } from 'src/lib/pepefi/positionPnl'
 
 import { useToast } from 'src/components/pepefi/ToastProvider'
 import PaperTradingBadge from 'src/components/pepefi/PaperTradingBadge'
@@ -102,12 +102,14 @@ export function TerminalView() {
     [account.positions],
   )
 
-  // 任何一個部位沒有數字（讀取失敗、無有效價格、價格過期），合計就是 null，畫面顯示「—」。
-  const totalPnl = totalPositionPnl(account.positions)
+  // 任何一個部位沒有數字（讀取失敗、無有效價格、價格過期），或有部位的 getPosition 本身讀不到
+  // （unreadCount，不在列表裡），合計就是 null，畫面顯示「—」（審查 N1）。
   // 權益 = 可用保證金 + 各部位現在平倉可拿回的金額（鎖住的保證金＋未實現損益）。
-  // 以前是 freeMgn + PnL，漏了鎖在部位裡的保證金，跟投資組合的交易帳戶對不起來。
-  const positionsValue = totalPositionValue(account.positions)
-  const equity = positionsValue === null ? null : account.freeMgn + positionsValue
+  const { totalPnl, equity } = terminalTotals({
+    positions: account.positions,
+    freeMargin: account.freeMgn,
+    unreadCount: account.unreadCount,
+  })
   const [nowMs, setNowMs] = useState(() => Date.now())
   useEffect(() => {
     // window.setInterval：這個元件有一個叫 setInterval 的 state setter（K 線週期）。
@@ -251,6 +253,7 @@ export function TerminalView() {
             totalPnl={totalPnl}
             freshness={freshness}
             freshnessLabel={freshnessLabel}
+            unreadCount={account.unreadCount}
             usdcBal={account.usdcBal}
             usdtBal={account.usdtBal}
             stable={stable}

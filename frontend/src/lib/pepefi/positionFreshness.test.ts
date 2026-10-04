@@ -85,3 +85,23 @@ describe('market activity panel (M1)', () => {
     expect(unrealised({ ...row, positionValue: null, oracle: [1n, BigInt(NOW)] }, NOW).pnl).toBeNull();
   });
 });
+
+// 審查 N3：輪詢不疊加、換錢包後舊位址的回應不寫入。
+describe('terminal polling guards', () => {
+  const hook = fs.readFileSync(path.join(SRC, 'hooks/useTerminalAccount.ts'), 'utf8');
+
+  it('skips a poll while the previous read is still in flight', () => {
+    expect(hook).toMatch(/!inFlightRef\.current\)\s*void refresh\(\)/);
+  });
+
+  it('only the latest read (and the current wallet) may write state', () => {
+    expect(hook).toMatch(/const isCurrent = \(\) => seq === seqRef\.current/);
+    expect(hook).toMatch(/if \(!isCurrent\(\)\) return\s*\n\s*const rows/);
+    // 換錢包／換合約時序號前進，舊請求失效。
+    expect(hook).toMatch(/seqRef\.current \+= 1[\s\S]*?\}, \[contracts, address\]\)/);
+  });
+
+  it('tells the account panel how many positions could not be read', () => {
+    expect(hook).toMatch(/setUnreadCount\(unread\)/);
+  });
+});

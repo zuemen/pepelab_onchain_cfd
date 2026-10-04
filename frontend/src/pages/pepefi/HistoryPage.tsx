@@ -4,7 +4,7 @@ import { MONO } from 'src/components/pepefi/brandKit'
 import { useRef, useState, useEffect, useCallback, type ReactNode } from 'react'
 import { useContracts } from 'src/hooks/useContracts'
 import { useV2Contracts } from 'src/hooks/useV2Contracts'
-import { isDeployed, safeRead } from 'src/lib/pepefi/safeRead'
+import { isDeployed, safeRead, withTimeout } from 'src/lib/pepefi/safeRead'
 import { LEGACY_SHARE_DECIMALS, formatShares } from 'src/lib/pepefi/vaultShares'
 import { usePepefiWallet } from 'src/layouts/pepefi'
 import { explorerTx } from 'src/lib/pepefi/notify'
@@ -291,16 +291,27 @@ function toChainEvent(source: string, log: ParsedEventLog): ChainEvent | null {
  * Only positions work this way — swaps, margin moves, fees, stakes and oracle
  * updates leave no per-user storage trail, so they stay log-only.
  */
-async function fetchPositionEvents(
+/**
+ * 歷史頁「載入中…」之前的每一次 RPC 都要有上限（審查 N2）：不回應的節點不會丟錯，只會讓
+ * await 永遠不結束，loading 就永遠不解除。逾時算失敗，照常重試，重試完仍失敗就讓呼叫端
+ * 顯示「讀取失敗，可重試」。
+ */
+export const HISTORY_READ_TIMEOUT_MS = 10_000
+
+/** safeRead.withTimeout 逾時丟的錯。 */
+const isTimeout = (e: unknown) => e instanceof Error && e.message === 'rpc timeout'
+
+export async function fetchPositionEvents(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   exchange: any,
   owner: string | null,
+  timeoutMs = HISTORY_READ_TIMEOUT_MS,
 ): Promise<{ evs: ChainEvent[]; missed: number }> {
   let ids: bigint[]
   if (owner) {
-    ids = [...(await withRetry(() => exchange.getUserPositions(owner)) as bigint[])]
+    ids = [...(await withRetry(() => exchange.getUserPositions(owner), 3, 120, timeoutMs) as bigint[])]
   } else {
-    const next = Number(await withRetry(() => exchange.nextPositionId()))
+    const next = Number(await withRetry(() => exchange.nextPositionId(), 3, 120, timeoutMs))
     const from = Math.max(0, next - MAX_POSITION_SCAN)
     ids = Array.from({ length: next - from }, (_, i) => BigInt(next - 1 - i))
   }
@@ -311,7 +322,7 @@ async function fetchPositionEvents(
       // Retry rather than skip: the public RPC drops calls under load, and a
       // silent skip reads as "you never opened that position".
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      return await withRetry(() => exchange.getPosition(id)) as any
+      return await withRetry(() => exchange.getPosition(id), 3, 120, timeoutMs) as any
     } catch {
       missed += 1
       return null
@@ -834,7 +845,7 @@ export default function HistoryPage() {
     setLoading(true)
     setError(null)
     try {
-      const currentBlock = await wallet.provider.getBlockNumber()
+      const currentBlock = await withTimeout(wallet.provider.getBlockNumber(), HISTORY_READ_TIMEOUT_MS)
       const windowStart  = Math.max(0, currentBlock - FETCH_BLOCKS)
 
       // Deliberately sequential, not Promise.all: the log scan alone already
@@ -879,7 +890,8 @@ export default function HistoryPage() {
       reportScanIssues(failedChunks, posResult.missed)
     } catch (err) {
       console.error('[history]', err)
-      setError(err instanceof Error ? err.message.slice(0, 120) : t.history.fetchFailed)
+      setError(isTimeout(err) ? t.history.timeoutRetry
+        : err instanceof Error ? err.message.slice(0, 120) : t.history.fetchFailed)
     } finally {
       setLoading(false)
       setScanning(false)

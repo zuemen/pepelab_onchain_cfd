@@ -126,7 +126,7 @@ export function PositionsTable({
                     {p.isLong ? t.terminal.positions.long : t.terminal.positions.short}
                   </Box>
                   <Box>{fUsd(fromUnits(p.entryPrice, 18))}</Box>
-                  <Box title={t.terminal.positions.markHint}>
+                  <Box title={t.terminal.positions.markHint} sx={{ color: dimmed ? C.mut : undefined }}>
                     {p.cur === null ? '—' : fUsd(fromUnits(p.cur, 18))}
                   </Box>
                   <Box>{fNum(fromUnits(p.margin, 18))}</Box>
