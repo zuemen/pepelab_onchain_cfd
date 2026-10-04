@@ -180,7 +180,7 @@ contract DemoE2E is Script {
     function _step3_lpSeedsVault() internal {
         vm.prank(alice); uint256 shares = vault.deposit(20_000e18);
         console.log("\n[3] LP seeded MM vault: deposited 20000 USDC, shares=%s, sharePrice=%s",
-            shares / 1e18, vault.getSharePrice());
+            shares / 10 ** vault.decimals(), vault.getSharePrice()); // P1-05: pIV has asset decimals + 6
     }
 
     function _step4_createSession() internal {
