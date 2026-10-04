@@ -1,0 +1,16 @@
+{
+  "$comment": "主合約成長門檻的釘選值，由 scripts/check-contract-size.mjs 讀取。要提高 maxRuntimeBytes，必須在同一個 PR 於 history 尾端追加一筆 { bytes, date, reason }，reason 寫明為什麼值得多花這些 byte。history 只能追加：CI（contract-size.yml）會與 PR 的 base 比對，既有紀錄被改或刪、放寬卻沒有新增紀錄、新紀錄沿用舊理由，都會失敗。",
+  "budgets": {
+    "PerpetualExchange": {
+      "artifact": "PerpetualExchange.sol/PerpetualExchange.json",
+      "maxRuntimeBytes": 23911,
+      "history": [
+        {
+          "bytes": 23911,
+          "date": "2026-10-04",
+          "reason": "初始釘選：等於 master 的 runtime 大小（contracts/foundry.toml：solc 0.8.36、via_ir、optimizer_runs 200；本機 0.8.30 也是 23,911 B）。距 EIP-170 尚有 665 B，保留給必要的安全修正；任何新增功能都要先在別處省下空間。"
+        }
+      ]
+    }
+  }
+}

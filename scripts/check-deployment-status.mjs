@@ -326,9 +326,12 @@ export function compareRuntime(gotHex, artifact, { pinImmutable = null } = {}) {
 
   const n = want.length;
   if (n <= 2) return fail("產物沒有 runtime code");
+  // CBOR metadata：最後兩個 byte 是長度，內容以 CBOR map 開頭（0xa0–0xbf；solc 的是 a1–a3）。
+  // 只有在標記也對得上時才把結尾當成 metadata 排除；否則（例如日後關閉 cbor_metadata）整段都比，
+  // 不會因為誤讀長度而把比對範圍截短。
   const meta = ((want[n - 2] << 8) | want[n - 1]) + 2;
-  if (meta >= n) return fail("產物沒有 CBOR metadata 結尾");
-  const end = n - meta;
+  const hasCbor = meta < n && want[n - meta] >= 0xa0 && want[n - meta] <= 0xbf;
+  const end = hasCbor ? n - meta : n;
   if (!got.subarray(0, end).equals(want.subarray(0, end))) {
     let k = 0;
     while (k < end && got[k] === want[k]) k++;
@@ -458,7 +461,7 @@ async function inspectAddress({ rpc, block, address, comp, denylist, outDir, sna
     result.code ??= await classifyCode(target, comp.artifacts, { outDir, fetchCode });
     result.snapshot = snapshotCompare(snapshot, address, code, comp.proxy ? { impl: result.impl, code: target } : null);
   } catch (e) {
-    result.code = { status: "unknown", matched: null, detail: `RPC 失敗：${e.message}` };
+    result.code = { status: "unknown", matched: null, detail: `RPC 失敗：${e.message}`, rpcError: true };
     return result;
   }
 
@@ -546,6 +549,7 @@ export async function buildReport({ root, outDir, chainIds, rpcOverrides = {}, f
   const report = {
     $comment: `由 node scripts/check-deployment-status.mjs 產生（唯讀 RPC），不要手改；${REPORT_MD} 是這份 JSON 的渲染結果。`,
     generatedAt: today,
+    compiler: compilerOf(outDir),
     denylistSize: denylist.length,
     chains: {},
     offchain: [],
@@ -584,6 +588,7 @@ export async function buildReport({ root, outDir, chainIds, rpcOverrides = {}, f
         if (block === null) {
           row.status = "unknown";
           row.detail = `RPC 失敗：${chain.error}`;
+          row.rpcError = true;
         } else {
           const results = [];
           for (const a of t.addresses) {
@@ -592,6 +597,7 @@ export async function buildReport({ root, outDir, chainIds, rpcOverrides = {}, f
           }
           const agg = aggregate(results);
           row.status = agg.status;
+          if (results.some((r) => r.code.rpcError)) row.rpcError = true;
           if (results.length === 1) {
             row.detail = results[0].code.detail;
             row.matched = results[0].code.matched;
@@ -625,6 +631,29 @@ export async function buildReport({ root, outDir, chainIds, rpcOverrides = {}, f
     });
   }
   return report;
+}
+
+/** 連網模式不可接受的狀況：整條鏈 RPC 失敗，或有元件因 RPC 失敗而無法比對。 */
+export function rpcFailures(report) {
+  const out = [];
+  for (const [id, c] of Object.entries(report.chains ?? {})) {
+    if (c.error) out.push(`${c.name}（${id}）：${c.error}`);
+    for (const r of c.components ?? []) if (r.rpcError) out.push(`${c.name} ${r.id}：${r.detail}`);
+  }
+  return out;
+}
+
+/** contracts/out 的編譯器版本（取 PerpetualExchange 產物的 metadata）。 */
+export function compilerOf(outDir) {
+  const art = loadArtifact(outDir, "PerpetualExchange.sol:PerpetualExchange");
+  return art?.metadata?.compiler?.version?.split("+")[0] ?? null;
+}
+
+/** contracts/foundry.toml 釘選的 solc_version；沒有釘選回傳 null。 */
+export function pinnedSolc(root) {
+  const f = join(root, "contracts/foundry.toml");
+  if (!existsSync(f)) return null;
+  return readFileSync(f, "utf8").match(/^\s*solc_version\s*=\s*["']([0-9.]+)["']/m)?.[1] ?? null;
 }
 
 // ── markdown ────────────────────────────────────────────────────────────────
@@ -664,7 +693,7 @@ export function renderMarkdown(report) {
   L.push("> 使用者碰到的永遠是鏈上那一版。一個修正要等到「已部署」而且「鏈上＝原始碼」，才真的保護到使用者；");
   L.push("> 要等到「展示驗收」有證據，才能對外說它可以展示。");
   L.push("");
-  L.push(`本文件由 \`node scripts/check-deployment-status.mjs\` 以唯讀 RPC 產生（${report.generatedAt}），**不要手改**；`);
+  L.push(`本文件由 \`node scripts/check-deployment-status.mjs\` 以唯讀 RPC 產生（${report.generatedAt}；比對用的編譯產物是 solc ${report.compiler ?? "?"}），**不要手改**；`);
   L.push(`機器可讀版是 [\`release-status.json\`](release-status.json)。CI 以 \`--offline\` 檢查本文件仍是那份 JSON 的渲染結果、`);
   L.push(`位址仍等於 \`frontend/src/contracts/**\`、標成「鏈上＝原始碼」的元件原始碼沒有在產生之後被改過。部署後重跑見`);
   L.push("[`OWNER_ACTIONS.md`](OWNER_ACTIONS.md) 第 7 步。");
@@ -840,6 +869,10 @@ export function checkConfig(root) {
   }
   const report = JSON.parse(readFileSync(jf, "utf8"));
   const md = readFileSync(mf, "utf8").replace(/\r\n/g, "\n");
+  const pin = pinnedSolc(root);
+  if (pin && report.compiler && report.compiler !== pin) {
+    problems.push(`${REPORT_JSON} 是用 solc ${report.compiler} 的產物比對的，但 contracts/foundry.toml 釘選 ${pin}——forge build 後重跑`);
+  }
   if (md !== renderMarkdown(report)) problems.push(`${REPORT_MD} 不是 ${REPORT_JSON} 的渲染結果（被手改？）——重跑 node scripts/check-deployment-status.mjs`);
   const targets = resolveTargets(src, Object.keys(report.chains ?? {}));
   for (const [chainId, chain] of Object.entries(report.chains ?? {})) {
@@ -944,6 +977,12 @@ async function main() {
     console.error(`找不到編譯產物 ${outDir}：先在 contracts/ 跑 forge build`);
     process.exit(1);
   }
+  const pin = pinnedSolc(root);
+  const built = compilerOf(outDir);
+  if (pin && built !== pin) {
+    console.error(`contracts/out 是用 solc ${built ?? "?"} 編的，但 contracts/foundry.toml 釘選 ${pin}：先在 contracts/ 跑 forge build`);
+    process.exit(1);
+  }
   const report = await buildReport({
     root,
     outDir,
@@ -954,7 +993,14 @@ async function main() {
   });
   if (args.includes("--stdout")) {
     process.stdout.write(renderMarkdown(report));
+    if (rpcFailures(report).length) process.exit(1);
     return;
+  }
+  const fails = rpcFailures(report);
+  if (fails.length) {
+    for (const f of fails) console.error(`✗ ${f}`);
+    console.error("RPC 失敗：不寫檔（一份全是「無法比對」的報告不能當成部署後的驗收）。換一個 RPC（--rpc <chainId>=<url>）後重跑。");
+    process.exit(1);
   }
   writeReport(root, report);
   for (const [id, c] of Object.entries(report.chains)) {

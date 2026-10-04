@@ -1,0 +1,90 @@
+name: Contract size
+
+# 主合約成長門檻：PerpetualExchange 的 runtime 不得超過 scripts/contract-size-budget.json 的釘選值
+# （比 EIP-170 更緊）。放寬必須在同一個 PR 追加 history 並寫理由，history 只能追加（與 PR base 比對）。
+#
+# 刻意**不加 paths 過濾**：有路徑過濾的 workflow 不能設成 required check（PR 沒改到那些路徑時
+# GitHub 不會建立這個 check，合併會一直停在「等待中」），而門檻不 required 就擋不住合併。
+# 所以 job 每個 PR 都跑，在 job 內判斷：沒改到 contracts/ 或門檻本身就跳過 build、直接成功；
+# 有改到才裝 Foundry、build、量大小。
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: contract-size-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  size:
+    name: contract size budget
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+          submodules: recursive
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '20'
+
+      # 先證明門檻會擋（含「改數字並沿用舊理由」的繞過），再檢查 repo。
+      - name: Budget self-test
+        run: node --test scripts/check-contract-size.test.mjs
+
+      # 比對基準：PR 用 base commit，push 用 before；拿不到（第一次 push、workflow_dispatch）就照常 build。
+      - name: Decide whether contracts changed
+        id: changed
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PUSH_BEFORE: ${{ github.event.before }}
+        run: |
+          set -euo pipefail
+          case "$EVENT_NAME" in
+            pull_request) base="$PR_BASE_SHA" ;;
+            push) base="$PUSH_BEFORE" ;;
+            *) base="" ;;
+          esac
+          if [ -z "$base" ] || [ "$base" = "0000000000000000000000000000000000000000" ] || ! git cat-file -e "${base}^{commit}" 2>/dev/null; then
+            echo "沒有可比對的 base，照常 build"
+            { echo "base="; echo "build=true"; } >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "base=$base" >> "$GITHUB_OUTPUT"
+          if git diff --name-only "$base" HEAD -- contracts/ scripts/check-contract-size.mjs scripts/contract-size-budget.json .github/workflows/contract-size.yml | grep -q .; then
+            echo "build=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "沒有改到 contracts/ 或門檻本身：跳過 build（門檻結果與 base 相同）"
+            echo "build=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Budget history is append-only
+        if: steps.changed.outputs.base != ''
+        env:
+          BASE_SHA: ${{ steps.changed.outputs.base }}
+        run: node scripts/check-contract-size.mjs --history-only --base "$BASE_SHA"
+
+      - name: Install Foundry
+        if: steps.changed.outputs.build == 'true'
+        uses: foundry-rs/foundry-toolchain@908c540300062bd5a7e473851cdb4282204cee09 # v1.9.1
+        with:
+          # 與 contracts-ci.yml 同一個版本；solc 版本由 contracts/foundry.toml 的 solc_version 釘選。
+          version: v1.8.0
+
+      - name: Build
+        if: steps.changed.outputs.build == 'true'
+        working-directory: contracts
+        run: forge build --sizes
+
+      - name: Contract size budget
+        if: steps.changed.outputs.build == 'true'
+        run: node scripts/check-contract-size.mjs --out contracts/out

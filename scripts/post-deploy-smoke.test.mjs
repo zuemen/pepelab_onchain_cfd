@@ -16,10 +16,14 @@ const API = "https://api.test";
 const NOW = 1_800_000_000;
 const SAFE = "0x" + "ab".repeat(20);
 const KEEPER = "0x" + "cd".repeat(20);
+const abiString = (t) => {
+  const hex = Buffer.from(t, "utf8").toString("hex");
+  return "0x" + (32).toString(16).padStart(64, "0") + t.length.toString(16).padStart(64, "0") + hex.padEnd(Math.ceil(hex.length / 64) * 64, "0");
+};
 const word = (v) => "0x" + String(v).replace(/^0x/, "").toLowerCase().padStart(64, "0");
 
 /** 一條「部署正確」的假鏈＋假 signal-api；overrides 用來注入錯誤。 */
-function world({ calls = {}, http = {}, priceAge = {} } = {}) {
+function world({ calls = {}, http = {}, priceAge = {}, noCode = [], vaultVersion = "2.5.0" } = {}) {
   const { frontend } = loadSources(REPO);
   const roles = frontend[PRIMARY_CHAIN].roles;
   const state = new Map();
@@ -28,6 +32,7 @@ function world({ calls = {}, http = {}, priceAge = {} } = {}) {
   set(roles.PerpetualExchange, selector("authorizedAgents(address)") + word(roles.AgentSessionManager).slice(2), word(1));
   set(roles.PerpetualExchange, selector("maxPriceAge()"), word((21600).toString(16)));
   set(roles.MockOracle, selector("owner()"), word(KEEPER));
+  set(roles.AssetVaultV2, selector("version()"), abiString(vaultVersion));
   const stale = staleRule(REPO);
   for (const sym of stale.assets) {
     const age = priceAge[sym] ?? 60;
@@ -54,6 +59,7 @@ function world({ calls = {}, http = {}, priceAge = {} } = {}) {
       if (method === "eth_getBlockByNumber") return ok({ timestamp: "0x" + NOW.toString(16) });
       if (method === "eth_getBalance") return ok("0xde0b6b3a7640000");
       if (method === "eth_getStorageAt") return ok(word("11".repeat(20)));
+      if (method === "eth_getCode") return ok(noCode.map((a) => a.toLowerCase()).includes(params[0].toLowerCase()) ? "0x" : "0x6080");
       if (method === "eth_call") {
         const { to, data } = params[0];
         const v = state.get(`${to.toLowerCase()}|${data}`);
@@ -70,7 +76,7 @@ function world({ calls = {}, http = {}, priceAge = {} } = {}) {
   return { roles, fetchImpl, sent };
 }
 
-const run = (w) => runSmoke({ root: REPO, rpcUrl: RPC, apiUrl: API, fetchImpl: w.fetchImpl, sleep: async () => {}, nowSec: NOW });
+const run = (w, extra = {}) => runSmoke({ root: REPO, rpcUrl: RPC, apiUrl: API, fetchImpl: w.fetchImpl, sleep: async () => {}, nowSec: NOW, ...extra });
 const fails = (results) => results.filter((r) => r.level === "FAIL");
 
 test("部署正確 → 沒有 FAIL；四類檢查都有跑；只用唯讀 RPC", async () => {
@@ -134,4 +140,43 @@ test("smoke 的 RPC 拒絕任何會送交易的方法", async () => {
   const rpc = makeRpc(RPC, { fetchImpl: async () => assert.fail("不該送出"), allowed: SMOKE_RPC_METHODS });
   await assert.rejects(() => rpc("eth_sendRawTransaction", ["0x"]), /不允許/);
   await assert.rejects(() => rpc("eth_sign", ["0x", "0x"]), /不允許/);
+});
+
+test("位址沒有程式碼 → FAIL，而不是把 0x 讀成零位址而通過", async () => {
+  const { roles } = world();
+  // X402FeeRouter 的 exchange()／copyTracker() 預期是 0：沒有程式碼時以前會「剛好」通過
+  const results = await run(world({ noCode: [roles.X402FeeRouter] }));
+  assert.ok(fails(results).some((r) => r.group === "程式碼" && r.name === roles.X402FeeRouter));
+  assert.equal(results.some((r) => r.name === "X402FeeRouter.exchange()" && r.level === "PASS"), false);
+});
+
+test("AssetVaultV2.version() 不是原始碼現行版（漏做 V2_5 升級）→ FAIL", async () => {
+  const f = fails(await run(world({ vaultVersion: "2.4.0" })));
+  assert.ok(f.some((r) => r.name === "AssetVaultV2 version()" && r.detail.includes("2.4.0") && r.detail.includes("2.5.0")));
+});
+
+test("--fresh-since：dispatch 之後完全沒有寫價 → FAIL；有寫過就 PASS（不要求每一檔都重寫）", async () => {
+  const w = world({ priceAge: Object.fromEntries(["sBTC", "sETH", "sAAPL", "sTSLA", "sGOLD", "sBOND", "sNVDA", "sMSFT", "sGOOGL", "sICLN", "sESGU"].map((k) => [k, 3 * 3600])) });
+  const ok = await run(w);
+  assert.equal(ok.find((r) => r.name === "最近一次寫價").level, "PASS", "3 小時內的舊價本來會過");
+  const strict = await run(w, { freshSince: NOW - 600 });
+  assert.equal(strict.find((r) => r.name === "最近一次寫價").level, "FAIL");
+  // 有一檔在 dispatch 後寫過 → keeper 確實跑了
+  const wrote = await run(world({ priceAge: { sBTC: 60, sETH: 3 * 3600 } }), { freshSince: NOW - 600 });
+  assert.equal(wrote.find((r) => r.name === "最近一次寫價").level, "PASS");
+});
+
+test("--max-age：任何一檔超過上限 → FAIL（股票休市的舊價也算）", async () => {
+  const results = await run(world({ priceAge: { sAAPL: 8 * 3600 } }), { maxAgeSec: 21600 });
+  assert.equal(results.find((r) => r.name === "sAAPL 價格").level, "FAIL");
+  assert.equal(results.find((r) => r.name === "sBTC 價格").level, "PASS");
+});
+
+test("外洩檢查有讀不到的項目 → 摘要是 WARN，不宣稱全部沒問題", async () => {
+  const { roles } = world();
+  const results = await run(world({ calls: { [`PerpetualExchange|${selector("guardian()")}`]: "0x" } }));
+  const summary = results.filter((r) => r.group === "外洩地址" && /項查詢$/.test(r.name));
+  assert.equal(summary.length, 1);
+  assert.equal(summary[0].level, "WARN");
+  assert.ok(roles.PerpetualExchange);
 });

@@ -1,13 +1,14 @@
 {
  "$comment": "由 node scripts/check-deployment-status.mjs 產生（唯讀 RPC），不要手改；docs/RELEASE_STATUS.md 是這份 JSON 的渲染結果。",
  "generatedAt": "2026-10-04",
+ "compiler": "0.8.36",
  "denylistSize": 1,
  "chains": {
   "84532": {
    "name": "Base Sepolia",
    "role": "正式測試網（交易、agent session、x402 都在這條鏈）",
    "rpc": "https://sepolia.base.org",
-   "block": 47659924,
+   "block": 47661267,
    "components": [
     {
      "id": "PerpetualExchange",
@@ -274,8 +275,8 @@
        "address": "0xdF9C1E53523568709f65Afe3C4AD2E6a6D99d14B"
       }
      ],
-     "status": "behind",
-     "detail": "與原始碼現行版不一致：長度不同（鏈上 3798 B，原始碼 3794 B）",
+     "status": "equal",
+     "detail": "程式碼一致；只有 CBOR metadata（原始碼文字雜湊）不同",
      "leaked": [],
      "reads": [],
      "snapshot": "absent",
@@ -285,7 +286,7 @@
       "evidence": [],
       "note": "只有部署腳本建立的 session #0，沒有 agent 實際下單的 tx 紀錄（docs/VERIFICATION_REPORT.md D 項待貼）"
      },
-     "matched": null
+     "matched": "AgentSessionManager.sol:AgentSessionManager"
     },
     {
      "id": "TraderStake",
@@ -369,8 +370,8 @@
        "address": "0xA103de184A5C76d7b70fB4e908F252199e004b95"
       }
      ],
-     "status": "behind",
-     "detail": "與原始碼現行版不一致：長度不同（鏈上 3693 B，原始碼 3681 B）",
+     "status": "equal",
+     "detail": "程式碼一致；只有 CBOR metadata（原始碼文字雜湊）不同",
      "leaked": [],
      "reads": [],
      "snapshot": "absent",
@@ -380,7 +381,7 @@
       "evidence": [],
       "note": null
      },
-     "matched": null
+     "matched": "StrategyRegistry.sol:StrategyRegistry"
     },
     {
      "id": "KYCRegistry",
@@ -398,7 +399,7 @@
       }
      ],
      "status": "behind",
-     "detail": "與原始碼現行版不一致：長度不同（鏈上 2842 B，原始碼 4409 B）",
+     "detail": "與原始碼現行版不一致：長度不同（鏈上 2842 B，原始碼 4454 B）",
      "leaked": [],
      "reads": [
       {
@@ -501,8 +502,8 @@
        "address": "0x0a4aE14a413a03c20ccF43E8134BfbD7bCB89820"
       }
      ],
-     "status": "behind",
-     "detail": "與原始碼現行版不一致：長度不同（鏈上 4746 B，原始碼 4733 B）",
+     "status": "equal",
+     "detail": "程式碼一致；只有 CBOR metadata（原始碼文字雜湊）不同",
      "leaked": [],
      "reads": [
       {
@@ -523,7 +524,7 @@
       "evidence": [],
       "note": null
      },
-     "matched": null
+     "matched": "SustainabilityBadge.sol:SustainabilityBadge"
     },
     {
      "id": "AssetVaultV2",
@@ -1281,7 +1282,7 @@
    "name": "Sepolia",
    "role": "legacy 展示鏈（不是產品路徑；合約未做金鑰輪替）",
    "rpc": "https://ethereum-sepolia-rpc.publicnode.com",
-   "block": 11840032,
+   "block": 11840223,
    "components": [
     {
      "id": "PerpetualExchange",
@@ -1600,7 +1601,7 @@
       }
      ],
      "status": "behind",
-     "detail": "與原始碼現行版不一致：長度不同（鏈上 7659 B，原始碼 3681 B）",
+     "detail": "與原始碼現行版不一致：長度不同（鏈上 7659 B，原始碼 3693 B）",
      "leaked": [],
      "reads": [],
      "snapshot": null,
@@ -1628,7 +1629,7 @@
       }
      ],
      "status": "behind",
-     "detail": "與原始碼現行版不一致：長度不同（鏈上 4119 B，原始碼 4409 B）",
+     "detail": "與原始碼現行版不一致：長度不同（鏈上 4119 B，原始碼 4454 B）",
      "leaked": [
       {
        "what": "owner()",
@@ -1671,7 +1672,7 @@
       }
      ],
      "status": "behind",
-     "detail": "與原始碼現行版不一致：長度不同（鏈上 5327 B，原始碼 2147 B）",
+     "detail": "與原始碼現行版不一致：長度不同（鏈上 5327 B，原始碼 2159 B）",
      "leaked": [
       {
        "what": "owner()",

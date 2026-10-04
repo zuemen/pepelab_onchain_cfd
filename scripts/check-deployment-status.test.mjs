@@ -28,6 +28,7 @@ import {
   parseTokenGroups,
   refreshAcceptance,
   renderMarkdown,
+  rpcFailures,
   resolveTargets,
   shortAddr,
   snapshotCompare,
@@ -78,6 +79,16 @@ test("compareRuntime：程式碼不同、長度不同、同一個 immutable 兩�
   assert.match(d.reason, /第 0 byte 起不同/);
   assert.match(compareRuntime(onchain() + "00", a).reason, /長度不同/);
   assert.match(compareRuntime(onchain({ immA: "11".repeat(32), immB: "22".repeat(32) }), a).reason, /兩個不同的值/);
+});
+
+test("compareRuntime：結尾不是 CBOR map 時整段都比（不因誤讀長度截短比對範圍）", () => {
+  // 結尾兩 byte 看起來像長度 4，但前面不是 CBOR map 標記（0xa0–0xbf）→ 不當成 metadata
+  const a = artifact({ meta: "11223344" });
+  assert.equal(compareRuntime(onchain({ meta: "11223344" }), a).match, true);
+  const r = compareRuntime(onchain({ meta: "11223355" }), a);
+  assert.equal(r.match, false, "最後幾個 byte 不同也要抓到");
+  // 正常的 CBOR（a1 開頭）只差 metadata → 一致、註記 metadataOnly
+  assert.equal(compareRuntime(onchain({ meta: "a1b2c3ff" }), artifact()).metadataOnly, true);
 });
 
 test("compareRuntime：library 位址遮蔽並回報；pinImmutable 不符 → 不一致", () => {
@@ -344,6 +355,46 @@ test("前端設定列了鏈上沒有程式碼的位址 → 報告列出、--offl
     writeFileSync(addrFile, lines.filter((l) => !l.includes(`"${ghost}"`)).join("\n"));
     await generate(root, outDir, new Set([ghost.toLowerCase()]));
     assert.deepEqual(checkConfig(root).problems, []);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+    rmSync(outDir, { recursive: true, force: true });
+  }
+});
+
+test("連網模式：整條鏈 RPC 失敗、或單一位址讀取失敗 → rpcFailures 非空（main 以非 0 結束且不寫檔）", async () => {
+  const root = tempRepo();
+  const outDir = outDirWith({ "PerpetualExchange.sol:PerpetualExchange": artifact() });
+  const exec = (cmd, args) => {
+    if (args[0] === "log") return ["1234567890abcdef1234567890abcdef12345678", "2026-10-04", "x (#1)"].join(String.fromCharCode(9));
+    throw new Error("no git");
+  };
+  try {
+    const down = async () => {
+      throw new Error("ECONNREFUSED");
+    };
+    const r1 = await buildReport({ root, outDir, chainIds: ["84532"], fetchImpl: down, sleep: async () => {}, today: "2026-10-04", exec });
+    assert.ok(r1.chains["84532"].error);
+    const f1 = rpcFailures(r1);
+    assert.ok(f1.length > 1 && /ECONNREFUSED|連續失敗/.test(f1[0]));
+
+    // 只有 exchange 的 eth_getCode 一直 5xx：其他元件照常，但那一列標為 RPC 失敗
+    const { frontend } = loadSources(root);
+    const pe = frontend["84532"].roles.PerpetualExchange.toLowerCase();
+    const base = fakeChain(root, "84532");
+    const flaky = async (url, init) => {
+      const { method, params } = JSON.parse(init.body);
+      if (method === "eth_getCode" && params[0].toLowerCase() === pe) return { status: 503, ok: false, text: async () => "busy" };
+      return base(url, init);
+    };
+    const r2 = await buildReport({ root, outDir, chainIds: ["84532"], fetchImpl: flaky, sleep: async () => {}, today: "2026-10-04", exec });
+    assert.equal(r2.chains["84532"].error, undefined);
+    const f2 = rpcFailures(r2);
+    assert.equal(f2.length, 1);
+    assert.match(f2[0], /PerpetualExchange/);
+
+    // 正常 → 空
+    const r3 = await buildReport({ root, outDir, chainIds: ["84532"], fetchImpl: base, sleep: async () => {}, today: "2026-10-04", exec });
+    assert.deepEqual(rpcFailures(r3), []);
   } finally {
     rmSync(root, { recursive: true, force: true });
     rmSync(outDir, { recursive: true, force: true });

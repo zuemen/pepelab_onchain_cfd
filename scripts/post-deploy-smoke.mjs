@@ -6,23 +6,28 @@
 //   1. 接線：ops/monitoring/monitors.json 的 active 接線規則（exchange.oracle()、
 //      InsuranceVault.exchange()…，與監控 Worker 同一份定義），位址一律由
 //      frontend/src/contracts/** 解析；另加 AgentSessionManager.exchange() 與
-//      exchange.authorizedAgents(sessionManager)、AssetVaultV2 的 EIP-1967 實作非零。
+//      exchange.authorizedAgents(sessionManager)、AssetVaultV2 的 EIP-1967 實作非零，以及
+//      AssetVaultV2.version() 等於原始碼現行版（漏做 V2_5 升級時只有這一項會紅）。
+//      每個位址第一次被讀之前先確認有程式碼：沒有程式碼的位址 eth_call 會回 0x，會被誤讀成零位址。
 //   2. 外洩地址：ops/release-status/components.json 列的 owner()／platformTreasury()／角色／
 //      authorizedAgents／verifiers，對 agent/shared/src/payoutSafety.ts 的 COMPROMISED_ADDRESSES
-//      逐一查；命中即 FAIL。輸出只寫縮寫。
+//      逐一查；命中即 FAIL。輸出只寫縮寫。讀不到的項目給 WARN，摘要也不會宣稱「全部沒問題」。
 //   3. keeper：exchange 實際讀的 oracle 上每個資產的 updatedAt，與 exchange.maxPriceAge()
 //      比（門檻與加密資產清單取自 monitors.json 的 oracle-stale 規則與參數預設值，與監控相同）；
-//      keeper 錢包（oracle owner）的 gas 餘額。
+//      keeper 錢包（oracle owner）的 gas 餘額。--fresh-since：最近一次寫價必須晚於該時間；--max-age：每一檔的年齡上限。
 //   4. signal-api：GET /healthz、GET /（payTo 與 payToSafety）、未付款的 GET /oracle/sBTC
 //      必須回 402 付款要求——回 503 payto_unsafe 代表付費端點 fail-closed。
 //
-// 只用 eth_chainId／eth_blockNumber／eth_getBlockByNumber／eth_getBalance／eth_getStorageAt／
+// 只用 eth_chainId／eth_blockNumber／eth_getBlockByNumber／eth_getBalance／eth_getCode／eth_getStorageAt／
 // eth_call 與 HTTP GET；不送交易、不付款。
 //
 // 用法：
 //   node scripts/post-deploy-smoke.mjs
 //   node scripts/post-deploy-smoke.mjs --rpc https://… --signal-api https://… --json out.json
 //   node scripts/post-deploy-smoke.mjs --skip-http        # 只做鏈上檢查
+//   node scripts/post-deploy-smoke.mjs --skip-http --fresh-since <unix 秒或 ISO> --max-age 21600
+//     # dispatch keeper 後用：最近一次寫價必須晚於 --fresh-since（證明 keeper 真的跑了），而且每一檔都不超過 --max-age 秒
+//     #（keeper 只重寫有變動或超過 heartbeat 的資產，所以不要求每一檔都在 dispatch 之後）
 import { readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -34,7 +39,7 @@ const ZERO = "0x0000000000000000000000000000000000000000";
 const lc = (s) => String(s).toLowerCase();
 const pad32 = (hex) => String(hex).replace(/^0x/, "").toLowerCase().padStart(64, "0");
 const wordToAddr = (hex) => "0x" + String(hex).replace(/^0x/, "").padStart(64, "0").slice(-40);
-export const SMOKE_RPC_METHODS = new Set(["eth_chainId", "eth_blockNumber", "eth_getBlockByNumber", "eth_getBalance", "eth_getStorageAt", "eth_call"]);
+export const SMOKE_RPC_METHODS = new Set(["eth_chainId", "eth_blockNumber", "eth_getBlockByNumber", "eth_getBalance", "eth_getCode", "eth_getStorageAt", "eth_call"]);
 /** keeper 錢包低於這個 ETH 數量時 WARN（與監控 keeper-gas 規則同一個方向；這裡只是部署後的粗檢）。 */
 export const KEEPER_MIN_WEI = 10n ** 15n; // 0.001 ETH
 
@@ -81,10 +86,27 @@ export function staleRule(root) {
   };
 }
 
+/** 原始碼裡 version() 的回傳字串（components.json AssetVaultV2 的第一個 source）。 */
+export function expectedVaultVersion(root, cfg) {
+  const comp = cfg.components.find((c) => c.id === "AssetVaultV2");
+  const file = comp?.sources?.find((f) => f.endsWith(".sol"));
+  if (!file) return null;
+  const m = readFileSync(join(root, file), "utf8").match(/function version\(\)[^{]*\{\s*return\s*"([^"]+)"/);
+  return m?.[1] ?? null;
+}
+
+/** ABI 編碼的單一 string 回傳值。 */
+export function decodeString(hex) {
+  const h = String(hex).replace(/^0x/, "");
+  if (h.length < 128) return null;
+  const len = Number(BigInt("0x" + h.slice(64, 128)));
+  return Buffer.from(h.slice(128, 128 + len * 2), "hex").toString("utf8");
+}
+
 const roleHash = (role) => (role === "DEFAULT_ADMIN_ROLE" ? "0x" + "0".repeat(64) : keccak256(role));
 const hours = (s) => `${(s / 3600).toFixed(1)} 小時`;
 
-export async function runSmoke({ root, rpcUrl, apiUrl, fetchImpl = fetch, sleep, skipHttp = false, nowSec }) {
+export async function runSmoke({ root, rpcUrl, apiUrl, fetchImpl = fetch, sleep, skipHttp = false, nowSec, freshSince = null, maxAgeSec = null }) {
   const results = [];
   const add = (group, name, level, detail) => results.push({ group, name, level, detail });
   const src = loadSources(root);
@@ -110,9 +132,29 @@ export async function runSmoke({ root, rpcUrl, apiUrl, fetchImpl = fetch, sleep,
     add("RPC", "Base Sepolia", "FAIL", e.message);
     return results;
   }
+  // 對沒有程式碼的位址做 eth_call 會回 "0x"，會被讀成零位址或 false——外洩檢查與「預期為 0」的
+  // 接線檢查都會無聲通過。所以每個位址第一次被讀之前先確認有程式碼；沒有就 FAIL、不再讀。
+  const codeKnown = new Map();
+  const hasCode = async (addr) => {
+    const k = lc(addr);
+    if (!codeKnown.has(k)) {
+      let ok = false;
+      try {
+        ok = (await must("eth_getCode", [addr, block])) !== "0x";
+      } catch {
+        ok = false;
+      }
+      codeKnown.set(k, ok);
+      if (!ok) add("程式碼", addr, "FAIL", "這個位址在鏈上沒有程式碼（或讀不到）：前端設定錯了，或部署沒有成功");
+    }
+    return codeKnown.get(k);
+  };
   const call = async (to, data) => {
+    if (!(await hasCode(to))) return { error: "沒有程式碼", noCode: true };
     const j = await rpc("eth_call", [{ to, data }, block]);
-    return j.error ? { error: j.error.message } : { value: j.result };
+    if (j.error) return { error: j.error.message };
+    if (!j.result || j.result === "0x") return { error: "回傳是空的" };
+    return { value: j.result };
   };
 
   // 1. 接線
@@ -137,6 +179,13 @@ export async function runSmoke({ root, rpcUrl, apiUrl, fetchImpl = fetch, sleep,
       const slot = await must("eth_getStorageAt", [roles.AssetVaultV2, IMPL_SLOT, block]);
       const impl = wordToAddr(slot);
       add("接線", "AssetVaultV2 EIP-1967 實作", lc(impl) === ZERO ? "FAIL" : "PASS", impl);
+      // 漏做 V2_5 升級時，實作仍在、接線也都對——只有版本號看得出來（OWNER_ACTIONS 第 5 步）。
+      const want = expectedVaultVersion(root, src.cfg);
+      const v = await call(roles.AssetVaultV2, selector("version()"));
+      const got = v.error ? null : decodeString(v.value);
+      if (!want) add("接線", "AssetVaultV2 version()", "WARN", "原始碼找不到 version() 的回傳值");
+      else if (got === want) add("接線", "AssetVaultV2 version()", "PASS", got);
+      else add("接線", "AssetVaultV2 version()", "FAIL", `鏈上 ${got ?? "讀不到"}，原始碼現行版 ${want}——金庫還沒升級到現行版（DEPLOY_130_CUTOVER.md §8）`);
     } catch (e) {
       add("接線", "AssetVaultV2 EIP-1967 實作", "FAIL", e.message);
     }
@@ -172,7 +221,12 @@ export async function runSmoke({ root, rpcUrl, apiUrl, fetchImpl = fetch, sleep,
       }
     }
   }
-  if (!results.some((r) => r.group === "外洩地址" && r.level === "FAIL")) add("外洩地址", `${leakChecks} 項查詢`, "PASS", "沒有任何 getter 或角色指向外洩地址");
+  const leakRows = results.filter((r) => r.group === "外洩地址");
+  if (!leakRows.some((r) => r.level === "FAIL")) {
+    const unread = leakRows.filter((r) => r.level === "WARN").length;
+    if (unread) add("外洩地址", `${leakChecks} 項查詢`, "WARN", `其中 ${unread} 項讀不到，那幾項無法確認；其餘沒有指向外洩地址`);
+    else add("外洩地址", `${leakChecks} 項查詢`, "PASS", "沒有任何 getter 或角色指向外洩地址");
+  }
 
   // 3. keeper：exchange 實際讀的 oracle
   try {
@@ -200,9 +254,14 @@ export async function runSmoke({ root, rpcUrl, apiUrl, fetchImpl = fetch, sleep,
       if (crypto && age >= maxAge) [level, why] = ["FAIL", `${hours(age)}未更新，超過交易所 maxPriceAge ${hours(maxAge)}：開平倉與清算會 revert`];
       else if (crypto && age >= stale.warnSec) [level, why] = ["WARN", `${hours(age)}未更新，超過預警 ${hours(stale.warnSec)}`];
       else if (!crypto && age >= stale.nonCryptoSec) [level, why] = ["WARN", `${hours(age)}未更新，超過非加密資產門檻 ${hours(stale.nonCryptoSec)}`];
+      if (maxAgeSec !== null && age > maxAgeSec) {
+        [level, why] = ["FAIL", `${hours(age)}未更新，超過 --max-age ${hours(maxAgeSec)}`];
+      }
       add("keeper", `${sym} 價格`, level, why);
     }
-    if (newest) add("keeper", "最近一次寫價", "PASS", `${new Date(newest * 1000).toISOString()}（oracle ${oracle}）`);
+    if (freshSince !== null && newest < freshSince) {
+      add("keeper", "最近一次寫價", "FAIL", `${newest ? new Date(newest * 1000).toISOString() : "沒有"}，早於 --fresh-since ${new Date(freshSince * 1000).toISOString()}：dispatch 之後 keeper 沒有寫任何一檔（oracle ${oracle}）`);
+    } else if (newest) add("keeper", "最近一次寫價", "PASS", `${new Date(newest * 1000).toISOString()}（oracle ${oracle}）`);
     const owner = await call(oracle, selector("owner()"));
     if (!owner.error) {
       const keeper = wordToAddr(owner.value);
@@ -274,7 +333,13 @@ async function main() {
     return k >= 0 ? args[k + 1] : undefined;
   };
   const root = resolve(opt("--root") ?? join(here, ".."));
-  const results = await runSmoke({ root, rpcUrl: opt("--rpc"), apiUrl: opt("--signal-api"), skipHttp: args.includes("--skip-http") });
+  const since = opt("--fresh-since");
+  const freshSince = since === undefined ? null : /^\d+$/.test(since) ? Number(since) : Math.floor(Date.parse(since) / 1000);
+  if (Number.isNaN(freshSince)) throw new Error(`--fresh-since 要是 unix 秒數或 ISO 時間：${since}`);
+  const maxAgeArg = opt("--max-age");
+  const maxAgeSec = maxAgeArg === undefined ? null : Number(maxAgeArg);
+  if (maxAgeSec !== null && !(maxAgeSec > 0)) throw new Error(`--max-age 要是正整數秒數：${maxAgeArg}`);
+  const results = await runSmoke({ root, rpcUrl: opt("--rpc"), apiUrl: opt("--signal-api"), skipHttp: args.includes("--skip-http"), freshSince, maxAgeSec });
   console.log(renderResults(results));
   const out = opt("--json");
   if (out) writeFileSync(out, JSON.stringify({ checkedAt: new Date().toISOString(), results }, null, 1) + "\n");

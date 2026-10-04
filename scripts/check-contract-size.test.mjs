@@ -6,7 +6,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { BUDGETS, EIP170_LIMIT, checkBudgetTable, checkSizes, runtimeSize } from "./check-contract-size.mjs";
+import { BUDGETS, EIP170_LIMIT, checkAppendOnly, checkBudgetTable, checkSizes, loadBaseBudgets, loadBudgets, runtimeSize } from "./check-contract-size.mjs";
 
 function fakeOut(sizes) {
   const dir = mkdtempSync(join(tmpdir(), "size-gate-"));
@@ -27,7 +27,7 @@ const budget = (bytes, extra = {}) => ({
   },
 });
 
-test("釘選表：主合約有預算、目前值 23,911 B、不超過 EIP-170、有理由", () => {
+test("釘選表（scripts/contract-size-budget.json）：主合約有預算、目前值 23,911 B、不超過 EIP-170、有理由", () => {
   assert.deepEqual(checkBudgetTable(), []);
   assert.equal(BUDGETS.PerpetualExchange.maxRuntimeBytes, 23911);
   assert.ok(BUDGETS.PerpetualExchange.maxRuntimeBytes <= EIP170_LIMIT);
@@ -48,7 +48,7 @@ test("等於預算 → 通過；多 1 B → 擋下並指出要改哪裡", () => 
     const { problems } = checkSizes({ outDir: dir, budgets: budget(99) });
     assert.equal(problems.length, 1);
     assert.match(problems[0], /超過釘選預算 99 B（多 1 B）/);
-    assert.match(problems[0], /BUDGETS\.X/);
+    assert.ok(problems[0].includes("contract-size-budget.json 的 X"));
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -83,4 +83,47 @@ test("找不到產物 → 擋下（不可無聲通過）", () => {
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+const clone = (x) => JSON.parse(JSON.stringify(x));
+
+test("只能追加：沒動 → 通過；base 沒有釘選表 → 不檢查", () => {
+  assert.deepEqual(checkAppendOnly(clone(BUDGETS), clone(BUDGETS)), []);
+  assert.deepEqual(checkAppendOnly(null, clone(BUDGETS)), []);
+});
+
+test("只能追加：改數字並把最後一筆的 bytes 一起改、沿用舊理由 → 擋下", () => {
+  const base = budget(100);
+  const cur = clone(base);
+  cur.X.maxRuntimeBytes = 120;
+  cur.X.history[0].bytes = 120; // 繞過 checkBudgetTable 的「最後一筆 == 預算」
+  assert.deepEqual(checkBudgetTable(cur), [], "單看釘選表抓不到——所以需要 base 比對");
+  const p = checkAppendOnly(base, cur);
+  assert.ok(p.some((x) => x.includes("history[0] 被修改或刪除")));
+  assert.ok(p.some((x) => /卻沒有在 history 追加新紀錄/.test(x)));
+});
+
+test("只能追加：追加新紀錄但理由照抄 → 擋下；寫新理由 → 通過", () => {
+  const base = budget(100);
+  const copy = clone(base);
+  copy.X.maxRuntimeBytes = 120;
+  copy.X.history.push({ ...base.X.history[0], bytes: 120, date: "2026-10-05" });
+  assert.ok(checkAppendOnly(base, copy).some((x) => /沿用了既有的理由/.test(x)));
+  const ok = clone(base);
+  ok.X.maxRuntimeBytes = 120;
+  ok.X.history.push({ bytes: 120, date: "2026-10-05", reason: "安全修正 X 需要多 20 B，已無其他可省空間" });
+  assert.deepEqual(checkAppendOnly(base, ok), []);
+  assert.deepEqual(checkBudgetTable(ok), []);
+});
+
+test("只能追加：整筆刪除預算 → 擋下", () => {
+  assert.ok(checkAppendOnly(budget(100), {}).some((x) => /整筆刪除/.test(x)));
+});
+
+test("釘選表在 JSON；--base 讀 git 的 base 版本（讀不到時回 null）", () => {
+  assert.equal(loadBudgets(JSON.stringify({ budgets: { A: 1 } })).A, 1);
+  assert.throws(() => loadBudgets("{}"), /沒有 budgets/);
+  assert.equal(loadBaseBudgets("no-such-ref-xyz", () => { throw new Error("bad ref"); }), null);
+  const fake = () => JSON.stringify({ budgets: budget(100) });
+  assert.equal(loadBaseBudgets("HEAD", fake).X.maxRuntimeBytes, 100);
 });

@@ -15,14 +15,10 @@ on:
     paths:
       - 'contracts/**'
       - '.github/workflows/contracts-ci.yml'
-      - 'scripts/check-contract-size.mjs'
-      - 'scripts/check-contract-size.test.mjs'
   pull_request:
     paths:
       - 'contracts/**'
       - '.github/workflows/contracts-ci.yml'
-      - 'scripts/check-contract-size.mjs'
-      - 'scripts/check-contract-size.test.mjs'
   workflow_dispatch:
 
 # 這三個 job 只需要讀原始碼。預設的 repo 權限常是 write-all，對一個跑第三方
@@ -66,21 +62,6 @@ jobs:
 
       - name: Build
         run: forge build --sizes
-
-      # 主合約成長門檻：PerpetualExchange 的 runtime 不得超過釘選預算（比 EIP-170 更緊）。
-      # 要放寬，同一個 PR 改 scripts/check-contract-size.mjs 的 BUDGETS 並在 history 寫理由。
-      # 先證明門檻會擋（自我測試），再量這次 build 的產物。
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
-        with:
-          node-version: '20'
-
-      - name: Contract size budget self-test
-        working-directory: .
-        run: node --test scripts/check-contract-size.test.mjs
-
-      - name: Contract size budget
-        working-directory: .
-        run: node scripts/check-contract-size.mjs --out contracts/out
 
       - name: Test
         run: forge test -vv --summary
