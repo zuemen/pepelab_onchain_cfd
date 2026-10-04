@@ -1,0 +1,18 @@
+### M2 拒絕清單與二次確認 ###
+-- 未設新 owner --
+    └─ ← [Revert] BadNewOwner(0x0000000000000000000000000000000000000000, "zero")
+-- 新 owner = adapter 自己 --
+    └─ ← [Revert] BadNewOwner(0x8215158642350a3f329aB9597186d21f957A813D, "on reject list (leaked/adapter/platform/anvil default)")
+-- 新 owner = anvil 帳號0 0xf39F --
+    └─ ← [Revert] BadNewOwner(0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266, "on reject list (leaked/adapter/platform/anvil default)")
+-- 新 owner = 合約(MockOracle) 有 code --
+    └─ ← [Return] 21982 bytes of code
+-- 新 owner 設了但沒二次確認 --
+    └─ ← [Revert] NewOwnerUnconfirmed()
+-- happy path: 0x27C2 + CONFIRM，計畫 --
+    ├─ [0] console::log("   項目數", 3, " 保留檢查數", 1) [staticcall]
+    ├─ [0] console::log("   adapter 新 owner", 0x27C21324D101e867E0634bf2ebe3F9Dcf3ACA585) [staticcall]
+    ├─ [0] console::log("   待處理 3 筆") [staticcall]
+     項目數 3  保留檢查數 1
+     adapter 新 owner 0x27C21324D101e867E0634bf2ebe3F9Dcf3ACA585
+     待處理 3 筆

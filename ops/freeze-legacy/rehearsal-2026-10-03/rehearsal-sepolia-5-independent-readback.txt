@@ -1,3 +1,0 @@
-[sepolia] 檢查 169 顆有 code 的合約（CREATE 全掃 + 事件 + repo 位址）
-外洩地址不再持有任何 owner／pendingOwner／guardian／marketOperator／authorizedAgents／verifiers／已知角色
-platformTreasury（immutable，凍結無法處理）= 外洩地址的合約：6 顆 0x0FfA7f279fED4E19b3018A4461A8F387aA6c16C2 0x2297e580166aF35dd0065379286f782933653079 0x54e5a77638760eD90D43E1E25a6D9b4A566beB82 0xBb7c02d02EFa81a44bC0fb7E0bC2F531Ee39FB2B 0xc2aAB2dCAdA7b8D9e47132A6bf0246873ad0078D 0xCCD05CBdC2f7961a4C27D3633694022722786A0F

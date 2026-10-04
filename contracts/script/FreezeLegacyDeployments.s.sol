@@ -6,35 +6,35 @@ import "forge-std/Script.sol";
 /// @notice P0-09 / 選項卡 D6「凍結 Sepolia」：拿掉外洩舊部署者金鑰在舊部署上的所有權限。
 ///
 ///         外洩地址 0xE80A…Eb93 的私鑰在公開 git 歷史裡，任何人都能用它簽名。這支腳本
-///         以「那把金鑰本人」的身分，把它持有的 owner() 與 AccessControl 角色逐一放棄
-///         （或移交給新的安全地址），讓搶到金鑰的人再也不能改設定、改價格、升級代理、
-///         或給自己 MINTER 去增發合成資產。
+///         以那把金鑰本人的身分，把它持有的 owner() 與 AccessControl 角色放棄或移交，
+///         讓它再也不能改設定、改價格、升級代理、或增發合成資產。
 ///
 ///         每一筆的處理方式與理由寫在 docs/RUNBOOK_FREEZE_LEGACY.md，腳本內的 reason
-///         字串是摘要。盤點方法（CREATE nonce 全掃 + 全區段 OwnershipTransferred /
-///         RoleGranted 事件）也在 runbook。
+///         字串是結論摘要（不描述任何攻擊手法）。盤點方法也在 runbook。
 ///
 ///         ── 三種模式 ───────────────────────────────────────────────────────────
 ///           1. 計畫（預設）：只讀鏈上狀態、印出完整計畫與每筆目前狀態，不產生任何交易。
 ///                FREEZE_CHAIN=sepolia forge script script/FreezeLegacyDeployments.s.sol --rpc-url <RPC>
 ///           2. 模擬：FREEZE_EXECUTE=true，**不加 --broadcast**。forge 在本機模擬每一筆交易
 ///              並跑完讀回驗證，不需要私鑰、不送出任何東西。
-///           3. 執行：FREEZE_EXECUTE=true + FREEZE_CONFIRM=FREEZE-<chainId> + --broadcast，
-///              並以環境變數 LEAKED_PRIVATE_KEY 提供外洩金鑰（腳本會確認它對應 0xE80A…）。
+///           3. 執行：FREEZE_EXECUTE=true + --broadcast，並以 FREEZE_CONFIRM=FREEZE-<chainId>
+///              確認；以環境變數 LEAKED_PRIVATE_KEY 提供外洩金鑰（腳本會確認它對應 0xE80A…）。
 ///              在 anvil 分叉上演練時改用 --unlocked（anvil_impersonateAccount），不需要私鑰。
-///              一律加 --slow：Base 上的外洩地址有 EIP-7702 委派，RPC 要求 nonce 嚴格連續，
-///              forge 預設批次送出會被拒（見 rotate-key.sh 的同一個坑）。
+///              一律加 --slow：Base 上的外洩地址被 EIP-7702 委派（MetaMask DeleGator 1.3.0），
+///              對被委派的帳戶節點同一時間只接受 1 筆在途交易，批次送出會被拒。
 ///
 ///         ── 安全性質 ───────────────────────────────────────────────────────────
-///           - 冪等：每筆先讀狀態，已經不由外洩地址持有的就跳過；中途失敗可直接重跑。
-///           - AccessControl：同一合約先放棄非 admin 角色、DEFAULT_ADMIN_ROLE 最後；
-///             放棄 DEFAULT_ADMIN 之前，必須確認「保留清單」中的另一個 admin 仍持有，
-///             否則整支腳本中止。刻意讓它無 admin 的（8 顆 SyntheticAssetV2）在計畫裡標明。
-///           - 保留清單（keeper 的 KEEPER_ROLE、guardian、risk、vault 的 MINTER_ROLE、
-///             MockOracle 的 keeper owner）在執行前後都驗證，確保沒有誤傷。
-///           - 執行後逐項讀回；另有 verify() 入口在廣播後對真實鏈重讀一次。
+///           - 冪等：每筆先讀狀態，已完成的跳過；中途失敗可直接重跑。
+///           - 確認字串：只要在廣播（或 resume）情境，不論用 --private-key／--account／--ledger
+///             或環境變數簽署，一律要求 FREEZE_CONFIRM=FREEZE-<chainId>，否則 revert。
+///           - AccessControl：同一合約先放棄非 admin 角色、DEFAULT_ADMIN 最後；放棄 admin 之前，
+///             必須已有另一個 admin（保留清單），或計畫中先把 admin 授給 V2_ADMIN（8 顆合成代幣）。
+///           - C1/M6：兩顆 82c68d9 版 exchange 有已知的會計缺陷，必須在放棄 owner 前先停用其
+///             FeeRouter（setFeeRouter(0)）——這一步排在批次最前面，verify 會檢查 feeRouter()==0。
+///           - 執行後逐項讀回；owner 若落到計畫外地址一律 revert；另有 verify() 入口在廣播後重讀。
+///           - AssetVaultV2 的 implementation slot 在執行前後都比對，防止執行期間被偷換實作。
 ///
-///         腳本與文件都不含任何私鑰字面值。
+///         腳本與文件都不含任何私鑰字面值，也不描述攻擊手法。
 contract FreezeLegacyDeployments is Script {
     address constant LEAKED = 0xE80A81360608C1342e66743F70a00f75d792Eb93;
 
@@ -48,6 +48,9 @@ contract FreezeLegacyDeployments is Script {
     uint256 constant SEPOLIA      = 11155111;
     uint256 constant BASE_SEPOLIA = 84532;
 
+    // ERC-1967 implementation slot（防止執行期間被偷換實作，M4）
+    bytes32 constant IMPL_SLOT = 0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc;
+
     // ── Sepolia V2 stack 的保留角色持有人（docs/ROLE_SEPARATION.md） ──────────────
     address constant V2_ADMIN    = 0x2a588AeA3271B159c9188d95E0d10614711f83e3;
     address constant V2_KEEPER   = 0x540aECD37E7A7885824e7b7e996eBddfb842ef17;
@@ -56,10 +59,16 @@ contract FreezeLegacyDeployments is Script {
 
     address constant S_GUARDED_ORACLE = 0x32A19D04ef2ca5A7DA02Df39419729fA745749A1;
     address constant S_ASSET_VAULT_V2 = 0x3a37415981F6f4fC27FA6c8C62F1d4e47115fD17;
+    address constant S_VAULT_V2_IMPL  = 0xA8a5B0e9C062e0Bb1Ab3a15788Ae823251C41ac1;
     address constant S_MOCK_ORACLE    = 0x17CA20A37Cf04F2f589B2573EC95f1411D29d958;
     address constant B_MOCK_ORACLE    = 0xeD90c4F3B48213888870C1FC8486921Cb0990Aa3;
 
-    enum Action { RenounceOwnership, TransferOwnership, RenounceRole }
+    // Base 三顆 oracle adapter（M2 拒絕清單用）
+    address constant B_CHAINLINK = 0x37DC7b70899BFfB17949366a5b6a86203C428E2f;
+    address constant B_PYTH      = 0x551C0B2e75a9129fe697210223F1Ca6e64F3C6d5;
+    address constant B_AGGREGATOR = 0x8215158642350a3f329aB9597186d21f957A813D;
+
+    enum Action { RenounceOwnership, TransferOwnership, RenounceRole, GrantAdminToV2, DisableFeeRouter }
     enum State { Pending, Done, NotHeld }
 
     struct Item {
@@ -68,7 +77,6 @@ contract FreezeLegacyDeployments is Script {
         Action action;
         bytes32 role;
         string reason;
-        bool intentionalNoAdmin; // 放棄後該合約永久沒有 DEFAULT_ADMIN（刻意）
     }
 
     /// 執行前後都必須成立：holder 持有 target 上的 role（role = 0 且 isOwner = true 時檢查 owner()）。
@@ -82,7 +90,8 @@ contract FreezeLegacyDeployments is Script {
 
     Item[] internal items;
     Keep[] internal keeps;
-    address internal newOwner; // 只用於 TransferOwnership（Base 的 oracle adapter）
+    address internal newOwner;              // 只用於 TransferOwnership（Base 的 oracle adapter）
+    bool internal requiresV2AdminProof;     // M3：計畫動到 V2_ADMIN 時為真
 
     error WrongChain(uint256 chainId);
     error UnknownChain(string name);
@@ -92,7 +101,11 @@ contract FreezeLegacyDeployments is Script {
     error OtherAdminMissing(string label, address target);
     error StillHeld(string label, address target);
     error UnexpectedOwner(string label, address target, address actual, address expected);
-    error BadNewOwner(address newOwner);
+    error FeeRouterNotDisabled(string label, address target);
+    error ImplChanged(address target, address actual, address expected);
+    error BadNewOwner(address newOwner, string why);
+    error NewOwnerUnconfirmed();
+    error V2AdminNotProven();
 
     // ════════════════════════════════════════════════════════════════════════
     // 入口
@@ -102,6 +115,7 @@ contract FreezeLegacyDeployments is Script {
         _build();
         _printPlan();
         _checkKeeps(unicode"執行前");
+        _checkImplPins(unicode"執行前");
         _checkAdminsBeforeRenounce();
 
         if (!vm.envOr("FREEZE_EXECUTE", false)) {
@@ -110,18 +124,22 @@ contract FreezeLegacyDeployments is Script {
             return;
         }
 
+        // M3：放棄 V2_ADMIN 控制的 admin（或把 admin 授給它）前，必須先證明那把金鑰可用。
+        if (requiresV2AdminProof && !vm.envOr("V2_ADMIN_PROVEN", false)) revert V2AdminNotProven();
+
+        // M1：只要在廣播（或 resume）情境，一律要求確認字串，不論用哪種簽署方式。模擬（dry-run）不要求。
+        bool broadcasting = vm.isContext(VmSafe.ForgeContext.ScriptBroadcast)
+            || vm.isContext(VmSafe.ForgeContext.ScriptResume);
         string memory expected = string.concat("FREEZE-", vm.toString(block.chainid));
         bool confirmed = keccak256(bytes(vm.envOr("FREEZE_CONFIRM", string("")))) == keccak256(bytes(expected));
+        if (broadcasting && !confirmed) revert NotConfirmed(expected);
 
         uint256 pk = vm.envOr("LEAKED_PRIVATE_KEY", uint256(0));
         if (pk != 0) {
-            // 真正要簽名時才需要確認字串；模擬（不加 --broadcast）不簽名也不送出。
-            if (!confirmed) revert NotConfirmed(expected);
             if (vm.addr(pk) != LEAKED) revert KeyMismatch(vm.addr(pk));
             vm.startBroadcast(pk);
         } else {
-            // 沒給私鑰：forge 模擬可以用任意 sender；廣播時只有 anvil 的 --unlocked 能簽。
-            if (!confirmed) console.log(unicode"   （未設 FREEZE_CONFIRM：只能模擬；加 --broadcast 會因為沒有簽名者而失敗）");
+            // 沒給私鑰：dry-run 用任意 sender 模擬；分叉演練用 anvil --unlocked 冒充外洩地址。
             vm.startBroadcast(LEAKED);
         }
 
@@ -129,10 +147,14 @@ contract FreezeLegacyDeployments is Script {
         for (uint256 i = 0; i < items.length; i++) {
             Item storage it = items[i];
             if (_state(it) != State.Pending) continue;
-            if (it.action == Action.RenounceOwnership) {
+            if (it.action == Action.DisableFeeRouter) {
+                IFeeRouterSettable(it.target).setFeeRouter(address(0));
+            } else if (it.action == Action.RenounceOwnership) {
                 IOwnable(it.target).renounceOwnership();
             } else if (it.action == Action.TransferOwnership) {
                 IOwnable(it.target).transferOwnership(newOwner);
+            } else if (it.action == Action.GrantAdminToV2) {
+                IAccessControlMin(it.target).grantRole(DEFAULT_ADMIN, V2_ADMIN);
             } else {
                 IAccessControlMin(it.target).renounceRole(it.role, LEAKED);
             }
@@ -145,8 +167,9 @@ contract FreezeLegacyDeployments is Script {
         _verifyAll();
     }
 
-    /// @notice 廣播完成後對真實鏈重讀一次（唯讀，不需要私鑰）。
+    /// @notice 廣播完成後對真實鏈重讀一次（唯讀，不需要私鑰）。owner 落到計畫外地址會 revert。
     ///         FREEZE_CHAIN=sepolia forge script script/FreezeLegacyDeployments.s.sol --sig "verify()" --rpc-url <RPC>
+    ///         Base 要同時帶 ADAPTER_NEW_OWNER（＝移交時用的同一個），否則 owner 比對會失敗。
     function verify() external {
         _build();
         _verifyAll();
@@ -159,6 +182,8 @@ contract FreezeLegacyDeployments is Script {
     function _build() internal {
         delete items;
         delete keeps;
+        newOwner = address(0);
+        requiresV2AdminProof = false;
         string memory chain = vm.envString("FREEZE_CHAIN");
         bytes32 c = keccak256(bytes(chain));
         if (c == keccak256("sepolia")) {
@@ -173,6 +198,15 @@ contract FreezeLegacyDeployments is Script {
     }
 
     function _planSepolia() internal {
+        requiresV2AdminProof = true;
+
+        // ── 0. C1/M6：兩顆 82c68d9 版 exchange 有已知會計缺陷，放棄 owner 前必須先停用 FeeRouter。──
+        //     這一步排在批次最前面；verify 會檢查 feeRouter()==0。其餘舊 exchange 是 907a6b6 版，
+        //     沒有這個缺陷，也不碰它們的 FeeRouter（原始碼未逐行審，貿然清掉可能使平倉 revert）。
+        string memory r0 = "known accounting defect in this exchange build (82c68d9); FeeRouter must be disabled before owner is renounced, after which the fix is impossible";
+        _feeRouter("PerpetualExchange (current) setFeeRouter(0)", 0x0c6459d38617E60017bDc4ed69ec26137DA5c32b, r0);
+        _feeRouter("PerpetualExchange (old 0x4cC7) setFeeRouter(0)", 0x4cC711AEa7c6D7E19e99676b51b7A69ee08c31Eb, r0);
+
         // ── 1. V2 硬化金庫：外洩金鑰能升級代理（UUPS）、改風控、改價，最危險，先處理 ──
         //     另一個 DEFAULT_ADMIN（V2_ADMIN）仍在，所以兩顆都不會變成無 admin。
         string memory r1 = "V2 admin/keeper/guardian already held by separated keys (ROLE_SEPARATION.md); leaked copy is pure liability";
@@ -183,17 +217,28 @@ contract FreezeLegacyDeployments is Script {
         _role("AssetVaultV2", S_ASSET_VAULT_V2, PAUSER_ROLE, r1);
         _role("AssetVaultV2", S_ASSET_VAULT_V2, DEFAULT_ADMIN, r1);
 
-        // ── 2. 8 顆 SyntheticAssetV2：外洩金鑰是唯一 admin，可以給自己 MINTER 增發後向金庫贖回 ──
-        //     刻意無 admin：唯一的 MINTER 是金庫代理（位址不會因升級改變），之後不需要再授權。
-        string memory r2 = "leaked key is SOLE admin and could grant itself MINTER then redeem against AssetVaultV2; MINTER stays with vault proxy";
-        _roleNoAdmin("sBTC (V2)",  0xeCF271592C0D64663906318f250d49c255E332Ac, r2);
-        _roleNoAdmin("sETH (V2)",  0x576856E68FdE8D586EAa2E2c21e74c4D37587e8F, r2);
-        _roleNoAdmin("sAAPL (V2)", 0x84C27703db71062061364E5B8E015139b2ac0163, r2);
-        _roleNoAdmin("sTSLA (V2)", 0x0e8b6478038876741925A5B7A571596E6f4a695E, r2);
-        _roleNoAdmin("sGOLD (V2)", 0xc97b8195cBd00fec5D3aAb103C9E313414B11a10, r2);
-        _roleNoAdmin("sBOND (V2)", 0xb84C17a704F9e7d96c3aF84Df05C6a8da5c344eb, r2);
-        _roleNoAdmin("sNVDA (V2)", 0xB5586Ef5bBA7DAa698a4a6745C9D46F0b3bECfeE, r2);
-        _roleNoAdmin("sMSFT (V2)", 0xCB2c5c834f1f0d54E6Da1f3628B1c624aAa750cf, r2);
+        // ── 2. 8 顆 SyntheticAssetV2：外洩金鑰是唯一 admin。兩階段（M4）：──
+        //     先把 admin 授給 V2_ADMIN、外洩地址再 renounce，確認沒有後門後由 V2_ADMIN 自行 renounce
+        //     （phase 2 由 V2_ADMIN 金鑰做，見 runbook）。這樣中途若被插入後門，仍有 admin 能撤銷。
+        //     MINTER 永遠只在金庫代理手上（位址不因升級改變）。
+        string memory r2 = "leaked key is sole admin; hand admin to V2_ADMIN then leaked renounces (two-phase, see runbook); MINTER stays with vault proxy";
+        address[8] memory synthV2 = [
+            0xeCF271592C0D64663906318f250d49c255E332Ac, // sBTC
+            0x576856E68FdE8D586EAa2E2c21e74c4D37587e8F, // sETH
+            0x84C27703db71062061364E5B8E015139b2ac0163, // sAAPL
+            0x0e8b6478038876741925A5B7A571596E6f4a695E, // sTSLA
+            0xc97b8195cBd00fec5D3aAb103C9E313414B11a10, // sGOLD
+            0xb84C17a704F9e7d96c3aF84Df05C6a8da5c344eb, // sBOND
+            0xB5586Ef5bBA7DAa698a4a6745C9D46F0b3bECfeE, // sNVDA
+            0xCB2c5c834f1f0d54E6Da1f3628B1c624aAa750cf  // sMSFT
+        ];
+        string[8] memory synthName =
+            [string("sBTC"), "sETH", "sAAPL", "sTSLA", "sGOLD", "sBOND", "sNVDA", "sMSFT"];
+        for (uint256 i = 0; i < synthV2.length; i++) {
+            _grantAdmin(string.concat(synthName[i], " (V2) grant admin->V2_ADMIN"), synthV2[i], r2);
+            _role(string.concat(synthName[i], " (V2) leaked renounce"), synthV2[i], DEFAULT_ADMIN, r2);
+            _keepRole(string.concat(synthName[i], " MINTER = AssetVaultV2"), synthV2[i], MINTER_ROLE, S_ASSET_VAULT_V2);
+        }
 
         // ── 3. 前端 Sepolia（legacy demo）現行 V1 合約：renounce ──
         //     使用者的提領／平倉／贖回／解除質押都不需要 owner；owner 只剩改參數與接線的能力。
@@ -219,7 +264,7 @@ contract FreezeLegacyDeployments is Script {
         _own("PerpetualExchange (2026-05 #1)", 0x00f6cf0113399a7A451c7f85fe094a28092d3e0c, r4);
         _own("PerpetualExchange (old)", 0xb3e978E96e36FeDa703827D9dfE142d502C3bd1d, r4);
         _own("PerpetualExchange (old)", 0xc100f942366305E2917d5a7B5eD0F5F1E930a49c, r4);
-        _own("PerpetualExchange (old)", 0x4cC711AEa7c6D7E19e99676b51b7A69ee08c31Eb, r4);
+        _own("PerpetualExchange (old 0x4cC7)", 0x4cC711AEa7c6D7E19e99676b51b7A69ee08c31Eb, r4);
         _own("PerpetualExchange (never wired)", 0xdC5cc6Ab502d8D8F648eCc2D9F130F68F7C306b4, r4);
         _own("PerpetualExchange (old)", 0xF2A6F7B684BEB8554df34A4463143B6408FB6F84, r4);
         _own("FeeRouter (old)",   0x0FfA7f279fED4E19b3018A4461A8F387aA6c16C2, r4);
@@ -258,48 +303,80 @@ contract FreezeLegacyDeployments is Script {
         _keepRole("AssetVaultV2 risk", S_ASSET_VAULT_V2, RISK_ROLE, V2_RISK);
         _keepRole("AssetVaultV2 pauser", S_ASSET_VAULT_V2, PAUSER_ROLE, V2_GUARDIAN);
         _keepOwner("MockOracle owner = keeper (price-keeper.yml)", S_MOCK_ORACLE, V2_KEEPER);
-        for (uint256 i = 0; i < items.length; i++) {
-            if (items[i].intentionalNoAdmin) {
-                _keepRole(string.concat(items[i].label, " MINTER = AssetVaultV2"), items[i].target, MINTER_ROLE, S_ASSET_VAULT_V2);
-            }
-        }
     }
 
     function _planBaseSepolia() internal {
-        // Base 上只剩三顆 oracle adapter 由外洩金鑰持有。鏈上沒有任何合約指向它們，但有兩條
-        // 鏈下依賴：base-sepolia-keeper.yml 的 KEEPER_RELAY_SOURCE 是 AggregatorOracle（keeper
-        // 優先讀它、再中繼進現行交易所讀的 MockOracle），ops/monitoring 的 oracleDeviation 也把它
-        // 當參考價。owner 能 setFeed／setPriceId 把來源指向任意合約，等於能經由 keeper 影響現行
-        // 交易所的價格，所以要拿走；來源之後仍需要維護，因此預設移交（ADAPTER_NEW_OWNER）而不是放棄。
+        // Base 上只剩三顆 oracle adapter 由外洩金鑰持有。鏈上沒有合約指向它們，但 keeper 曾把
+        // AggregatorOracle 當中繼來源、監控把它當參考價，owner 能改 feed。因此要拿走；來源之後仍
+        // 需要維護，所以預設移交（ADAPTER_NEW_OWNER），不是放棄。
         bool renounce = vm.envOr("ADAPTER_RENOUNCE", false);
+        string memory r = "keeper relay source / monitoring reference; owner could repoint feeds";
         if (!renounce) {
             newOwner = vm.envOr("ADAPTER_NEW_OWNER", address(0));
-            if (newOwner == address(0) || newOwner == LEAKED) revert BadNewOwner(newOwner);
+            _validateNewOwner(newOwner);
         }
-        string memory r = "keeper relay source (KEEPER_RELAY_SOURCE) and monitoring reference; owner could point feeds anywhere";
-        _adapter("ChainlinkOracleAdapter", 0x37DC7b70899BFfB17949366a5b6a86203C428E2f, renounce, r);
-        _adapter("PythOracleAdapter",      0x551C0B2e75a9129fe697210223F1Ca6e64F3C6d5, renounce, r);
-        _adapter("AggregatorOracleAdapter", 0x8215158642350a3f329aB9597186d21f957A813D, renounce, r);
+        _adapter("ChainlinkOracleAdapter", B_CHAINLINK, renounce, r);
+        _adapter("PythOracleAdapter",      B_PYTH,      renounce, r);
+        _adapter("AggregatorOracleAdapter", B_AGGREGATOR, renounce, r);
 
         _keepOwner("Base MockOracle owner = keeper (price-keeper-base)", B_MOCK_ORACLE, V2_KEEPER);
+    }
+
+    /// M2：adapter 新 owner 必須是 EOA（或 7702 委派）、不得在拒絕清單、且要二次確認。
+    function _validateNewOwner(address a) internal view {
+        if (a == address(0)) revert BadNewOwner(a, "zero");
+        if (_rejected(a)) revert BadNewOwner(a, "on reject list (leaked/adapter/platform/anvil default)");
+        uint256 size = a.code.length;
+        // EOA = 0；EIP-7702 委派帳戶 = 23 bytes 且以 0xef0100 開頭，另外允許。
+        if (size != 0) {
+            if (size != 23 || a.code[0] != 0xef || a.code[1] != 0x01 || a.code[2] != 0x00) {
+                revert BadNewOwner(a, "has contract code (must be EOA or EIP-7702 account)");
+            }
+        }
+        // 二次確認：ADAPTER_NEW_OWNER_CONFIRM 必須等於 ADAPTER_NEW_OWNER。
+        address confirm = vm.envOr("ADAPTER_NEW_OWNER_CONFIRM", address(0));
+        if (confirm != a) revert NewOwnerUnconfirmed();
+    }
+
+    function _rejected(address a) internal pure returns (bool) {
+        if (a == LEAKED || a == B_CHAINLINK || a == B_PYTH || a == B_AGGREGATOR) return true;
+        if (a == S_GUARDED_ORACLE || a == S_ASSET_VAULT_V2 || a == S_MOCK_ORACLE || a == B_MOCK_ORACLE) return true;
+        // anvil 預設助記詞帳號 0–9（公開私鑰）
+        if (a == 0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266) return true;
+        if (a == 0x70997970C51812dc3A010C7d01b50e0d17dc79C8) return true;
+        if (a == 0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC) return true;
+        if (a == 0x90F79bf6EB2c4f870365E785982E1f101E93b906) return true;
+        if (a == 0x15d34AAf54267DB7D7c367839AAf71A00a2C6A65) return true;
+        if (a == 0x9965507D1a55bcC2695C58ba16FB37d819B0A4dc) return true;
+        if (a == 0x976EA74026E726554dB657fA54763abd0C3a0aa9) return true;
+        if (a == 0x14dC79964da2C08b23698B3D3cc7Ca32193d9955) return true;
+        if (a == 0x23618e81E3f5cdF7f54C3d65f7FBc0aBf5B21E8f) return true;
+        if (a == 0xa0Ee7A142d267C1f36714E4a8F75612F20a79720) return true;
+        return false;
     }
 
     // ── 建表小工具 ────────────────────────────────────────────────────────────
 
     function _own(string memory label, address t, string memory reason) internal {
-        items.push(Item(label, t, Action.RenounceOwnership, 0, reason, false));
+        items.push(Item(label, t, Action.RenounceOwnership, 0, reason));
     }
 
     function _adapter(string memory label, address t, bool renounce, string memory reason) internal {
-        items.push(Item(label, t, renounce ? Action.RenounceOwnership : Action.TransferOwnership, 0, reason, false));
+        items.push(Item(label, t, renounce ? Action.RenounceOwnership : Action.TransferOwnership, 0, reason));
     }
 
     function _role(string memory label, address t, bytes32 role, string memory reason) internal {
-        items.push(Item(label, t, Action.RenounceRole, role, reason, false));
+        items.push(Item(label, t, Action.RenounceRole, role, reason));
     }
 
-    function _roleNoAdmin(string memory label, address t, string memory reason) internal {
-        items.push(Item(label, t, Action.RenounceRole, DEFAULT_ADMIN, reason, true));
+    function _grantAdmin(string memory label, address t, string memory reason) internal {
+        // 執行後 V2_ADMIN 持有 admin 由 _verifyAll 的 GrantAdminToV2 分支確認；
+        // 不放進保留清單，否則執行「前」V2_ADMIN 還沒拿到 admin，_checkKeeps 會誤判。
+        items.push(Item(label, t, Action.GrantAdminToV2, DEFAULT_ADMIN, reason));
+    }
+
+    function _feeRouter(string memory label, address t, string memory reason) internal {
+        items.push(Item(label, t, Action.DisableFeeRouter, 0, reason));
     }
 
     function _keepRole(string memory label, address t, bytes32 role, address holder) internal {
@@ -315,6 +392,12 @@ contract FreezeLegacyDeployments is Script {
     // ════════════════════════════════════════════════════════════════════════
 
     function _state(Item storage it) internal view returns (State) {
+        if (it.action == Action.DisableFeeRouter) {
+            return IFeeRouterSettable(it.target).feeRouter() == address(0) ? State.Done : State.Pending;
+        }
+        if (it.action == Action.GrantAdminToV2) {
+            return IAccessControlMin(it.target).hasRole(DEFAULT_ADMIN, V2_ADMIN) ? State.Done : State.Pending;
+        }
         if (it.action == Action.RenounceRole) {
             return IAccessControlMin(it.target).hasRole(it.role, LEAKED) ? State.Pending : State.Done;
         }
@@ -322,7 +405,7 @@ contract FreezeLegacyDeployments is Script {
         if (o == LEAKED) return State.Pending;
         if (it.action == Action.RenounceOwnership && o == address(0)) return State.Done;
         if (it.action == Action.TransferOwnership && o == newOwner) return State.Done;
-        return State.NotHeld; // 已被別人接手（例如先前手動移交）：不碰
+        return State.NotHeld; // 已被別人接手：不碰，但 verify 會把計畫外的 owner 當異常
     }
 
     function _printPlan() internal view {
@@ -335,19 +418,22 @@ contract FreezeLegacyDeployments is Script {
             Item storage it = items[i];
             State s = _state(it);
             if (s == State.Pending) pending++;
-            string memory act = it.action == Action.RenounceOwnership
-                ? "renounceOwnership()"
-                : it.action == Action.TransferOwnership
-                    ? "transferOwnership(newOwner)"
-                    : string.concat("renounceRole(", _roleName(it.role), ")");
+            string memory act = _actName(it);
             string memory st = s == State.Pending ? "PENDING" : s == State.Done ? "done" : "not-held(skip)";
             console.log(string.concat(
-                "  [", vm.toString(i + 1), "] ", st, "  ", it.label, " ", vm.toString(it.target), "  ", act,
-                it.intentionalNoAdmin ? "  [INTENTIONAL: no admin afterwards]" : ""
+                "  [", vm.toString(i + 1), "] ", st, "  ", it.label, " ", vm.toString(it.target), "  ", act
             ));
             console.log(string.concat("        why: ", it.reason));
         }
         console.log(string.concat(unicode"   待處理 ", vm.toString(pending), unicode" 筆"));
+    }
+
+    function _actName(Item storage it) internal view returns (string memory) {
+        if (it.action == Action.DisableFeeRouter) return "setFeeRouter(address(0))";
+        if (it.action == Action.RenounceOwnership) return "renounceOwnership()";
+        if (it.action == Action.TransferOwnership) return "transferOwnership(newOwner)";
+        if (it.action == Action.GrantAdminToV2) return "grantRole(DEFAULT_ADMIN, V2_ADMIN)";
+        return string.concat("renounceRole(", _roleName(it.role), ", leaked)");
     }
 
     function _checkKeeps(string memory phase) internal view {
@@ -361,53 +447,65 @@ contract FreezeLegacyDeployments is Script {
         console.log(string.concat(unicode"   保留清單（", phase, unicode"）全部成立：", vm.toString(keeps.length), unicode" 項"));
     }
 
-    /// 放棄 DEFAULT_ADMIN 前：除了刻意無 admin 的項目，保留清單裡必須有同一合約的另一個 admin。
+    /// M4：AssetVaultV2 的 implementation slot 執行前後都必須等於已知實作，防止執行期間被偷換。
+    ///     這顆 UUPS 代理只在 Sepolia，Base 沒有可釘的代理。
+    function _checkImplPins(string memory phase) internal view {
+        if (block.chainid != SEPOLIA) return;
+        address impl = address(uint160(uint256(vm.load(S_ASSET_VAULT_V2, IMPL_SLOT))));
+        if (impl != S_VAULT_V2_IMPL) revert ImplChanged(S_ASSET_VAULT_V2, impl, S_VAULT_V2_IMPL);
+        console.log(string.concat(unicode"   AssetVaultV2 implementation（", phase, unicode"）未被更換 ✓"));
+    }
+
+    /// 放棄 DEFAULT_ADMIN 前：要嘛保留清單已有另一個 admin，要嘛計畫中先把 admin 授給 V2_ADMIN。
     function _checkAdminsBeforeRenounce() internal view {
         for (uint256 i = 0; i < items.length; i++) {
             Item storage it = items[i];
-            if (it.action != Action.RenounceRole || it.role != DEFAULT_ADMIN || it.intentionalNoAdmin) continue;
+            if (it.action != Action.RenounceRole || it.role != DEFAULT_ADMIN) continue;
             bool found;
-            for (uint256 j = 0; j < keeps.length; j++) {
+            // (a) 已有另一個 admin 的保留清單項目
+            for (uint256 j = 0; j < keeps.length && !found; j++) {
                 Keep storage k = keeps[j];
                 if (k.target == it.target && !k.isOwner && k.role == DEFAULT_ADMIN && k.holder != LEAKED
-                    && IAccessControlMin(k.target).hasRole(DEFAULT_ADMIN, k.holder)) {
-                    found = true;
-                    break;
-                }
+                    && IAccessControlMin(k.target).hasRole(DEFAULT_ADMIN, k.holder)) found = true;
+            }
+            // (b) 計畫中先把 admin 授給 V2_ADMIN（同一合約的 GrantAdminToV2）
+            for (uint256 j = 0; j < items.length && !found; j++) {
+                if (items[j].action == Action.GrantAdminToV2 && items[j].target == it.target) found = true;
             }
             if (!found) revert OtherAdminMissing(it.label, it.target);
         }
     }
 
     function _verifyAll() internal view {
-        uint256 bad;
+        _checkImplPins(unicode"執行後");
         for (uint256 i = 0; i < items.length; i++) {
             Item storage it = items[i];
-            if (it.action == Action.RenounceRole) {
+            if (it.action == Action.DisableFeeRouter) {
+                if (IFeeRouterSettable(it.target).feeRouter() != address(0)) revert FeeRouterNotDisabled(it.label, it.target);
+            } else if (it.action == Action.RenounceRole) {
                 if (IAccessControlMin(it.target).hasRole(it.role, LEAKED)) revert StillHeld(it.label, it.target);
+            } else if (it.action == Action.GrantAdminToV2) {
+                if (!IAccessControlMin(it.target).hasRole(DEFAULT_ADMIN, V2_ADMIN)) revert KeepBroken(it.label, it.target, V2_ADMIN);
             } else {
                 address o = IOwnable(it.target).owner();
                 if (o == LEAKED) revert StillHeld(it.label, it.target);
                 address want = it.action == Action.TransferOwnership ? newOwner : address(0);
-                if (o != want) {
-                    // 不是外洩地址就達成凍結目的；但與計畫不符要讓人看見。
-                    console.log(string.concat(unicode"   注意：", it.label, unicode" owner 不是預期值：", vm.toString(o)));
-                    bad++;
-                }
+                // L10：owner 落到任何計畫外地址（後門）都當失敗，不只印警告。
+                if (o != want) revert UnexpectedOwner(it.label, it.target, o, want);
             }
         }
-        // 外洩地址在每一顆項目合約上，連其他已知角色也不能持有。
+        // 外洩地址在每一顆角色型項目的合約上，連其他已知角色也不能持有。
         bytes32[6] memory all = [DEFAULT_ADMIN, KEEPER_ROLE, GUARDIAN_ROLE, RISK_ROLE, PAUSER_ROLE, MINTER_ROLE];
         for (uint256 i = 0; i < items.length; i++) {
-            if (items[i].action != Action.RenounceRole) continue;
+            Action a = items[i].action;
+            if (a != Action.RenounceRole && a != Action.GrantAdminToV2) continue;
             for (uint256 r = 0; r < all.length; r++) {
                 if (IAccessControlMin(items[i].target).hasRole(all[r], LEAKED)) revert StillHeld(items[i].label, items[i].target);
             }
         }
         _checkKeeps(unicode"執行後");
         console.log(string.concat(
-            unicode"== 讀回完成：外洩地址在 ", vm.toString(items.length), unicode" 個項目上都已無權限",
-            bad == 0 ? "" : string.concat(unicode"（", vm.toString(bad), unicode" 項 owner 與預期不同，見上方）")
+            unicode"== 讀回完成：外洩地址在 ", vm.toString(items.length), unicode" 個項目上都已無權限，owner 全部落在計畫內"
         ));
     }
 
@@ -430,5 +528,11 @@ interface IOwnable {
 
 interface IAccessControlMin {
     function hasRole(bytes32 role, address account) external view returns (bool);
+    function grantRole(bytes32 role, address account) external;
     function renounceRole(bytes32 role, address callerConfirmation) external;
+}
+
+interface IFeeRouterSettable {
+    function feeRouter() external view returns (address);
+    function setFeeRouter(address _feeRouter) external;
 }

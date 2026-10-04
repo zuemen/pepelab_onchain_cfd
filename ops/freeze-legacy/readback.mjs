@@ -71,13 +71,32 @@ async function rpc(method, params) {
       }
       return { result: j.result };
     } catch (e) {
-      if (attempt === 4) throw e;
+      if (attempt === 4) return { error: { message: String(e && e.message || e) } };
       await new Promise((s) => setTimeout(s, 1500));
     }
   }
-  return { error: "rate limited" };
+  return { error: { message: "rate limited after retries" } };
 }
-const call = async (to, data) => (await rpc("eth_call", [{ to, data }, "latest"])).result;
+// M5：區分「函式不存在（execution reverted，code 3）」與「RPC 真的壞了」。
+// 前者回傳 undefined（這顆合約沒有這個 getter）；後者絕不可當成「沒有權限」，一律 exit 2。
+let okCalls = 0;
+function dieRpc(what, err) {
+  console.error(`RPC 錯誤（${what}）：${JSON.stringify(err)} — 無法判定權限，請換節點重跑。`);
+  process.exit(2);
+}
+const isRevert = (err) => {
+  const s = JSON.stringify(err).toLowerCase();
+  return err.code === 3 || /execution reverted|revert|out of gas|invalid opcode/.test(s);
+};
+const call = async (to, data) => {
+  const { result, error } = await rpc("eth_call", [{ to, data }, "latest"]);
+  if (error) {
+    if (isRevert(error)) return undefined;   // 合約沒有這個函式
+    dieRpc(`eth_call ${to} ${data.slice(0, 10)}`, error);
+  }
+  okCalls++;
+  return result;
+};
 const isLeakAddr = (ret) => typeof ret === "string" && ret.length === 66 && ret.slice(26).toLowerCase() === LEAK.slice(2);
 const isTrue = (ret) => typeof ret === "string" && ret.length === 66 && BigInt(ret) === 1n;
 
@@ -121,30 +140,52 @@ const ALLOWED = new Set([
 ]);
 let unexpected = 0;
 if (process.env.LOGS_RPC) {
-  const logsRpc = async (topics) => {
+  const logsRpc = async (filter) => {
     const r = await fetch(process.env.LOGS_RPC, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "eth_getLogs", params: [{ fromBlock: "0x0", toBlock: "latest", topics }] }),
-    });
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "eth_getLogs", params: [{ fromBlock: "0x0", toBlock: "latest", ...filter }] }),
+    }).catch((e) => { dieRpc("LOGS_RPC fetch", { message: String(e && e.message || e) }); });
     const j = await r.json();
-    if (j.error) throw new Error(`LOGS_RPC: ${JSON.stringify(j.error)}`);
+    if (j.error) dieRpc("LOGS_RPC eth_getLogs", j.error);
     return j.result;
   };
   const RG = "0x2f8788117e7eff1d82e926ec794901d17c78024a50270940304540a733656f0d";
   const OT = "0x8be0079c531659141344cd1fd0a4f28419497f9722a3daafe3b4186f6b6457e0";
+  const UPGRADED = "0xbc7cd75a20ee27fd9adebab32041f755214dbc6bffa90cc0225b39da2e5c2d3b";       // ERC1967 Upgraded(address)
+  const ADMIN_CHANGED = "0x7e644d79422f17c01e4894b5f4f588d331ebfa28653d42ae832dc59e38c9798f"; // AdminChanged(address,address)
+  const KNOWN_IMPL = "0xa8a5b0e9c062e0bb1ab3a15788ae823251c41ac1"; // AssetVaultV2 已知實作
   const pad = "0x" + leakWord;
-  const grants = await logsRpc([RG, null, null, pad]);
-  const transfers = await logsRpc([OT, pad]);
+  const grants = await logsRpc({ topics: [RG, null, null, pad] });
+  const transfers = await logsRpc({ topics: [OT, pad] });
   const bad = [];
   for (const l of grants) { const to = "0x" + l.topics[2].slice(26); if (!ALLOWED.has(to)) bad.push(`RoleGranted ${l.address} role ${l.topics[1].slice(0, 10)}… → ${to}（block ${Number(l.blockNumber)}）`); }
   for (const l of transfers) { const to = "0x" + l.topics[2].slice(26); if (!ALLOWED.has(to)) bad.push(`OwnershipTransferred ${l.address} → ${to}（block ${Number(l.blockNumber)}）`); }
+  // M4：代理被 upgradeToAndCall 到惡意實作只會發 Upgraded／AdminChanged，不會發 RoleGranted。
+  // 只掃我們凍結角色的那顆 UUPS 代理（Sepolia 的 AssetVaultV2）：掃全盤點會混進 OP 系統合約、
+  // Circle USDC、Base 版本沿革等無關升級，純噪音。這顆的 Upgraded 應只有建構時那一次、且實作 = 已知值。
+  const PROXIES = { sepolia: ["0x3a37415981f6f4fc27fa6c8c62f1d4e47115fd17"], base: [] }[chainKey] || [];
+  let upgrades = [], adminChanges = [];
+  if (PROXIES.length) {
+    upgrades = await logsRpc({ address: PROXIES, topics: [UPGRADED] });
+    adminChanges = await logsRpc({ address: PROXIES, topics: [ADMIN_CHANGED] });
+    // 只看「最後一次」升級：代理歷經多版是正常的（slot pin 已保證目前實作正確）。
+    // 若最後一次升級的實作不是已知值，才是異常（配合 script 的 impl-slot pin 雙重確認）。
+    const lastUp = upgrades.slice().sort((a, b) => Number(a.blockNumber) - Number(b.blockNumber)).pop();
+    if (lastUp) { const impl = "0x" + lastUp.topics[1].slice(26); if (impl !== KNOWN_IMPL) bad.push(`最後一次 Upgraded ${lastUp.address} → impl ${impl}（block ${Number(lastUp.blockNumber)}）`); }
+    for (const l of adminChanges) { bad.push(`AdminChanged ${l.address}（block ${Number(l.blockNumber)}）— 代理 admin 換手，需人工確認`); }
+  }
   unexpected = bad.length;
-  console.log(`[${chainArg}] 外洩金鑰送出的授權／轉移：RoleGranted ${grants.length} 筆、OwnershipTransferred ${transfers.length} 筆；指向計畫外地址 ${bad.length} 筆`);
-  if (bad.length) console.log("  " + bad.join("\n  ") + "\n  ↑ 這些地址可能是搶到金鑰的人留下的後門，凍結外洩地址擋不住它們，需另行處理。");
+  console.log(`[${chainArg}] 事件掃描：RoleGranted(sender=leak) ${grants.length}、OwnershipTransferred(prev=leak) ${transfers.length}、Upgraded ${upgrades.length}、AdminChanged ${adminChanges.length}；可疑 ${bad.length} 筆`);
+  if (bad.length) console.log("  " + bad.join("\n  ") + "\n  ↑ 計畫外的授權／移交／升級，凍結外洩地址擋不住，需另行處理。");
+} else {
+  console.log(`[${chainArg}] 注意：未設 LOGS_RPC，略過事件掃描（計畫外授權／升級無法偵測）。驗收時必須設 LOGS_RPC（見 runbook §7.4）。`);
 }
 
-console.log(`[${chainArg}] 讀回 ${chain.contracts.length} 顆合約（盤點全集，不只凍結計畫）`);
+// M5：整輪一個成功的 eth_call 都沒有，代表 RPC 壞了或接錯鏈，不能當成「都沒有權限」。
+if (okCalls === 0) dieRpc("整輪沒有任何成功的 eth_call", { message: "0 ok calls" });
+
+console.log(`[${chainArg}] 讀回 ${chain.contracts.length} 顆合約（盤點全集，不只凍結計畫）；成功 eth_call ${okCalls} 次`);
 if (held.length) {
   console.log(`外洩地址仍持有 ${held.length} 顆：\n  ${held.join("\n  ")}`);
 } else {

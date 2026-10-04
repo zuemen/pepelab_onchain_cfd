@@ -14,15 +14,18 @@
 == A. 使用者資金路徑（凍結後）
   PASS  PerpetualExchange(現行 Sepolia) 持有人 #1 withdrawMargin(1,000) — freeMargin 前 <略>
         錢包 mUSDC 增加 <略>
-  PASS  PerpetualExchange(現行 Sepolia) 持有人 #1 closePosition(#31)
-  PASS  InsuranceVault(現行 Sepolia) 持有人 withdraw(全部 shares)
+  PASS  PerpetualExchange(現行 Sepolia) 持有人 #1 closePosition(#<略>)
+  PASS  InsuranceVault(現行 Sepolia) 持有人 withdraw(全部 <略> shares)
         錢包 mUSDC 增加 <略>
-  PASS  TraderStake(現行 Sepolia) 持有人 requestUnstake(<全部>)
+  PASS  TraderStake(現行 Sepolia) 持有人 requestUnstake(<略>)
   PASS  TraderStake executeUnstake()（快轉 1 天冷卻）
         錢包 mUSDC 增加 <略>
-  PASS  舊 PerpetualExchange 0x4cC7 非外洩持有人 closePosition(#0)（舊 oracle 已無 owner，以凍結價結算）
+  PASS  舊 PerpetualExchange 0x4cC7 非外洩持有人 closePosition(#<略>)（舊 oracle 已無 owner，以凍結價結算）
   PASS  舊 PerpetualExchange 0x4cC7 非外洩持有人 withdrawMargin(全額 <略>)
         錢包舊 mUSDC 增加 <略>
+== C1 修補：82c68d9 版 exchange 的 FeeRouter 已停用（放棄 owner 前必做，見 runbook §4）
+  PASS  現行 exchange 0x0c64 feeRouter()==0
+  PASS  舊 exchange 0x4cC7 feeRouter()==0
 == C. 外洩金鑰已無法動手
   PASS  外洩地址 grantRole(KEEPER) on GuardedOracle（revert，符合預期）
   PASS  外洩地址 grantRole(MINTER) on sAAPL(V2)（revert，符合預期）
@@ -30,4 +33,4 @@
   PASS  外洩地址 updatePrice on 舊 MockOracle 0x3f1E（revert，符合預期）
   PASS  外洩地址 setFeeRouter on 現行 Sepolia exchange（revert，符合預期）
   PASS  外洩地址 mint PEPE（revert，符合預期）
-== 結果：PASS 21 / FAIL 0
+== 結果：PASS 23 / FAIL 0

@@ -70,6 +70,13 @@ fm=$(cast call $OLDEX "freeMargin(address)(uint256)" $H_OLD --rpc-url $R | awk '
 ok "$(send $H_OLD $OLDEX 'withdrawMargin(uint256)' $amt)" "舊 PerpetualExchange 0x4cC7 非外洩持有人 withdrawMargin(全額 $amt)"
 echo "        錢包舊 mUSDC 增加 $(calc "($(bal $OLDUSDC $H_OLD)-$b0)/1e18")"
 
+echo "== C1 修補：82c68d9 版 exchange 的 FeeRouter 已停用（放棄 owner 前必做，見 runbook §4）"
+for X in "$EX|現行 exchange 0x0c64" "$OLDEX|舊 exchange 0x4cC7"; do
+  addr=${X%%|*}; name=${X#*|}
+  fr=$(cast call $addr 'feeRouter()(address)' --rpc-url $R 2>/dev/null)
+  if [ "$fr" = "0x0000000000000000000000000000000000000000" ]; then echo "  PASS  $name feeRouter()==0"; pass=$((pass+1)); else echo "  FAIL  $name feeRouter()=$fr（未停用）"; fail=$((fail+1)); fi
+done
+
 echo "== C. 外洩金鑰已無法動手"
 mustfail "$(send $LEAK $GO 'grantRole(bytes32,address)' 0xfc8737ab85eb45125971625a9ebdb75cc78e01d5c1fa80c4c6e5203f47bc4fab $LEAK)" "外洩地址 grantRole(KEEPER) on GuardedOracle"
 mustfail "$(send $LEAK $SAAPL2 'grantRole(bytes32,address)' 0x9f2df0fed2c77648de5860a4cc508cd0818c85b8b8a1ab4ceeef8d981c8956a6 $LEAK)" "外洩地址 grantRole(MINTER) on sAAPL(V2)"

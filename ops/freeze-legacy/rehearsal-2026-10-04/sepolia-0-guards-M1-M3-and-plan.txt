@@ -1,0 +1,11 @@
+### M1: 廣播但不給 FREEZE_CONFIRM 應被 NotConfirmed 拒 ###
+    └─ ← [Revert] NotConfirmed("FREEZE-11155111")
+Error: script failed: NotConfirmed("FREEZE-11155111")
+### M3: 執行但不給 V2_ADMIN_PROVEN 應被 V2AdminNotProven 拒 ###
+    └─ ← [Revert] V2AdminNotProven()
+Error: script failed: V2AdminNotProven()
+### 計畫模式（dry plan，不需 env）###
+     項目數 68  保留檢查數 15
+     待處理 68 筆
+     保留清單（執行前）全部成立：15 項
+     AssetVaultV2 implementation（執行前）未被更換 ✓

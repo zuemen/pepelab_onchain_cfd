@@ -1,3 +1,0 @@
-# 對照組（唯讀 eth_call，非交易）：凍結前外洩地址在真實 Base Sepolia 上能否改 adapter 設定
-setFeed(sBTC, 任意) from LEAK on ChainlinkAdapter: 0x （0x = 成功，代表目前可被濫用）
-setMaxDeviationBps(10000) from LEAK on AggregatorOracle: 0x

@@ -1,0 +1,16 @@
+# M4 後門偵測演練（Sepolia 分叉）
+# 凍結『前』以外洩金鑰把 DEFAULT_ADMIN 授給測試後門地址 0x…bEEF（sBTC 與 AssetVaultV2），
+# 然後跑完整凍結。腳本自身 verify 仍通過（只檢查外洩地址，看不到後門）；
+# 不帶 LOGS_RPC 的 readback 也 exit 0（會漏）；帶 LOGS_RPC 的 readback 標出 2 筆可疑並 exit 1。
+
+### readback 不帶 LOGS_RPC（只看外洩地址，會漏掉後門）###
+[sepolia] 注意：未設 LOGS_RPC，略過事件掃描（計畫外授權／升級無法偵測）。驗收時必須設 LOGS_RPC（見 runbook §7.4）。
+[sepolia] 讀回 118 顆合約（盤點全集，不只凍結計畫）；成功 eth_call 234 次
+外洩地址已不持有任何 owner／pendingOwner／guardian／marketOperator／authorizedAgents／verifiers／已知角色
+platformTreasury（immutable，凍結無法處理，只能重部署）= 外洩地址：6 顆
+exit 0
+### readback 帶 LOGS_RPC=fork（應抓到 0xbEEF 後門，exit 1）###
+[sepolia] 事件掃描：RoleGranted(sender=leak) 38、OwnershipTransferred(prev=leak) 45、Upgraded 3、AdminChanged 0；可疑 4 筆
+[sepolia] 讀回 118 顆合約（盤點全集，不只凍結計畫）；成功 eth_call 234 次
+外洩地址已不持有任何 owner／pendingOwner／guardian／marketOperator／authorizedAgents／verifiers／已知角色
+exit 1
