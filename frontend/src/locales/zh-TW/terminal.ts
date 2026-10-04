@@ -115,6 +115,8 @@ export const terminal = {
     equity: '權益',
     freeMargin: '可用保證金',
     unrealizedPnl: '未實現 PnL',
+    /** 有部位讀不出數字時，權益與未實現 PnL 都顯示「—」，下面加這一句。 */
+    pnlPartial: '有部位目前無法估值（讀取失敗或價格不可用），合計不顯示。',
     wallet: '錢包 {token}',
     marginNote: '保證金以 USDC 結算 · USDT 僅供持有/兌換',
 
@@ -132,6 +134,12 @@ export const terminal = {
     tabFills: '成交紀錄',
     tabFunding: '資金費率',
     refresh: '↺ 重新整理',
+
+    /** 持倉每 30 秒輪詢一次；這三句告訴使用者畫面上的數字是什麼時候的。 */
+    updatedAt: '更新於 {time}',
+    staleData: '已超過 {sec} 秒沒有更新成功，數字可能已過期（最後更新 {time}）',
+    readFailed: '最近一次讀取失敗，顯示的是 {time} 的資料',
+    neverRead: '尚未讀到持倉',
   },
 
   positions: {
@@ -150,6 +158,11 @@ export const terminal = {
     closed: '已平倉 ✓',
     close: '平倉',
     stale: '價格過期',
+    /** 「標記價」欄與 PnL 欄的 tooltip（見 lib/pepefi/positionPnl.ts 檔頭）。 */
+    markHint:
+      '合約 getMarkPrice：index 價加上全平台多空失衡的溢價。部位自己的損益用的是排除自身名目的標記價，溢價上限大於 0 時兩者可能不同。',
+    pnlHint:
+      '現在平倉比保證金多拿或少拿多少（合約 getPositionValue − 保證金）：已扣平倉手續費、借貸費與應付資金費。不含部分部位獲利時另收的 10% 績效費；資金費以最後一次結算為準；不含穿倉補貼。',
   },
 
   fills: {

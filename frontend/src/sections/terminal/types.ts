@@ -1,4 +1,5 @@
 import type { useContracts } from 'src/hooks/useContracts'
+import type { PnlStatus } from 'src/lib/pepefi/positionPnl'
 
 import { parseEther } from 'ethers'
 
@@ -31,12 +32,14 @@ export interface Pos {
   entryPrice: bigint
   margin: bigint
   leverage: bigint
+  /** ok 才有數字；其餘（讀取失敗、無有效價格、價格過期）三個欄位都是 null，畫面顯示「—」。 */
+  status: PnlStatus
   /** 未實現損益：合約 getPositionValue − 保證金（見 lib/pepefi/positionPnl.ts）。 */
-  pnl: bigint
+  pnl: bigint | null
   /** 現在平倉拿回的金額（合約 getPositionValue）。 */
-  value: bigint
-  /** 合約 mark 價，18 位小數。 */
-  cur: bigint
+  value: bigint | null
+  /** 合約 mark 價（含全部 OI 的溢價），18 位小數。 */
+  cur: bigint | null
 }
 
 /**
@@ -44,7 +47,7 @@ export interface Pos {
  * 都對不起來；現在就是合約讀數 `pnl`，保留這個名字只是為了不動持倉表的介面。
  */
 export interface LivePos extends Pos {
-  livePnl: bigint
+  livePnl: bigint | null
 }
 
 export type TxResp = { wait(): Promise<unknown>; hash: string }

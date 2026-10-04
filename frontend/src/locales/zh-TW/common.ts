@@ -71,6 +71,8 @@ export const common = {
     settingsAria: '顯示設定',
     backToTopAria: '回到頁首',
     accountAvatarAria: '帳戶頭像',
+    accountButtonAria: '開啟帳戶選單',
+    signOut: '登出',
     needHelp: '需要協助？',
 
     settings: {
@@ -93,6 +95,9 @@ export const common = {
       fontSizeAria: '調整字級',
       fullscreen: '全螢幕',
       exitFullscreen: '離開全螢幕',
+      system: '跟隨系統',
+      navIntegrate: '融入',
+      navApparent: '突顯',
     },
 
     search: {
@@ -109,6 +114,19 @@ export const common = {
       body: '你要找的頁面不存在，可能是網址打錯了，請再確認一次。',
       home: '回到首頁',
     },
+  },
+
+  /**
+   * 部位損益讀不出數字時的三種原因（終端機、投資組合、市場動態共用）。數字欄顯示「—」，
+   * 原因放在旁邊或 tooltip——絕不補 0。見 lib/pepefi/positionPnl.ts。
+   */
+  pnlStatus: {
+    unreadable: '讀取失敗',
+    noPrice: '無有效價格',
+    stale: '價格過期',
+    unreadableHint: '這個部位的合約資料這次沒讀到（節點逾時或錯誤），不代表沒有損益。重新整理後再看。',
+    noPriceHint: '預言機目前沒有這個標的的有效價格（價格為 0），合約無法估算平倉價值，所以不顯示損益。',
+    staleHint: '預言機價格已超過合約允許的時間沒有更新；合約此時不接受平倉，所以不顯示損益。',
   },
 
   avatarPicker: {
@@ -191,6 +209,9 @@ export const common = {
    * 交易者等級。名稱刻意是「英文 中文」的雙語形式，逐字保留——英文那一半是
    * 排行榜與合約事件裡用的名字，中文那一半是給讀者的。
    */
+  /** 交易者等級徽章前面的小字（TraderRankBadge）。 */
+  rankPrefix: '等級',
+
   tier: {
     diamond: 'Diamond 鑽石',
     gold: 'Gold 黃金',

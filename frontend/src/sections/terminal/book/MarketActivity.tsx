@@ -5,6 +5,7 @@ import Box from '@mui/material/Box'
 import { t, interpolate } from 'src/locales'
 import { positionPnl } from 'src/lib/pepefi/positionPnl'
 import { fUsd, fNum, fromUnits } from 'src/lib/pepefi/format'
+import { pnlStatusText } from 'src/lib/pepefi/positionFreshness'
 
 import { C, monoCss, labelCss } from '../terminal-theme'
 
@@ -27,10 +28,17 @@ const hhmm = (unix: bigint) => {
 /**
  * 未實現損益：合約 getPositionValue − 保證金，跟下方持倉表、投資組合頁同一個定義
  * （lib/pepefi/positionPnl.ts）。以前用鏈下參考價自己重算，同一個部位在這裡、在持倉表、
- * 在投資組合會是三個數字。讀不到就是 null（顯示「—」），不補 0。
+ * 在投資組合會是三個數字。讀不到、價格為 0 或過期就是 null（顯示「—」＋原因），不補 0，
+ * 也不讓 oracle 價格為 0 時把所有人的部位畫成「保證金全虧」。
  */
-function unrealised(p: ActivityRow): bigint | null {
-  return positionPnl({ margin: p.margin, positionValue: p.positionValue ?? null, markPnl: null }).pnl
+export function unrealised(p: ActivityRow, nowSec = Math.floor(Date.now() / 1000)) {
+  return positionPnl({
+    margin: p.margin,
+    positionValue: p.positionValue ?? null,
+    oracle: p.oracle ?? null,
+    nowSec,
+    maxPriceAgeSec: p.maxPriceAgeSec,
+  })
 }
 
 export function MarketActivity({
@@ -86,7 +94,8 @@ export function MarketActivity({
       {rows.map((p) => {
         // 未平倉 → 合約的平倉淨額 − 保證金；已平倉 → 鏈上寫死的已實現損益。
         const live = p.isOpen ? unrealised(p) : null
-        const pnlRaw = p.isOpen ? live : p.realizedPnL
+        const pnlRaw = p.isOpen ? (live?.pnl ?? null) : p.realizedPnL
+        const why = live ? pnlStatusText(live.status) : null
         const pnl = pnlRaw === null ? null : fromUnits(pnlRaw, 18)
         return (
           <Box
@@ -119,6 +128,7 @@ export function MarketActivity({
                 較淡、後面掛一個 open 記號；已平倉的是粗體實數。只靠顏色不夠——
                 兩者都會是紅或綠。 */}
             <Box
+              title={pnl === null ? why?.hint : undefined}
               sx={{
                 textAlign: 'right',
                 color: pnl === null ? C.mut : pnl >= 0 ? C.green : C.red,
@@ -126,7 +136,7 @@ export function MarketActivity({
                 opacity: p.isOpen ? 0.75 : 1,
               }}
             >
-              {pnl === null ? '—' : `${p.isOpen ? '(' : ''}${fNum(pnl, { dp: 2, signed: true })}${p.isOpen ? ')' : ''}`}
+              {pnl === null ? `— ${why?.label ?? ''}` : `${p.isOpen ? '(' : ''}${fNum(pnl, { dp: 2, signed: true })}${p.isOpen ? ')' : ''}`}
               {p.isOpen && (
                 <Box component="span" sx={{ color: C.mut, fontSize: 9, ml: 0.4 }}>
                   {t.terminal.activity.openMarker}

@@ -62,6 +62,8 @@ export const common: Catalog['common'] = {
     settingsAria: 'Settings button',
     backToTopAria: 'Back to top',
     accountAvatarAria: 'Account avatar',
+    accountButtonAria: 'Account button',
+    signOut: 'Logout',
     needHelp: 'Need help?',
 
     settings: {
@@ -84,6 +86,9 @@ export const common: Catalog['common'] = {
       fontSizeAria: 'Change font size',
       fullscreen: 'Fullscreen',
       exitFullscreen: 'Exit',
+      system: 'System',
+      navIntegrate: 'Integrate',
+      navApparent: 'Apparent',
     },
 
     search: {
@@ -99,6 +104,15 @@ export const common: Catalog['common'] = {
       body: 'Sorry, we couldn’t find the page you’re looking for. Perhaps you’ve mistyped the URL? Be sure to check your spelling.',
       home: 'Go to home',
     },
+  },
+
+  pnlStatus: {
+    unreadable: 'read failed',
+    noPrice: 'no valid price',
+    stale: 'price stale',
+    unreadableHint: 'This position’s contract data could not be read this time (node timeout or error). It does not mean there is no PnL — refresh to try again.',
+    noPriceHint: 'The oracle has no valid price for this asset right now (price is 0), so the contract cannot value the position and no PnL is shown.',
+    staleHint: 'The oracle price is older than the contract allows; the contract will not accept a close right now, so no PnL is shown.',
   },
 
   avatarPicker: {
@@ -174,6 +188,8 @@ export const common: Catalog['common'] = {
    * 的名字，中文那一半是給讀者的說明。en 版讀者已經看得懂那個英文名字本身，不需要
    * 再翻出第二份說明，所以就是單一個字。
    */
+  rankPrefix: 'RANK',
+
   tier: {
     diamond: 'Diamond',
     gold: 'Gold',

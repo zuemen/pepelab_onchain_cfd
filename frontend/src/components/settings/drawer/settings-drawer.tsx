@@ -105,7 +105,7 @@ export function SettingsDrawer({ sx, defaultSettings }: SettingsDrawerProps) {
               fontWeight: 'fontWeightSemiBold',
             }}
           >
-            System
+            {t.common.shell.settings.system}
           </Label>
         ) : null
       }
@@ -227,12 +227,12 @@ export function SettingsDrawer({ sx, defaultSettings }: SettingsDrawerProps) {
             }}
             options={[
               {
-                label: 'Integrate',
+                label: t.common.shell.settings.navIntegrate,
                 value: 'integrate',
                 icon: <SvgIcon>{settingIcons.sidebarOutline}</SvgIcon>,
               },
               {
-                label: 'Apparent',
+                label: t.common.shell.settings.navApparent,
                 value: 'apparent',
                 icon: <SvgIcon>{settingIcons.sidebarFill}</SvgIcon>,
               },

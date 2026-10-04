@@ -8,6 +8,9 @@
  *   1. JSX 文字節點：<Button>Connect Wallet</Button>
  *   2. 顯示用屬性的字串字面值：label="…" title="…" placeholder="…" aria-label="…" alt="…"
  *   3. JSX 大括號裡直接寫的字串：{'Loading…'}、{cond ? 'Yes' : 'No'}
+ *   4. 物件字面值裡顯示用的屬性：{ label: 'Exchange', to: '/exchange' }——之後被
+ *      `.map()` 成 `{link.label}` 的那種清單（2026-10 審查 M4：首頁快速連結就是這樣漏掉的）。
+ *      只看 OBJECT_DISPLAY_KEYS 列的鍵名；`key`、`to`、`icon` 這類不是顯示文字。
  *
  * 只抓含兩個以上連續英文字母的字串。純符號、數字、單一字母（x、×）、以及下面
  * ALLOW 列的協定／產品／代號（USDC、ERC-8126、x402…）不算漏翻——它們在中文介面
@@ -42,6 +45,19 @@ const DISPLAY_ATTRS = new Set([
   'secondary',
   'description',
   'emptyText',
+]);
+
+const OBJECT_DISPLAY_KEYS = new Set([
+  'label',
+  'title',
+  'text',
+  'description',
+  'subtitle',
+  'tooltip',
+  'hint',
+  'placeholder',
+  'caption',
+  'heading',
 ]);
 
 // 中文介面裡本來就寫英文的詞：代號、協定、單位、品牌。整串去掉這些詞後若已沒有
@@ -142,7 +158,20 @@ for (const file of walkFiles(SRC)) {
           for (const lit of lits) report(sf, lit, `attr:${name}`, literalText(lit));
         }
       }
-      return; // 其餘屬性（sx、className、href…）不是顯示文字
+      // 其餘屬性（sx、className、href…）的字串不是顯示文字，但屬性值裡可能還包著 JSX，
+      // 例如 <Chip label={<><span>RANK</span>…</>} />：往下走，只收 JSX 文字與物件顯示屬性。
+      if (node.initializer && ts.isJsxExpression(node.initializer) && node.initializer.expression) {
+        visit(node.initializer.expression);
+      }
+      return;
+    } else if (
+      ts.isPropertyAssignment(node) &&
+      OBJECT_DISPLAY_KEYS.has(node.name.getText(sf).replace(/['"]/g, ''))
+    ) {
+      const lits = [];
+      collectRenderedStrings(node.initializer, lits);
+      const key = node.name.getText(sf).replace(/['"]/g, '');
+      for (const lit of lits) report(sf, lit, `prop:${key}`, literalText(lit));
     } else if (
       ts.isJsxExpression(node) &&
       node.parent &&

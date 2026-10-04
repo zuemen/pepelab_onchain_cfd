@@ -1,5 +1,6 @@
 import type { LivePos, TerminalContracts } from '../types'
 import type { FundingData } from 'src/hooks/useFundingData'
+import type { DataFreshness } from 'src/lib/pepefi/positionFreshness'
 
 import { useState } from 'react'
 
@@ -26,6 +27,8 @@ export function PositionsPanel({
   contracts,
   address,
   positions,
+  freshness,
+  freshnessLabel,
   funding,
   fundingInterval,
   staleNoticeFor,
@@ -36,6 +39,9 @@ export function PositionsPanel({
   contracts: TerminalContracts
   address: string | null
   positions: LivePos[]
+  /** 持倉資料新鮮度（見 lib/pepefi/positionFreshness.ts）。 */
+  freshness: DataFreshness
+  freshnessLabel: string
   funding: FundingData
   /** 鏈上 FUNDING_INTERVAL()（秒），null = 讀不到。 */
   fundingInterval: bigint | null
@@ -103,12 +109,31 @@ export function PositionsPanel({
           )
         })}
 
+        {tab === 'positions' && (
+          <Box
+            role="status"
+            title={freshnessLabel}
+            sx={{
+              ml: 'auto',
+              ...monoCss,
+              fontSize: 11,
+              color: freshness === 'fresh' ? C.mut : C.red,
+              maxWidth: 420,
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {freshness === 'fresh' ? '' : '⚠ '}
+            {freshnessLabel}
+          </Box>
+        )}
         <Box
           component="button"
           type="button"
           onClick={() => void refreshCurrent()}
           sx={{
-            ml: 'auto',
+            ml: tab === 'positions' ? 1 : 'auto',
             ...monoCss,
             fontSize: 12,
             minHeight: 32,
@@ -129,6 +154,7 @@ export function PositionsPanel({
         <PositionsTable
           contracts={contracts}
           positions={positions}
+          dimmed={freshness !== 'fresh'}
           staleNoticeFor={staleNoticeFor}
           notify={notify}
           onRefresh={onRefresh}

@@ -1,5 +1,6 @@
 import { useRef, useState, useEffect, useCallback } from 'react'
 
+import { readMaxPriceAge } from 'src/lib/pepefi/positionPnl'
 import { mapLimit, withRetry, RPC_CONCURRENCY } from 'src/lib/pepefi/rpcBatch'
 
 // 鏈上實際部位活動：某個標的最近有誰開了什麼倉、平掉了沒、賺賠多少。
@@ -53,6 +54,14 @@ export interface ActivityRow {
    * 得出，跟持倉表、投資組合頁同一個定義（lib/pepefi/positionPnl.ts）。讀不到為 null。
    */
   positionValue?: bigint | null
+  /**
+   * 未平倉才有：該標的 oracle 的 [價格(8 dp), 更新時間]。價格為 0 或過期時合約的
+   * getPositionValue 會回 0（不 revert），不檢查就會把全平台的部位都畫成「保證金全虧」。
+   * 讀不到為 null。
+   */
+  oracle?: readonly [bigint, bigint] | null
+  /** 合約 maxPriceAge（秒），判斷過期用。 */
+  maxPriceAgeSec?: number
 }
 
 export interface MarketActivity {
@@ -133,6 +142,28 @@ async function scanAll(contracts: Contracts): Promise<ScanResult> {
       // nextPositionId 之下未必每個 ID 都存在；未初始化的 asset 是 0x0。
       if (!p.asset || p.asset === ZERO_ASSET) continue
       rows.push(p)
+    }
+  }
+
+  // 未平倉部位的標的價格：每個標的讀一次 oracle（不是每個部位一次）。
+  const openAssets = [...new Set(rows.filter((r) => r.isOpen).map((r) => r.asset))]
+  if (openAssets.length) {
+    const [maxPriceAgeSec, quotes] = await Promise.all([
+      readMaxPriceAge(ex),
+      mapLimit(openAssets, RPC_CONCURRENCY, async (asset) => {
+        try {
+          const q = (await withRetry(() => contracts.oracle.getPrice(asset))) as [bigint, bigint]
+          return [q[0], q[1]] as const
+        } catch {
+          return null
+        }
+      }),
+    ])
+    const byAsset = new Map(openAssets.map((a, i) => [a, quotes[i]]))
+    for (const r of rows) {
+      if (!r.isOpen) continue
+      r.oracle = byAsset.get(r.asset) ?? null
+      r.maxPriceAgeSec = maxPriceAgeSec
     }
   }
 

@@ -8,7 +8,7 @@ export const portfolio = {
   netWorth: {
     title: '淨資產',
     unrealisedPnl: '未實現 PnL',
-    unrealisedPnlTooltip: '未平倉部位現在平倉的淨損益：依合約標記價計算，已扣手續費與資金費。與交易終端機的持倉表同一個算法',
+    unrealisedPnlTooltip: '未平倉部位現在平倉的淨損益：依合約標記價計算，已扣手續費與資金費，與交易終端機的持倉表同一個算法。不含部分部位獲利時另收的 10% 績效費；資金費以最後一次結算為準；不含穿倉補貼。有部位讀不到數字時，這裡顯示「—」並標成總額不完整',
 
     /**
      * 單複數寫成兩條完整的句子。catalog 沒有複數引擎，而把 'balance' / 'balances'
@@ -153,7 +153,7 @@ export const portfolio = {
     entry: '你的開倉價格',
     oracle: '合約結算依據的鏈上價格——未實現 PnL 以這個價格（加上 OI 溢價後的標記價）計算',
     liveMarket: '鏈下報價來源，變動會早於預言機，因此出現落差是正常現象',
-    unrealizedPnl: '現在平倉會比投入的保證金多拿或少拿多少：依合約標記價計算，已扣平倉手續費、借貸費與應付資金費（合約 getPositionValue − 保證金）',
+    unrealizedPnl: '現在平倉會比投入的保證金多拿或少拿多少：依合約標記價計算，已扣平倉手續費、借貸費與應付資金費（合約 getPositionValue − 保證金）。不含部分部位獲利時另收的 10% 績效費；資金費以最後一次結算為準；不含穿倉補貼',
   },
 
   /** 部位頁籤的平倉按鈕（見 lib/pepefi/closeGuard.ts）。 */
@@ -168,6 +168,8 @@ export const portfolio = {
   },
 
   page: {
+    /** 審查 L5：getPosition 讀不到的部位不會出現在表格裡，要明講。 */
+    positionsUnread: '有 {count} 個部位這次讀取失敗，下表與合計不完整。重新整理後再看。',
     title: '我的投資組合',
     refresh: '重新整理',
 

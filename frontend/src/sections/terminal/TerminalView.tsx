@@ -1,6 +1,6 @@
 import type { AssetId, LivePos } from './types'
 
-import { useMemo, useState, useCallback } from 'react'
+import { useMemo, useState, useEffect, useCallback } from 'react'
 
 import Box from '@mui/material/Box'
 
@@ -13,8 +13,8 @@ import { useFundingData } from 'src/hooks/useFundingData'
 import { useVaultBacking } from 'src/hooks/useVaultBacking'
 import { useTerminalLayout } from 'src/hooks/useTerminalLayout'
 import { useMarketActivity } from 'src/hooks/useMarketActivity'
-import { useTerminalAccount } from 'src/hooks/useTerminalAccount'
 import { useAssetTradingParams } from 'src/hooks/useAssetTradingParams'
+import { POSITION_STALE_MS, useTerminalAccount } from 'src/hooks/useTerminalAccount'
 
 import { t } from 'src/locales'
 import { assetPolicy } from 'src/tenant'
@@ -25,7 +25,8 @@ import { stalenessNotice } from 'src/lib/pepefi/priceFreshness'
 import { fundingIntervalOf } from 'src/lib/pepefi/fundingInterval'
 import { staticTradingParams } from 'src/lib/pepefi/tradingParams'
 import { type Interval, DEFAULT_INTERVAL } from 'src/lib/pepefi/candles'
-import { totalPnl as totalPositionPnl } from 'src/lib/pepefi/positionPnl'
+import { freshnessText, dataFreshness } from 'src/lib/pepefi/positionFreshness'
+import { totalPnl as totalPositionPnl, totalValue as totalPositionValue } from 'src/lib/pepefi/positionPnl'
 
 import { useToast } from 'src/components/pepefi/ToastProvider'
 import PaperTradingBadge from 'src/components/pepefi/PaperTradingBadge'
@@ -101,8 +102,25 @@ export function TerminalView() {
     [account.positions],
   )
 
+  // 任何一個部位沒有數字（讀取失敗、無有效價格、價格過期），合計就是 null，畫面顯示「—」。
   const totalPnl = totalPositionPnl(account.positions)
-  const equity = account.freeMgn + totalPnl
+  // 權益 = 可用保證金 + 各部位現在平倉可拿回的金額（鎖住的保證金＋未實現損益）。
+  // 以前是 freeMgn + PnL，漏了鎖在部位裡的保證金，跟投資組合的交易帳戶對不起來。
+  const positionsValue = totalPositionValue(account.positions)
+  const equity = positionsValue === null ? null : account.freeMgn + positionsValue
+  const [nowMs, setNowMs] = useState(() => Date.now())
+  useEffect(() => {
+    // window.setInterval：這個元件有一個叫 setInterval 的 state setter（K 線週期）。
+    const id = window.setInterval(() => setNowMs(Date.now()), 5_000)
+    return () => window.clearInterval(id)
+  }, [])
+  const freshness = dataFreshness({
+    updatedAt: account.updatedAt,
+    readFailed: account.readFailed,
+    nowMs,
+    staleAfterMs: POSITION_STALE_MS,
+  })
+  const freshnessLabel = freshnessText(freshness, account.updatedAt, POSITION_STALE_MS)
   const fi = funding[selAsset]
   const rate = fi ? Number(fi.rate) : 0
   const fundingInterval = fundingIntervalOf(funding)
@@ -231,6 +249,8 @@ export function TerminalView() {
             equity={equity}
             freeMgn={account.freeMgn}
             totalPnl={totalPnl}
+            freshness={freshness}
+            freshnessLabel={freshnessLabel}
             usdcBal={account.usdcBal}
             usdtBal={account.usdtBal}
             stable={stable}
@@ -245,6 +265,8 @@ export function TerminalView() {
         contracts={contracts}
         address={wallet.address ?? null}
         positions={livePositions}
+        freshness={freshness}
+        freshnessLabel={freshnessLabel}
         funding={funding}
         fundingInterval={fundingInterval}
         staleNoticeFor={staleNoticeFor}

@@ -15,7 +15,7 @@ import { STABLE_LABEL } from 'src/lib/pepefi/tokenLabel'
 import { firstBlocking, stalenessNotice } from 'src/lib/pepefi/priceFreshness'
 import ESGBadge from 'src/components/pepefi/ESGBadge'
 import KYCModal from 'src/components/pepefi/KYCModal'
-import { getPepeAvatar } from 'src/utils/pepefi-assets'
+import { traderAvatarSrc } from 'src/utils/pepefi-assets'
 import TraderRankBadge from 'src/components/pepefi/TraderRankBadge'
 import { useToast } from 'src/components/pepefi/ToastProvider'
 
@@ -292,7 +292,7 @@ export default function CopyPage() {
       <Card sx={{ p: 3 }}>
         <Stack direction="row" spacing={3} alignItems="center">
           <Avatar
-            src={getPepeAvatar(stakeData ? stakeData.reputation : null, traderAddress)}
+            src={traderAvatarSrc(stakeData ? stakeData.reputation : null, traderAddress)}
             sx={{
               width: 80,
               height: 80,

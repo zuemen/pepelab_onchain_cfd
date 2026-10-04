@@ -60,8 +60,9 @@ type Props = {
 
 export default function NetWorthHero({ parts, pnlPct, loading }: Props) {
   const { total, incomplete, missing } = netWorthOf(parts);
-  const pnl = parts.unrealisedPnl ?? 0n;
-  const pnlTone = pnl > 0n ? PEPE.long : pnl < 0n ? PEPE.short : 'text.secondary';
+  // null = 有部位讀不出數字（讀取失敗、無有效價格、價格過期）：顯示「—」，不顯示 +$0.00。
+  const pnl = parts.unrealisedPnl;
+  const pnlTone = pnl === null ? 'text.secondary' : pnl > 0n ? PEPE.long : pnl < 0n ? PEPE.short : 'text.secondary';
 
   const { part, unread } = t.portfolio.netWorth;
   const breakdown: BreakdownItem[] = [
@@ -104,7 +105,7 @@ export default function NetWorthHero({ parts, pnlPct, loading }: Props) {
           <Tooltip title={t.portfolio.netWorth.unrealisedPnlTooltip}>
             <Stack direction="row" alignItems="baseline" gap={0.75}>
               <Typography sx={{ fontWeight: 800, fontFamily: MONO, color: pnlTone }}>
-                {fSignedUsd(pnl)}
+                {pnl === null ? '—' : fSignedUsd(pnl)}
               </Typography>
               <Typography variant="caption" sx={{ color: pnlTone, opacity: 0.85, fontFamily: MONO }}>
                 {pnlPct}

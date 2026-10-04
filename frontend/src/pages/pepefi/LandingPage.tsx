@@ -80,6 +80,14 @@ const STEPS = [
   { n: '04', text: COPY.stepFour },
 ];
 
+/**
+ * 主視覺漸層的中段色。租戶覆寫了主色就從 themeColor 混一點主色；沒覆寫（default 租戶）
+ * 沿用改版前的 PepeLab 深綠，確保 default 外觀不變。
+ */
+const HERO_MID_COLOR = tenant.theme.primary
+  ? `color-mix(in srgb, ${tenant.brand.themeColor} 85%, var(--palette-primary-darker))`
+  : '#0d1f12';
+
 export default function LandingPage() {
   const wallet = usePepefiWallet();
 
@@ -92,7 +100,8 @@ export default function LandingPage() {
         minHeight: '100dvh',
         // 光暈與底色都從租戶設定推：主色光暈 + brand.themeColor 為底、中段混一點主色。
         // 以前寫死 PepeLab 綠（#0d1f12、rgba(124,193,74)），demo-bank 的藍色主題底下仍是綠光。
-        background: `radial-gradient(120% 80% at 80% -10%, rgba(var(--palette-primary-mainChannel) / 0.10) 0%, transparent 55%), linear-gradient(165deg, ${tenant.brand.themeColor} 0%, color-mix(in srgb, ${tenant.brand.themeColor} 85%, var(--palette-primary-darker)) 55%, ${tenant.brand.themeColor} 100%)`,
+        // default 租戶沒有覆寫色票：中段保留原本的 #0d1f12，外觀一個像素都不變。
+        background: `radial-gradient(120% 80% at 80% -10%, rgba(var(--palette-primary-mainChannel) / 0.10) 0%, transparent 55%), linear-gradient(165deg, ${tenant.brand.themeColor} 0%, ${HERO_MID_COLOR} 55%, ${tenant.brand.themeColor} 100%)`,
         pt: 8,
         pb: 8,
       }}
@@ -454,10 +463,11 @@ export default function LandingPage() {
 
             {/* Quick links */}
             <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1.5, mt: 4, pt: 3, borderTop: '1px solid', borderColor: 'divider' }}>
+              {/* 名稱與側欄共用 nav.item.*：同一個頁面在兩處叫同一個名字。 */}
               {([
-                { label: 'Exchange',    icon: 'solar:transfer-horizontal-bold-duotone', to: '/exchange' },
-                { label: 'Marketplace', icon: 'solar:cart-3-bold',                      to: '/marketplace' },
-                { label: 'Vault',       icon: 'solar:shield-keyhole-bold-duotone',      to: '/vault' },
+                { label: t.nav.item.exchange,    icon: 'solar:transfer-horizontal-bold-duotone', to: '/exchange' },
+                { label: t.nav.item.marketplace, icon: 'solar:cart-3-bold',                      to: '/marketplace' },
+                { label: t.nav.item.vault,       icon: 'solar:shield-keyhole-bold-duotone',      to: '/vault' },
               ] as const).map((link) => (
                 <Button
                   key={link.label}

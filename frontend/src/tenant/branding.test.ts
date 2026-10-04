@@ -3,6 +3,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { it, expect, describe } from 'vitest';
 
+import { traderAvatarSrc } from 'src/utils/pepefi-assets';
+
 import { t, locale } from 'src/locales';
 import { LOCALES } from 'src/locales/catalogs';
 import { ASSET_IDS } from 'src/contracts/addresses';
@@ -113,9 +115,11 @@ describe('PepeLab brand elements do not leak into another tenant', () => {
   it('the landing page takes its mascot badge and glow from the tenant, not from literals', () => {
     const landing = codeOf('pages/pepefi/LandingPage.tsx');
     expect(landing).not.toContain('🐸');
-    // PepeLab 綠（#7cc14a = 124,193,74）與它的深底 #0d1f12 只能經由色票變數出現。
+    // PepeLab 綠（#7cc14a = 124,193,74）只能經由色票變數出現；深底 #0d1f12 只能是
+    // 「租戶沒覆寫主色」時的後備值（default 外觀不變），覆寫了主色的租戶一定走 color-mix。
     expect(landing).not.toMatch(/rgba\(\s*124\s*,\s*193\s*,\s*74/);
-    expect(landing).not.toMatch(/#0d1f12/i);
+    expect(landing.match(/#0d1f12/gi) ?? []).toHaveLength(1);
+    expect(landing).toMatch(/tenant\.theme\.primary\s*\?[^:]*color-mix[\s\S]*?:\s*'#0d1f12'/);
     expect(landing).toMatch(/TENANT_SHOWS_MASCOT/);
   });
 
@@ -123,6 +127,33 @@ describe('PepeLab brand elements do not leak into another tenant', () => {
     expect(codeOf('components/pepefi/PepeAvatar.tsx')).toMatch(
       /TENANT_SHOWS_MASCOT\s*\?\s*<MascotAvatar[^>]*>\s*:\s*<NeutralAvatar/
     );
+  });
+
+  // 審查 M3：入金頁的交易遮罩、交易者頁與市集的頭像仍是 Pepe。
+  it('trader avatars go through traderAvatarSrc, which drops the Pepe art for a mascot-less tenant', () => {
+    expect(traderAvatarSrc(80, '0xabc') === undefined).toBe(!showsMascot(tenant));
+    for (const rel of [
+      'pages/pepefi/TraderProfilePage.tsx',
+      'pages/pepefi/TraderDashboard.tsx',
+      'pages/pepefi/MarketplacePage.tsx',
+      'pages/pepefi/CopyPage.tsx',
+      'components/pepefi/Podium.tsx',
+    ]) {
+      const code = codeOf(rel);
+      expect(code, rel).not.toMatch(/getPepeAvatar\(/);
+      expect(code, rel).toMatch(/traderAvatarSrc\(/);
+    }
+  });
+
+  it('the exchange page’s transaction overlay shows the tenant’s mark, not a hard-coded frog', () => {
+    const code = codeOf('pages/pepefi/ExchangePage.tsx');
+    expect(code).toMatch(/\{tenant\.brand\.mark\}/);
+    // 剩下唯一的 🐸 在 PEPE 水龍頭按鈕上，整段包在 FEATURE_PEPE_REWARDS 裡（demo-bank 不允許開）。
+    const frogs = code.split('🐸').length - 1;
+    expect(frogs).toBe(1);
+    const at = code.indexOf('🐸');
+    expect(code.lastIndexOf('FEATURE_PEPE_REWARDS &&', at)).toBeGreaterThan(-1);
+    expect(demoBank.features.pepeRewards.allowed).toBe(false);
   });
 });
 

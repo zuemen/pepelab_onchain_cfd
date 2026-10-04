@@ -107,6 +107,7 @@ export const terminal: Catalog['terminal'] = {
     equity: 'Equity',
     freeMargin: 'Free Margin',
     unrealizedPnl: 'Unrealised PnL',
+    pnlPartial: 'Some positions cannot be valued right now (read failed or no usable price), so the total is not shown.',
     wallet: 'Wallet {token}',
     marginNote: 'margin settles in USDC · USDT is hold/swap only',
 
@@ -124,6 +125,11 @@ export const terminal: Catalog['terminal'] = {
     tabFills: 'Fills',
     tabFunding: 'Funding',
     refresh: '↺ refresh',
+
+    updatedAt: 'Updated {time}',
+    staleData: 'No successful update for over {sec}s — figures may be out of date (last updated {time})',
+    readFailed: 'The last read failed — showing data from {time}',
+    neverRead: 'Positions not read yet',
   },
 
   positions: {
@@ -142,6 +148,10 @@ export const terminal: Catalog['terminal'] = {
     closed: 'Closed ✓',
     close: 'Close',
     stale: 'Price stale',
+    markHint:
+      'Contract getMarkPrice: index price plus the premium from platform-wide long/short imbalance. A position\u2019s own PnL uses the mark with its own notional excluded, so the two can differ when the premium cap is above 0.',
+    pnlHint:
+      'How much more or less than your margin you would get back by closing now (contract getPositionValue − margin), after the close fee, borrow fee and accrued funding. Excludes the 10% performance fee some positions pay on profit; funding as of the last settlement; excludes the bankruptcy bailout.',
   },
 
   fills: {

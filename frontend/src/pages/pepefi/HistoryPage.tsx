@@ -26,7 +26,7 @@ import {
   type ParsedEventLog,
   type DeferredTopicFilterLike,
 } from 'src/lib/pepefi/chainLogs'
-import { lookupWindow, estimateBlockAt, type BlockLike } from 'src/lib/pepefi/positionTxLookup'
+import { resolveTxHashes } from 'src/lib/pepefi/positionTxLookup'
 
 import Box from '@mui/material/Box';
 import Container from '@mui/material/Container';
@@ -353,13 +353,10 @@ async function fetchPositionEvents(
   return { evs, missed }
 }
 
-/** 一次最多替幾列 storage 部位補交易雜湊（最新的優先）。每列最多兩趟 getLogs。 */
-const MAX_TX_LOOKUPS = 12
-
 /**
  * 替「從合約儲存重建、還沒有交易雜湊」的部位列補上雜湊：用 openedAt / closedAt 反推
  * 區塊，對那個 positionId 做一次窄範圍查詢（見 lib/pepefi/positionTxLookup.ts）。
- * 只回傳找到的列；找不到的維持「合約儲存」，等完整日誌掃描。
+ * 只回傳找到的列；找不到的維持「合約儲存」，等完整日誌掃描。每一步都有逾時與總預算。
  */
 async function resolveStorageTxHashes(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -368,22 +365,20 @@ async function resolveStorageTxHashes(
   provider: any,
   chainId: number | null,
   rows: ChainEvent[],
+  notFound: Set<string>,
+  isCancelled: () => boolean,
 ): Promise<ChainEvent[]> {
-  const pending = rows
-    .filter((e) => !e.txHash && e.timestamp > 0 && e.details.positionId !== undefined
+  const targets = rows
+    .filter((e) => !e.txHash && e.details.positionId !== undefined
       && (e.type === 'PositionOpened' || e.type === 'PositionClosed'))
-    .sort((a, b) => b.timestamp - a.timestamp)
-    .slice(0, MAX_TX_LOOKUPS)
-  if (pending.length === 0) return []
-
-  const head = (await provider.getBlock('latest').catch(() => null)) as BlockLike | null
-  if (!head) return []
-
-  const found = await mapLimit(pending, 2, async (row): Promise<ChainEvent | null> => {
-    try {
-      const at = await estimateBlockAt(provider, row.timestamp, chainId, head)
-      if (!at) return null
-      const [from, to] = lookupWindow(at.est, at.latest)
+    .map((e) => ({ key: `${e.type}:${String(e.details.positionId)}`, timestamp: e.timestamp, row: e }))
+  return resolveTxHashes({
+    provider,
+    chainId,
+    rows: targets,
+    notFound,
+    isCancelled,
+    lookup: async ({ row }, from, to) => {
       const pid = row.details.positionId as bigint
       const filter = row.type === 'PositionOpened'
         ? exchange.filters.PositionOpened(pid)
@@ -400,11 +395,8 @@ async function resolveStorageTxHashes(
         }
       }
       return null
-    } catch {
-      return null
-    }
+    },
   })
-  return found.filter((e): e is ChainEvent => e !== null)
 }
 
 const shortAddr = (addr?: string) =>
@@ -613,6 +605,10 @@ export default function HistoryPage() {
   // 部位（storage）顯示之後 loading 就結束；後面的日誌掃描是背景同步，用另一個狀態，
   // 不然事件都已經在表上了，右上角還一直寫「載入中…」。
   const [scanning,   setScanning]   = useState(false)
+  // 每次 refresh 一個世代號：舊的一輪補雜湊看到世代變了就停手、不寫入。
+  const refreshGenRef = useRef(0)
+  // 這個 session 已經查過、查不到雜湊的部位（L7）：不每次重新整理都重查一遍。
+  const txNotFoundRef = useRef(new Set<string>())
   const [error,      setError]      = useState<string | null>(null)
   const [filterKey,  setFilterKey]  = useState<FilterKey>('all')
   /** 日誌確實讀成功過的區塊範圍；「載入較舊」從它的下緣往下走。 */
@@ -820,6 +816,8 @@ export default function HistoryPage() {
   /** Re-scans the newest window and folds it into what's already known. */
   const refresh = useCallback(async () => {
     if (!contracts || !wallet.provider) return
+    refreshGenRef.current += 1
+    const gen = refreshGenRef.current
     setLoading(true)
     setError(null)
     try {
@@ -842,16 +840,23 @@ export default function HistoryPage() {
       // 部位來自 storage，和日誌掃描範圍無關——先顯示，覆蓋範圍維持原值。
       commit(mergeEvents(eventsRef.current, posResult.evs), prev)
 
-      // storage 沒有交易雜湊；完整日誌掃描要十幾段 getLogs，先對這幾個部位各做一次
-      // 窄範圍查詢把雜湊與 explorer 連結補上，「交易」欄不必一直寫「合約儲存」。
-      const hashed = await resolveStorageTxHashes(
-        contracts.exchange, wallet.provider, wallet.chainId ?? null, eventsRef.current,
-      )
-      if (hashed.length) commit(mergeEvents(eventsRef.current, hashed), prev)
-
+      // 部位已經上畫面：loading 到此結束，其餘都是背景同步（scanning）。
       setLoading(false)
       setScanning(true)
+
+      // storage 沒有交易雜湊；完整日誌掃描要十幾段 getLogs，先對這幾個部位各做一次
+      // 窄範圍查詢把雜湊與 explorer 連結補上。在背景跑、和主掃描並行，有逾時與總預算；
+      // 使用者再按一次重新整理（或離開頁面）就丟棄結果。
+      const isCancelled = () => gen !== refreshGenRef.current
+      const hashing = resolveStorageTxHashes(
+        contracts.exchange, wallet.provider, wallet.chainId ?? null, eventsRef.current,
+        txNotFoundRef.current, isCancelled,
+      ).then((hashed) => {
+        if (hashed.length && !isCancelled()) commit(mergeEvents(eventsRef.current, hashed), coverageRef.current)
+      }).catch(() => { /* 補雜湊是加分項：失敗就維持「合約儲存」 */ })
+
       const { evs, failedChunks, contiguousLow } = await scanRange(windowStart, currentBlock)
+      await hashing
       // 只把「從最新塊往下連續成功」的那一段算進覆蓋；與舊覆蓋不相接（隔天回訪的
       // 缺口、失敗段）就以新的一段為準，「載入較舊」會從它的下緣往下補。
       commit(
@@ -888,6 +893,9 @@ export default function HistoryPage() {
       setLoadingMore(false)
     }
   }, [commit, contracts, scanRange, wallet.provider])
+
+  // 離開頁面：讓背景補雜湊停手。
+  useEffect(() => () => { refreshGenRef.current += 1 }, [])
 
   useEffect(() => { void refresh() }, [contracts, tab, wallet.address, wallet.provider])   // eslint-disable-line react-hooks/exhaustive-deps
 
