@@ -1,0 +1,16 @@
+# N4（2026-10-04，本機 Sepolia 分叉）：外洩地址一旦有 code（7702 委派），計畫／模擬／verify 都以 LeakedHasCode 中止；
+# 還原為無 code 後，完整模擬恢復正常（68 筆、nonce 對帳 ✓、讀回完成）。
+# 注意：在分叉上用 anvil_setCode 測試時，需 evm_mine 並加 --no-storage-caching，否則 forge 會讀到同一區塊的快取帳戶狀態。
+
+### N4：外洩地址有 7702 code（cast code=0xef0100000000000000000000000000000000000000dead）###
+-- 計畫 --
+    └─ ← [Revert] LeakedHasCode(23)
+-- 執行（模擬）--
+    └─ ← [Revert] LeakedHasCode(23)
+-- verify() --
+    └─ ← [Revert] LeakedHasCode(23)
+### 還原無 code（cast code=0x）後完整模擬，LEAKED_NONCE_BEFORE=1231 ###
+     待處理 68 筆
+  == 已送出（或模擬）68 筆交易；開始讀回驗證
+     nonce 對帳（模擬階段、開跑前）✓：1231 + 68 = 1299
+  == 讀回完成：外洩地址在 68 個項目上都已無權限，owner 全部落在計畫內

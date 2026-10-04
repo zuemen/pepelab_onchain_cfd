@@ -8,6 +8,9 @@
 //   node ops/freeze-legacy/readback.mjs sepolia      <RPC_URL>
 //   node ops/freeze-legacy/readback.mjs base-sepolia <RPC_URL>
 //
+// 有效期限：這支工具只針對「凍結當下」。事件掃描把 AssetVaultV2 的升級史固定為恰好 3 筆；
+// 日後 V2_ADMIN 若合法升級該代理，這裡會一直報可疑——屆時要更新 KNOWN_UPGRADE_COUNT 等常數或停用此檢查。
+//
 // 結束碼：0 = 外洩地址在整份盤點上已無任何 owner／角色（且設了 LOGS_RPC 時沒有計畫外的授權）；
 //         1 = 仍持有或有計畫外授權（逐項列出）；2 = 用法或 RPC 錯誤。
 

@@ -114,6 +114,7 @@ contract FreezeLegacyDeployments is Script {
     error NonceMismatch(uint256 before, uint256 sent, uint256 actual);
     error NewOwnerNotHardcoded(address got, address expected);
     error DelegateNotAllowed(address newOwner, address delegate);
+    error LeakedHasCode(uint256 codeLength);
 
     // ════════════════════════════════════════════════════════════════════════
     // 入口
@@ -178,15 +179,16 @@ contract FreezeLegacyDeployments is Script {
         console.log("");
         console.log(string.concat(unicode"== 已送出（或模擬）", vm.toString(sent), unicode" 筆交易；開始讀回驗證"));
 
-        // N2：nonce 對帳。設了 LEAKED_NONCE_BEFORE 時，執行後外洩地址的 nonce 必須恰好 = 前值 + 送出筆數。
-        //   多出來的交易＝有人在空窗期用了這把公開金鑰。Sepolia 上外洩地址沒有 7702 code，它發出的任何
-        //   交易（含 7702 授權）都會讓 nonce +1，所以這招能封住事件掃描看不到的那些路徑。Base 有 7702／
-        //   4337 可繞過 nonce，對帳僅供參考——但 Base 只有 3 顆 adapter、且是移交可事後修正（見 runbook）。
+        // N2／N3：nonce 對帳。設了 LEAKED_NONCE_BEFORE 時，外洩地址的 nonce 必須恰好 = 前值 + 送出筆數。
+        //   注意（N3）：forge 先完整模擬整支腳本、之後才廣播，所以這個檢查跑在**模擬階段、真實交易送出之前**——
+        //   它擋得住「記下 nonce 到開跑之間」被插入的交易；**廣播期間**的插隊則由 nonce 衝突讓 forge 停止
+        //   （Sepolia 上外洩地址沒有 7702 code，見 N4 的前置檢查，任何插隊都必定佔用 nonce）。
+        //   執行後的對帳要另外用 `cast nonce` 做（runbook §7.4）。Base 有 7702／4337 可繞過 nonce，僅供參考。
         uint256 nonceBefore = vm.envOr("LEAKED_NONCE_BEFORE", type(uint256).max);
         if (nonceBefore != type(uint256).max) {
             uint256 nonceAfter = vm.getNonce(LEAKED);
             if (nonceAfter != nonceBefore + sent) revert NonceMismatch(nonceBefore, sent, nonceAfter);
-            console.log(string.concat(unicode"   nonce 對帳 ✓：", vm.toString(nonceBefore), " + ", vm.toString(sent), " = ", vm.toString(nonceAfter)));
+            console.log(string.concat(unicode"   nonce 對帳（模擬階段、開跑前）✓：", vm.toString(nonceBefore), " + ", vm.toString(sent), " = ", vm.toString(nonceAfter)));
         }
         _verifyAll();
     }
@@ -222,6 +224,10 @@ contract FreezeLegacyDeployments is Script {
     }
 
     function _planSepolia() internal {
+        // N4：N1 的相鄰順序（插隊必定佔用 nonce）與 nonce 對帳，都建立在「Sepolia 上外洩地址沒有 7702 code」
+        //   這個前提上。金鑰是公開的，任何人都能事先簽 7702 授權把它委派出去，之後不耗 nonce 就能以它的身分呼叫。
+        //   所以只要它有 code，一律中止，由人先處理（計畫、模擬、執行、verify 都會檢查）。
+        if (LEAKED.code.length != 0) revert LeakedHasCode(LEAKED.code.length);
         requiresV2AdminProof = true;
 
         // ── 0. C1/M6/N1：兩顆 82c68d9 版 exchange 有已知會計缺陷，放棄 owner 前必須先停用 FeeRouter。──

@@ -10,6 +10,7 @@
 - `sepolia-4-N1-ordering-and-N2-nonce.txt` — N1 相鄰順序；N2「空窗期多送一筆」→ NonceMismatch 中止
 - `sepolia-5-N2-upgrade-detection.txt` — N2「升級事件」：代理被額外 upgradeToAndCall → 事件掃描抓到（count≠3、cutoff 之後），exit 1
 - `sepolia-6-M4-backdoor-detection.txt` — 凍結前插入 0xbEEF 後門 → 腳本 verify 看不到，但帶 LOGS_RPC 的 readback 抓到、exit 1
+- `sepolia-7-N4-leaked-code-guard.txt` — N4：外洩地址有 7702 code 時計畫／模擬／verify 都以 LeakedHasCode 中止；還原後完整模擬正常
 
 ## Base
 - `base-1-guards-M2-L1-L2-L3.txt` — 新 owner 檢查：L3 非寫死值被拒、L2 keeper 熱錢包被拒、L1 非允許清單的 7702 委派被拒、happy path 計畫

@@ -4,5 +4,5 @@
   [3] setFeeRouter(address(0))  0x4cC7…
   [4] renounceOwnership()        0x4cC7…
 
-# N2 nonce 對帳（廣播後）：外洩地址 nonce 1231 + 送出 68 = 1299 ✓
+# N2 nonce 對帳（腳本模擬階段、開跑前；forge 先模擬再廣播）：外洩地址 nonce 1231 + 送出 68 = 1299 ✓
 # N2 空窗期多送一筆：事後在外洩地址多送交易，重跑凍結 → NonceMismatch(1299, 0, 1301) 中止 ✓

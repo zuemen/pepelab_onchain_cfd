@@ -182,10 +182,11 @@ MockOracle 與 GuardedOracle。建議：
 2. **（M3／L4）證明 `0x2a58…`（V2_ADMIN）金鑰可用**：先記下它目前的 nonce（`cast nonce 0x2a588AeA3271B159c9188d95E0d10614711f83e3 --rpc-url "$SEPOLIA_RPC_URL"`，目前是 2），
    用它在 Sepolia 送一筆 0 值自轉帳，再確認 nonce 變成 ≥ 3：
    ```bash
-   cast send 0x2a588AeA3271B159c9188d95E0d10614711f83e3 --value 0 --private-key "$V2_ADMIN_PK" --rpc-url "$SEPOLIA_RPC_URL"
+   # 私鑰不放指令列：--interactive 會在執行時提示貼上（或改用 --account <keystore 名稱>）
+   cast send 0x2a588AeA3271B159c9188d95E0d10614711f83e3 --value 0 --interactive --rpc-url "$SEPOLIA_RPC_URL"
    cast nonce 0x2a588AeA3271B159c9188d95E0d10614711f83e3 --rpc-url "$SEPOLIA_RPC_URL"   # 應 ≥ 3
    ```
-   確認 `contracts/.env.roles` 有**離線備份**（本步驟不要去讀或動那個檔案的內容）。做完後執行才設 `V2_ADMIN_PROVEN=1`——
+   確認 `contracts/.env.roles` 有**離線備份**（備份是檔案層級的複製，不需要把內容印出來或貼到指令列）。做完後執行才設 `V2_ADMIN_PROVEN=1`——
    腳本除了看這個旗標，還會鏈上檢查 `vm.getNonce(0x2a58…) >= 3`，兩者都不成立就以 `V2AdminNotProven` 中止。
 3. **（M2）證明 `ADAPTER_NEW_OWNER`（預設寫死 `0x27C2…`）金鑰可用**：用它在 Base 送一筆 0 值自轉帳或簽一則訊息。
    腳本已**寫死**預期新 owner 為 `0x27C2…`；要改用別的位址必須 `ADAPTER_NEW_OWNER_OVERRIDE=1`，且仍要 EOA（或委派目標在允許清單的 7702 帳戶）、
@@ -201,6 +202,10 @@ MockOracle 與 GuardedOracle。建議：
 ### 7.1 執行前的唯讀確認（不需要金鑰）
 
 ```bash
+# N4：Sepolia 上的外洩地址必須仍然沒有 code（沒有 7702 委派）。結果必須是 0x；否則**停**——
+# N1 的相鄰順序與 nonce 對帳都建立在這個前提上（腳本也會檢查，有 code 就以 LeakedHasCode 中止）。
+cast code 0xE80A81360608C1342e66743F70a00f75d792Eb93 --rpc-url "$SEPOLIA_RPC_URL"   # 必須是 0x
+
 # 應該 exit 1，列出 Sepolia 54 顆、Base 3 顆；LOGS_RPC 行的「可疑」必須為 0。
 # 若合約數多於此、或可疑 > 0，代表盤點後又有新的授權／升級，先停下來查再繼續。
 LOGS_RPC=https://sepolia.gateway.tenderly.co      node ops/freeze-legacy/readback.mjs sepolia      https://ethereum-sepolia-rpc.publicnode.com
@@ -260,12 +265,13 @@ unset LEAKED_PRIVATE_KEY
   forge 預設批次送出會被拒。`--slow` 逐筆等收據，自然滿足。（Sepolia 外洩地址沒有委派，不需要，但加了無害。）
 - 廣播（或 `--resume`）情境下**一律**要求 `FREEZE_CONFIRM=FREEZE-<chainId>`，不論用 `--private-key`／`--account`／`--ledger`
   或環境變數簽署；不符會 `NotConfirmed` 中止。模擬（不加 `--broadcast`）不要求。
-- **N2 nonce 對帳**：帶 `LEAKED_NONCE_BEFORE` 時，執行後外洩地址的 nonce 必須恰好 = 前值 + 送出筆數，否則 `NonceMismatch` 中止；
-  多出來的交易就是有人在空窗期用了這把公開金鑰。Sepolia 上外洩地址沒有 7702 code，它發出的任何交易（含 7702 授權）都會讓
-  nonce +1，所以這招能封住事件掃描看不到的路徑；Base 有 7702／4337 可繞過 nonce，對帳僅供參考，但 Base 只有 3 顆 adapter、
-  且為移交可事後修正。
+- **N2／N3 nonce 對帳（開跑前）**：forge 先完整模擬整支腳本、之後才廣播，所以腳本裡的 `LEAKED_NONCE_BEFORE` 對帳跑在
+  **模擬階段、任何真實交易送出之前**——它擋得住「記下 nonce 到開跑之間」有人用了這把公開金鑰（`NonceMismatch` 中止）。
+  **廣播期間**若有人插隊，Sepolia 上會因 nonce 衝突讓 forge 停止（外洩地址沒有 7702 code，見 §7.1 的 N4 檢查，任何插隊都必定
+  佔用 nonce）。執行**後**的對帳要另外做，見 §7.4 第 3 條。Base 有 7702／4337 可繞過 nonce，對帳僅供參考，但 Base 只有 3 顆
+  adapter、且為移交可事後修正。
 - 腳本會檢查私鑰推導出的地址是 `0xE80A…Eb93`，不是就 `KeyMismatch` 中止。
-- 腳本是冪等的：已完成的項目顯示 `done` 並跳過，中途失敗可直接重跑。
+- 腳本是冪等的：已完成的項目顯示 `done` 並跳過。中途中斷的處理見 §7.5 第一列（不要直接帶舊的 `LEAKED_NONCE_BEFORE` 重跑）。
 
 ### 7.4 驗證（按順序，每一條都要通過）
 
@@ -281,25 +287,35 @@ cd contracts
 FREEZE_CHAIN=sepolia forge script script/FreezeLegacyDeployments.s.sol --sig "verify()" --rpc-url "$SEPOLIA_RPC_URL"
 FREEZE_CHAIN=base-sepolia ADAPTER_NEW_OWNER=$ADAPTER_NEW_OWNER ADAPTER_NEW_OWNER_CONFIRM=$ADAPTER_NEW_OWNER \
   forge script script/FreezeLegacyDeployments.s.sol --sig "verify()" --rpc-url "$BASE_SEPOLIA_RPC_URL"
+
+# 3) 執行後的 nonce 對帳（N3）：外洩地址 nonce 必須 = §7.0 第 4 步記下的值 + 實際上鏈的筆數
+#    （上鏈筆數看 forge 廣播紀錄的 receipts 數；Sepolia 完整一次是 68 筆 → 1231 + 68 = 1299）。
+#    多出來的就是有人在執行期間用了這把金鑰，依 §7.5 的 NonceMismatch 列處理。
+cast nonce 0xE80A81360608C1342e66743F70a00f75d792Eb93 --rpc-url "$SEPOLIA_RPC_URL"
+cast code  0xE80A81360608C1342e66743F70a00f75d792Eb93 --rpc-url "$SEPOLIA_RPC_URL"   # 仍須是 0x
 ```
 
 - **phase 2（8 顆合成代幣）**：上面完成後，8 顆 SyntheticAssetV2 的 admin 此時在 `0x2a58…`（V2_ADMIN）手上。
   確認 readback 的事件掃描「可疑 0」之後，由 **V2_ADMIN 自己的金鑰**對每一顆送 `renounceRole(0x00, 0x2a58…)`，
   讓它們回到無 admin。這一步用 V2_ADMIN 金鑰，不是外洩金鑰。做完再跑一次 readback 確認。
+  **注意（N6）**：phase 2 之後，`verify()` 對這 8 顆只確認「外洩地址與 V2_ADMIN 都不再是 admin」，看不出 admin 是否曾被授給
+  計畫外的地址。所以 phase 2 之後 `verify()` 通過**不能**取代帶 `LOGS_RPC` 的 readback——後者會列出所有 sender = 外洩地址的
+  RoleGranted，那才是驗收依據。
 - 另外確認下一次排程的 `price-keeper.yml` 與 `base-sepolia-keeper.yml` 仍是綠的。
 
 ### 7.5 失敗時怎麼辦
 
 | 狀況 | 處理 |
 |---|---|
-| 中途中斷（RPC、nonce、gas） | 直接用同一條指令重跑。已完成的項目會跳過，只送剩下的。 |
+| 中途中斷（RPC、nonce、gas） | **不要直接重跑**。先跑帶 `LOGS_RPC` 的 readback 與 `cast nonce`／`cast code` 查清楚哪些已上鏈、有沒有別人插隊；確認沒有異常後，把 `LEAKED_NONCE_BEFORE` 更新為**目前**的 nonce 再重跑（已完成的項目會跳過）。帶舊值重跑一定會 `NonceMismatch`。 |
 | `NotConfirmed(...)` | 廣播但沒給（或給錯）`FREEZE_CONFIRM=FREEZE-<chainId>`。 |
 | `V2AdminNotProven()` | 沒設 `V2_ADMIN_PROVEN=1`，**或** `0x2a58…` 的 nonce 還 < 3（§7.0 第 2 步那筆 0 值交易沒送出）。做完再執行。 |
 | `BadNewOwner(a, why)` | Base 的 `ADAPTER_NEW_OWNER` 是 0、在拒絕清單（含 keeper／guardian／risk／anvil 帳號）、或有非 7702 的合約 code。 |
 | `NewOwnerNotHardcoded(got, exp)` | 新 owner 不是寫死的 `0x27C2…`。要用別的位址須 `ADAPTER_NEW_OWNER_OVERRIDE=1`（L3）。 |
 | `DelegateNotAllowed(a, delegate)` | 新 owner 是 7702 帳戶，但委派目標不在允許清單（只接受 MetaMask DeleGator）。換一個乾淨 EOA。 |
 | `NewOwnerUnconfirmed()` | `ADAPTER_NEW_OWNER_CONFIRM` 與 `ADAPTER_NEW_OWNER` 不相符（Base 的 `verify()` 也要帶，見 §7.4）。 |
-| `NonceMismatch(before, sent, actual)` | 外洩地址 nonce ≠ before+sent：有人在空窗期用了這把公開金鑰。**停**，用帶 `LOGS_RPC` 的 readback 找出那筆做了什麼，依本表其餘列處理後重跑。 |
+| `NonceMismatch(before, sent, actual)` | 開跑前（模擬階段）外洩地址 nonce 已不是記下的值：記下之後有人用了這把公開金鑰，或你在中斷後帶了舊值重跑。**停**，用帶 `LOGS_RPC` 的 readback 找出多出來的交易做了什麼，依本表其餘列處理後，以目前的 nonce 重跑。 |
+| `LeakedHasCode(len)` | Sepolia 上外洩地址有了 code（被 7702 委派）。N1 與 nonce 對帳的前提失效，**停**，不要執行；先查委派目標與它能做什麼。 |
 | `ImplChanged(...)` | AssetVaultV2 代理的實作 slot 與已知值不符——執行期間（或之前）被換過實作。**停**，查 `Upgraded` 事件。 |
 | `FeeRouterNotDisabled(...)` | 0x0c64／0x4cC7 的 `setFeeRouter(0)` 沒生效。重跑；仍失敗代表 owner 已不在外洩地址手上。 |
 | `KeepBroken(...)` | 保留清單中的某個角色已不在預期持有人手上（有人先動過）。**停**，查該合約的 `RoleGranted`／`RoleRevoked`，更新腳本的保留清單後再跑。 |
