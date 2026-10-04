@@ -1,6 +1,7 @@
-import type { LivePrice } from 'src/hooks/useLivePrices'
 import type { AssetMeta } from 'src/lib/pepefi/assetMeta'
 import type { FundingInfo } from 'src/hooks/useFundingData'
+import type { MarketStatus } from 'src/lib/pepefi/marketStatus'
+import type { LivePrice, LivePriceMeta } from 'src/hooks/useLivePrices'
 
 import Box from '@mui/material/Box'
 
@@ -10,6 +11,7 @@ import { fUsd, fNum, fromUnits } from 'src/lib/pepefi/format'
 import { type TradingParams, staticTradingParams } from 'src/lib/pepefi/tradingParams'
 
 import { Stat } from './Atoms'
+import { MarketStatusBadge } from './MarketStatusBadge'
 import { C, panel, monoCss, labelCss } from './terminal-theme'
 
 /** 行情列：顯示價、漲跌、index / mark、funding、未平倉量與報價來源。 */
@@ -25,6 +27,8 @@ export function MarketStatsBar({
   priceInfo,
   vaultAssets,
   tradingParams,
+  marketStatus,
+  priceMeta,
 }: {
   meta?: AssetMeta
   livePx?: number
@@ -40,7 +44,19 @@ export function MarketStatsBar({
   vaultAssets?: bigint | null
   /** 與下單面板共用的鏈上交易參數（useAssetTradingParams）。 */
   tradingParams: TradingParams
+  /** 市場狀態徽章（排定時段 × 鏈上 assetMode，lib/pepefi/marketStatus.ts）。 */
+  marketStatus?: MarketStatus
+  /** 價齡用的時鐘與過期門檻（useLivePricesWithMeta）。 */
+  priceMeta?: LivePriceMeta
 }) {
+  const freshness = priceInfo?.freshness
+  const maxAgeH = priceMeta ? fNum(priceMeta.maxPriceAgeSec / 3600, { dp: 1 }) : null
+  const ageHint = maxAgeH
+    ? interpolate(t.status.market.priceAgeHint, {
+        max: interpolate(t.status.market.maxAgeHours, { n: maxAgeH }),
+      }) + (priceMeta?.clock === 'local' ? t.status.market.priceAgeLocalClock : '')
+    : undefined
+
   return (
     <Box
       sx={{
@@ -61,6 +77,11 @@ export function MarketStatsBar({
           </Box>
         </Box>
         <Box sx={{ ...labelCss, mt: 0.3 }}>{assetDisplayName(meta)}</Box>
+        {marketStatus && (
+          <Box sx={{ mt: 0.8, maxWidth: 360 }}>
+            <MarketStatusBadge status={marketStatus} />
+          </Box>
+        )}
       </Box>
 
       <Box>
@@ -82,6 +103,22 @@ export function MarketStatsBar({
         <Box sx={{ ...labelCss, mt: 0.2, fontSize: 9.5 }}>{t.terminal.stats.displayPrice}</Box>
       </Box>
 
+      {/* 指數價（鏈上 oracle）最後一次寫入距今多久，以鏈上時鐘算；超過合約的 maxPriceAge
+          變紅（此時開倉、平倉都會被拒），過半變黃。 */}
+      <Box data-testid="price-age">
+        <Stat
+          label={t.status.market.priceAge}
+          hint={ageHint}
+          v={freshness && freshness.level !== 'unknown' ? freshness.label : '—'}
+          color={
+            freshness?.level === 'stale'
+              ? C.red
+              : freshness?.level === 'aging'
+                ? C.lime
+                : undefined
+          }
+        />
+      </Box>
       <Stat
         label={t.terminal.stats.index}
         v={curPrice > 0n ? fUsd(fromUnits(curPrice, 18)) : '—'}

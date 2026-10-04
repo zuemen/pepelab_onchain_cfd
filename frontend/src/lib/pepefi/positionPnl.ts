@@ -269,6 +269,11 @@ export async function cachedMaxPriceAge(
  * 誤差就是使用者時鐘與鏈上時間的差（一般幾秒；anvil fork 這類可調時間的環境會更大）。
  */
 export async function chainNowSec(contract: object | null | undefined, ms = 5000): Promise<number> {
+  return (await readChainNowSec(contract, ms)) ?? Math.floor(Date.now() / 1000);
+}
+
+/** 同 chainNowSec，但讀不到時回 null 而不是退回本機時鐘——呼叫端要標示「用的是哪個時鐘」時用。 */
+export async function readChainNowSec(contract: object | null | undefined, ms = 5000): Promise<number | null> {
   const runner = (contract as { runner?: { provider?: unknown; getBlock?: unknown } } | null)?.runner;
   const provider = (runner && typeof runner.getBlock === 'function' ? runner : runner?.provider) as
     | { getBlock?: (tag: 'latest') => Promise<{ timestamp: number | bigint } | null> }
@@ -277,7 +282,7 @@ export async function chainNowSec(contract: object | null | undefined, ms = 5000
     const b = await settle<{ timestamp: number | bigint } | null>(() => provider.getBlock!('latest'), ms);
     if (b && Number(b.timestamp) > 0) return Number(b.timestamp);
   }
-  return Math.floor(Date.now() / 1000);
+  return null;
 }
 
 /**

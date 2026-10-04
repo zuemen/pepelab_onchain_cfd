@@ -8,9 +8,10 @@ import { useKYC } from 'src/hooks/useKYC'
 import { useCandles } from 'src/hooks/useCandles'
 import { useContracts } from 'src/hooks/useContracts'
 import { useStablecoin } from 'src/hooks/useStablecoin'
-import { useLivePrices } from 'src/hooks/useLivePrices'
+import { useAssetModes } from 'src/hooks/useAssetModes'
 import { useFundingData } from 'src/hooks/useFundingData'
 import { useVaultBacking } from 'src/hooks/useVaultBacking'
+import { useLivePricesWithMeta } from 'src/hooks/useLivePrices'
 import { useTerminalLayout } from 'src/hooks/useTerminalLayout'
 import { useMarketActivity } from 'src/hooks/useMarketActivity'
 import { useAssetTradingParams } from 'src/hooks/useAssetTradingParams'
@@ -20,9 +21,10 @@ import { t } from 'src/locales'
 import { assetPolicy } from 'src/tenant'
 import { ASSET_IDS } from 'src/contracts/addresses'
 import { usePepefiWallet } from 'src/layouts/pepefi'
-import { ASSET_META } from 'src/lib/pepefi/assetMeta'
+import { marketStatus } from 'src/lib/pepefi/marketStatus'
 import { terminalTotals } from 'src/lib/pepefi/positionPnl'
 import { stalenessNotice } from 'src/lib/pepefi/priceFreshness'
+import { ASSET_META, ASSETS_LIST } from 'src/lib/pepefi/assetMeta'
 import { fundingIntervalOf } from 'src/lib/pepefi/fundingInterval'
 import { staticTradingParams } from 'src/lib/pepefi/tradingParams'
 import { type Interval, DEFAULT_INTERVAL } from 'src/lib/pepefi/candles'
@@ -41,6 +43,9 @@ import { AccountPanel } from './ticket/AccountPanel'
 import { C, panel, labelCss } from './terminal-theme'
 import { PositionsPanel } from './positions/PositionsPanel'
 
+/** 市場列表上的資產（租戶白名單內）；assetMode 只讀這些。 */
+const SELECTABLE_IDS = assetPolicy.selectable(ASSETS_LIST).map((a) => a.id)
+
 /**
  * 終端機版面骨架與共用狀態的擁有者。
  *
@@ -50,7 +55,7 @@ import { PositionsPanel } from './positions/PositionsPanel'
 export function TerminalView() {
   const wallet = usePepefiWallet()
   const contracts = useContracts(wallet.provider, wallet.signer, wallet.chainId)
-  const live = useLivePrices()
+  const { prices: live, meta: priceMeta } = useLivePricesWithMeta()
   const funding = useFundingData(contracts?.exchange ?? null)
 
   // 預設選白標租戶白名單的第一檔（default 租戶 = 全部資產，第一檔就是 sBTC，與改版前相同）。
@@ -123,6 +128,21 @@ export function TerminalView() {
     staleAfterMs: POSITION_STALE_MS,
   })
   const freshnessLabel = freshnessText(freshness, account.updatedAt, POSITION_STALE_MS)
+  // 市場狀態徽章：排定時段（使用者電腦的時鐘＝牆上時間）× 鏈上 assetMode。
+  // 時段用牆上時間而不是區塊時間：「美股現在有沒有開」是現實世界的事；價齡才用鏈上時鐘。
+  const assetModes = useAssetModes(contracts?.exchange, SELECTABLE_IDS)
+  const nowSec = Math.floor(nowMs / 1000)
+  const statusFor = useCallback(
+    (id: AssetId) =>
+      marketStatus({
+        symbol: ASSET_META[id]?.symbol ?? id,
+        nowSec,
+        probe: assetModes[id] ?? { kind: 'unknown' },
+      }),
+    [assetModes, nowSec],
+  )
+  const selStatus = statusFor(selAsset)
+
   const fi = funding[selAsset]
   const rate = fi ? Number(fi.rate) : 0
   const fundingInterval = fundingIntervalOf(funding)
@@ -159,7 +179,7 @@ export function TerminalView() {
       </Box>
 
       <TerminalHeader />
-      <MarketSelector selAsset={selAsset} onSelect={setSelAsset} />
+      <MarketSelector selAsset={selAsset} onSelect={setSelAsset} statusFor={statusFor} />
 
       <MarketStatsBar
         meta={meta}
@@ -173,6 +193,8 @@ export function TerminalView() {
         priceInfo={live[selAsset]}
         vaultAssets={vaultAssets}
         tradingParams={tradingParams}
+        marketStatus={selStatus}
+        priceMeta={priceMeta}
       />
 
       {/* 版面分級。欄寬一律用 minmax(0, …)：1fr 的隱含最小值是 min-content，圖表
@@ -242,6 +264,7 @@ export function TerminalView() {
             kycUnknown={kycUnknown}
             kycPending={kycPending}
             staleNotice={staleNoticeFor(selAsset)}
+            marketStatus={selStatus}
             tradingParams={tradingParams}
             notify={notify}
             onFilled={account.refresh}

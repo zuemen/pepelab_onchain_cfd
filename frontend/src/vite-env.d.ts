@@ -23,6 +23,12 @@ interface ImportMetaEnv {
   readonly VITE_ENABLE_MOCK_WALLET?: string;
 }
 
+/**
+ * build 時由 vite.config.ts 注入（src/lib/pepefi/buildMeta.ts）：commit 短 SHA 與 build 時間。
+ * vitest 不注入，讀之前一律先 `typeof __BUILD_INFO__ === 'undefined'`（src/lib/pepefi/buildInfo.ts）。
+ */
+declare const __BUILD_INFO__: { sha: string | null; builtAt: string } | undefined;
+
 // Note: `window.ethereum` is declared once in src/hooks/useWallet.ts via
 // `declare global`, using ethers' own Eip1193Provider type. Do not redeclare it
 // here — a second, weaker declaration conflicts with it (TS2717) and makes the

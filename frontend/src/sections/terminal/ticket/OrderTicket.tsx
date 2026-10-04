@@ -1,16 +1,22 @@
 import type { AssetMeta } from 'src/lib/pepefi/assetMeta'
+import type { MarketStatus } from 'src/lib/pepefi/marketStatus'
 
 import { useRef, useState, useEffect } from 'react'
 
 import Box from '@mui/material/Box'
 import Alert from '@mui/material/Alert'
 import Button from '@mui/material/Button'
+import Dialog from '@mui/material/Dialog'
+import DialogTitle from '@mui/material/DialogTitle'
+import DialogActions from '@mui/material/DialogActions'
+import DialogContent from '@mui/material/DialogContent'
 
 import { assetPolicy } from 'src/tenant'
 import { t, interpolate } from 'src/locales'
 import { STABLE_LABEL } from 'src/lib/pepefi/tokenLabel'
 import { prettyError } from 'src/lib/pepefi/errorMessages'
 import { perpetualOpenBlock } from 'src/tenant/assetPolicy'
+import { closedOrderWarning } from 'src/lib/pepefi/marketStatus'
 import { type TradingParams } from 'src/lib/pepefi/tradingParams'
 import { estimateLiquidationPrice } from 'src/lib/pepefi/liquidation'
 import { fUsd, fNum, fToken, fromUnits } from 'src/lib/pepefi/format'
@@ -40,6 +46,7 @@ export function OrderTicket({
   kycPending,
   staleNotice,
   tradingParams,
+  marketStatus,
   notify,
   onFilled,
 }: {
@@ -68,6 +75,11 @@ export function OrderTicket({
    * 鏈上值讀回來之前是 pending：上限先鎖在 1×。
    */
   tradingParams: TradingParams
+  /**
+   * 這個資產的市場狀態（TerminalView 算好，與標頭徽章同一份）。休市而單會成交時
+   * （confirmBeforeOpen），送出前先跳一次確認——只提醒，不擋單。
+   */
+  marketStatus?: MarketStatus
   notify: (msg: string, ok: boolean) => void
   onFilled: () => Promise<void>
 }) {
@@ -102,6 +114,8 @@ export function OrderTicket({
   const [margin, setMargin] = useState('')
   const [busy, setBusy] = useState(false)
   const [riskOpen, setRiskOpen] = useState(true)
+  const [confirmOpen, setConfirmOpen] = useState(false)
+  const closedWarning = marketStatus?.confirmBeforeOpen ? closedOrderWarning(marketStatus.kind) : null
 
   const marginBig = tryParse(margin)
   const notional = marginBig ? marginBig * BigInt(effLev) : 0n
@@ -362,7 +376,7 @@ export function OrderTicket({
       )}
 
       <Button
-        onClick={() => void openPosition()}
+        onClick={() => (closedWarning ? setConfirmOpen(true) : void openPosition())}
         disabled={busy || !margin || overFree || kycBlocked || staleBlocked || noPrice || !!tenantNotice}
         sx={{
           py: 1.4,
@@ -385,6 +399,37 @@ export function OrderTicket({
                 asset: meta?.symbol ?? '',
               })}
       </Button>
+
+      {/* 休市而且這筆單會以收盤價成交：送出前確認一次。取消就什麼都不送。 */}
+      <Dialog
+        open={confirmOpen && closedWarning !== null}
+        onClose={() => setConfirmOpen(false)}
+        aria-labelledby="closed-market-confirm-title"
+        slotProps={{ paper: { sx: { bgcolor: C.panel, color: C.ink, border: `1px solid ${C.line2}`, maxWidth: 440 } } }}
+      >
+        <DialogTitle id="closed-market-confirm-title" sx={{ fontSize: 16, fontWeight: 800 }}>
+          {t.status.market.confirm.title}
+        </DialogTitle>
+        <DialogContent sx={{ fontSize: 13.5, lineHeight: 1.6 }}>
+          <Box>{interpolate(closedWarning ?? '', { asset: meta?.symbol ?? '' })}</Box>
+          <Box sx={{ mt: 1, color: C.mut, fontSize: 12 }}>{t.status.market.confirm.note}</Box>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2 }}>
+          <Button onClick={() => setConfirmOpen(false)} sx={{ color: C.mut, textTransform: 'none' }}>
+            {t.status.market.confirm.cancel}
+          </Button>
+          <Button
+            data-testid="closed-market-proceed"
+            onClick={() => {
+              setConfirmOpen(false)
+              void openPosition()
+            }}
+            sx={{ textTransform: 'none', fontWeight: 800, color: '#06120c', bgcolor: '#f5b545', '&:hover': { bgcolor: '#f5b545', filter: 'brightness(1.08)' } }}
+          >
+            {t.status.market.confirm.proceed}
+          </Button>
+        </DialogActions>
+      </Dialog>
     </>
   )
 }

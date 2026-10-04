@@ -1316,6 +1316,30 @@ write, no loosening of a refused asset, closed versus protected) and
 `agent/keeper/round.test.ts` (heartbeat still written while closed; `priced`
 excludes refused and unreadable assets).
 
+**What the trading page says (added 2026-10-04).** The terminal shows a
+market-status badge on the asset header and a short tag in the market list
+(`frontend/src/lib/pepefi/marketStatus.ts`). It combines the scheduled
+session with what the exchange can actually do:
+
+- The exchange's runtime bytecode is checked for the `assetMode(bytes32)`
+  selector. If it is there, the badge shows the asset's on-chain mode
+  (ReduceOnly as "reduce-only", Halted as "halted"). If it is not, as on the
+  live deployment, a closed market reads "Market closed (this testnet
+  deployment has no closed-market order stop; orders fill at the last
+  close)", and the order ticket asks for one confirmation before sending an
+  open. It does not block the order.
+- The session rule is a copy of the keeper's calendar (`marketHours.ts`):
+  equities and ETFs 09:30–16:00 ET with daylight saving, gold closed from
+  Friday 17:00 to Sunday 18:00 ET, crypto 24/7, unclassified assets treated
+  as equities, no holidays and no close lead. It uses the viewer's clock,
+  since it describes the real-world session. `marketHours.keeper.test.ts`
+  loads the keeper's own `market.ts`, `operator.ts` and `marketMode.ts` and
+  compares the two at 15-minute steps across both 2026 daylight-saving
+  changes; `frontend-ci.yml` runs on changes to those three keeper files.
+- The price age next to it ("last price write") is measured against the
+  latest block time, the clock the contract uses, and turns red past the
+  exchange's `maxPriceAge`.
+
 ## 32. VC revocation is an off-chain signed list (added 2026-10-02)
 
 Before ADR-016 an authorization VC could not be revoked on its own: the only
