@@ -4,6 +4,8 @@ import { m } from 'framer-motion';
 
 import IconButton from '@mui/material/IconButton';
 
+import { t } from 'src/locales';
+
 import { PepeAvatar } from 'src/components/pepefi/PepeAvatar';
 import { varTap, varHover, AnimateBorder, transitionTap } from 'src/components/animate';
 
@@ -22,7 +24,7 @@ export function AccountButton({ photoURL, displayName, address, sx, ...other }: 
       whileTap={varTap(0.96)}
       whileHover={varHover(1.04)}
       transition={transitionTap()}
-      aria-label="Account button"
+      aria-label={t.common.shell.accountButtonAria}
       sx={[{ p: 0 }, ...(Array.isArray(sx) ? sx : [sx])]}
       {...other}
     >

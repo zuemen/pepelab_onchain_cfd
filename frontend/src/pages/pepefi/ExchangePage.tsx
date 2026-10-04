@@ -6,6 +6,7 @@ import { usePepefiWallet } from 'src/layouts/pepefi';
 import { t, interpolate } from 'src/locales';
 import { prettyError } from 'src/lib/pepefi/errorMessages';
 import { safeRead } from 'src/lib/pepefi/safeRead';
+import { tenant } from 'src/tenant';
 import { FEATURE_PEPE_REWARDS } from 'src/lib/pepefi/featureFlags';
 import { SyntheticDisclosure } from 'src/components/pepefi/SyntheticDisclosure';
 import { STABLE_LABEL, ALT_STABLE_LABEL, X402_STABLE_LABEL } from 'src/lib/pepefi/tokenLabel';
@@ -699,7 +700,8 @@ export default function ExchangePage() {
               fontSize: '1.5rem',
             }}
           >
-            🐸
+            {/* 交易處理中的品牌小圖示：租戶的 brand.mark（default 是 🐸，demo-bank 是 🏦）。 */}
+            {tenant.brand.mark}
           </Box>
         </Box>
         <Box sx={{ textAlign: 'center' }}>

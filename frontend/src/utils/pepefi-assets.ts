@@ -1,4 +1,5 @@
 import { t } from 'src/locales';
+import { TENANT_SHOWS_MASCOT } from 'src/tenant';
 
 /**
  * PepeLab Asset Helper Utility
@@ -59,6 +60,13 @@ export const getPepeAvatar = (reputation: number | bigint | null, address: strin
     return `/assets/images/pepefi/pepe_${options[Math.abs(hash) % options.length]}.png`;
   }
 };
+
+/**
+ * 交易者頭像的圖片來源。機構租戶（brand.mascot = false）不顯示 Pepe 圖：回 undefined，
+ * MUI Avatar 會退回中性的人像圖示。頁面一律用這個，不要直接呼叫 getPepeAvatar。
+ */
+export const traderAvatarSrc = (reputation: number | bigint | null, address: string): string | undefined =>
+  TENANT_SHOWS_MASCOT ? getPepeAvatar(reputation, address) : undefined;
 
 /**
  * Returns rank metadata including styled metallic gradients and colors.

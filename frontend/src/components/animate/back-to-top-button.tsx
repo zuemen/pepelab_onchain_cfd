@@ -5,6 +5,8 @@ import { useBackToTop } from 'minimal-shared/hooks';
 
 import Fab from '@mui/material/Fab';
 
+import { t } from 'src/locales';
+
 import { Iconify } from '../iconify';
 
 // ----------------------------------------------------------------------
@@ -32,7 +34,7 @@ export function BackToTopButton({
 
   return (
     <Fab
-      aria-label="Back to top"
+      aria-label={t.common.shell.backToTopAria}
       onClick={onBackToTop}
       sx={[
         (theme) => ({

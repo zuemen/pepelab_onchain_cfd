@@ -22,7 +22,7 @@ import AllocationRow from 'src/components/pepefi/AllocationRow';
 import AllocationMarketplace from 'src/components/pepefi/AllocationMarketplace';
 import Podium from 'src/components/pepefi/Podium';
 import ScoreBreakdownPopover from 'src/components/pepefi/ScoreBreakdownPopover';
-import { getPepeAvatar } from 'src/utils/pepefi-assets';
+import { traderAvatarSrc } from 'src/utils/pepefi-assets';
 import TraderRankBadge from 'src/components/pepefi/TraderRankBadge';
 import { t, interpolate } from 'src/locales';
 import {
@@ -650,7 +650,7 @@ function TraderLeaderboard() {
                       >
                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                           <Avatar
-                            src={getPepeAvatar(trader.reputation, trader.address)}
+                            src={traderAvatarSrc(trader.reputation, trader.address)}
                             sx={{
                               width: 32,
                               height: 32,

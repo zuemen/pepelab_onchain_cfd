@@ -1,7 +1,7 @@
 import { Link as RouterLink } from 'react-router';
 import { usePepefiWallet } from 'src/layouts/pepefi';
-import { t } from 'src/locales';
-import { tenant } from 'src/tenant';
+import { t, interpolate } from 'src/locales';
+import { tenant, TENANT_SHOWS_MASCOT } from 'src/tenant';
 import WalletButton from 'src/components/pepefi/WalletButton';
 import HeroKpiStrip from 'src/components/pepefi/HeroKpiStrip';
 import { SHOW_PERPETUALS, FEATURE_COPY_TRADING } from 'src/lib/pepefi/featureFlags';
@@ -80,6 +80,14 @@ const STEPS = [
   { n: '04', text: COPY.stepFour },
 ];
 
+/**
+ * 主視覺漸層的中段色。租戶覆寫了主色就從 themeColor 混一點主色；沒覆寫（default 租戶）
+ * 沿用改版前的 PepeLab 深綠，確保 default 外觀不變。
+ */
+const HERO_MID_COLOR = tenant.theme.primary
+  ? `color-mix(in srgb, ${tenant.brand.themeColor} 85%, var(--palette-primary-darker))`
+  : '#0d1f12';
+
 export default function LandingPage() {
   const wallet = usePepefiWallet();
 
@@ -90,7 +98,10 @@ export default function LandingPage() {
         // URL bar *hidden*, so the hero overflows by the bar's height until the
         // user scrolls. dvh tracks the visible viewport.
         minHeight: '100dvh',
-        background: 'radial-gradient(120% 80% at 80% -10%, rgba(124,193,74,0.10) 0%, transparent 55%), linear-gradient(165deg, #0A0F0B 0%, #0d1f12 55%, #0A0F0B 100%)',
+        // 光暈與底色都從租戶設定推：主色光暈 + brand.themeColor 為底、中段混一點主色。
+        // 以前寫死 PepeLab 綠（#0d1f12、rgba(124,193,74)），demo-bank 的藍色主題底下仍是綠光。
+        // default 租戶沒有覆寫色票：中段保留原本的 #0d1f12，外觀一個像素都不變。
+        background: `radial-gradient(120% 80% at 80% -10%, rgba(var(--palette-primary-mainChannel) / 0.10) 0%, transparent 55%), linear-gradient(165deg, ${tenant.brand.themeColor} 0%, ${HERO_MID_COLOR} 55%, ${tenant.brand.themeColor} 100%)`,
         pt: 8,
         pb: 8,
       }}
@@ -130,7 +141,7 @@ export default function LandingPage() {
                   fontWeight: 900,
                   lineHeight: 0.95,
                   color: 'var(--palette-primary-main)',
-                  textShadow: '-1px -1px 0 var(--palette-secondary-main), 1px -1px 0 var(--palette-secondary-main), -1px 1px 0 var(--palette-secondary-main), 1px 1px 0 var(--palette-secondary-main), 0 0 40px rgba(124,193,74,0.6)',
+                  textShadow: '-1px -1px 0 var(--palette-secondary-main), 1px -1px 0 var(--palette-secondary-main), -1px 1px 0 var(--palette-secondary-main), 1px 1px 0 var(--palette-secondary-main), 0 0 40px rgba(var(--palette-primary-mainChannel) / 0.6)',
                   mb: 1.5,
                 }}
               >
@@ -196,7 +207,7 @@ export default function LandingPage() {
                   to="/marketplace"
                   variant="outlined"
                   size="large"
-                  sx={{ borderColor: 'var(--palette-primary-main)', color: 'var(--palette-primary-main)', '&:hover': { bgcolor: 'rgba(124,193,74,0.1)' } }}
+                  sx={{ borderColor: 'var(--palette-primary-main)', color: 'var(--palette-primary-main)', '&:hover': { bgcolor: 'rgba(var(--palette-primary-mainChannel) / 0.1)' } }}
                 >
                   {COPY.viewCta}
                 </Button>
@@ -214,7 +225,7 @@ export default function LandingPage() {
               <Box sx={{
                 position: 'absolute', inset: -8,
                 borderRadius: '50%',
-                background: 'radial-gradient(circle, rgba(124,193,74,0.4) 0%, transparent 70%)',
+                background: 'radial-gradient(circle, rgba(var(--palette-primary-mainChannel) / 0.4) 0%, transparent 70%)',
                 animation: 'pulse 2s ease-in-out infinite',
                 '@keyframes pulse': {
                   '0%,100%': { opacity: 0.6, transform: 'scale(1)' },
@@ -224,28 +235,30 @@ export default function LandingPage() {
               <Box
                 component="img"
                 src={tenant.brand.logo.src}
-                alt={`${tenant.brand.name} Mascot`}
+                alt={interpolate(t.landing.logoAlt, { name: tenant.brand.name })}
                 sx={{
                   width: '100%', height: '100%',
                   borderRadius: '50%',
                   objectFit: 'cover',
                   border: '4px solid var(--palette-primary-main)',
-                  boxShadow: '0 0 48px rgba(124,193,74,0.5), 0 0 96px rgba(255,210,61,0.2)',
+                  boxShadow: '0 0 48px rgba(var(--palette-primary-mainChannel) / 0.5), 0 0 96px rgba(var(--palette-secondary-mainChannel) / 0.2)',
                   position: 'relative', zIndex: 1,
                 }}
                 onError={(e) => { (e.target as HTMLImageElement).src = tenant.brand.logo.fallbackSrc; }}
               />
-              {/* Gold badge overlay */}
+              {/* 品牌小徽章：租戶的 brand.mark。機構租戶（brand.mascot = false）不放。 */}
+              {TENANT_SHOWS_MASCOT && (
               <Box sx={{
                 position: 'absolute', bottom: 12, right: 12, zIndex: 2,
                 bgcolor: 'var(--palette-secondary-main)', color: '#1C252E',
                 borderRadius: '50%', width: 48, height: 48,
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                 fontSize: 22, fontWeight: 900,
-                boxShadow: '0 4px 12px rgba(255,210,61,0.6)',
+                boxShadow: '0 4px 12px rgba(var(--palette-secondary-mainChannel) / 0.6)',
               }}>
-                🐸
+                {tenant.brand.mark}
               </Box>
+              )}
             </Box>
           </Stack>
         </Box>
@@ -258,7 +271,7 @@ export default function LandingPage() {
 
           {/* Testnet badge */}
           <Chip
-            label="Live on Base Sepolia · 84532"
+            label={t.landing.liveOn}
             variant="outlined"
             color="success"
             icon={
@@ -358,9 +371,9 @@ export default function LandingPage() {
                     borderColor: 'rgba(255,255,255,0.05)',
                     transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
                     '&:hover': {
-                      bgcolor: 'rgba(124, 193, 74, 0.03)',
+                      bgcolor: 'rgba(var(--palette-primary-mainChannel) / 0.03)',
                       borderColor: 'var(--palette-primary-main)',
-                      boxShadow: '0 12px 24px rgba(124, 193, 74, 0.12)',
+                      boxShadow: '0 12px 24px rgba(var(--palette-primary-mainChannel) / 0.12)',
                       transform: 'translateY(-6px)',
                     },
                   }}
@@ -374,7 +387,7 @@ export default function LandingPage() {
                       alignItems: 'center',
                       justifyContent: 'center',
                       borderRadius: 1.5,
-                      bgcolor: 'rgba(124, 193, 74, 0.1)',
+                      bgcolor: 'rgba(var(--palette-primary-mainChannel) / 0.1)',
                       color: 'primary.main',
                     }}
                   >
@@ -399,10 +412,10 @@ export default function LandingPage() {
           <Card
             sx={{
               p: 4,
-              bgcolor: 'rgba(124, 193, 74, 0.02)',
-              borderColor: 'rgba(124, 193, 74, 0.15)',
-              boxShadow: '0 8px 32px 0 rgba(124, 193, 74, 0.05)',
-              border: '1px solid rgba(124, 193, 74, 0.2)',
+              bgcolor: 'rgba(var(--palette-primary-mainChannel) / 0.02)',
+              borderColor: 'rgba(var(--palette-primary-mainChannel) / 0.15)',
+              boxShadow: '0 8px 32px 0 rgba(var(--palette-primary-mainChannel) / 0.05)',
+              border: '1px solid rgba(var(--palette-primary-mainChannel) / 0.2)',
               position: 'relative',
               overflow: 'hidden',
               '&::after': {
@@ -431,9 +444,9 @@ export default function LandingPage() {
                       alignItems: 'center',
                       justifyContent: 'center',
                       borderRadius: '50%',
-                      bgcolor: 'rgba(124, 193, 74, 0.15)',
+                      bgcolor: 'rgba(var(--palette-primary-mainChannel) / 0.15)',
                       border: '1px solid',
-                      borderColor: 'rgba(124, 193, 74, 0.4)',
+                      borderColor: 'rgba(var(--palette-primary-mainChannel) / 0.4)',
                       color: 'primary.main',
                       fontSize: '0.875rem',
                       fontWeight: 'bold',
@@ -450,10 +463,11 @@ export default function LandingPage() {
 
             {/* Quick links */}
             <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1.5, mt: 4, pt: 3, borderTop: '1px solid', borderColor: 'divider' }}>
+              {/* 名稱與側欄共用 nav.item.*：同一個頁面在兩處叫同一個名字。 */}
               {([
-                { label: 'Exchange',    icon: 'solar:transfer-horizontal-bold-duotone', to: '/exchange' },
-                { label: 'Marketplace', icon: 'solar:cart-3-bold',                      to: '/marketplace' },
-                { label: 'Vault',       icon: 'solar:shield-keyhole-bold-duotone',      to: '/vault' },
+                { label: t.nav.item.exchange,    icon: 'solar:transfer-horizontal-bold-duotone', to: '/exchange' },
+                { label: t.nav.item.marketplace, icon: 'solar:cart-3-bold',                      to: '/marketplace' },
+                { label: t.nav.item.vault,       icon: 'solar:shield-keyhole-bold-duotone',      to: '/vault' },
               ] as const).map((link) => (
                 <Button
                   key={link.label}

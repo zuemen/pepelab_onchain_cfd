@@ -61,14 +61,10 @@ jobs:
       EXCHANGE: "0x827eA0c62a32e995927101259042F8A27D99124D"
       # 部分失敗容忍度：失敗筆數 / 有價可寫筆數 超過這個百分比就讓 job 失敗。
       MAX_FAIL_PCT: "30"
-      # AggregatorOracleAdapter（Chainlink + Pyth）。Pyth 在 Base Sepolia 是活的：
-      # 2026-08-06 實測 sBTC $64,484.07、sETH $1,894.91，與外部 API 一致。
-      # 設定之後 sBTC/sETH 改讀鏈上去中心化預言機，其餘資產（測試網沒有 feed）
-      # 自動退回 Yahoo。Chainlink 對這些 assetId 沒有 feed，聚合器會退化成單走 Pyth。
-      #
-      # 這是受信任的中繼，不是無信任的整合：keeper 的金鑰仍可寫任何值。它拿掉的是
-      # 對中心化交易所 API 的依賴，不是對 keeper 的依賴。
-      KEEPER_RELAY_SOURCE: "0x8215158642350a3f329aB9597186d21f957A813D"
+      # KEEPER_RELAY_SOURCE 刻意不設（2026-10-03 移除，原為 AggregatorOracle 0x8215…）。
+      # 原因：該 adapter 的 owner 仍是已外洩的舊部署者金鑰，不應作為寫價來源。移除時
+      # Aggregator 對全部資產回 NoLiveSource，keeper 實際走外部 API，沒有功能損失。
+      # 重新啟用的前提見 docs/RUNBOOK_KEEPER.md「relay 來源」。
       # #129 硬化版 V2 stack（2026-09-10 上鏈）。之前沒設，GuardedOracle 自 9/10 起
       # 沒人餵價；vault 的 maxPriceAge 是 30 天，2026-10-10 03:17 UTC 就會讓
       # mint／redeem 全面 StalePrice。keeper key 已有 GuardedOracle 的 KEEPER_ROLE

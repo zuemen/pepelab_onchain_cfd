@@ -12,6 +12,7 @@ import IconButton from '@mui/material/IconButton';
 import Typography from '@mui/material/Typography';
 import { useColorScheme } from '@mui/material/styles';
 
+import { t } from 'src/locales';
 import { themeConfig } from 'src/theme/theme-config';
 import { primaryColorPresets } from 'src/theme/with-settings';
 
@@ -68,12 +69,12 @@ export function SettingsDrawer({ sx, defaultSettings }: SettingsDrawerProps) {
       }}
     >
       <Typography variant="h6" sx={{ flexGrow: 1 }}>
-        Settings
+        {t.common.shell.settings.title}
       </Typography>
 
       <FullScreenButton />
 
-      <Tooltip title="Reset all">
+      <Tooltip title={t.common.shell.settings.resetAll}>
         <IconButton onClick={handleReset}>
           <Badge color="error" variant="dot" invisible={!settings.canReset}>
             <Iconify icon="solar:restart-bold" />
@@ -81,7 +82,7 @@ export function SettingsDrawer({ sx, defaultSettings }: SettingsDrawerProps) {
         </IconButton>
       </Tooltip>
 
-      <Tooltip title="Close">
+      <Tooltip title={t.common.shell.settings.close}>
         <IconButton onClick={settings.onCloseDrawer}>
           <Iconify icon="mingcute:close-line" />
         </IconButton>
@@ -91,7 +92,7 @@ export function SettingsDrawer({ sx, defaultSettings }: SettingsDrawerProps) {
 
   const renderMode = () => (
     <BaseOption
-      label="Mode"
+      label={t.common.shell.settings.mode}
       selected={settings.state.mode === 'dark'}
       icon={<SvgIcon>{settingIcons.moon}</SvgIcon>}
       action={
@@ -104,7 +105,7 @@ export function SettingsDrawer({ sx, defaultSettings }: SettingsDrawerProps) {
               fontWeight: 'fontWeightSemiBold',
             }}
           >
-            System
+            {t.common.shell.settings.system}
           </Label>
         ) : null
       }
@@ -117,7 +118,7 @@ export function SettingsDrawer({ sx, defaultSettings }: SettingsDrawerProps) {
 
   const renderContrast = () => (
     <BaseOption
-      label="Contrast"
+      label={t.common.shell.settings.contrast}
       selected={settings.state.contrast === 'high'}
       icon={<SvgIcon>{settingIcons.contrast}</SvgIcon>}
       onChangeOption={() => {
@@ -130,7 +131,7 @@ export function SettingsDrawer({ sx, defaultSettings }: SettingsDrawerProps) {
 
   const renderDirection = () => (
     <BaseOption
-      label="Right to left"
+      label={t.common.shell.settings.rtl}
       selected={settings.state.direction === 'rtl'}
       icon={<SvgIcon>{settingIcons.alignRight}</SvgIcon>}
       onChangeOption={() => {
@@ -141,8 +142,8 @@ export function SettingsDrawer({ sx, defaultSettings }: SettingsDrawerProps) {
 
   const renderCompactLayout = () => (
     <BaseOption
-      tooltip="Dashboard only and available at large resolutions > 1600px (xl)"
-      label="Compact"
+      tooltip={t.common.shell.settings.compactTooltip}
+      label={t.common.shell.settings.compact}
       selected={!!settings.state.compactLayout}
       icon={<SvgIcon>{settingIcons.autofitWidth}</SvgIcon>}
       onChangeOption={() => {
@@ -153,7 +154,7 @@ export function SettingsDrawer({ sx, defaultSettings }: SettingsDrawerProps) {
 
   const renderPresets = () => (
     <LargeBlock
-      title="Presets"
+      title={t.common.shell.settings.presets}
       canReset={settings.state.primaryColor !== defaultSettings.primaryColor}
       onReset={() => {
         settings.setState({ primaryColor: defaultSettings.primaryColor });
@@ -176,10 +177,10 @@ export function SettingsDrawer({ sx, defaultSettings }: SettingsDrawerProps) {
   );
 
   const renderNav = () => (
-    <LargeBlock title="Nav" tooltip="Dashboard only" sx={{ gap: 2.5 }}>
+    <LargeBlock title={t.common.shell.settings.nav} tooltip={t.common.shell.settings.navTooltip} sx={{ gap: 2.5 }}>
       {visibility.navLayout && (
         <SmallBlock
-          label="Layout"
+          label={t.common.shell.settings.layout}
           canReset={settings.state.navLayout !== defaultSettings.navLayout}
           onReset={() => {
             settings.setState({ navLayout: defaultSettings.navLayout });
@@ -213,7 +214,7 @@ export function SettingsDrawer({ sx, defaultSettings }: SettingsDrawerProps) {
       )}
       {visibility.navColor && (
         <SmallBlock
-          label="Color"
+          label={t.common.shell.settings.color}
           canReset={settings.state.navColor !== defaultSettings.navColor}
           onReset={() => {
             settings.setState({ navColor: defaultSettings.navColor });
@@ -226,12 +227,12 @@ export function SettingsDrawer({ sx, defaultSettings }: SettingsDrawerProps) {
             }}
             options={[
               {
-                label: 'Integrate',
+                label: t.common.shell.settings.navIntegrate,
                 value: 'integrate',
                 icon: <SvgIcon>{settingIcons.sidebarOutline}</SvgIcon>,
               },
               {
-                label: 'Apparent',
+                label: t.common.shell.settings.navApparent,
                 value: 'apparent',
                 icon: <SvgIcon>{settingIcons.sidebarFill}</SvgIcon>,
               },
@@ -243,10 +244,10 @@ export function SettingsDrawer({ sx, defaultSettings }: SettingsDrawerProps) {
   );
 
   const renderFont = () => (
-    <LargeBlock title="Font" sx={{ gap: 2.5 }}>
+    <LargeBlock title={t.common.shell.settings.font} sx={{ gap: 2.5 }}>
       {visibility.fontFamily && (
         <SmallBlock
-          label="Family"
+          label={t.common.shell.settings.fontFamily}
           canReset={settings.state.fontFamily !== defaultSettings.fontFamily}
           onReset={() => {
             settings.setState({ fontFamily: defaultSettings.fontFamily });
@@ -269,7 +270,7 @@ export function SettingsDrawer({ sx, defaultSettings }: SettingsDrawerProps) {
       )}
       {visibility.fontSize && (
         <SmallBlock
-          label="Size"
+          label={t.common.shell.settings.fontSize}
           canReset={settings.state.fontSize !== defaultSettings.fontSize}
           onReset={() => {
             settings.setState({ fontSize: defaultSettings.fontSize });

@@ -3,6 +3,8 @@ import { useState, useCallback } from 'react';
 import Tooltip from '@mui/material/Tooltip';
 import IconButton from '@mui/material/IconButton';
 
+import { t } from 'src/locales';
+
 import { Iconify } from '../../iconify';
 
 // ----------------------------------------------------------------------
@@ -21,7 +23,7 @@ export function FullScreenButton() {
   }, []);
 
   return (
-    <Tooltip title={fullscreen ? 'Exit' : 'Fullscreen'}>
+    <Tooltip title={fullscreen ? t.common.shell.settings.exitFullscreen : t.common.shell.settings.fullscreen}>
       <IconButton onClick={handleToggleFullscreen} color={fullscreen ? 'primary' : 'default'}>
         <Iconify
           icon={

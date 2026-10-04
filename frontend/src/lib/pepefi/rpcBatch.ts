@@ -1,3 +1,5 @@
+import { withTimeout } from './safeRead'
+
 /**
  * 限制併發的 map。
  *
@@ -57,12 +59,17 @@ export async function withRetry<T>(
   fn: () => Promise<T>,
   attempts = 3,
   baseDelayMs = 120,
+  /**
+   * 每一次嘗試的逾時（毫秒）。省略 = 不設（舊行為）。不回應的節點不會丟錯，只會讓
+   * await 永遠不結束——頁面載入路徑上的呼叫應該傳這個（歷史紀錄頁「載入中…」卡住的原因之一）。
+   */
+  timeoutMs?: number,
 ): Promise<T> {
   let lastErr: unknown
   for (let i = 0; i < attempts; i += 1) {
     try {
       // eslint-disable-next-line no-await-in-loop
-      return await fn()
+      return timeoutMs ? await withTimeout(fn(), timeoutMs) : await fn()
     } catch (err) {
       lastErr = err
       if (i < attempts - 1) {

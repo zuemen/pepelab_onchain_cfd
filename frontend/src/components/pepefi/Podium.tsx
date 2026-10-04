@@ -11,7 +11,7 @@ import Typography from '@mui/material/Typography';
 
 import { t } from 'src/locales';
 import { MONO, shortAddr } from 'src/components/pepefi/brandKit';
-import { getPepeAvatar } from 'src/utils/pepefi-assets';
+import { traderAvatarSrc } from 'src/utils/pepefi-assets';
 import ESGBadge from 'src/components/pepefi/ESGBadge';
 import AllocationRow from 'src/components/pepefi/AllocationRow';
 import { scoreChipColor, fPnL, fWinRate, fReturnPct, type TraderCard } from 'src/lib/pepefi/leaderboardMetrics';
@@ -105,7 +105,7 @@ export default function Podium({ podium, esgOf, onScoreClick }: Props) {
           }}
         >
           <Avatar
-            src={getPepeAvatar(trader.reputation, trader.address)}
+            src={traderAvatarSrc(trader.reputation, trader.address)}
             sx={{
               width: 36,
               height: 36,

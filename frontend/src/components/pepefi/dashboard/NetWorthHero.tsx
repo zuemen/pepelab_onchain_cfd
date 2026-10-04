@@ -38,7 +38,8 @@ import Skeleton from 'src/components/pepefi/Skeleton';
 const fUsd = (v: bigint) =>
   `$${(Number(v) / 1e18).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
-const fSignedUsd = (v: bigint) => (v >= 0n ? '+' : '') + fUsd(v);
+// 負號放在 $ 前面（-$2.40），不是 $-2.40。
+const fSignedUsd = (v: bigint) => (v >= 0n ? `+${fUsd(v)}` : `-${fUsd(-v)}`);
 
 type BreakdownItem = {
   label: string;
@@ -59,8 +60,9 @@ type Props = {
 
 export default function NetWorthHero({ parts, pnlPct, loading }: Props) {
   const { total, incomplete, missing } = netWorthOf(parts);
-  const pnl = parts.unrealisedPnl ?? 0n;
-  const pnlTone = pnl > 0n ? PEPE.long : pnl < 0n ? PEPE.short : 'text.secondary';
+  // null = 有部位讀不出數字（讀取失敗、無有效價格、價格過期）：顯示「—」，不顯示 +$0.00。
+  const pnl = parts.unrealisedPnl;
+  const pnlTone = pnl === null ? 'text.secondary' : pnl > 0n ? PEPE.long : pnl < 0n ? PEPE.short : 'text.secondary';
 
   const { part, unread } = t.portfolio.netWorth;
   const breakdown: BreakdownItem[] = [
@@ -75,8 +77,8 @@ export default function NetWorthHero({ parts, pnlPct, loading }: Props) {
     <Card
       sx={{
         p: { xs: 2.5, sm: 3.5 },
-        background: 'linear-gradient(135deg, rgba(124,193,74,0.10) 0%, rgba(11,22,37,0.75) 100%)',
-        border: '1px solid rgba(124,193,74,0.28)',
+        background: 'linear-gradient(135deg, rgba(var(--palette-primary-mainChannel) / 0.10) 0%, rgba(11,22,37,0.75) 100%)',
+        border: '1px solid rgba(var(--palette-primary-mainChannel) / 0.28)',
       }}
     >
       {/* ── 總額 ────────────────────────────────────────────────────────── */}
@@ -103,7 +105,7 @@ export default function NetWorthHero({ parts, pnlPct, loading }: Props) {
           <Tooltip title={t.portfolio.netWorth.unrealisedPnlTooltip}>
             <Stack direction="row" alignItems="baseline" gap={0.75}>
               <Typography sx={{ fontWeight: 800, fontFamily: MONO, color: pnlTone }}>
-                {fSignedUsd(pnl)}
+                {pnl === null ? '—' : fSignedUsd(pnl)}
               </Typography>
               <Typography variant="caption" sx={{ color: pnlTone, opacity: 0.85, fontFamily: MONO }}>
                 {pnlPct}

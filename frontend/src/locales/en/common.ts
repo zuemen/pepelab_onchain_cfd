@@ -7,6 +7,12 @@ export const common: Catalog['common'] = {
   /** 錢包連線視窗。 */
   wallet: {
     dialogTitle: 'Connect Wallet',
+
+    connectButton: 'Connect Wallet',
+    connecting: 'Connecting…',
+    connectedTitle: 'Connected Wallet',
+    switchAccount: 'Switch Account',
+    disconnect: 'Disconnect',
     closeAria: 'Close wallet connection dialog',
     intro: 'Choose your sign-in channel to enter the {brand} on-chain RWA platform.',
 
@@ -46,6 +52,67 @@ export const common: Catalog['common'] = {
       "This platform runs on a testnet — every asset and balance is simulated, no real money involved. Equivalent to TradingView's Paper Trading mode.",
     compactLabel: 'PAPER TRADING',
     label: 'PAPER TRADING · Simulated testnet trading',
+  },
+
+  shell: {
+    logoAria: 'Go to home page',
+    openNavAria: 'Open navigation menu',
+    expandSidebarAria: 'Expand sidebar',
+    collapseSidebarAria: 'Collapse sidebar',
+    settingsAria: 'Settings button',
+    backToTopAria: 'Back to top',
+    accountAvatarAria: 'Account avatar',
+    accountButtonAria: 'Account button',
+    signOut: 'Logout',
+    needHelp: 'Need help?',
+
+    settings: {
+      title: 'Settings',
+      resetAll: 'Reset all',
+      close: 'Close',
+      mode: 'Mode',
+      contrast: 'Contrast',
+      rtl: 'Right to left',
+      compact: 'Compact',
+      compactTooltip: 'Dashboard only and available at large resolutions > 1600px (xl)',
+      presets: 'Presets',
+      nav: 'Nav',
+      navTooltip: 'Dashboard only',
+      layout: 'Layout',
+      color: 'Color',
+      font: 'Font',
+      fontFamily: 'Family',
+      fontSize: 'Size',
+      fontSizeAria: 'Change font size',
+      fullscreen: 'Fullscreen',
+      exitFullscreen: 'Exit',
+      system: 'System',
+      navIntegrate: 'Integrate',
+      navApparent: 'Apparent',
+    },
+
+    search: {
+      enterKeywords: 'Please enter keywords',
+      notFoundTitle: 'Not found',
+      notFoundBefore: 'No results found for',
+      notFoundAfter: '.',
+      notFoundHint: 'Try checking for typos or using complete words.',
+    },
+
+    notFound: {
+      title: 'Sorry, page not found!',
+      body: 'Sorry, we couldn’t find the page you’re looking for. Perhaps you’ve mistyped the URL? Be sure to check your spelling.',
+      home: 'Go to home',
+    },
+  },
+
+  pnlStatus: {
+    unreadable: 'read failed',
+    noPrice: 'no valid price',
+    stale: 'price stale',
+    unreadableHint: 'This position’s contract data could not be read this time (node timeout or error). It does not mean there is no PnL — refresh to try again.',
+    noPriceHint: 'The oracle has no valid price for this asset right now (price is 0), so the contract cannot value the position and no PnL is shown.',
+    staleHint: 'The oracle price is older than the contract allows; the contract will not accept a close right now, so no PnL is shown.',
   },
 
   avatarPicker: {
@@ -121,6 +188,8 @@ export const common: Catalog['common'] = {
    * 的名字，中文那一半是給讀者的說明。en 版讀者已經看得懂那個英文名字本身，不需要
    * 再翻出第二份說明，所以就是單一個字。
    */
+  rankPrefix: 'RANK',
+
   tier: {
     diamond: 'Diamond',
     gold: 'Gold',

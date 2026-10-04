@@ -129,3 +129,34 @@ session 的單筆保證金 / 總預算 / 槓桿 / 到期 / 撤銷皆由 `AgentSe
   套到 workspace 的依賴上（scratch 最小重現已確認）。這次的 lockfile 是比照全新解析的
   結果，只調整弱點相關的條目。用 npm 11 跑 `npm ls` 會誤報 `invalid`，npm 12 的
   `npm ls` 則正確。之後若要調整這幾個 overrides，同樣要手動對照全新解析的結果。
+
+## 9. dotenv 16 → 18 與 x402／x402-hono 留在 0.5.x（2026-10-04，Dependabot #234／#235／#236）
+
+**dotenv 18 升級，但 `loadEnv()` 的每個選項都寫死。** 唯一的載入點是
+`shared/src/env.ts` 的 `loadEnv()`（`x402_agent.ts` 也改成呼叫它）；keeper 不載入 dotenv。
+
+- dotenv 17 起 `config()` 預設 `quiet: false`，18 起在 stderr 印
+  `◇ injected env (N) from <path>`。只印數量與路徑，不印值，但 CI、Vercel 的 log 會多出
+  .env 相關的輸出。
+- dotenv 17.2 起 `config()` 會從 process.env 以及剛讀進來的 .env 讀
+  `DOTENV_{QUIET,DEBUG,OVERRIDE,FAST,ENCODING,PATH}`（以及 `DOTENV_CONFIG_*`）當預設值。
+  16.6.1 只有 `dotenv/config` 會讀這些變數。不寫死的話，環境裡出現 `DOTENV_OVERRIDE=true`，
+  .env 就會蓋過平台注入的 secret；出現 `DOTENV_DEBUG=true`，每個 key 名都會印到 stdout。
+- `dotenvLoadOptions()` 明確給 `quiet: true, override: false, debug: false, fast: false,
+  encoding: "utf8"`，程式碼給的選項優先於上述環境變數。18 的預設 parser 與 16.6.1 用同一條
+  regex，`populate` 的覆寫規則也一樣。`examples/env-load.test.ts` 會把所有 `DOTENV_*` 開關
+  打開（包括寫在 .env 檔裡的），驗證載入時不輸出任何東西、不覆寫既有變數、parser 結果不變。
+- 18 移除了 `.env.vault`／`DOTENV_KEY`，也移除了 `-r dotenv/config` 預載。本 repo 兩者都沒用到。
+
+**x402 與 x402-hono 維持 0.5.3，dependabot 的 major 與 minor 都 ignore**（理由寫在
+`.github/dependabot.yml`）：
+
+- x402-hono 0.8.0（#234 的 group 裡）已帶有 1.x 的行為改動。實測結果：
+  `x402DefaultGolden` 紅（paywall HTML 長度從 2821006 變成 3548823），
+  `facilitatorErrors` 紅（facilitator 503 從 502 變成 402）。另外它依賴 x402 ^0.8，
+  typecheck 也紅。
+- 單升 x402 1.2.0（#235）時 golden 與 facilitator 測試仍綠，原因是付費牆用的是
+  x402-hono 底下的 0.5.3。代價是 npm 會裝兩份 x402：app.ts 的 `findMatchingRoute` 改用
+  1.2.0，與付費牆不再同源。實測 `/signals/%zz` 這個路徑，0.5.3 判為「不匹配」，
+  1.2.0 判為「匹配」。目前 app.ts 會在更前面的 `normalizeRequestPath` 先回 400，所以碰不到，
+  但「與付費牆完全一致」的前提已經不成立。此外 bundle 會多出 40 個 @solana 套件。

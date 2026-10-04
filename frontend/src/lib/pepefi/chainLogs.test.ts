@@ -2,6 +2,7 @@ import { vi, describe, it, expect } from 'vitest'
 
 import {
   CHUNK_SIZE,
+  CHUNK_TIMEOUT_MS,
   MAX_CHUNKS,
   avgBlockTime,
   chunkRanges,
@@ -271,6 +272,29 @@ describe('getLogsChunkedDetailed', () => {
     const r = await getLogsChunkedDetailed(p, {}, 0, CHUNK_SIZE - 1, { retries: 2, retryDelayMs: 0 })
     expect(r.failedChunks).toBe(0)
     expect(p.getLogs).toHaveBeenCalledTimes(2)
+  })
+
+  // 歷史紀錄頁的「載入中…」在事件都出來之後還掛著：一段 getLogs 永遠不回應，
+  // 整個掃描就永遠不結束。逾時必須讓那一段變成失敗段，掃描照常收尾。
+  it('一段永遠不回應的 getLogs 會逾時成失敗段,掃描照樣結束', async () => {
+    const p = {
+      getLogs: vi.fn((f: { fromBlock: number }) =>
+        f.fromBlock === 0 ? new Promise<never>(() => {}) : Promise.resolve([{ from: f.fromBlock }]),
+      ),
+    }
+    const r = await getLogsChunkedDetailed(p, {}, 0, CHUNK_SIZE * 2 - 1, {
+      retries: 1,
+      retryDelayMs: 0,
+      timeoutMs: 20,
+    })
+    expect(r.failedChunks).toBe(1)
+    expect(r.logs).toEqual([{ from: CHUNK_SIZE }])
+    expect(p.getLogs).toHaveBeenCalledTimes(3) // 卡住的段：第一次 + 一次重試
+  })
+
+  it('預設就有逾時上限,不需要呼叫端記得傳', () => {
+    expect(CHUNK_TIMEOUT_MS).toBeGreaterThan(0)
+    expect(Number.isFinite(CHUNK_TIMEOUT_MS)).toBe(true)
   })
 })
 

@@ -87,7 +87,8 @@ contract MarketMakerVaultTest is Test {
         // LP withdraws everything → principal + routed yield.
         vm.prank(lp);
         uint256 out = vault.withdraw(shares);
-        assertEq(out, 1_002e18);
+        // P1-05: the virtual shares hold back 1 wei (rounding toward the vault).
+        assertEq(out, 1_002e18 - 1);
     }
 
     // ── bailout regression: routing does not break the existing vault floor ─────

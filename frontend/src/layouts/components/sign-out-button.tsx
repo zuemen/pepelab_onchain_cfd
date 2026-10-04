@@ -6,6 +6,8 @@ import Button from '@mui/material/Button';
 
 import { useRouter } from 'src/routes/hooks';
 
+import { t } from 'src/locales';
+
 import { useAuthContext } from 'src/auth/hooks';
 import { signOut } from 'src/auth/context/jwt/action';
 
@@ -42,7 +44,7 @@ export function SignOutButton({ onClose, sx, ...other }: Props) {
       sx={sx}
       {...other}
     >
-      Logout
+      {t.common.shell.signOut}
     </Button>
   );
 }

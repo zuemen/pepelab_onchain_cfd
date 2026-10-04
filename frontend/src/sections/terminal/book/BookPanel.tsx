@@ -24,7 +24,6 @@ import { C, panel, monoCss, labelCss } from '../terminal-theme'
 export function BookPanel({
   symbol,
   activity,
-  currentPrice,
 }: {
   /** 顯示用的標的代號，例如 sBTC。 */
   symbol?: string
@@ -35,8 +34,6 @@ export function BookPanel({
     truncated: boolean
     missed: number
   }
-  /** 算未實現損益用的當前價（18 dp）。 */
-  currentPrice?: bigint
 }) {
   return (
     <Box
@@ -70,7 +67,7 @@ export function BookPanel({
       </Box>
 
       <Box sx={{ flex: 1, minHeight: 0, overflowY: 'auto', py: 1 }}>
-        <MarketActivity {...activity} symbol={symbol} currentPrice={currentPrice} />
+        <MarketActivity {...activity} symbol={symbol} />
       </Box>
     </Box>
   )

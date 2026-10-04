@@ -59,6 +59,11 @@ export const landing = {
 
   oracleDisclosure: 'Oracle 價格由部署者（admin）控制，Demo 期間會即時更新以展示 PnL 變化',
 
+  /** 首頁徽章。網路名稱與 chainId 是技術識別碼，不譯。 */
+  liveOn: '運行於 Base Sepolia 測試網 · 84532',
+  /** 主視覺 logo 的替代文字；{name} 是租戶的品牌名稱。 */
+  logoAlt: '{name} 標誌',
+
   /** 首頁最上方的即時 KPI 條（HeroKpiStrip）。網路名稱、chainId 是技術識別碼，不譯。 */
   heroKpi: {
     x402Revenue: 'x402 收入',

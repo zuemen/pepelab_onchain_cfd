@@ -1,3 +1,5 @@
+import type { DataFreshness } from 'src/lib/pepefi/positionFreshness'
+
 import { useState } from 'react'
 
 import Box from '@mui/material/Box'
@@ -19,6 +21,9 @@ export function AccountPanel({
   equity,
   freeMgn,
   totalPnl,
+  freshness,
+  freshnessLabel,
+  unreadCount,
   usdcBal,
   usdtBal,
   stable,
@@ -27,9 +32,15 @@ export function AccountPanel({
   onDeposited,
 }: {
   contracts: TerminalContracts
-  equity: bigint
+  /** null = 有部位讀不出數字，顯示「—」。 */
+  equity: bigint | null
   freeMgn: bigint
-  totalPnl: bigint
+  /** null = 有部位讀不出數字，顯示「—」。 */
+  totalPnl: bigint | null
+  freshness: DataFreshness
+  freshnessLabel: string
+  /** getPosition 讀不到的部位數；> 0 時合計是 null，並明講少了幾個部位。 */
+  unreadCount: number
   usdcBal: bigint
   usdtBal: bigint
   stable: Stable
@@ -63,7 +74,8 @@ export function AccountPanel({
     }
   }
 
-  const pnl = fromUnits(totalPnl, 18)
+  const pnl = totalPnl === null ? null : fromUnits(totalPnl, 18)
+  const dim = freshness !== 'fresh'
 
   return (
     <Box
@@ -76,16 +88,31 @@ export function AccountPanel({
         gap: 0.6,
       }}
     >
-      <Row k={t.terminal.account.equity} v={fUsd(fromUnits(equity, 18))} strong />
+      <Row
+        k={t.terminal.account.equity}
+        v={equity === null ? '—' : fUsd(fromUnits(equity, 18))}
+        color={dim || equity === null ? C.mut : undefined}
+        strong
+      />
       <Row
         k={t.terminal.account.freeMargin}
         v={fToken(fromUnits(freeMgn, 18), 'USDC', { dp: 2 })}
       />
       <Row
         k={t.terminal.account.unrealizedPnl}
-        v={fNum(pnl, { dp: 4, signed: true })}
-        color={pnl >= 0 ? C.green : C.red}
+        v={pnl === null ? '—' : fNum(pnl, { dp: 4, signed: true })}
+        color={pnl === null || dim ? C.mut : pnl >= 0 ? C.green : C.red}
       />
+      {unreadCount > 0 && (
+        <Box sx={{ fontSize: 10.5, color: C.red, lineHeight: 1.4 }}>
+          {interpolate(t.terminal.account.positionsUnread, { count: unreadCount })}
+        </Box>
+      )}
+      {unreadCount === 0 && (dim || pnl === null) && (
+        <Box sx={{ fontSize: 10.5, color: C.red, lineHeight: 1.4 }}>
+          {pnl === null && !dim ? t.terminal.account.pnlPartial : freshnessLabel}
+        </Box>
+      )}
 
       {/* 幣別切換只影響餘額顯示。入金一律走 USDC，因為 PerpetualExchange 寫死了；
           下面那行說明就是在講這件事。 */}

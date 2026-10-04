@@ -7,6 +7,7 @@ import Box from '@mui/material/Box'
 
 import { t } from 'src/locales'
 import { fUsd, fromUnits } from 'src/lib/pepefi/format'
+import { underlyingLabel } from 'src/lib/pepefi/assetName'
 
 import { ChartToolbar } from './ChartToolbar'
 import { DataSourceBadge } from './DataSourceBadge'
@@ -83,7 +84,7 @@ export function ChartPanel({
 
         <Box sx={{ ml: 'auto', display: 'flex', alignItems: 'center', gap: 1 }}>
           {feed.underlying && (
-            <Box sx={{ ...labelCss, fontSize: 10 }}>{feed.underlying}</Box>
+            <Box sx={{ ...labelCss, fontSize: 10 }}>{underlyingLabel(feed.underlying)}</Box>
           )}
           <DataSourceBadge
             source={feed.source}

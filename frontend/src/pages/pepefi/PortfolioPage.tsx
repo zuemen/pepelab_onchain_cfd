@@ -17,7 +17,18 @@ import { ASSET_IDS, CHAIN_NAMES } from 'src/contracts/addresses';
 import { t, interpolate } from 'src/locales';
 import { ASSET_LABEL } from 'src/lib/pepefi/assetMeta';
 import { prettyError } from 'src/lib/pepefi/errorMessages';
-import { safeRead } from 'src/lib/pepefi/safeRead';
+import {
+  isPriced,
+  totalPnl,
+  totalValue,
+  toPortfolioRow,
+  chainNowSec,
+  cachedMaxPriceAge,
+  readPosition,
+  type PnlStatus,
+  type PortfolioPositionRow,
+} from 'src/lib/pepefi/positionPnl';
+import { pnlStatusText } from 'src/lib/pepefi/positionFreshness';
 import { STABLE_LABEL } from 'src/lib/pepefi/tokenLabel';
 import { firstBlocking, stalenessNotice } from 'src/lib/pepefi/priceFreshness';
 
@@ -46,6 +57,8 @@ import Skeleton, { TableSkeleton } from 'src/components/pepefi/Skeleton';
 import Box from '@mui/material/Box';
 import Container from '@mui/material/Container';
 import Typography from '@mui/material/Typography';
+import MuiTooltip from '@mui/material/Tooltip';
+import Alert from '@mui/material/Alert';
 import Card from '@mui/material/Card';
 import Grid from '@mui/material/Grid';
 import Stack from '@mui/material/Stack';
@@ -83,17 +96,6 @@ interface RawCopyRecord {
   active:        boolean;
 }
 
-interface RawPos {
-  asset:       string;
-  isLong:      boolean;
-  isOpen:      boolean;
-  entryPrice:  bigint;
-  margin:      bigint;
-  leverage:    bigint;
-  openedAt:    bigint;
-  copiedFrom:  string;
-}
-
 interface CopyRec {
   index:         number;
   trader:        string;
@@ -105,20 +107,8 @@ interface CopyRec {
   positionIds:   bigint[];
 }
 
-interface PosRow {
-  id:            bigint;
-  asset:         string;
-  isLong:        boolean;
-  entryPrice:    bigint;    // 18-dec
-  currentPrice:  bigint;    // 18-dec
-  margin:        bigint;    // 18-dec
-  leverage:      bigint;
-  openedAt:      bigint;    // unix seconds
-  unrealizedPnL: bigint;    // signed 18-dec
-  currentValue:  bigint;    // 18-dec ≥ 0
-  copiedFrom:    string;    // address(0) for self-opened
-  accruedFunding: bigint;   // signed 18-dec
-}
+/** 見 lib/pepefi/positionPnl.ts：終端機與這頁共用同一個讀取與損益定義。 */
+type PosRow = PortfolioPositionRow;
 
 // ── Formatting ────────────────────────────────────────────────────────────────
 const f18   = (v: bigint, d = 2) => (Number(v) / 1e18).toFixed(d);
@@ -133,7 +123,26 @@ const fDate = (ts: bigint) =>
     timeStyle: 'short',
   });
 const fPnL      = (v: bigint) => (Number(v) >= 0 ? '+' : '') + f18(v, 4) + ' ' + STABLE_LABEL;
-const pnlColor  = (v: bigint) => Number(v) >= 0 ? 'success.main' : 'error.main';
+const pnlColor  = (v: bigint | null) => v === null ? 'text.secondary' : Number(v) >= 0 ? 'success.main' : 'error.main';
+
+/**
+ * 部位讀不出數字（讀取失敗、無有效價格、價格過期）時的儲存格內容：「—」加原因，
+ * 滑過看說明。絕不補 0——見 lib/pepefi/positionPnl.ts。
+ */
+function NoFigure({ status }: { status: PnlStatus }) {
+  const why = pnlStatusText(status);
+  return (
+    <MuiTooltip title={why?.hint ?? ''}>
+      <Typography component="span" variant="caption" sx={{ color: 'text.secondary', cursor: 'help', fontFamily: MONO }}>
+        — {why?.label}
+      </Typography>
+    </MuiTooltip>
+  );
+}
+
+/** 合計：任何一列沒有數字就是 null（顯示「—」），不把讀不到的列當 0 加進去。 */
+const sumOrNull = (vals: readonly (bigint | null)[]): bigint | null =>
+  vals.some((v) => v === null) ? null : vals.reduce<bigint>((s, v) => s + (v as bigint), 0n);
 const returnPct = (initial: bigint, current: bigint): string => {
   if (initial === 0n) return '—';
   const pct = ((Number(current) - Number(initial)) / Number(initial)) * 100;
@@ -180,14 +189,14 @@ function renderSimplePositionCell(key: OpenPositionColumnKey, row: PosRow) {
       );
     case 'value':
       return (
-        <TableCell key={key} sx={{ fontFamily: MONO, fontWeight: 'bold', fontSize: '0.8125rem', color: pnlColor(row.currentValue - row.margin) }}>
-          {f18(row.currentValue)}
+        <TableCell key={key} sx={{ fontFamily: MONO, fontWeight: 'bold', fontSize: '0.8125rem', color: pnlColor(row.unrealizedPnL) }}>
+          {row.currentValue === null ? <NoFigure status={row.status} /> : f18(row.currentValue)}
         </TableCell>
       );
     case 'unrealizedPnl':
       return (
         <TableCell key={key} sx={{ fontFamily: MONO, fontWeight: 'bold', fontSize: '0.8125rem', color: pnlColor(row.unrealizedPnL) }}>
-          {fPnL(row.unrealizedPnL)}
+          {row.unrealizedPnL === null ? <NoFigure status={row.status} /> : fPnL(row.unrealizedPnL)}
         </TableCell>
       );
     default:
@@ -251,6 +260,8 @@ export default function PortfolioPage() {
   // isPortfolioProvablyEmpty。
   const [copyRecsOk,   setCopyRecsOk]   = useState(false);
   const [positionsOk,  setPositionsOk]  = useState(false);
+  /** getPosition 讀不到的部位數（審查 L5）。>0 時淨資產與合計標成不完整。 */
+  const [positionsUnread, setPositionsUnread] = useState(0);
   const [freeMarginOk, setFreeMarginOk] = useState(false);
 
   const [busy,  setBusy]  = useState<Record<string, boolean>>({});
@@ -311,50 +322,21 @@ export default function PortfolioPage() {
     const positionsResult = await trackedRead((async (): Promise<PosRow[]> => {
       const posIds = (await contracts.exchange.getUserPositions(addr)) as bigint[];
 
-      // getPosition 先併發拿完，再對「還開著」的倉位併發拿細節。舊版是在
-      // 每個 map 裡先 await getPosition 再 await 四個 view，兩層都算在同一個
-      // Promise.all 底下沒錯，但 getPosition 一律要等一個完整 RTT 才開始下一批；
-      // 拆成兩階段後總延遲是 2 個 RTT 而不是 2N 個。
-      const rawPositions = await Promise.all(
-        posIds.map(id =>
-          safeRead<RawPos | null>(contracts.exchange.getPosition(id) as unknown as Promise<RawPos>, null),
-        ),
+      // 每個部位一個 readOpenPosition（getPosition 之後四個 view 併發，各自隔離）。
+      // 終端機的持倉表也走同一個函式，所以同一個部位兩頁的未實現損益一定一樣：
+      // 合約 getPositionValue − 保證金。見 lib/pepefi/positionPnl.ts。
+      // maxPriceAge 有 10 分鐘快取；判斷價格過期用最新區塊時間（與合約一致）。兩者並行讀。
+      const [maxPriceAgeSec, nowSec] = await Promise.all([
+        cachedMaxPriceAge(contracts.exchange),
+        chainNowSec(contracts.exchange),
+      ]);
+      const results = await Promise.all(
+        // 投資組合不顯示標記價，不讀 getMarkPrice（每個部位省一次 RPC）。
+        posIds.map((id) => readPosition(contracts, id, { withMarkPrice: false, maxPriceAgeSec, nowSec })),
       );
-
-      const maybeRows = await Promise.all(
-        posIds.map(async (id, i): Promise<PosRow | null> => {
-          try {
-            const raw = rawPositions[i];
-            if (!raw || !raw.isOpen) return null;
-            // Each read is isolated: a reverting view on one position must not
-            // blank the whole portfolio.
-            const [pnl, val, priceRes, funding] = await Promise.all([
-              safeRead(contracts.exchange.getUnrealizedPnL(id) as Promise<bigint>, 0n),
-              safeRead(contracts.exchange.getPositionValue(id) as Promise<bigint>, 0n),
-              safeRead(
-                contracts.oracle.getPrice(raw.asset) as Promise<[bigint, bigint]>,
-                [0n, 0n] as [bigint, bigint],
-              ),
-              safeRead(contracts.exchange.pendingFunding(id) as Promise<bigint>, 0n),
-            ]);
-            const pr = priceRes as unknown as [bigint, bigint];
-            return {
-              id,
-              asset:          raw.asset,
-              isLong:         raw.isLong,
-              entryPrice:     raw.entryPrice,
-              currentPrice:   pr[0] * 10n ** 10n,
-              margin:         raw.margin,
-              leverage:       raw.leverage,
-              openedAt:       raw.openedAt,
-              unrealizedPnL:  pnl as bigint,
-              currentValue:   val as bigint,
-              copiedFrom:     raw.copiedFrom,
-              accruedFunding: funding as bigint,
-            };
-          } catch { return null; }
-        })
-      );
+      // getPosition 本身讀不到的部位：不能悄悄從列表與淨資產裡消失（審查 L5）。
+      setPositionsUnread(results.filter((r) => r.kind === 'failed').length);
+      const maybeRows: (PosRow | null)[] = results.map((r) => (r.kind === 'open' ? toPortfolioRow(r.row) : null));
       return maybeRows.filter((r): r is PosRow => r !== null);
     })(), [] as PosRow[], 'positions');
     setPositions(positionsResult.value);
@@ -522,8 +504,13 @@ export default function PortfolioPage() {
   // ── Net worth ─────────────────────────────────────────────────────────────
   // freeMargin 有兩個來源：這一頁自己讀的（提領後會立刻更新）與 useAccountBalances
   // 的輪詢。以本頁的為準，因為提領完不該還顯示舊值等下一輪輪詢。
-  const lockedMargin = positions.reduce((s, p) => s + p.margin, 0n);
-  const unrealisedPnl = positions.reduce((s, p) => s + p.unrealizedPnL, 0n);
+  // 有部位讀不到時，鎖住的保證金也不完整：交給 netWorthOf 標成「此總額不完整」。
+  const lockedMargin = positionsUnread > 0 ? null : positions.reduce((s, p) => s + p.margin, 0n);
+  // 任何部位讀不出數字就是 null：淨資產會標成「此總額不完整」，而不是把它當 0 加進去。
+  const unrealisedPnl = positionsUnread > 0 ? null : totalPnl(positions.map((p) => ({ pnl: p.unrealizedPnL })));
+  const positionsValueTotal = positionsUnread > 0 ? null : totalValue(positions.map((p) => ({ value: p.currentValue })));
+  const fundingTotal = sumOrNull(positions.map((p) => p.accruedFunding));
+  const pricedPositions = positions.filter(isPriced);
 
   // 現貨代幣（/tokens 買的 sGOLD、sBOND…）以 oracle 價計入淨值。讀取中當成 null
   // （不完整），讀到餘額但缺價的那幾檔由 spotUnpriced 帶出「此總額不完整」。
@@ -544,7 +531,7 @@ export default function PortfolioPage() {
   };
 
   const notionalTotal = positions.reduce((s, p) => s + p.margin * p.leverage, 0n);
-  const pnlPctStr = notionalTotal > 0n
+  const pnlPctStr = notionalTotal > 0n && unrealisedPnl !== null
     ? (Number(unrealisedPnl) / Number(notionalTotal) >= 0 ? '+' : '')
       + ((Number(unrealisedPnl) / Number(notionalTotal)) * 100).toFixed(2) + '%'
     : '—';
@@ -717,7 +704,7 @@ export default function PortfolioPage() {
       <>
       {/* RWA 是本平台的最大賣點，緊接在淨值 hero 之後、任何操作之前——見
           RwaAllocation.tsx 頂部註解。Simple／Expert 皆顯示，零持倉也照樣顯示。 */}
-      <RwaAllocation rows={positions} holdings={synthHoldings.rows} />
+      <RwaAllocation rows={pricedPositions} holdings={synthHoldings.rows} />
 
       {/* KYC 是 RwaAllocation 剛講的「四大類都能配置」背後那道閘門——緊接在它
           後面，讓「這個平台讓你配什麼」和「我現在能不能配」連在一起讀。常駐
@@ -885,6 +872,11 @@ export default function PortfolioPage() {
           </Typography>
         </Box>
 
+        {positionsUnread > 0 && (
+          <Alert severity="warning" sx={{ mx: 2, mb: 1 }}>
+            {interpolate(t.portfolio.page.positionsUnread, { count: positionsUnread })}
+          </Alert>
+        )}
         {positions.length === 0 ? (
           <Typography variant="body2" color="text.secondary" align="center" sx={{ py: 4, fontStyle: 'italic' }}>
             {t.portfolio.page.noOpenPositions}
@@ -919,10 +911,10 @@ export default function PortfolioPage() {
                 <TableRow sx={{ bgcolor: 'background.neutral' }}>
                   <TableCell colSpan={2} sx={{ fontWeight: 'bold', color: 'text.primary' }}>{t.portfolio.page.total}</TableCell>
                   <TableCell sx={{ fontFamily: MONO, fontWeight: 'bold', color: 'text.primary' }}>
-                    {f18(positions.reduce((s, p) => s + p.currentValue, 0n))}
+                    {positionsValueTotal === null ? '—' : f18(positionsValueTotal)}
                   </TableCell>
-                  <TableCell sx={{ fontFamily: MONO, fontWeight: 'bold', color: pnlColor(positions.reduce((s, p) => s + p.unrealizedPnL, 0n)) }}>
-                    {fPnL(positions.reduce((s, p) => s + p.unrealizedPnL, 0n))}
+                  <TableCell sx={{ fontFamily: MONO, fontWeight: 'bold', color: pnlColor(unrealisedPnl) }}>
+                    {unrealisedPnl === null ? '—' : fPnL(unrealisedPnl)}
                   </TableCell>
                   <TableCell />
                 </TableRow>
@@ -999,7 +991,7 @@ export default function PortfolioPage() {
                       />
                     </TableCell>
                     <TableCell sx={{ fontFamily: MONO, fontSize: '0.8125rem' }}>{fUsd(row.entryPrice)}</TableCell>
-                    <TableCell sx={{ fontFamily: MONO, fontSize: '0.8125rem' }}>{fUsd(row.currentPrice)}</TableCell>
+                    <TableCell sx={{ fontFamily: MONO, fontSize: '0.8125rem' }}>{row.currentPrice === null ? '—' : fUsd(row.currentPrice)}</TableCell>
                     <TableCell sx={{ fontFamily: MONO, fontSize: '0.8125rem' }}>
                       {(() => {
                         // 讀不到價格就是「—」，不再以黃色顯示模擬價；有價格時標出來源。
@@ -1029,13 +1021,13 @@ export default function PortfolioPage() {
                     </TableCell>
                     )}
                     <TableCell sx={{ fontFamily: MONO, fontWeight: 'bold', fontSize: '0.8125rem', color: pnlColor(row.unrealizedPnL) }}>
-                      {fPnL(row.unrealizedPnL)}
+                      {row.unrealizedPnL === null ? <NoFigure status={row.status} /> : fPnL(row.unrealizedPnL)}
                     </TableCell>
-                    <TableCell sx={{ fontFamily: MONO, fontSize: '0.75rem', color: row.accruedFunding < 0n ? 'success.main' : row.accruedFunding > 0n ? 'error.main' : 'text.secondary' }}>
-                      {row.accruedFunding === 0n ? '—' : fPnL(-row.accruedFunding)}
+                    <TableCell sx={{ fontFamily: MONO, fontSize: '0.75rem', color: row.accruedFunding === null || row.accruedFunding === 0n ? 'text.secondary' : row.accruedFunding < 0n ? 'success.main' : 'error.main' }}>
+                      {row.accruedFunding === null || row.accruedFunding === 0n ? '—' : fPnL(-row.accruedFunding)}
                     </TableCell>
-                    <TableCell sx={{ fontFamily: MONO, fontWeight: 'bold', fontSize: '0.8125rem', color: pnlColor(row.currentValue - row.margin) }}>
-                      {f18(row.currentValue)}
+                    <TableCell sx={{ fontFamily: MONO, fontWeight: 'bold', fontSize: '0.8125rem', color: pnlColor(row.unrealizedPnL) }}>
+                      {row.currentValue === null ? <NoFigure status={row.status} /> : f18(row.currentValue)}
                     </TableCell>
                     {renderCloseCell(row)}
                   </TableRow>
@@ -1044,14 +1036,14 @@ export default function PortfolioPage() {
               <tfoot style={{ borderTop: '1px solid rgba(255,255,255,0.08)' }}>
                 <TableRow sx={{ bgcolor: 'background.neutral' }}>
                   <TableCell colSpan={showCopiedFrom ? 9 : 8} sx={{ fontWeight: 'bold', color: 'text.primary' }}>{t.portfolio.page.total}</TableCell>
-                  <TableCell sx={{ fontFamily: MONO, fontWeight: 'bold', color: pnlColor(positions.reduce((s, p) => s + p.unrealizedPnL, 0n)) }}>
-                    {fPnL(positions.reduce((s, p) => s + p.unrealizedPnL, 0n))}
+                  <TableCell sx={{ fontFamily: MONO, fontWeight: 'bold', color: pnlColor(unrealisedPnl) }}>
+                    {unrealisedPnl === null ? '—' : fPnL(unrealisedPnl)}
                   </TableCell>
-                  <TableCell sx={{ fontFamily: MONO, fontSize: '0.75rem', color: positions.reduce((s, p) => s + p.accruedFunding, 0n) < 0n ? 'success.main' : 'error.main' }}>
-                    {fPnL(-positions.reduce((s, p) => s + p.accruedFunding, 0n))}
+                  <TableCell sx={{ fontFamily: MONO, fontSize: '0.75rem', color: fundingTotal === null ? 'text.secondary' : fundingTotal < 0n ? 'success.main' : 'error.main' }}>
+                    {fundingTotal === null ? '—' : fPnL(-fundingTotal)}
                   </TableCell>
                   <TableCell sx={{ fontFamily: MONO, fontWeight: 'bold', color: 'text.primary' }}>
-                    {f18(positions.reduce((s, p) => s + p.currentValue, 0n))}
+                    {positionsValueTotal === null ? '—' : f18(positionsValueTotal)}
                   </TableCell>
                   <TableCell />
                 </TableRow>
@@ -1063,7 +1055,7 @@ export default function PortfolioPage() {
       )}
 
       {/* ─── Analysis (expert only) ─────────────────────────────────────── */}
-      {mode === 'expert' && <PortfolioAnalysis rows={positions} esg={esg} />}
+      {mode === 'expert' && <PortfolioAnalysis rows={pricedPositions} esg={esg} />}
 
       {/* ─── C + D side-by-side ─────────────────────────────────────────── */}
       <Grid container spacing={3}>

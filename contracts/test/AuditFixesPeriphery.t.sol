@@ -46,7 +46,7 @@ contract AuditFixesPeripheryTest is Test {
         vm.prank(exchangeStub);
         vault.bailout(1_000e18, makeAddr("bankruptTrader"));
         assertEq(vault.totalAssets(), 0);
-        assertEq(vault.totalSupply(), 1_000e18);   // alice's shares still exist
+        assertEq(vault.totalSupply(), 1_000e18 * 1e6); // alice's shares still exist (24-dec pIV, P1-05)
 
         vm.prank(bob); usdc.approve(address(vault), type(uint256).max);
         vm.prank(bob);
@@ -54,7 +54,7 @@ contract AuditFixesPeripheryTest is Test {
         vault.deposit(1_000e18);
 
         // And alice's shares are still worth nothing, as they should be.
-        assertEq(vault.previewWithdraw(1_000e18), 0);
+        assertEq(vault.previewWithdraw(vault.balanceOf(alice)), 0);
     }
 
     /// @dev The vault must be recoverable, otherwise refusing deposits would
@@ -75,7 +75,7 @@ contract AuditFixesPeripheryTest is Test {
         vm.prank(bob); usdc.approve(address(vault), type(uint256).max);
         vm.prank(bob);
         uint256 shares = vault.deposit(1_000e18);
-        assertEq(shares, 1_000e18);                // priced at 1:1 again, fairly
+        assertEq(shares, 1_000e18 * 1e6);          // priced at 1:1 again (whole units, 24-dec pIV), fairly
     }
 
     // ── FeeRouter (Low): performance fee must be pulled, not just booked ──────

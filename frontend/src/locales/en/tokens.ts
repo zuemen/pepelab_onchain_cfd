@@ -5,6 +5,20 @@ import type { Catalog } from '../zh-TW';
  */
 export const tokens: Catalog['tokens'] = {
   /** 見 `../zh-TW/tokens.ts`。 */
+  assetName: {
+    sBTC: 'Synthetic Bitcoin',
+    sETH: 'Synthetic Ethereum',
+    sAAPL: 'Synthetic Apple Inc.',
+    sTSLA: 'Synthetic Tesla Inc.',
+    sGOLD: 'Synthetic Gold (XAU/USD)',
+    sBOND: 'Synthetic Green Bond ETF (BGRN)',
+    sNVDA: 'Synthetic NVIDIA Corp.',
+    sMSFT: 'Synthetic Microsoft Corp.',
+    sGOOGL: 'Synthetic Alphabet Inc.',
+    sICLN: 'Synthetic iShares Clean Energy ETF',
+    sESGU: 'Synthetic iShares MSCI USA ESG ETF',
+  },
+
   attested: {
     title: 'Attested Carbon Tier',
     sourceNote: 'Median across on-chain attestations',

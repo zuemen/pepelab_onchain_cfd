@@ -1,5 +1,6 @@
 import { useRef, useState, useEffect, useCallback } from 'react'
 
+import { chainNowSec, cachedMaxPriceAge } from 'src/lib/pepefi/positionPnl'
 import { mapLimit, withRetry, RPC_CONCURRENCY } from 'src/lib/pepefi/rpcBatch'
 
 // 鏈上實際部位活動：某個標的最近有誰開了什麼倉、平掉了沒、賺賠多少。
@@ -48,6 +49,21 @@ export interface ActivityRow {
   closedAt: bigint
   realizedPnL: bigint
   isOpen: boolean
+  /**
+   * 未平倉才有：合約 `getPositionValue`（平倉可拿回的金額）。未實現損益由它減保證金
+   * 得出，跟持倉表、投資組合頁同一個定義（lib/pepefi/positionPnl.ts）。讀不到為 null。
+   */
+  positionValue?: bigint | null
+  /**
+   * 未平倉才有：該標的 oracle 的 [價格(8 dp), 更新時間]。價格為 0 或過期時合約的
+   * getPositionValue 會回 0（不 revert），不檢查就會把全平台的部位都畫成「保證金全虧」。
+   * 讀不到為 null。
+   */
+  oracle?: readonly [bigint, bigint] | null
+  /** 合約 maxPriceAge（秒），判斷過期用。 */
+  maxPriceAgeSec?: number
+  /** 讀取當下最新區塊的 timestamp（秒），判斷過期用（與合約一致）。 */
+  nowSec?: number
 }
 
 export interface MarketActivity {
@@ -98,7 +114,25 @@ async function scanAll(contracts: Contracts): Promise<ScanResult> {
         // 重試而不是直接跳過：公開 RPC 即使在併發 6 也會零星丟包（實測掃 76 筆
         // 有 8 筆失敗；加了重試之後多數輪次歸零，但仍非保證）。靜默跳過會讓列表
         // 無聲地少幾列，看起來像「這個標的就只有這些部位」。
-        return (await withRetry(() => ex.getPosition(id))) as ActivityRow
+        const p = (await withRetry(() => ex.getPosition(id))) as ActivityRow
+        if (!p.isOpen) return p
+        // ethers 的 Result 是唯讀的 array-like，展開成一般物件才能加欄位。
+        const positionValue = await withRetry(() => ex.getPositionValue(id))
+          .then((v: unknown) => v as bigint)
+          .catch(() => null)
+        return {
+          id: p.id ?? BigInt(id),
+          asset: p.asset,
+          isLong: p.isLong,
+          entryPrice: p.entryPrice,
+          margin: p.margin,
+          leverage: p.leverage,
+          openedAt: p.openedAt,
+          closedAt: p.closedAt,
+          realizedPnL: p.realizedPnL,
+          isOpen: p.isOpen,
+          positionValue,
+        } satisfies ActivityRow
       } catch {
         missed += 1
         return null
@@ -110,6 +144,30 @@ async function scanAll(contracts: Contracts): Promise<ScanResult> {
       // nextPositionId 之下未必每個 ID 都存在；未初始化的 asset 是 0x0。
       if (!p.asset || p.asset === ZERO_ASSET) continue
       rows.push(p)
+    }
+  }
+
+  // 未平倉部位的標的價格：每個標的讀一次 oracle（不是每個部位一次）。
+  const openAssets = [...new Set(rows.filter((r) => r.isOpen).map((r) => r.asset))]
+  if (openAssets.length) {
+    const [maxPriceAgeSec, nowSec, quotes] = await Promise.all([
+      cachedMaxPriceAge(ex),
+      chainNowSec(ex),
+      mapLimit(openAssets, RPC_CONCURRENCY, async (asset) => {
+        try {
+          const q = (await withRetry(() => contracts.oracle.getPrice(asset))) as [bigint, bigint]
+          return [q[0], q[1]] as const
+        } catch {
+          return null
+        }
+      }),
+    ])
+    const byAsset = new Map(openAssets.map((a, i) => [a, quotes[i]]))
+    for (const r of rows) {
+      if (!r.isOpen) continue
+      r.oracle = byAsset.get(r.asset) ?? null
+      r.maxPriceAgeSec = maxPriceAgeSec
+      r.nowSec = nowSec
     }
   }
 
