@@ -1,0 +1,36 @@
+== B. 沒有誤傷保留角色
+  PASS  keeper 仍可寫 MockOracle 0x17CA（price-keeper.yml 路徑）
+  PASS  keeper 仍可寫 GuardedOracle（KEEPER_ROLE 未受影響）asset 0x6587d61b
+  PASS  keeper 仍可寫 GuardedOracle（KEEPER_ROLE 未受影響）asset 0xeed17252
+  PASS  guardian 仍可 setPaused(true) GuardedOracle
+  PASS  guardian 仍可 setPaused(false) GuardedOracle
+== A0. 不需快轉時間的路徑（V2 贖回、質押、AMM）
+  PASS  AssetVaultV2 redeem(sAAPL, 1)（唯一的 sAAPL 持有人是外洩地址；redeem 不需要任何角色）
+        mUSDC 增加 332.68892999999997
+  INFO  PepeStaking 目前沒有任何質押者（餘額只是獎勵預算），無提領可測
+  INFO  PepeAMM 0x3e65 部署版本的 bytecode 沒有 removeLiquidity／owner 提款（凍結前後相同）；改測 swap 路徑
+  PASS  PepeAMM 使用者 approve
+  PASS  PepeAMM(現行) swapUSDCForETH(10) 仍可用
+== A. 使用者資金路徑（凍結後）
+  PASS  PerpetualExchange(現行 Sepolia) 持有人 #1 withdrawMargin(1,000) — freeMargin 前 <略>
+        錢包 mUSDC 增加 <略>
+  PASS  PerpetualExchange(現行 Sepolia) 持有人 #1 closePosition(#<略>)
+  PASS  InsuranceVault(現行 Sepolia) 持有人 withdraw(全部 <略> shares)
+        錢包 mUSDC 增加 <略>
+  PASS  TraderStake(現行 Sepolia) 持有人 requestUnstake(<略>)
+  PASS  TraderStake executeUnstake()（快轉 1 天冷卻）
+        錢包 mUSDC 增加 <略>
+  PASS  舊 PerpetualExchange 0x4cC7 非外洩持有人 closePosition(#<略>)（舊 oracle 已無 owner，以凍結價結算）
+  PASS  舊 PerpetualExchange 0x4cC7 非外洩持有人 withdrawMargin(全額 <略>)
+        錢包舊 mUSDC 增加 <略>
+== C1 修補：82c68d9 版 exchange 的 FeeRouter 已停用（放棄 owner 前必做，見 runbook §4）
+  PASS  現行 exchange 0x0c64 feeRouter()==0
+  PASS  舊 exchange 0x4cC7 feeRouter()==0
+== C. 外洩金鑰已無法動手
+  PASS  外洩地址 grantRole(KEEPER) on GuardedOracle（revert，符合預期）
+  PASS  外洩地址 grantRole(MINTER) on sAAPL(V2)（revert，符合預期）
+  PASS  外洩地址 grantRole(RISK) on AssetVaultV2（DEFAULT_ADMIN 檢查，等同升級權限的同一個 admin）（revert，符合預期）
+  PASS  外洩地址 updatePrice on 舊 MockOracle 0x3f1E（revert，符合預期）
+  PASS  外洩地址 setFeeRouter on 現行 Sepolia exchange（revert，符合預期）
+  PASS  外洩地址 mint PEPE（revert，符合預期）
+== 結果：PASS 23 / FAIL 0

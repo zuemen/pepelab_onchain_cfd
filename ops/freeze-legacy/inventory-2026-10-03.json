@@ -1,0 +1,1325 @@
+{
+ "$comment": "2026-10-03 唯讀盤點：外洩地址 0xE80A…Eb93 在每顆有 code 的合約上持有的權限（凍結前）。候選集合 = 外洩地址 CREATE nonce 0..N 全掃 ∪ 全區段 OwnershipTransferred／RoleGranted 事件（newOwner/account = 外洩地址）的發出合約 ∪ repo 內出現過的位址。只有合約位址與權限，沒有任何持有人資料。由 ops/freeze-legacy/readback.mjs 讀取。 已排除 EIP-7702 委派的一般帳戶（runtime code 為 23 bytes 的 0xef0100…）：它們不是合約。",
+ "generatedAt": "2026-10-03",
+ "leaked": "0xE80A81360608C1342e66743F70a00f75d792Eb93",
+ "chains": {
+  "sepolia": {
+   "chainId": 11155111,
+   "leakNonceAtScan": 1231,
+   "contracts": [
+    {
+     "address": "0x00000000000C2E074eC69A0dFb2997BA6C7d2e1e",
+     "label": null,
+     "createdByLeak": false,
+     "leakPrivilegesBefore": []
+    },
+    {
+     "address": "0x000000000022D473030F116dDEE9F6B43aC78BA3",
+     "label": null,
+     "createdByLeak": false,
+     "leakPrivilegesBefore": []
+    },
+    {
+     "address": "0x00f6cf0113399a7A451c7f85fe094a28092d3e0c",
+     "label": "PerpetualExchange (2026-05 #1)",
+     "createdByLeak": true,
+     "leakPrivilegesBefore": [
+      "owner()"
+     ]
+    },
+    {
+     "address": "0x01C5C0122039549AD1493B8220cABEdD739BC44E",
+     "label": null,
+     "createdByLeak": false,
+     "leakPrivilegesBefore": []
+    },
+    {
+     "address": "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
+     "label": null,
+     "createdByLeak": false,
+     "leakPrivilegesBefore": []
+    },
+    {
+     "address": "0x042A4e1F9750CE76fb96F063acB40a4f813C0737",
+     "label": null,
+     "createdByLeak": true,
+     "leakPrivilegesBefore": []
+    },
+    {
+     "address": "0x055FD971965662286F03ddBe1401ebACd2356c15",
+     "label": null,
+     "createdByLeak": true,
+     "leakPrivilegesBefore": []
+    },
+    {
+     "address": "0x05F9613aDB30026FFd634f38e5C4dFd30a197Fa1",
+     "label": null,
+     "createdByLeak": false,
+     "leakPrivilegesBefore": []
+    },
+    {
+     "address": "0x0971690615EcAAa39eA517B85B9Cf7ABd247Fe59",
+     "label": null,
+     "createdByLeak": true,
+     "leakPrivilegesBefore": []
+    },
+    {
+     "address": "0x0c6459d38617E60017bDc4ed69ec26137DA5c32b",
+     "label": "PerpetualExchange",
+     "createdByLeak": true,
+     "leakPrivilegesBefore": [
+      "owner()"
+     ]
+    },
+    {
+     "address": "0x0e8b6478038876741925A5B7A571596E6f4a695E",
+     "label": "sTSLA (V2)",
+     "createdByLeak": true,
+     "leakPrivilegesBefore": [
+      "DEFAULT_ADMIN_ROLE"
+     ]
+    },
+    {
+     "address": "0x0FfA7f279fED4E19b3018A4461A8F387aA6c16C2",
+     "label": "FeeRouter (old)",
+     "createdByLeak": true,
+     "leakPrivilegesBefore": [
+      "owner()"
+     ]
+    },
+    {
+     "address": "0x115CED81eD9Ef6a1c5faa428cEaf076E284b4871",
+     "label": null,
+     "createdByLeak": true,
+     "leakPrivilegesBefore": []
+    },
+    {
+     "address": "0x118917a40FAF1CD7a13dB0Ef56C86De7973Ac503",
+     "label": null,
+     "createdByLeak": false,
+     "leakPrivilegesBefore": []
+    },
+    {
+     "address": "0x11D1E96aa302a93897de8e60CB00b38247Fafc78",
+     "label": "TraderStake (old)",
+     "createdByLeak": true,
+     "leakPrivilegesBefore": [
+      "owner()"
+     ]
+    },
+    {
+     "address": "0x167Bacef1925184f0df34A3196F834C0622Cfd36",
+     "label": null,
+     "createdByLeak": true,
+     "leakPrivilegesBefore": []
+    },
+    {
+     "address": "0x16Fc5058F25648194471939df75CF27A2fdC48BC",
+     "label": null,
+     "createdByLeak": false,
+     "leakPrivilegesBefore": []
+    },
+    {
+     "address": "0x17CA20A37Cf04F2f589B2573EC95f1411D29d958",
+     "label": null,
+     "createdByLeak": true,
+     "leakPrivilegesBefore": []
+    },
+    {
+     "address": "0x18c35cb3D3DdC522D0b7996e01d4a5C8b9cf16f4",
+     "label": "MockOracle (old)",
+     "createdByLeak": true,
+     "leakPrivilegesBefore": [
+      "owner()"
+     ]
+    },
+    {
+     "address": "0x191b8D2F561F977c8bF31e40a0E03fafd7c1E421",
+     "label": null,
+     "createdByLeak": true,
+     "leakPrivilegesBefore": []
+    },
+    {
+     "address": "0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238",
+     "label": null,
+     "createdByLeak": false,
+     "leakPrivilegesBefore": []
+    },
+    {
+     "address": "0x2297e580166aF35dd0065379286f782933653079",
+     "label": "FeeRouter",
+     "createdByLeak": true,
+     "leakPrivilegesBefore": [
+      "owner()"
+     ]
+    },
+    {
+     "address": "0x29e5732AC62254d9b92A1C7d3F38EbFA8809B57d",
+     "label": null,
+     "createdByLeak": true,
+     "leakPrivilegesBefore": []
+    },
+    {
+     "address": "0x2afE6a153709FaED8dAc19Deb9D390855E522CE5",
+     "label": null,
+     "createdByLeak": true,
+     "leakPrivilegesBefore": []
+    },
+    {
+     "address": "0x2B4516FD9af3aB104A920fe3C197340BbfAb847b",
+     "label": "PepeAMM (old)",
+     "createdByLeak": true,
+     "leakPrivilegesBefore": [
+      "owner()"
+     ]
+    },
+    {
+     "address": "0x2b9EA2cC78c73FF8bEAE60d5444c676988568f64",
+     "label": null,
+     "createdByLeak": true,
+     "leakPrivilegesBefore": []
+    },
+    {
+     "address": "0x2cBB4310Dfc62A591975f71c818EF4E3f655Bc1d",
+     "label": "TraderStake (old)",
+     "createdByLeak": true,
+     "leakPrivilegesBefore": [
+      "owner()"
+     ]
+    },
+    {
+     "address": "0x32A19D04ef2ca5A7DA02Df39419729fA745749A1",
+     "label": "GuardedOracle",
+     "createdByLeak": true,
+     "leakPrivilegesBefore": [
+      "DEFAULT_ADMIN_ROLE",
+      "GUARDIAN_ROLE",
+      "KEEPER_ROLE"
+     ]
+    },
+    {
+     "address": "0x33963D72EB305ddBb027E1aEC2785579ba685d71",
+     "label": "PepeIncentives (old)",
+     "createdByLeak": true,
+     "leakPrivilegesBefore": [
+      "owner()"
+     ]
+    },
+    {
+     "address": "0x349757C3C171DbAF1cB885f03b8EFc2c93C9a3a9",
+     "label": null,
+     "createdByLeak": true,
+     "leakPrivilegesBefore": []
+    },
+    {
+     "address": "0x35967322A5705354d858c92834bb99DCEd92a65D",
+     "label": null,
+     "createdByLeak": true,
+     "leakPrivilegesBefore": []
+    },
+    {
+     "address": "0x37DC7b70899BFfB17949366a5b6a86203C428E2f",
+     "label": null,
+     "createdByLeak": true,
+     "leakPrivilegesBefore": []
+    },
+    {
+     "address": "0x3a37415981F6f4fC27FA6c8C62F1d4e47115fD17",
+     "label": "AssetVaultV2",
+     "createdByLeak": true,
+     "leakPrivilegesBefore": [
+      "DEFAULT_ADMIN_ROLE",
+      "PAUSER_ROLE",
+      "RISK_ROLE"
+     ]
+    },
+    {
+     "address": "0x3e6503BA0F4ad9E4743b695141CeB48709106A0c",
+     "label": "PepeAMM",
+     "createdByLeak": true,
+     "leakPrivilegesBefore": [
+      "owner()"
+     ]
+    },
+    {
+     "address": "0x3f1E53C64bc644D07b8FA76baC8aEE33b96194d8",
+     "label": "MockOracle (old)",
+     "createdByLeak": true,
+     "leakPrivilegesBefore": [
+      "owner()"
+     ]
+    },
+    {
+     "address": "0x3fC91A3afd70395Cd496C647d5a6CC9D4B2b7FAD",
+     "label": null,
+     "createdByLeak": false,
+     "leakPrivilegesBefore": []
+    },
+    {
+     "address": "0x3fe1dbC82eA267085CAB5eb67C6b7d3E68A7d673",
+     "label": "TraderStake",
+     "createdByLeak": true,
+     "leakPrivilegesBefore": [
+      "owner()"
+     ]
+    },
+    {
+     "address": "0x401eCb1D350407f13ba348573E5630B83638E30D",
+     "label": null,
+     "createdByLeak": false,
+     "leakPrivilegesBefore": []
+    },
+    {
+     "address": "0x446eeaC0368Dad42fC9e3B57ECC24FAb747CDFf5",
+     "label": "MockOracle (old)",
+     "createdByLeak": true,
+     "leakPrivilegesBefore": [
+      "owner()"
+     ]
+    },
+    {
+     "address": "0x468a65aCB9e83955459e6FeA41783ecF0D90c067",
+     "label": null,
+     "createdByLeak": true,
+     "leakPrivilegesBefore": []
+    },
+    {
+     "address": "0x481E650A3E6617C8E387E2e9229e725BE242BD3f",
+     "label": null,
+     "createdByLeak": true,
+     "leakPrivilegesBefore": []
+    },
+    {
+     "address": "0x49f53e41452C74589E85cA1677426Ba426459e85",
+     "label": null,
+     "createdByLeak": false,
+     "leakPrivilegesBefore": []
+    },
+    {
+     "address": "0x4cC711AEa7c6D7E19e99676b51b7A69ee08c31Eb",
+     "label": "PerpetualExchange (old)",
+     "createdByLeak": true,
+     "leakPrivilegesBefore": [
+      "owner()"
+     ]
+    },
+    {
+     "address": "0x4cF1A7DB08BDcC59FAA2514606F1096AB85D159f",
+     "label": "PepeAMM (old)",
+     "createdByLeak": true,
+     "leakPrivilegesBefore": [
+      "owner()"
+     ]
+    },
+    {
+     "address": "0x4ed4E862860beD51a9570b96d89aF5E1B0Efefed",
+     "label": null,
+     "createdByLeak": false,
+     "leakPrivilegesBefore": []
+    },
+    {
+     "address": "0x54e5a77638760eD90D43E1E25a6D9b4A566beB82",
+     "label": "FeeRouter (old)",
+     "createdByLeak": true,
+     "leakPrivilegesBefore": [
+      "owner()"
+     ]
+    },
+    {
+     "address": "0x54e8C43f9Eb151Bb8DD6e61d16a969C4D0e73915",
+     "label": null,
+     "createdByLeak": true,
+     "leakPrivilegesBefore": []
+    },
+    {
+     "address": "0x551C0B2e75a9129fe697210223F1Ca6e64F3C6d5",
+     "label": null,
+     "createdByLeak": true,
+     "leakPrivilegesBefore": []
+    },
+    {
+     "address": "0x576856E68FdE8D586EAa2E2c21e74c4D37587e8F",
+     "label": "sETH (V2)",
+     "createdByLeak": true,
+     "leakPrivilegesBefore": [
+      "DEFAULT_ADMIN_ROLE"
+     ]
+    },
+    {
+     "address": "0x5Bb30b2C730c6C9FE03911D696d895c0A3e3B123",
+     "label": null,
+     "createdByLeak": true,
+     "leakPrivilegesBefore": []
+    },
+    {
+     "address": "0x5f98b068480334633EdA2C1051293b325e1e5c20",
+     "label": null,
+     "createdByLeak": true,
+     "leakPrivilegesBefore": []
+    },
+    {
+     "address": "0x612674Ab98589228309353FCc2f9d88Cc830CBdF",
+     "label": "PepeAMM (old)",
+     "createdByLeak": true,
+     "leakPrivilegesBefore": [
+      "owner()"
+     ]
+    },
+    {
+     "address": "0x6196E77023318EE3DF0745b001161c17c2c109bF",
+     "label": "MockOracle (old)",
+     "createdByLeak": true,
+     "leakPrivilegesBefore": [
+      "owner()"
+     ]
+    },
+    {
+     "address": "0x655D51EDE4439d66894663AD4725770381db3EBa",
+     "label": null,
+     "createdByLeak": true,
+     "leakPrivilegesBefore": []
+    },
+    {
+     "address": "0x65b9F1B4d18822d4faBa763621E3e4eA065aE5D7",
+     "label": "PepeIncentives",
+     "createdByLeak": true,
+     "leakPrivilegesBefore": [
+      "owner()"
+     ]
+    },
+    {
+     "address": "0x69fd695Bc7C3aFdb35ABA35cD6890C506400b035",
+     "label": "CoolToken (nonce 0)",
+     "createdByLeak": true,
+     "leakPrivilegesBefore": [
+      "owner()"
+     ]
+    },
+    {
+     "address": "0x6D798128a5553E703B20f9A789260f999b6fb511",
+     "label": "MockOracle (old)",
+     "createdByLeak": true,
+     "leakPrivilegesBefore": [
+      "owner()"
+     ]
+    },
+    {
+     "address": "0x70B91d94e80C71FFfad3Ab39cd187aa67F70bfd7",
+     "label": null,
+     "createdByLeak": true,
+     "leakPrivilegesBefore": []
+    },
+    {
+     "address": "0x7134CfDCc806Dd9f1C39f1c8a5828bE10604fBFB",
+     "label": null,
+     "createdByLeak": true,
+     "leakPrivilegesBefore": []
+    },
+    {
+     "address": "0x73756CF6e0738db54E2823512997033e309fcd24",
+     "label": "TraderStake (old)",
+     "createdByLeak": true,
+     "leakPrivilegesBefore": [
+      "owner()"
+     ]
+    },
+    {
+     "address": "0x7A7D35106B79919A48494BD5c827350bC179ACcF",
+     "label": null,
+     "createdByLeak": true,
+     "leakPrivilegesBefore": []
+    },
+    {
+     "address": "0x7d40A2D3e39cDD1Dc613071D3C463AA161f7C5bB",
+     "label": "KYCRegistry",
+     "createdByLeak": true,
+     "leakPrivilegesBefore": [
+      "owner()"
+     ]
+    },
+    {
+     "address": "0x82c94AAE3F50F2eE31241B986366BC929b774f7a",
+     "label": null,
+     "createdByLeak": true,
+     "leakPrivilegesBefore": []
+    },
+    {
+     "address": "0x84457ca9D0163FbC4bbfe4Dfbb20ba46e48DF254",
+     "label": null,
+     "createdByLeak": false,
+     "leakPrivilegesBefore": []
+    },
+    {
+     "address": "0x84C27703db71062061364E5B8E015139b2ac0163",
+     "label": "sAAPL (V2)",
+     "createdByLeak": true,
+     "leakPrivilegesBefore": [
+      "DEFAULT_ADMIN_ROLE"
+     ]
+    },
+    {
+     "address": "0x852c0fBa54552aafbA4798709d90056159682A4C",
+     "label": "PepeClaim",
+     "createdByLeak": true,
+     "leakPrivilegesBefore": [
+      "owner()"
+     ]
+    },
+    {
+     "address": "0x8bDE83dBC2CA450B539346e224E7819348C7b091",
+     "label": "InsuranceVault",
+     "createdByLeak": true,
+     "leakPrivilegesBefore": [
+      "owner()"
+     ]
+    },
+    {
+     "address": "0x8d84Cf73E580bbB71b3eFEBB4175B4dcF01f0C1a",
+     "label": null,
+     "createdByLeak": true,
+     "leakPrivilegesBefore": []
+    },
+    {
+     "address": "0x90E9c4f8a994a250F6aEfd61CAFb4F2e895D458F",
+     "label": null,
+     "createdByLeak": false,
+     "leakPrivilegesBefore": []
+    },
+    {
+     "address": "0x999962a2F031623cF4996841004BAE8fd0589FeB",
+     "label": null,
+     "createdByLeak": true,
+     "leakPrivilegesBefore": []
+    },
+    {
+     "address": "0x9B9c176184C1d7B83206Dd5eb06F6563e8BA1100",
+     "label": null,
+     "createdByLeak": true,
+     "leakPrivilegesBefore": []
+    },
+    {
+     "address": "0xA08C0F92804173Bf796FDa3FA66654F96aDDB5F1",
+     "label": "MockUSDT",
+     "createdByLeak": true,
+     "leakPrivilegesBefore": [
+      "owner()"
+     ]
+    },
+    {
+     "address": "0xA1a522B9d31e5B48E41DcCd050DE10dA2e3BEdD0",
+     "label": "EsgRewardDistributor",
+     "createdByLeak": true,
+     "leakPrivilegesBefore": [
+      "owner()"
+     ]
+    },
+    {
+     "address": "0xA261E76c7C465f910082b372580a57Dea4DD210d",
+     "label": null,
+     "createdByLeak": true,
+     "leakPrivilegesBefore": []
+    },
+    {
+     "address": "0xA27BeB4899d71A5A4966AE23f97139A6248B1FA1",
+     "label": null,
+     "createdByLeak": true,
+     "leakPrivilegesBefore": []
+    },
+    {
+     "address": "0xA2aa501b19aff244D90cc15a4Cf739D2725B5729",
+     "label": null,
+     "createdByLeak": false,
+     "leakPrivilegesBefore": []
+    },
+    {
+     "address": "0xa364F43627A17BE5bfbcb32693f3eD7E44ebe1D9",
+     "label": "PepeToken",
+     "createdByLeak": true,
+     "leakPrivilegesBefore": [
+      "owner()"
+     ]
+    },
+    {
+     "address": "0xA8a5B0e9C062e0Bb1Ab3a15788Ae823251C41ac1",
+     "label": null,
+     "createdByLeak": true,
+     "leakPrivilegesBefore": []
+    },
+    {
+     "address": "0xAccF31D862A889Aa2D560205aefae33c857bd348",
+     "label": null,
+     "createdByLeak": true,
+     "leakPrivilegesBefore": []
+    },
+    {
+     "address": "0xb2999a8A3589Cd408aD38703E06f95B855BF79bD",
+     "label": "PepeIncentives (old)",
+     "createdByLeak": true,
+     "leakPrivilegesBefore": [
+      "owner()"
+     ]
+    },
+    {
+     "address": "0xb3e978E96e36FeDa703827D9dfE142d502C3bd1d",
+     "label": "PerpetualExchange (old)",
+     "createdByLeak": true,
+     "leakPrivilegesBefore": [
+      "owner()"
+     ]
+    },
+    {
+     "address": "0xB4D10cBC6143E410dd7b48797334C4397b99325f",
+     "label": "AssetVault (V1)",
+     "createdByLeak": true,
+     "leakPrivilegesBefore": [
+      "owner()"
+     ]
+    },
+    {
+     "address": "0xB5586Ef5bBA7DAa698a4a6745C9D46F0b3bECfeE",
+     "label": "sNVDA (V2)",
+     "createdByLeak": true,
+     "leakPrivilegesBefore": [
+      "DEFAULT_ADMIN_ROLE"
+     ]
+    },
+    {
+     "address": "0xB7f8BC63BbcaD18155201308C8f3540b07f84F5e",
+     "label": null,
+     "createdByLeak": false,
+     "leakPrivilegesBefore": []
+    },
+    {
+     "address": "0xb84C17a704F9e7d96c3aF84Df05C6a8da5c344eb",
+     "label": "sBOND (V2)",
+     "createdByLeak": true,
+     "leakPrivilegesBefore": [
+      "DEFAULT_ADMIN_ROLE"
+     ]
+    },
+    {
+     "address": "0xBb7c02d02EFa81a44bC0fb7E0bC2F531Ee39FB2B",
+     "label": "FeeRouter (old)",
+     "createdByLeak": true,
+     "leakPrivilegesBefore": [
+      "owner()"
+     ]
+    },
+    {
+     "address": "0xc100f942366305E2917d5a7B5eD0F5F1E930a49c",
+     "label": "PerpetualExchange (old)",
+     "createdByLeak": true,
+     "leakPrivilegesBefore": [
+      "owner()"
+     ]
+    },
+    {
+     "address": "0xc120bbCc68db30F8fc87d4ce983AabD89555F0cB",
+     "label": null,
+     "createdByLeak": true,
+     "leakPrivilegesBefore": []
+    },
+    {
+     "address": "0xC236D6298b280def6D70931c8E67953E9De0Eb41",
+     "label": null,
+     "createdByLeak": true,
+     "leakPrivilegesBefore": []
+    },
+    {
+     "address": "0xC262dB3e0d73ce0aeE21DA6669d2B483ABE78Ff2",
+     "label": "MockOracle (old)",
+     "createdByLeak": true,
+     "leakPrivilegesBefore": [
+      "owner()"
+     ]
+    },
+    {
+     "address": "0xc2aAB2dCAdA7b8D9e47132A6bf0246873ad0078D",
+     "label": "FeeRouter (old)",
+     "createdByLeak": true,
+     "leakPrivilegesBefore": [
+      "owner()"
+     ]
+    },
+    {
+     "address": "0xc2eAB19e995458ce06dD7a188bABbeEC6F96478A",
+     "label": null,
+     "createdByLeak": true,
+     "leakPrivilegesBefore": []
+    },
+    {
+     "address": "0xC7F23AAa4aCf63C0990C0B0Fc2BCcF0A3Df2532d",
+     "label": null,
+     "createdByLeak": true,
+     "leakPrivilegesBefore": []
+    },
+    {
+     "address": "0xC81C3fD1Bb46D095115EaF2c6Ea0FcEf28944391",
+     "label": null,
+     "createdByLeak": true,
+     "leakPrivilegesBefore": []
+    },
+    {
+     "address": "0xc8Af999e38273D658BE1b921b88A9Ddf005769cC",
+     "label": null,
+     "createdByLeak": false,
+     "leakPrivilegesBefore": []
+    },
+    {
+     "address": "0xc97b8195cBd00fec5D3aAb103C9E313414B11a10",
+     "label": "sGOLD (V2)",
+     "createdByLeak": true,
+     "leakPrivilegesBefore": [
+      "DEFAULT_ADMIN_ROLE"
+     ]
+    },
+    {
+     "address": "0xC9b0e5C219AA1B3eB00E92Fd9a883B182F0AE8Ae",
+     "label": "HaerinToken (nonce 1)",
+     "createdByLeak": true,
+     "leakPrivilegesBefore": [
+      "owner()"
+     ]
+    },
+    {
+     "address": "0xcA11bde05977b3631167028862bE2a173976CA11",
+     "label": null,
+     "createdByLeak": false,
+     "leakPrivilegesBefore": []
+    },
+    {
+     "address": "0xCB2c5c834f1f0d54E6Da1f3628B1c624aAa750cf",
+     "label": "sMSFT (V2)",
+     "createdByLeak": true,
+     "leakPrivilegesBefore": [
+      "DEFAULT_ADMIN_ROLE"
+     ]
+    },
+    {
+     "address": "0xCCD05CBdC2f7961a4C27D3633694022722786A0F",
+     "label": "FeeRouter (old)",
+     "createdByLeak": true,
+     "leakPrivilegesBefore": [
+      "owner()"
+     ]
+    },
+    {
+     "address": "0xccedA707C3831b23a6C9bC4AF81FEF69b78410F2",
+     "label": "MockUSDT (old)",
+     "createdByLeak": true,
+     "leakPrivilegesBefore": [
+      "owner()"
+     ]
+    },
+    {
+     "address": "0xcDcC229A7C33FafCc5C963308eC08934F4F86985",
+     "label": null,
+     "createdByLeak": true,
+     "leakPrivilegesBefore": []
+    },
+    {
+     "address": "0xce01f8eee7E479C928F8919abD53E553a36CeF67",
+     "label": null,
+     "createdByLeak": false,
+     "leakPrivilegesBefore": []
+    },
+    {
+     "address": "0xd057912349d4AB6c4612457f2B428998C4184958",
+     "label": null,
+     "createdByLeak": true,
+     "leakPrivilegesBefore": []
+    },
+    {
+     "address": "0xd6E6dBf4F7EA0ac412fD8b65ED297e64BB7a06E1",
+     "label": null,
+     "createdByLeak": false,
+     "leakPrivilegesBefore": []
+    },
+    {
+     "address": "0xdC5cc6Ab502d8D8F648eCc2D9F130F68F7C306b4",
+     "label": "PerpetualExchange (never wired)",
+     "createdByLeak": true,
+     "leakPrivilegesBefore": [
+      "owner()"
+     ]
+    },
+    {
+     "address": "0xdCFdDd38e1d80C1A5eeB44c05187Ec7979B98c13",
+     "label": "ESGRegistry",
+     "createdByLeak": true,
+     "leakPrivilegesBefore": [
+      "owner()"
+     ]
+    },
+    {
+     "address": "0xe362dE5b06e98D4c5292209EEc965aC842d36c75",
+     "label": null,
+     "createdByLeak": true,
+     "leakPrivilegesBefore": []
+    },
+    {
+     "address": "0xE40ABfbDb4B70A3788faF0E6A04e10C4204A6eB3",
+     "label": "InsuranceVault (old)",
+     "createdByLeak": true,
+     "leakPrivilegesBefore": [
+      "owner()"
+     ]
+    },
+    {
+     "address": "0xE8D78859B61AF6CEd5318044bAd0E265f1D1CE8E",
+     "label": "TraderStake (old)",
+     "createdByLeak": true,
+     "leakPrivilegesBefore": [
+      "owner()"
+     ]
+    },
+    {
+     "address": "0xeCF271592C0D64663906318f250d49c255E332Ac",
+     "label": "sBTC (V2)",
+     "createdByLeak": true,
+     "leakPrivilegesBefore": [
+      "DEFAULT_ADMIN_ROLE"
+     ]
+    },
+    {
+     "address": "0xeEeEEEeE14D718C2B47D9923Deab1335E144EeEe",
+     "label": null,
+     "createdByLeak": false,
+     "leakPrivilegesBefore": []
+    },
+    {
+     "address": "0xEf75ECA6514cE96B18382E921aC6190a0cF8c072",
+     "label": null,
+     "createdByLeak": true,
+     "leakPrivilegesBefore": []
+    },
+    {
+     "address": "0xF2A6F7B684BEB8554df34A4463143B6408FB6F84",
+     "label": "PerpetualExchange (old)",
+     "createdByLeak": true,
+     "leakPrivilegesBefore": [
+      "owner()"
+     ]
+    },
+    {
+     "address": "0xf45f00D4D74D0B4352993424d5EA7d6D28AFbEE5",
+     "label": null,
+     "createdByLeak": true,
+     "leakPrivilegesBefore": []
+    },
+    {
+     "address": "0xf5d0953A443259ebdFC62fE49189998988e309f9",
+     "label": "PepeStaking",
+     "createdByLeak": true,
+     "leakPrivilegesBefore": [
+      "owner()"
+     ]
+    },
+    {
+     "address": "0xFBb0621E0B23b5478B630BD55a5f21f67730B0F1",
+     "label": null,
+     "createdByLeak": false,
+     "leakPrivilegesBefore": []
+    },
+    {
+     "address": "0xfd0Bf71F60660E2f608ed56e1659C450eB113120",
+     "label": null,
+     "createdByLeak": false,
+     "leakPrivilegesBefore": []
+    }
+   ]
+  },
+  "base": {
+   "chainId": 84532,
+   "leakNonceAtScan": 1962,
+   "contracts": [
+    {
+     "address": "0x000000000022D473030F116dDEE9F6B43aC78BA3",
+     "label": null,
+     "createdByLeak": false,
+     "leakPrivilegesBefore": []
+    },
+    {
+     "address": "0x00f6cf0113399a7A451c7f85fe094a28092d3e0c",
+     "label": null,
+     "createdByLeak": true,
+     "leakPrivilegesBefore": []
+    },
+    {
+     "address": "0x019F8b30D5988A3Df828C64c527a5965f6699286",
+     "label": null,
+     "createdByLeak": true,
+     "leakPrivilegesBefore": []
+    },
+    {
+     "address": "0x01aEB530bcFc69f036309ffe55acc7eA6C5a28Fe",
+     "label": null,
+     "createdByLeak": true,
+     "leakPrivilegesBefore": []
+    },
+    {
+     "address": "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
+     "label": null,
+     "createdByLeak": false,
+     "leakPrivilegesBefore": []
+    },
+    {
+     "address": "0x0a4aE14a413a03c20ccF43E8134BfbD7bCB89820",
+     "label": null,
+     "createdByLeak": false,
+     "leakPrivilegesBefore": []
+    },
+    {
+     "address": "0x0aF44425ADC54fdBcB084611Ca82beFb91DDb1b6",
+     "label": null,
+     "createdByLeak": false,
+     "leakPrivilegesBefore": []
+    },
+    {
+     "address": "0x0b3FC9e94cA04E3457B71064339c599D44dd5B20",
+     "label": null,
+     "createdByLeak": true,
+     "leakPrivilegesBefore": []
+    },
+    {
+     "address": "0x0c85923193AB6137A117E5911aAA7DF7Cb8787D7",
+     "label": null,
+     "createdByLeak": true,
+     "leakPrivilegesBefore": []
+    },
+    {
+     "address": "0x13d13c8BCF513368B48B13e9f9EEB78Be991f315",
+     "label": null,
+     "createdByLeak": true,
+     "leakPrivilegesBefore": []
+    },
+    {
+     "address": "0x14496785f82F691656691486C49c3b8fB78BF770",
+     "label": null,
+     "createdByLeak": false,
+     "leakPrivilegesBefore": []
+    },
+    {
+     "address": "0x161ea684812b91c5685237B2DBEc20b861177575",
+     "label": null,
+     "createdByLeak": true,
+     "leakPrivilegesBefore": []
+    },
+    {
+     "address": "0x217B1B450eC77a8AECC569108683106c169b9dDC",
+     "label": null,
+     "createdByLeak": true,
+     "leakPrivilegesBefore": []
+    },
+    {
+     "address": "0x285C16bf8160bD1343a9409445a4Ad4A8C5E2879",
+     "label": null,
+     "createdByLeak": false,
+     "leakPrivilegesBefore": []
+    },
+    {
+     "address": "0x29e5732AC62254d9b92A1C7d3F38EbFA8809B57d",
+     "label": null,
+     "createdByLeak": true,
+     "leakPrivilegesBefore": []
+    },
+    {
+     "address": "0x37DC7b70899BFfB17949366a5b6a86203C428E2f",
+     "label": "ChainlinkOracleAdapter",
+     "createdByLeak": true,
+     "leakPrivilegesBefore": [
+      "owner()"
+     ]
+    },
+    {
+     "address": "0x3dd1447e21C779bddf079baB86E330db0317fDAf",
+     "label": null,
+     "createdByLeak": true,
+     "leakPrivilegesBefore": []
+    },
+    {
+     "address": "0x3E9196A84F89dC688834A62D51fd7e7dDaeb11E7",
+     "label": null,
+     "createdByLeak": false,
+     "leakPrivilegesBefore": []
+    },
+    {
+     "address": "0x401eCb1D350407f13ba348573E5630B83638E30D",
+     "label": null,
+     "createdByLeak": false,
+     "leakPrivilegesBefore": []
+    },
+    {
+     "address": "0x4200000000000000000000000000000000000006",
+     "label": null,
+     "createdByLeak": false,
+     "leakPrivilegesBefore": []
+    },
+    {
+     "address": "0x4200000000000000000000000000000000000007",
+     "label": null,
+     "createdByLeak": false,
+     "leakPrivilegesBefore": []
+    },
+    {
+     "address": "0x420000000000000000000000000000000000000F",
+     "label": null,
+     "createdByLeak": false,
+     "leakPrivilegesBefore": []
+    },
+    {
+     "address": "0x4200000000000000000000000000000000000010",
+     "label": null,
+     "createdByLeak": false,
+     "leakPrivilegesBefore": []
+    },
+    {
+     "address": "0x4200000000000000000000000000000000000014",
+     "label": null,
+     "createdByLeak": false,
+     "leakPrivilegesBefore": []
+    },
+    {
+     "address": "0x4200000000000000000000000000000000000015",
+     "label": null,
+     "createdByLeak": false,
+     "leakPrivilegesBefore": []
+    },
+    {
+     "address": "0x4200000000000000000000000000000000000016",
+     "label": null,
+     "createdByLeak": false,
+     "leakPrivilegesBefore": []
+    },
+    {
+     "address": "0x44a8E5195E168e5AdcCa4343Bd8B399B49D5609F",
+     "label": null,
+     "createdByLeak": false,
+     "leakPrivilegesBefore": []
+    },
+    {
+     "address": "0x459d238aC61eC4A0E08608FBcd363227B860CF34",
+     "label": null,
+     "createdByLeak": true,
+     "leakPrivilegesBefore": []
+    },
+    {
+     "address": "0x4E7cC1B79B72ab72531a6C790e14304370f70764",
+     "label": null,
+     "createdByLeak": true,
+     "leakPrivilegesBefore": []
+    },
+    {
+     "address": "0x4ed4E862860beD51a9570b96d89aF5E1B0Efefed",
+     "label": null,
+     "createdByLeak": false,
+     "leakPrivilegesBefore": []
+    },
+    {
+     "address": "0x4f36CBc3321b47327407C0eD116188A21ec4da28",
+     "label": null,
+     "createdByLeak": false,
+     "leakPrivilegesBefore": []
+    },
+    {
+     "address": "0x50b3405e7165d052f0ca5971627004b61249259F",
+     "label": null,
+     "createdByLeak": true,
+     "leakPrivilegesBefore": []
+    },
+    {
+     "address": "0x510D59b33C04164596D2601B57a154dF31914C23",
+     "label": null,
+     "createdByLeak": false,
+     "leakPrivilegesBefore": []
+    },
+    {
+     "address": "0x54e8C43f9Eb151Bb8DD6e61d16a969C4D0e73915",
+     "label": null,
+     "createdByLeak": true,
+     "leakPrivilegesBefore": []
+    },
+    {
+     "address": "0x551C0B2e75a9129fe697210223F1Ca6e64F3C6d5",
+     "label": "PythOracleAdapter",
+     "createdByLeak": true,
+     "leakPrivilegesBefore": [
+      "owner()"
+     ]
+    },
+    {
+     "address": "0x56182e30733641616e5D28441E17d00A4cE2b54F",
+     "label": null,
+     "createdByLeak": true,
+     "leakPrivilegesBefore": []
+    },
+    {
+     "address": "0x5c8A1e970D275Cc269e09A949D68693120416d78",
+     "label": null,
+     "createdByLeak": true,
+     "leakPrivilegesBefore": []
+    },
+    {
+     "address": "0x5D95fD9e7a5f80E5369e24783F1f98E0f952360d",
+     "label": null,
+     "createdByLeak": true,
+     "leakPrivilegesBefore": []
+    },
+    {
+     "address": "0x5Ebcc64C712C5a26119789dCbD0753981dc518E8",
+     "label": null,
+     "createdByLeak": true,
+     "leakPrivilegesBefore": []
+    },
+    {
+     "address": "0x6533C94869D28fAA8dF77cc63f9e2b2D6Cf77eBA",
+     "label": null,
+     "createdByLeak": false,
+     "leakPrivilegesBefore": []
+    },
+    {
+     "address": "0x69fd695Bc7C3aFdb35ABA35cD6890C506400b035",
+     "label": null,
+     "createdByLeak": true,
+     "leakPrivilegesBefore": []
+    },
+    {
+     "address": "0x73310bfb9f93711e9405EB717e3426246BD58618",
+     "label": null,
+     "createdByLeak": true,
+     "leakPrivilegesBefore": []
+    },
+    {
+     "address": "0x8215158642350a3f329aB9597186d21f957A813D",
+     "label": "AggregatorOracleAdapter",
+     "createdByLeak": true,
+     "leakPrivilegesBefore": [
+      "owner()"
+     ]
+    },
+    {
+     "address": "0x827eA0c62a32e995927101259042F8A27D99124D",
+     "label": null,
+     "createdByLeak": false,
+     "leakPrivilegesBefore": []
+    },
+    {
+     "address": "0x881a8B8b4eacf7103078d6d5e81bfB4E344f3003",
+     "label": null,
+     "createdByLeak": false,
+     "leakPrivilegesBefore": []
+    },
+    {
+     "address": "0x893a8F9Fd92110EBcAbB8855223CF184B54a7166",
+     "label": null,
+     "createdByLeak": false,
+     "leakPrivilegesBefore": []
+    },
+    {
+     "address": "0x8c35FA2967b3cC716940656a510b2aCa4e1b5b7D",
+     "label": null,
+     "createdByLeak": false,
+     "leakPrivilegesBefore": []
+    },
+    {
+     "address": "0x8E9e59BE9589Ad88EC14F3ef6bdcc43E8B76f842",
+     "label": null,
+     "createdByLeak": false,
+     "leakPrivilegesBefore": []
+    },
+    {
+     "address": "0x9013c0b94193aF24a59D4FCe25fd0acb2cFdb3b1",
+     "label": null,
+     "createdByLeak": true,
+     "leakPrivilegesBefore": []
+    },
+    {
+     "address": "0x916D7Fc399d9afd23BAa113E2c2Cc601341ff10a",
+     "label": null,
+     "createdByLeak": false,
+     "leakPrivilegesBefore": []
+    },
+    {
+     "address": "0x93bE44A81a2796D378f65ebcc8d5f8b40166ad63",
+     "label": null,
+     "createdByLeak": true,
+     "leakPrivilegesBefore": []
+    },
+    {
+     "address": "0x96357144fE56c5E0e33e8046bE2A63F45528b210",
+     "label": null,
+     "createdByLeak": true,
+     "leakPrivilegesBefore": []
+    },
+    {
+     "address": "0xA103de184A5C76d7b70fB4e908F252199e004b95",
+     "label": null,
+     "createdByLeak": false,
+     "leakPrivilegesBefore": []
+    },
+    {
+     "address": "0xa156b658F291f27AA6dB5258E72d9DfE8BF4cf5A",
+     "label": null,
+     "createdByLeak": false,
+     "leakPrivilegesBefore": []
+    },
+    {
+     "address": "0xA2aa501b19aff244D90cc15a4Cf739D2725B5729",
+     "label": null,
+     "createdByLeak": false,
+     "leakPrivilegesBefore": []
+    },
+    {
+     "address": "0xA2D967221da278b26E0432F4A6BD231D7e0a3733",
+     "label": null,
+     "createdByLeak": false,
+     "leakPrivilegesBefore": []
+    },
+    {
+     "address": "0xaD7348198fdbb89eEeAC4E607E917DE8A91CD834",
+     "label": null,
+     "createdByLeak": false,
+     "leakPrivilegesBefore": []
+    },
+    {
+     "address": "0xB364E2e3e1e7a2b033eF03a4ACceF42066F3D812",
+     "label": null,
+     "createdByLeak": true,
+     "leakPrivilegesBefore": []
+    },
+    {
+     "address": "0xb6cDca0a481779cB04DeCf2A25f32bB0326d29fB",
+     "label": null,
+     "createdByLeak": true,
+     "leakPrivilegesBefore": []
+    },
+    {
+     "address": "0xB92A47fb7E0AE7b87E159cCf56e98cB40f9c0539",
+     "label": null,
+     "createdByLeak": false,
+     "leakPrivilegesBefore": []
+    },
+    {
+     "address": "0xBF50bc2104C1C47EEe1E0b1693AeB27D6Bb1D70B",
+     "label": null,
+     "createdByLeak": true,
+     "leakPrivilegesBefore": []
+    },
+    {
+     "address": "0xBF5B9cD78566791d79c687A732b4ed5bc3E95dFf",
+     "label": null,
+     "createdByLeak": false,
+     "leakPrivilegesBefore": []
+    },
+    {
+     "address": "0xC30DFe1C9EBb47197b785995aA9Cd0F5B89557A5",
+     "label": null,
+     "createdByLeak": true,
+     "leakPrivilegesBefore": []
+    },
+    {
+     "address": "0xC78D68cA1B217ba241c23Ebad3118c6ec0dc0D34",
+     "label": null,
+     "createdByLeak": true,
+     "leakPrivilegesBefore": []
+    },
+    {
+     "address": "0xc7AfE2064106A608E0E21BFbF9aff89B0EAd7B9f",
+     "label": null,
+     "createdByLeak": true,
+     "leakPrivilegesBefore": []
+    },
+    {
+     "address": "0xc81Bc66656E7d32A570895B7ba8a3Fc9aa9997f1",
+     "label": null,
+     "createdByLeak": false,
+     "leakPrivilegesBefore": []
+    },
+    {
+     "address": "0xC9b0e5C219AA1B3eB00E92Fd9a883B182F0AE8Ae",
+     "label": null,
+     "createdByLeak": true,
+     "leakPrivilegesBefore": []
+    },
+    {
+     "address": "0xC9e91f7D36e910C58042164032c625427b23CCB2",
+     "label": null,
+     "createdByLeak": false,
+     "leakPrivilegesBefore": []
+    },
+    {
+     "address": "0xcA11bde05977b3631167028862bE2a173976CA11",
+     "label": null,
+     "createdByLeak": false,
+     "leakPrivilegesBefore": []
+    },
+    {
+     "address": "0xcb3069C32188Fd92376d1ba53F08D733451e9175",
+     "label": null,
+     "createdByLeak": false,
+     "leakPrivilegesBefore": []
+    },
+    {
+     "address": "0xCCD05CBdC2f7961a4C27D3633694022722786A0F",
+     "label": null,
+     "createdByLeak": true,
+     "leakPrivilegesBefore": []
+    },
+    {
+     "address": "0xceD347341eF54046352E05f5fec70DD6F5D23150",
+     "label": null,
+     "createdByLeak": false,
+     "leakPrivilegesBefore": []
+    },
+    {
+     "address": "0xd74aE712B412488Bb18F604052B232fea22270DA",
+     "label": null,
+     "createdByLeak": false,
+     "leakPrivilegesBefore": []
+    },
+    {
+     "address": "0xD816E621849eb8849D032dc39dD37e39cd668144",
+     "label": null,
+     "createdByLeak": false,
+     "leakPrivilegesBefore": []
+    },
+    {
+     "address": "0xdF9C1E53523568709f65Afe3C4AD2E6a6D99d14B",
+     "label": null,
+     "createdByLeak": false,
+     "leakPrivilegesBefore": []
+    },
+    {
+     "address": "0xeB869a8f10C251C5eb6626C31aA5D54B94c28044",
+     "label": null,
+     "createdByLeak": true,
+     "leakPrivilegesBefore": []
+    },
+    {
+     "address": "0xEBfA1dc7dDea032ac6242cB619d982e543A23c12",
+     "label": null,
+     "createdByLeak": false,
+     "leakPrivilegesBefore": []
+    },
+    {
+     "address": "0xeD90c4F3B48213888870C1FC8486921Cb0990Aa3",
+     "label": null,
+     "createdByLeak": true,
+     "leakPrivilegesBefore": []
+    },
+    {
+     "address": "0xEf75ECA6514cE96B18382E921aC6190a0cF8c072",
+     "label": null,
+     "createdByLeak": true,
+     "leakPrivilegesBefore": []
+    },
+    {
+     "address": "0xfAEf549C687C37064cEaB5728989a839B08955cf",
+     "label": null,
+     "createdByLeak": false,
+     "leakPrivilegesBefore": []
+    }
+   ]
+  }
+ }
+}

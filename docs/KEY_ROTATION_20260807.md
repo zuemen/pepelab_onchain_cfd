@@ -74,9 +74,15 @@ key, and rotating it would have broken the price feed.
 
 ## What is still true
 
-The leaked key remains public forever and the account is still delegated to a
-sweeper. It now owns nothing and holds only a gas dust balance. Never send
-anything to it again.
+The leaked key remains public forever and the account is still delegated
+(EIP-7702, MetaMask DeleGator). As of 2026-10-03 it still owned the three Base
+Sepolia oracle adapters (ChainlinkOracleAdapter `0x37DC…`, PythOracleAdapter
+`0x551C…`, AggregatorOracleAdapter `0x8215…`) and 54 Ethereum Sepolia contracts
+— this 2026-08-07 rotation only covered the Base trading contracts. The freeze
+procedure for the rest is `docs/RUNBOOK_FREEZE_LEGACY.md`. The leaked key is also
+the immutable `platformTreasury` of the Base FeeRouter `0x00f6…` and the x402
+FeeRouter `0x29e5…`, which no owner action can change. Never send anything to it
+again.
 
 The new key is a single EOA, not a multisig — the same limitation recorded in
 `KNOWN_LIMITATIONS.md` #13. Rotating away from a compromised key and holding the

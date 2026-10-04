@@ -271,11 +271,14 @@ cast call "$EXCHANGE" "authorizedAgents(address)(bool)" \
 
 ### 6.2 x402 payTo / platformTreasury
 
+`FeeRouter.platformTreasury` 是 `immutable`，**沒有任何 setter**（全檔只有 `setCopyTracker`、`setExchange`）；
+`withdrawPlatformFees()` 只付給它。若仍是 `0xE80A8136…`，唯一的處理方式是**部署新的 FeeRouter**
+（treasury = `$NEW_ADDR`），把 exchange／CopyTracker／x402 設定改接新 router，並更新 `PAY_TO`。舊 router
+已累積的平台分潤只有外洩金鑰能領，視為損失。詳見 `docs/RUNBOOK_FREEZE_LEGACY.md` §2.3。
+
 ```bash
 export X402_ROUTER=0x29e5732AC62254d9b92A1C7d3F38EbFA8809B57d
-cast call "$X402_ROUTER" "platformTreasury()(address)" --rpc-url "$BASE_RPC"
-# 若仍是 0xE80A8136…，用該 router 的 owner-only setter 改成 $NEW_ADDR，然後：
-cast call "$X402_ROUTER" "platformTreasury()(address)" --rpc-url "$BASE_RPC"  # 應為 $NEW_ADDR
+cast call "$X402_ROUTER" "platformTreasury()(address)" --rpc-url "$BASE_RPC"   # 確認現況（immutable，無法就地修改）
 ```
 
 ---
