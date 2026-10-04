@@ -62,10 +62,9 @@ jobs:
       # 部分失敗容忍度：失敗筆數 / 有價可寫筆數 超過這個百分比就讓 job 失敗。
       MAX_FAIL_PCT: "30"
       # KEEPER_RELAY_SOURCE 刻意不設（2026-10-03 移除，原為 AggregatorOracle 0x8215…）。
-      # 三顆 oracle adapter 的 owner 仍是公開外洩的舊部署者金鑰：它能把 feed 換成自製合約，
-      # keeper 會優先採用 relay 價，單輪 ≤ 熔斷門檻的變動不查第二來源，於是能逐輪推動現行
-      # 交易所讀的 MockOracle。移除時 Aggregator 對全部資產回 NoLiveSource，keeper 實際走
-      # 外部 API，所以沒有功能損失。重新啟用的前提見 docs/RUNBOOK_KEEPER.md「relay 來源」。
+      # 原因：該 adapter 的 owner 仍是已外洩的舊部署者金鑰，不應作為寫價來源。移除時
+      # Aggregator 對全部資產回 NoLiveSource，keeper 實際走外部 API，沒有功能損失。
+      # 重新啟用的前提見 docs/RUNBOOK_KEEPER.md「relay 來源」。
       # #129 硬化版 V2 stack（2026-09-10 上鏈）。之前沒設，GuardedOracle 自 9/10 起
       # 沒人餵價；vault 的 maxPriceAge 是 30 天，2026-10-10 03:17 UTC 就會讓
       # mint／redeem 全面 StalePrice。keeper key 已有 GuardedOracle 的 KEEPER_ROLE
