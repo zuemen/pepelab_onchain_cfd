@@ -14,6 +14,11 @@ on:
       - 'web/**'
       - 'README.md'
       - 'docs/**'
+      # 前端的市場時段規則是 keeper 的複製，一致性測試（src/lib/pepefi/marketHours.keeper.test.ts）
+      # 直接載入這三個檔；改 keeper 的時段規則時也要跑到它。
+      - 'agent/keeper/market.ts'
+      - 'agent/keeper/operator.ts'
+      - 'agent/keeper/marketMode.ts'
       - '.github/workflows/frontend-ci.yml'
   pull_request:
     paths:
@@ -22,6 +27,11 @@ on:
       - 'web/**'
       - 'README.md'
       - 'docs/**'
+      # 前端的市場時段規則是 keeper 的複製，一致性測試（src/lib/pepefi/marketHours.keeper.test.ts）
+      # 直接載入這三個檔；改 keeper 的時段規則時也要跑到它。
+      - 'agent/keeper/market.ts'
+      - 'agent/keeper/operator.ts'
+      - 'agent/keeper/marketMode.ts'
       - '.github/workflows/frontend-ci.yml'
   workflow_dispatch:
 

@@ -14,6 +14,7 @@ import { common } from './common';
 import { legacy } from './legacy';
 import { tokens } from './tokens';
 import { errors } from './errors';
+import { status } from './status';
 import { history } from './history';
 import { pepelab } from './pepelab';
 import { landing } from './landing';
@@ -43,6 +44,7 @@ const zhTW = {
   admin,
   errors,
   freshness,
+  status,
   portfolio,
   exchange,
   terminal,

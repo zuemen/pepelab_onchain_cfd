@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 
 import { useContracts } from 'src/hooks/useContracts'
 import { safeRead } from 'src/lib/pepefi/safeRead'
+import { readChainNowSec } from 'src/lib/pepefi/positionPnl'
 import { useWalletContext } from 'src/contexts/wallet-context'
 import { ASSET_IDS } from 'src/contracts/addresses'
 import { getAddresses } from 'src/contracts/deployment'
@@ -54,7 +55,21 @@ async function fetchCoinGecko(pepeAddr?: string | null): Promise<Record<string, 
   return out
 }
 
+/**
+ * 價齡是用哪個時鐘算的，以及當下用的過期門檻。
+ *   chain — 最新區塊的 timestamp（與合約 `_requireFresh` 的 block.timestamp 同一個時鐘）
+ *   local — 區塊讀不到，暫用使用者電腦的時鐘（畫面要標出來）
+ */
+export interface LivePriceMeta {
+  clock: 'chain' | 'local'
+  maxPriceAgeSec: number
+}
+
 export function useLivePrices(): Record<string, LivePrice> {
+  return useLivePricesWithMeta().prices
+}
+
+export function useLivePricesWithMeta(): { prices: Record<string, LivePrice>; meta: LivePriceMeta } {
   const { provider, signer, chainId } = useWalletContext()
   const contracts = useContracts(provider, signer, chainId)
 
@@ -66,6 +81,7 @@ export function useLivePrices(): Record<string, LivePrice> {
   const [prices, setPrices] = useState<Record<string, LivePrice>>(() =>
     emptyLivePrices(Object.values(ASSET_IDS), pepeAddr),
   )
+  const [meta, setMeta] = useState<LivePriceMeta>({ clock: 'local', maxPriceAgeSec: FALLBACK_MAX_PRICE_AGE_SEC })
 
   useEffect(() => {
     if (!pepeAddr) return
@@ -78,7 +94,6 @@ export function useLivePrices(): Record<string, LivePrice> {
     const tick = async () => {
       // 1) Free, keyless display quotes (crypto + PEPE) — always tries to be live.
       const cg = await fetchCoinGecko(pepeAddr)
-      const nowSec = Math.floor(Date.now() / 1000)
 
       // 交易所自己的 maxPriceAge 才是「可不可以交易」的真相 —— 顯示價來自
       // CoinGecko，但結算走鏈上 oracle，兩者過期與否由合約說了算。
@@ -86,7 +101,11 @@ export function useLivePrices(): Record<string, LivePrice> {
 
       // maxPriceAge 與 11 個資產的 oracle 讀取一次全部併發送出。舊版是 12 次
       // 串行 await：任何一次慢，整輪就跟著慢，而且每輪要花 12 個 RTT。
-      const [maxAgeRaw, oracleRaw] = await Promise.all([
+      //
+      // 價齡用鏈上時鐘（最新區塊時間）算，跟合約判斷 StalePrice 用的是同一個「現在」；
+      // 使用者電腦的時鐘可能不準（或在截圖、測試時被刻意調過），不該影響「價格多新」。
+      const [chainNow, maxAgeRaw, oracleRaw] = await Promise.all([
+        readChainNowSec(contracts?.exchange ?? null, READ_TIMEOUT_MS),
         contracts?.exchange
           ? safeRead<bigint | null>(contracts.exchange.maxPriceAge() as Promise<bigint>, null, READ_TIMEOUT_MS)
           : Promise.resolve(null),
@@ -105,6 +124,7 @@ export function useLivePrices(): Record<string, LivePrice> {
 
       // 舊部署沒有這個 getter、或讀取逾時 → 保留後備值。
       const maxPriceAgeSec = maxAgeRaw === null ? FALLBACK_MAX_PRICE_AGE_SEC : Number(maxAgeRaw)
+      const nowSec = chainNow ?? Math.floor(Date.now() / 1000)
 
       const next = buildLivePrices({
         assetIds,
@@ -115,7 +135,10 @@ export function useLivePrices(): Record<string, LivePrice> {
         pepeAddr,
       })
 
-      if (!cancelled) setPrices(next)
+      if (!cancelled) {
+        setPrices(next)
+        setMeta({ clock: chainNow === null ? 'local' : 'chain', maxPriceAgeSec })
+      }
     }
 
     void tick()
@@ -133,5 +156,5 @@ export function useLivePrices(): Record<string, LivePrice> {
     }
   }, [contracts, pepeAddr])
 
-  return prices
+  return { prices, meta }
 }
