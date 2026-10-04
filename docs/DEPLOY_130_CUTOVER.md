@@ -76,6 +76,26 @@ RWA（其餘 8 檔）             : C_rwa = C × 50%
 
 ## 5. 執行
 
+### 5.0 先 dispatch keeper，確認價格新鮮
+
+開始前（§5.2 預檢之前）先手動觸發一次 keeper，確認 11 檔價格都是剛寫的：
+
+```bash
+gh workflow run base-sepolia-keeper.yml && gh run watch     # 等它綠
+node scripts/post-deploy-smoke.mjs --skip-http               # 「keeper」類 11 檔都應是 PASS（唯讀）
+```
+
+為什麼：
+
+- **新 exchange 一上線就套用 6 小時的 `maxPriceAge`**。cutover 從預檢、broadcast 到 `Verify130` 加上 §7 的 commit 要好幾個小時，
+  GitHub cron 的實測間隔最長約 169 分鐘（`RUNBOOK_KEEPER.md`）；從舊價格開始做，很容易在驗收時剛好過期，新 exchange 的開倉、
+  平倉、清算全部 revert `StalePrice`，看起來像 cutover 失敗。
+- **keeper 要到 §7 第 6 項才改指向新 exchange**。在那之前 keeper 仍照舊 exchange 的設定運作，寫價本身不受影響（預設 MockOracle 時新舊 exchange 讀同一顆 oracle），
+  但休市切換等針對 exchange 的動作還不會作用在新 exchange 上——起點的價格越新，這段空窗越不容易出事。
+- **`ORACLE_KIND=guarded` 或同一輪要做 §10 的 GuardedOracle 重部署時**：preflight 要求 11 檔都能報價，`RedeployGuardedOracle.s.sol`
+  只要有任何一檔超過 `min(金庫 maxPriceAge, 6h, ORACLE_MAX_PRICE_AGE)` 就拒絕執行。先寫價可以避免做到一半被擋下。
+- `Verify130` 對超過 6 小時的價格只警告、不失敗（見 §5.4）；事前確認新鮮，才不會把「價格過期」誤當成「部署正確」放過。
+
 ### 5.1 清空舊 exchange
 
 腳本會掃描舊 exchange 的倉位：**只要有未平倉就 revert**，除非刻意設定 `ALLOW_OPEN_POSITIONS=true`。舊 exchange 上的保證金（目前 500 USDC）不會被搬走，使用者隨時可以 `withdrawMargin` 領回，然後存進新的 exchange。執行費 ETH 由 owner 呼叫 `withdrawExecutionFees` 取回。

@@ -442,6 +442,7 @@ async function inspectAddress({ rpc, block, address, comp, denylist, outDir, sna
     const code = await fetchCode(address);
     if (code === "0x") {
       result.code = { status: "unknown", matched: null, detail: "這個位址在鏈上沒有程式碼" };
+      result.noCode = true;
       return result;
     }
     let target = code;
@@ -605,6 +606,8 @@ export async function buildReport({ root, outDir, chainIds, rpcOverrides = {}, f
             const snaps = [...new Set(results.map((r) => r.snapshot))];
             row.snapshot = chainId === String(snapshot?.chainId) ? (snaps.length === 1 ? snaps[0] : "mixed") : null;
           }
+          const noCode = results.filter((r) => r.noCode).map((r) => ({ key: r.key, address: r.address }));
+          if (noCode.length) row.noCode = noCode;
           for (const r of results) for (const l of r.leaked) row.leaked.push(results.length > 1 ? { ...l, what: `${r.key}.${l.what}` } : l);
         }
       }
@@ -700,6 +703,15 @@ export function renderMarkdown(report) {
       for (const l of leaks) L.push(`| ${l.id} | \`${esc(l.what)}\` | \`${l.holder}\` |`);
     }
     L.push("");
+    const empty = c.components.flatMap((r) => (r.noCode ?? []).map((x) => ({ id: r.id, ...x })));
+    if (empty.length) {
+      L.push(`### ${c.name}：前端設定列了、但鏈上沒有程式碼的位址`);
+      L.push("");
+      L.push("這些位址不該出現在 `frontend/src/contracts/**`：UI 會把它們當成可用的合約。`--offline` 會擋下。");
+      L.push("");
+      for (const e of empty) L.push(`- ${e.id}：${e.key} \`${e.address}\``);
+      L.push("");
+    }
     const failed = c.components.flatMap((r) => (r.reads ?? []).filter((x) => x.error).map((x) => ({ id: r.id, ...x })));
     if (failed.length) {
       L.push(`### ${c.name}：讀不到的 getter`);
@@ -851,6 +863,15 @@ export function checkConfig(root) {
       }
       const acc = acceptanceOf(cfg, chainId, t.id);
       if (JSON.stringify(acc) !== JSON.stringify(r.acceptance)) problems.push(`${label}：展示驗收與 components.json 不同——執行 --refresh-acceptance`);
+    }
+    // 報告說「鏈上沒有程式碼」的位址仍列在前端設定裡 → 擋下（UI 會把它當成可用的合約）。
+    const current = new Set(want.flatMap((t) => t.addresses.map((x) => lc(x.address))));
+    for (const r of chain.components) {
+      for (const x of r.noCode ?? []) {
+        if (current.has(lc(x.address))) {
+          problems.push(`${chain.name} ${r.id} ${x.key}：${x.address} 在鏈上沒有程式碼，卻仍列在 frontend/src/contracts/**——移除，或部署後重跑`);
+        }
+      }
     }
     for (const id of have.keys()) if (!want.some((t) => t.id === id)) problems.push(`${REPORT_JSON} ${chain.name}：多了現行設定沒有的元件 ${id}——重跑`);
   }

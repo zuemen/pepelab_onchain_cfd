@@ -7,7 +7,7 @@
    "name": "Base Sepolia",
    "role": "正式測試網（交易、agent session、x402 都在這條鏈）",
    "rpc": "https://sepolia.base.org",
-   "block": 47659527,
+   "block": 47659924,
    "components": [
     {
      "id": "PerpetualExchange",
@@ -1281,7 +1281,7 @@
    "name": "Sepolia",
    "role": "legacy 展示鏈（不是產品路徑；合約未做金鑰輪替）",
    "rpc": "https://ethereum-sepolia-rpc.publicnode.com",
-   "block": 11839973,
+   "block": 11840032,
    "components": [
     {
      "id": "PerpetualExchange",
@@ -1793,22 +1793,10 @@
       {
        "key": "sMSFT",
        "address": "0xCB2c5c834f1f0d54E6Da1f3628B1c624aAa750cf"
-      },
-      {
-       "key": "sGOOGL",
-       "address": "0x42D083F0e4a60FdFe28b5E00D44f11C41Bf1763d"
-      },
-      {
-       "key": "sICLN",
-       "address": "0xF34cA755a315531745dDC4A85963EeFA6129F459"
-      },
-      {
-       "key": "sESGU",
-       "address": "0x3f89C2Fd5e7222012d563ecC67e41De02ad746e7"
       }
      ],
-     "status": "unknown",
-     "detail": "程式碼一致；只有 CBOR metadata（原始碼文字雜湊）不同；這個位址在鏈上沒有程式碼",
+     "status": "equal",
+     "detail": "程式碼一致；只有 CBOR metadata（原始碼文字雜湊）不同",
      "leaked": [
       {
        "what": "sBTC.DEFAULT_ADMIN_ROLE",
@@ -1893,8 +1881,7 @@
       "note": "legacy 展示鏈，不做展示驗收"
      },
      "counts": {
-      "equal": 8,
-      "unknown": 3
+      "equal": 8
      },
      "perAddress": [
       {
@@ -1936,21 +1923,6 @@
        "key": "sMSFT",
        "status": "equal",
        "detail": "程式碼一致；只有 CBOR metadata（原始碼文字雜湊）不同"
-      },
-      {
-       "key": "sGOOGL",
-       "status": "unknown",
-       "detail": "這個位址在鏈上沒有程式碼"
-      },
-      {
-       "key": "sICLN",
-       "status": "unknown",
-       "detail": "這個位址在鏈上沒有程式碼"
-      },
-      {
-       "key": "sESGU",
-       "status": "unknown",
-       "detail": "這個位址在鏈上沒有程式碼"
       }
      ]
     },

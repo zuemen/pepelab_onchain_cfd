@@ -259,9 +259,12 @@ export const V2_STACK: Record<number, {
       sBOND:  "0xb84C17a704F9e7d96c3aF84Df05C6a8da5c344eb",
       sNVDA:  "0xB5586Ef5bBA7DAa698a4a6745C9D46F0b3bECfeE",
       sMSFT:  "0xCB2c5c834f1f0d54E6Da1f3628B1c624aAa750cf",
-      sGOOGL: "0x42D083F0e4a60FdFe28b5E00D44f11C41Bf1763d",
-      sICLN:  "0xF34cA755a315531745dDC4A85963EeFA6129F459",
-      sESGU:  "0x3f89C2Fd5e7222012d563ecC67e41De02ad746e7",
+      // sGOOGL／sICLN／sESGU 刻意不列：2026-10-04 唯讀查詢，這裡原本寫的三個位址
+      // （0x42D0…63d、0xF34c…459、0x3f89…6e7）在 Sepolia 上**沒有程式碼**（nonce 0），
+      // 雖然 AssetVaultV2.assetToken 登記的就是它們——DeployGuardedStack 的廣播只上鏈了
+      // 前 8 顆。列在這裡會讓 /tokens 顯示買得到卻一定 revert 的資產、持倉讀取永遠計為
+      // 失敗。缺項時 UI 走「未代幣化」路徑（toSpotAllocation 的 notTokenized）。
+      // scripts/check-deployment-status.mjs --offline 會擋下「前端列了沒有程式碼的位址」。
     },
   },
   // ── Base Sepolia (84532) — the canonical chain, hardened by #129 ───────────

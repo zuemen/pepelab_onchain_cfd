@@ -144,13 +144,15 @@ test("外洩地址名單：讀 payoutSafety.ts；空名單 → 丟錯（不可�
   assert.equal(shortAddr(LEAKED), LEAKED_SHORT);
 });
 
-test("位址解析：與 frontend/src/contracts/** 相同；同一位址只比一次；代幣群組各 11 顆", () => {
+test("位址解析：與 frontend/src/contracts/** 相同；同一位址只比一次；代幣群組只列鏈上真的有的", () => {
   const src = loadSources(REPO);
   const tokens = parseTokenGroups(readFileSync(join(REPO, ADDRESSES_FILE), "utf8"), ["84532", "11155111"]);
   for (const id of ["84532", "11155111"]) {
     assert.equal(Object.keys(tokens[id].SYNTH_TOKENS).length, 11);
-    assert.equal(Object.keys(tokens[id]["V2_STACK.tokens"]).length, 11);
   }
+  assert.equal(Object.keys(tokens["84532"]["V2_STACK.tokens"]).length, 11);
+  // Sepolia 的 V2 只有 8 顆真的上鏈；sGOOGL／sICLN／sESGU 的位址沒有程式碼，已自前端設定移除。
+  assert.deepEqual(Object.keys(tokens["11155111"]["V2_STACK.tokens"]).sort(), ["sAAPL", "sBOND", "sBTC", "sETH", "sGOLD", "sMSFT", "sNVDA", "sTSLA"]);
   const t = resolveTargets(src);
   const base = (id) => t.find((x) => x.chainId === "84532" && x.id === id);
   assert.equal(base("PerpetualExchange").addresses[0].address, src.frontend["84532"].roles.PerpetualExchange);
@@ -205,8 +207,8 @@ function tempRepo() {
   return root;
 }
 
-/** 假 RPC：PerpetualExchange 的 code 符合假產物、owner() 是外洩地址；其餘位址沒有 code。 */
-function fakeChain(root, chainId) {
+/** 假 RPC：PerpetualExchange 的 code 符合假產物、owner() 是外洩地址；noCode 裡的位址沒有 code；其餘是不符產物的短 code。 */
+function fakeChain(root, chainId, noCode = new Set()) {
   const { frontend } = loadSources(root);
   const pe = frontend[chainId].roles.PerpetualExchange.toLowerCase();
   const word = (a) => "0x" + a.replace(/^0x/, "").padStart(64, "0");
@@ -216,7 +218,7 @@ function fakeChain(root, chainId) {
     const err = (message) => ({ status: 200, ok: true, text: async () => JSON.stringify({ jsonrpc: "2.0", id, error: { code: 3, message } }) });
     if (method === "eth_chainId") return ok("0x" + Number(chainId).toString(16));
     if (method === "eth_blockNumber") return ok("0x100");
-    if (method === "eth_getCode") return ok(params[0].toLowerCase() === pe ? onchain() : "0x");
+    if (method === "eth_getCode") return ok(params[0].toLowerCase() === pe ? onchain() : noCode.has(params[0].toLowerCase()) ? "0x" : "0x6080");
     if (method === "eth_getStorageAt") return ok(word("0"));
     if (method === "eth_call") {
       const { to, data } = params[0];
@@ -229,12 +231,12 @@ function fakeChain(root, chainId) {
   };
 }
 
-async function generate(root, outDir) {
+async function generate(root, outDir, noCode) {
   const exec = (cmd, args) => {
     if (args[0] === "log") return "1234567890abcdef1234567890abcdef12345678\t2026-10-04\tsomething (#999)\n";
     throw new Error("no git");
   };
-  const report = await buildReport({ root, outDir, chainIds: ["84532"], fetchImpl: fakeChain(root, "84532"), sleep: async () => {}, today: "2026-10-04", exec });
+  const report = await buildReport({ root, outDir, chainIds: ["84532"], fetchImpl: fakeChain(root, "84532", noCode), sleep: async () => {}, today: "2026-10-04", exec });
   writeFileSync(join(root, REPORT_JSON), JSON.stringify(report, null, 1) + "\n");
   writeFileSync(join(root, REPORT_MD), renderMarkdown(report));
   return report;
@@ -251,7 +253,8 @@ test("buildReport：分類、外洩地址只寫縮寫、四個欄位都在 markd
     assert.deepEqual(pe.merged, { pr: 999, commit: "1234567", date: "2026-10-04" });
     assert.ok(pe.leaked.some((l) => l.what === "owner()" && l.holder === LEAKED_SHORT));
     assert.ok(pe.leaked.some((l) => /^authorizedAgents\(/.test(l.what)));
-    assert.equal(rows.find((r) => r.id === "MockOracle").status, "unknown"); // 假鏈上沒有 code
+    assert.equal(rows.find((r) => r.id === "MockOracle").status, "unknown"); // 假 out/ 沒有 MockOracle 產物
+    assert.match(rows.find((r) => r.id === "MockOracle").detail, /找不到編譯產物/);
     const json = JSON.stringify(report);
     const md = readFileSync(join(root, REPORT_MD), "utf8");
     assert.equal(json.toLowerCase().includes(LEAKED), false, "JSON 不得出現完整的外洩地址");
@@ -315,6 +318,31 @@ test("--offline：手改報告、位址變更、原始碼在「鏈上＝原始�
     assert.ok(has(/空的/));
     writeFileSync(denyPath, deny);
 
+    assert.deepEqual(checkConfig(root).problems, []);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+    rmSync(outDir, { recursive: true, force: true });
+  }
+});
+
+test("前端設定列了鏈上沒有程式碼的位址 → 報告列出、--offline 擋下；移除後通過", async () => {
+  const root = tempRepo();
+  const outDir = outDirWith({ "PerpetualExchange.sol:PerpetualExchange": artifact() });
+  try {
+    const { tokens } = loadSources(root);
+    const ghost = tokens["84532"]["V2_STACK.tokens"].sICLN;
+    await generate(root, outDir, new Set([ghost.toLowerCase()]));
+    const row = JSON.parse(readFileSync(join(root, REPORT_JSON), "utf8")).chains["84532"].components.find((r) => r.id === "SyntheticAssetV2");
+    assert.equal(row.status, "unknown");
+    assert.deepEqual(row.noCode, [{ key: "sICLN", address: ghost }]);
+    assert.match(readFileSync(join(root, REPORT_MD), "utf8"), /前端設定列了、但鏈上沒有程式碼的位址/);
+    assert.ok(checkConfig(root).problems.some((p) => p.includes(ghost) && /沒有程式碼/.test(p)));
+
+    // 從前端設定移除後重跑 → 通過
+    const addrFile = join(root, ADDRESSES_FILE);
+    const lines = readFileSync(addrFile, "utf8").split("\n");
+    writeFileSync(addrFile, lines.filter((l) => !l.includes(`"${ghost}"`)).join("\n"));
+    await generate(root, outDir, new Set([ghost.toLowerCase()]));
     assert.deepEqual(checkConfig(root).problems, []);
   } finally {
     rmSync(root, { recursive: true, force: true });

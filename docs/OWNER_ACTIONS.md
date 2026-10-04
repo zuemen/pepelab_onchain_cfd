@@ -16,8 +16,8 @@
 | 1 | 私鑰移入受保護的 environment、刪 repo 層級 secret、設 branch protection | GitHub 設定頁 | 45–60 分 | `gh api …/environments/…`、`gh api …/actions/secrets` |
 | 2 | 部署 keeper-trigger 與 monitoring 兩個 Worker | Cloudflare | 1.5–2 小時 | Worker Logs、`gh api …/actions/runs` |
 | 3 | 凍結舊部署上外洩地址的權限 | 本機 forge（Base 先、Sepolia 後） | 2–3 小時 | `ops/freeze-legacy/readback.mjs`、`post-deploy-smoke.mjs` |
-| 4 | 換 PAY_TO、重部署 x402 FeeRouter 與平台 FeeRouter | 本機 forge＋Vercel＋GitHub variables | 1.5–2 小時 | `cast call … platformTreasury()`、`post-deploy-smoke.mjs` |
-| 5 | 完整 cutover：#130、GuardedOracle、InsuranceVault、PepeIncentives、PepeAMM | 本機 forge（先 dispatch keeper） | 動手 6–8 小時，另有 timelock 48 小時等待與 2 天緩衝 | `Verify130`、`post-deploy-smoke.mjs` |
+| 4 | 換 PAY_TO、重部署 x402 FeeRouter（沿用舊 x402 保險金庫） | 本機 forge＋Vercel＋GitHub variables | 1.5–2 小時 | `cast call … platformTreasury()`、`post-deploy-smoke.mjs` |
+| 5 | 完整 cutover：#130、GuardedOracle、InsuranceVault＋平台 FeeRouter＋CopyTracker、PepeIncentives、PepeAMM | 本機 forge（先 dispatch keeper） | 動手 6–8 小時，另有 timelock 48 小時等待與 2 天緩衝 | `Verify130`、`post-deploy-smoke.mjs` |
 | 6 | 每台 agent 主機 `npm run vc-status:init` | 各 agent 主機 | 每台 5 分 | `agent/.state/vc-status/index.json` 存在 |
 | 7 | 重跑發布狀態與 smoke test，確認「原始碼較新」變成「鏈上＝原始碼」 | 本機 | 45–60 分（含 `forge build`） | `check-deployment-status.mjs --offline`、`post-deploy-smoke.mjs` |
 
@@ -32,7 +32,8 @@ node scripts/post-deploy-smoke.mjs --skip-http  # 只看鏈上
 ```
 
 2026-10-04 的基準：FAIL 7 項——平台與 x402 FeeRouter 的 `platformTreasury()`、Base 三顆 oracle adapter 的 `owner()`
-仍是外洩地址，signal-api 的 payTo 是外洩地址、付費端點因此 fail-closed 回 503。第 3、4 步完成後這 7 項應全部消失。
+仍是外洩地址，signal-api 的 payTo 是外洩地址、付費端點因此 fail-closed 回 503。第 3、4 步完成後剩平台 FeeRouter 的
+`platformTreasury()` 一項，第 5 步完成後應全部消失。
 
 ---
 
@@ -159,14 +160,12 @@ gh api 'repos/zuemen/pepelab_onchain_cfd/actions/runs?event=workflow_dispatch&pe
 
 **為什麼：** 外洩地址 `0xE80A…Eb93` 仍是 Sepolia 54 顆舊合約的 owner／admin，也是 Base 三顆 oracle adapter
 （AggregatorOracle、ChainlinkAdapter、PythAdapter）的 owner。凍結是把這些權限轉走或放棄，讓那把金鑰不再能改設定。
-凍結**處理不了** `FeeRouter.platformTreasury`（immutable）——那是第 4 步。
+凍結**處理不了** `FeeRouter.platformTreasury`（immutable）——x402 那顆在第 4 步、平台那顆在第 5 步重新部署。
 
-**依據：** `docs/RUNBOOK_FREEZE_LEGACY.md`。**這份 runbook 還沒有合併進 master**，目前在分支
-[`ops/freeze-legacy-deployments`](https://github.com/zuemen/pepelab_onchain_cfd/blob/ops/freeze-legacy-deployments/docs/RUNBOOK_FREEZE_LEGACY.md)；
-**PR #241 合併後生效**，請以合併後 master 上的版本為準（分支上的內容仍可能變動）。腳本
-`contracts/script/FreezeLegacyDeployments.s.sol` 與讀回工具 `ops/freeze-legacy/readback.mjs` 也隨 PR #241 進來。
+**依據：** [`RUNBOOK_FREEZE_LEGACY.md`](RUNBOOK_FREEZE_LEGACY.md)。腳本是 `contracts/script/FreezeLegacyDeployments.s.sol`，
+讀回工具是 `ops/freeze-legacy/readback.mjs`，本機分叉演練紀錄在 `ops/freeze-legacy/rehearsal-2026-10-04/`。
 
-**前置條件（runbook §7.0）：** PR #241 已合併；`forge build` 通過；證明要接手權限的新地址（V2 admin、
+**前置條件（runbook §7.0）：** `forge build` 通過；證明要接手權限的新地址（V2 admin、
 `ADAPTER_NEW_OWNER`）的金鑰真的可用；記下外洩地址在兩條鏈的 nonce；先通知會收到告警的人
 （Base 的 owner 轉移是 SEV-1，三顆 adapter 各響一次）。
 
@@ -176,9 +175,9 @@ gh api 'repos/zuemen/pepelab_onchain_cfd/actions/runs?event=workflow_dispatch&pe
 **完成後驗證（唯讀，runbook §7.4）：**
 
 ```bash
-# 盤點全集讀回＋事件掃描：必須 exit 0、「可疑」為 0（LOGS_RPC 與參數照 runbook）
-node ops/freeze-legacy/readback.mjs base-sepolia https://sepolia.base.org
-node ops/freeze-legacy/readback.mjs sepolia https://ethereum-sepolia-rpc.publicnode.com
+# 盤點全集讀回＋事件掃描：必須 exit 0、「可疑」為 0（Base 另需帶 ADAPTER_NEW_OWNER，見 runbook §7.4）
+LOGS_RPC=https://base-sepolia.gateway.tenderly.co node ops/freeze-legacy/readback.mjs base-sepolia https://base-sepolia-rpc.publicnode.com
+LOGS_RPC=https://sepolia.gateway.tenderly.co      node ops/freeze-legacy/readback.mjs sepolia      https://ethereum-sepolia-rpc.publicnode.com
 # Base 的三顆 adapter 不再出現在外洩地址 FAIL 裡
 node scripts/post-deploy-smoke.mjs --skip-http
 ```
@@ -190,61 +189,79 @@ node scripts/post-deploy-smoke.mjs --skip-http
 
 ---
 
-## 第 4 步：換 PAY_TO、重部署 x402 FeeRouter 與平台 FeeRouter
+## 第 4 步：換 PAY_TO、重部署 x402 FeeRouter（沿用舊 x402 保險金庫）
 
-**為什麼：** 兩顆 FeeRouter 的 `platformTreasury` 都是外洩地址，而且是 **immutable**——沒有任何 setter 能改
-（`docs/RUNBOOK_KEY_ROTATION.md` 提到的「owner-only setter」並不存在）。只能重新部署。signal-api 的 `PAY_TO`
+**為什麼：** x402 FeeRouter 的 `platformTreasury` 是外洩地址，而且是 **immutable**——沒有任何 setter 能改
+（`docs/RUNBOOK_KEY_ROTATION.md` 提到的「owner-only setter」並不存在），只能重新部署。signal-api 的 `PAY_TO`
 也指向同一個地址，付費端點因此 fail-closed 回 503，等於 x402 收費現在完全停擺。
+**平台 FeeRouter 不在這一步**：它的保險金庫位址是 immutable，而 CopyTracker 綁的 FeeRouter 也是 immutable，
+在這裡先換只會在第 5 步換主保險金庫時再部署一次，所以併入第 5 步（見第 5 步第 3 項）。
+
+**x402 保險金庫維持舊的那顆，不換新版**（[`INSURANCE_VAULT_SHARES.md`](INSURANCE_VAULT_SHARES.md) §5.2）：它的 `exchange` 是 0、
+不做 bailout、沒有外部 LP；換成 virtual shares 版反而會讓供給為 0 時的流入永久鎖死。2026-10-04 唯讀確認：舊 x402 金庫
+`0xc7Af…7B9f` 的 `owner()` 是現行部署者 `0x27C2…A585`（不是外洩地址），`feeRouter()` 是舊 router `0x29e5…B57d`，
+`totalSupply()` 為 0——所以可以沿用，由 owner 把它的 `feeRouter` 改指向新 router。
+
+**不要用 `contracts/script/DeployX402Router.s.sol`**：它一律 `new InsuranceVault(usdc)`，**無法沿用既有金庫**；
+而且沒帶 `TREASURY` 時預設是部署者。本步改用 `forge create` 只部署 FeeRouter。
+（後續待辦：讓這支腳本支援 `X402_VAULT` 沿用既有金庫、並強制要求 `TREASURY`；本 PR 不改部署腳本。）
 
 **前置條件：**
 - 第 1 步完成。準備一把**新的結算金鑰**（新 EOA，不是 Safe 或合約）：`PAY_TO` 必須等於這把金鑰的地址
   （結算 worker 會核對 PAY_TO、線上 `/` 公布的 payTo 與 signer 三者一致）。
-- 決定新的 `TREASURY`（平台分潤收款地址）。**`DeployX402Router.s.sol` 沒帶 `TREASURY` 時預設是部署者**；一定要明確帶入，
-  並確認不在外洩名單內。
-- 部署錢包有 Base Sepolia ETH，以及至少 1 USDC（Circle 官方 USDC）作為新 x402 金庫的種子。
+- 決定新的 `TREASURY`（平台分潤收款地址），**必須明確指定**，並確認不在 `agent/shared/src/payoutSafety.ts` 的外洩名單內。
+- 部署者（也是舊 x402 金庫的 owner）錢包有 Base Sepolia ETH，以及至少 1 USDC（Circle 官方 USDC `0x036C…CF7e`）作為種子。
+- 金鑰用 `cast wallet import` 建的 keystore（`--account <名稱>`）或 `--interactive`，不要出現在指令列。
 
-**操作：**
+**操作（依序）：**
 
-1. **x402 FeeRouter**（`contracts/`）：
-   `forge script script/DeployX402Router.s.sol:DeployX402Router --rpc-url base_sepolia --broadcast`，環境變數帶 `TREASURY=<新地址>`。
-   **注意：** 這支腳本會同時部署一顆**新的** InsuranceVault（現行原始碼是 virtual shares 版）並立刻 `setFeeRouter`。
-   依 [`INSURANCE_VAULT_SHARES.md`](INSURANCE_VAULT_SHARES.md) §3.3、§5.2，金庫供給為 0 時流入的錢會永久歸 virtual 份額——
-   **在任何收入流進來之前**（也就是下面第 3 小步切換 `X402_FEE_ROUTER` 之前），先以平台地址對新金庫 `deposit` 至少 1 USDC，
-   並確認 `totalSupply() > 0`。
-2. **新結算金鑰**：GitHub → Settings → Environments → `settlement` → 更新 `FEE_SETTLEMENT_PRIVATE_KEY`。
-3. **切換設定**（同一個時段內完成）：
+1. **先存種子**（§5.2）：平台地址對舊 x402 金庫 `approve` 後 `deposit(1000000)`（1 USDC），確認 `totalSupply() > 0`。
+   舊金庫供給為 0 時，第一筆存款會拿走金庫裡既有的餘額；由平台自己先存，就不會被別人拿走。
+2. **部署新 x402 FeeRouter**（`contracts/`）：constructor 是 `(usdc, platformTreasury, insuranceVault)`，三者都是 immutable。
+   ```bash
+   forge create src/FeeRouter.sol:FeeRouter --rpc-url https://sepolia.base.org --account <keystore> --broadcast      --constructor-args 0x036CbD53842c5426634e7929541eC2318f3dCF7e <新 TREASURY> 0xc7AfE2064106A608E0E21BFbF9aff89B0EAd7B9f
+   ```
+   **在接線之前**先讀回三個 immutable（見下方驗證的前三行），任何一個不對就放棄這顆、重新部署。
+   新 router 的 `exchange`、`copyTracker` 保持 0（監控規則 `feerouter-wiring` 預期 x402 這兩項是 0）。
+3. **舊 x402 金庫改接新 router**：由金庫 owner 送 `setFeeRouter(<新 x402 FeeRouter>)`。之後舊 router 分給金庫的 10% 會被拒，
+   舊 router 的 `routeExternalRevenue` 整筆 revert，不會再有收入流向外洩的 treasury。
+4. **新結算金鑰**：GitHub → Settings → Environments → `settlement` → 更新 `FEE_SETTLEMENT_PRIVATE_KEY`。
+5. **切換設定**（同一個時段內完成）：
    - GitHub → Settings → Secrets and variables → Actions → **Variables**：`PAY_TO`＝新結算 EOA、`X402_FEE_ROUTER`＝新 router。
    - Vercel → signal-api 專案 → Settings → Environment Variables：`PAY_TO`、`X402_FEE_ROUTER` 同上，然後 Redeploy。
    - repo 內（走 PR）：`frontend/src/contracts/x402.ts` 的 `X402_FEE_ROUTER`、`agent/.env.example` 的 `X402_FEE_ROUTER`；
      結算 worker 會比對 repo variable 與 `x402.ts`，兩邊不同時 fail-closed。
    - Cloudflare monitoring：`EXPECTED_PAY_TO`＝新 PAY_TO，重新 `npx wrangler deploy`；移除第 2 步暫設的 `MUTE_KEYS`。
-4. **平台 FeeRouter**：沒有單獨的部署腳本；它的 `insuranceVault` 同樣是 immutable，而 CopyTracker 的 `feeRouter` 也是 immutable
-   （見 `INSURANCE_VAULT_SHARES.md` §5.1）。也就是說，**換平台 FeeRouter 就要換 CopyTracker，換主保險金庫又要再換一次 FeeRouter**。
-   建議：若第 5 步會在近期執行，平台 FeeRouter 併入第 5 步、與新 InsuranceVault／CopyTracker 同一批部署（帶新 treasury）；
-   若第 5 步會延後很久，才先以現行金庫單獨重部署，並接受第 5 步要再部署一次。不論哪種，部署後都要對交易所
-   `setFeeRouter`、對新 FeeRouter `setExchange`／`setCopyTracker`。
-5. 部署後同一個 PR 更新：`frontend/src/contracts/addresses.ts`、`ops/monitoring/deployed.json`
-   （`node scripts/check-monitoring.mjs --refresh-deployed` 後 `--write`）、`ops/monitoring/monitors.json` 中 treasury 的預期值。
+6. 同一個 PR 更新 `ops/monitoring/deployed.json`（`node scripts/check-monitoring.mjs --refresh-deployed` 後 `--write`），
+   讓 x402 的 treasury 預期值換成新值。
 
 **完成後驗證（唯讀）：**
 
 ```bash
-cast call <新 x402 FeeRouter> "platformTreasury()(address)" --rpc-url https://sepolia.base.org   # 新 treasury
-cast call <新 x402 金庫> "totalSupply()(uint256)" --rpc-url https://sepolia.base.org            # > 0
-curl -s https://agent-git-master-zuemens-projects.vercel.app/ | jq '{payTo, payToSafety}'        # safe: true
-node scripts/post-deploy-smoke.mjs   # signal-api 兩項與 FeeRouter treasury 應轉為 PASS；未付款 /oracle/sBTC 應回 402
+R=<新 x402 FeeRouter>; RPC=https://sepolia.base.org
+cast call $R "platformTreasury()(address)" --rpc-url $RPC   # 必須等於指定的新 TREASURY，且不是 0xE80A…Eb93、不是部署者（除非刻意）
+cast call $R "insuranceVault()(address)"   --rpc-url $RPC   # 0xc7AfE206…7B9f（舊 x402 金庫）
+cast call $R "usdc()(address)"             --rpc-url $RPC   # 0x036CbD53…CF7e
+cast call 0xc7AfE2064106A608E0E21BFbF9aff89B0EAd7B9f "feeRouter()(address)"   --rpc-url $RPC   # == $R
+cast call 0xc7AfE2064106A608E0E21BFbF9aff89B0EAd7B9f "totalSupply()(uint256)" --rpc-url $RPC   # > 0
+curl -s https://agent-git-master-zuemens-projects.vercel.app/ | jq '{payTo, payToSafety}'      # safe: true
+node scripts/post-deploy-smoke.mjs   # signal-api 兩項與 X402FeeRouter.platformTreasury() 應轉為 PASS；未付款 /oracle/sBTC 應回 402
 ```
 
+此時 smoke test 仍會有一項 FAIL：平台 `FeeRouter.platformTreasury()`——那要到第 5 步才會消失。
+
 **失敗時：**
+- `platformTreasury()` 讀回不對：這顆 router 作廢（immutable，不能改），不要接線，重新 `forge create`。
+- 已經 `setFeeRouter` 才發現不對：由金庫 owner 再 `setFeeRouter` 指回正確的 router 或 0。
 - signal-api 仍回 503 `payto_unsafe`：Vercel 的 `PAY_TO` 沒更新或沒 Redeploy；或新地址有 code（不是 EOA）。
 - 結算 worker 失敗「PAY_TO ≠ signer」：`settlement` environment 的金鑰與 `PAY_TO` 不是同一把。
-- 已經有收入在種子之前流進新金庫：那筆錢無法取回（歸 virtual 份額）；立刻補種子，避免後續再發生。
 
 ---
 
-## 第 5 步：完整 cutover（#130、新 GuardedOracle、InsuranceVault、PepeIncentives、PepeAMM）
+## 第 5 步：完整 cutover（#130、新 GuardedOracle、InsuranceVault＋平台 FeeRouter＋CopyTracker、PepeIncentives、PepeAMM）
 
 **為什麼：** 交易引擎、保險金庫份額定價、oracle 速率限制與凍結期限、PepeIncentives、PepeAMM 的修正都只存在於原始碼；
+平台 FeeRouter 的 `platformTreasury` 仍是外洩地址（immutable）。
 [`RELEASE_STATUS.md`](RELEASE_STATUS.md) 把它們列為「原始碼較新（待部署）」。合約不可升級，只能重新部署並改接線。
 
 **前置條件：**
@@ -259,18 +276,29 @@ node scripts/post-deploy-smoke.mjs   # signal-api 兩項與 FeeRouter treasury �
 
 **操作（依序；每一項的詳細指令在對應文件，這裡不重抄）：**
 
-1. **#130 cutover**：[`DEPLOY_130_CUTOVER.md`](DEPLOY_130_CUTOVER.md) §3 設風險參數 → §5.1 清空舊 exchange →
-   §5.2 `PREFLIGHT_ONLY=true` 預檢與 fork 模擬（不需要金鑰）→ §5.3 broadcast → §5.4 `Verify130` → §7 部署後必做（一個 commit）。
-   §5.3 第 9 步（舊 InsuranceVault／FeeRouter 改指向新 exchange）**不可逆**。
-   **Oracle 選擇（§4）：** 若選 `ORACLE_KIND=guarded`，exchange 上的 oracle 是 immutable——要讓新 exchange 讀到**新的** GuardedOracle，
-   就必須把下一項（新 GuardedOracle）**提前到 #130 之前**做；選預設的 MockOracle 則順序不影響。
+> **Oracle 選擇決定順序。** 若 #130 選 `ORACLE_KIND=guarded`（`DEPLOY_130_CUTOVER.md` §4），exchange 上的 oracle 是 **immutable**：
+> **新 GuardedOracle（下面第 2 項）必須在 #130 之前部署**，並在 #130 指向這顆新的；否則新 exchange 會永久讀舊 oracle
+> （沒有時間窗上限、凍結沒有期限），要換只能再重部署一次 exchange。選預設的 MockOracle 時才照下面的順序。
+
+1. **#130 cutover**：[`DEPLOY_130_CUTOVER.md`](DEPLOY_130_CUTOVER.md) §3 設風險參數 → §5.0 先 dispatch keeper 並確認價格新鮮 →
+   §5.1 清空舊 exchange → §5.2 `PREFLIGHT_ONLY=true` 預檢與 fork 模擬（不需要金鑰）→ §5.3 broadcast → §5.4 `Verify130` →
+   §7 部署後必做（一個 commit）。§5.3 第 9 步（舊 InsuranceVault／FeeRouter 改指向新 exchange）**不可逆**。
 2. **新 GuardedOracle**：`DEPLOY_130_CUTOVER.md` §10，`script/RedeployGuardedOracle.s.sol`；先跑 fork 測試
    （`forge test --match-path test/fork/RedeployGuardedOracleFork.t.sol --fork-url https://sepolia.base.org -vv`）。
-   `ORACLE_MAX_PRICE_AGE` 必須 ≥ keeper 的 `KEEPER_HEARTBEAT` ＋ 排程延遲；**要在治理 phase 2 之前做**。
-3. **InsuranceVault**：[`INSURANCE_VAULT_SHARES.md`](INSURANCE_VAULT_SHARES.md) §5.3 的順序，**一步都不能調換**：
-   部署新金庫（`feeRouter`、`exchange` 留 0）→ 存至少 1 USDC 新資金作種子並確認 `totalSupply > 0` → 接線後移交 timelock
-   （前三步同一次 broadcast）→ timelock 預排 `setInsuranceVault`／`setFeeRouter`（等 48 小時）→ 遷移窗口（ReduceOnly → 執行排程 →
-   立刻搬協議自有部位 → 切回 Active）。舊金庫**不要**把 `exchange` 設成 0。平台 FeeRouter／CopyTracker 若併入這一批，見第 4 步第 4 小步。
+   `ORACLE_MAX_PRICE_AGE` 必須 ≥ keeper 的 `KEEPER_HEARTBEAT` ＋ 排程延遲；**要在治理 phase 2 之前做**；
+   `ORACLE_KIND=guarded` 時見上方方框，提前到第 1 項之前。
+3. **InsuranceVault＋平台 FeeRouter＋CopyTracker（同一批）**：平台 FeeRouter 的 `insuranceVault` 與 `platformTreasury` 都是 immutable，
+   CopyTracker 的 `feeRouter` 也是 immutable（`INSURANCE_VAULT_SHARES.md` §5.1），所以三者一起換、只部署一次。
+   順序照 [`INSURANCE_VAULT_SHARES.md`](INSURANCE_VAULT_SHARES.md) §5.3，**一步都不能調換**：
+   部署新金庫（`feeRouter`、`exchange` 留 0）、新平台 FeeRouter（**明確帶新 `TREASURY`**，constructor 指向新金庫）、新 CopyTracker
+   （指向新 FeeRouter）→ 存至少 1 USDC 新資金作種子並確認 `totalSupply > 0` → 新金庫接線後移交 timelock（前三步同一次 broadcast）→
+   timelock 預排 `setInsuranceVault`／`setFeeRouter`（等 48 小時）→ 遷移窗口（ReduceOnly → 執行排程 → 立刻搬協議自有部位 → 切回 Active）。
+   新 FeeRouter 要 `setExchange`／`setCopyTracker`；`TraderStake.setCopyTracker` 與交易所對新 CopyTracker 的授權也要跟上。
+   舊金庫**不要**把 `exchange` 設成 0。
+   - **現行腳本的限制（後續待辦，本 PR 不改腳本）：** `Redeploy130Hardened.s.sol` 把現行平台 FeeRouter 與 InsuranceVault 寫成常數，
+     第 1 項會部署一顆綁**舊** FeeRouter 的 CopyTracker；這一項換 FeeRouter 時 CopyTracker 必須再部署一次。這一批也還沒有部署腳本
+     （§5 只寫了流程）。要真正只部署一次，得先讓 Redeploy130 接受新的 FeeRouter／金庫位址。
+   - 第 1 項到這一項之間，平台手續費仍累積在舊 FeeRouter，而它的提領只認外洩的 treasury——這段時間要盡量短。
 4. **PepeIncentives**：`contracts/script/DeployPepeIncentives.s.sol`，部署後更新 `addresses.ts` 並轉入獎勵池；
    新實例從空狀態開始，舊的連續簽到等資料不會帶過來（`KNOWN_LIMITATIONS.md`）。
 5. **PepeAMM**：`contracts/script/DeployAMM.s.sol`（簽署者必須是 MockUSDC 的 owner），部署後更新 `addresses.ts`。
@@ -281,6 +309,7 @@ node scripts/post-deploy-smoke.mjs   # signal-api 兩項與 FeeRouter treasury �
 cd contracts && forge script script/Verify130.s.sol:Verify130 --rpc-url https://sepolia.base.org   # §5.4 的參數照文件
 cd .. && node scripts/check-addresses.mjs && node scripts/check-monitoring.mjs
 node scripts/post-deploy-smoke.mjs     # 接線（含 agent session 授權）、外洩地址、keeper、signal-api
+cast call <新平台 FeeRouter> "platformTreasury()(address)" --rpc-url https://sepolia.base.org   # 新 TREASURY，不是 0xE80A…Eb93
 ```
 
 **失敗時：** `DEPLOY_130_CUTOVER.md` §9：一律用 `RESUME_*` 續跑，不要從頭重跑；各步的回滾指令在 §9。
