@@ -58,11 +58,30 @@ updates:
     #     classifyFacilitatorFailure（503／429 分類）就接不到，facilitator 故障會變成
     #     「請重新付款」。
     #   • 1.x 依賴 x402 ^1，與 signal-api 直接使用的 x402 0.5.3 型別不相容（typecheck 紅）。
-    # v1 付款路徑的後續方向是 X402_PROTOCOL=v2（@x402/*，ADR-010），不是升 x402-hono。
-    # minor／patch 仍照常進 agent-minor-patch group。
+    # 0.x 的 minor 一樣是破壞性升級（2026-10-04 評估 #234，0.5.3 → 0.8.0）：0.8.0 已含上面
+    # 前兩點的全部改動（X-Forwarded resource、error 改字串、paywall 改用 x402/paywall、
+    # 自己接住 /verify 例外），且依賴 x402 ^0.8，app.ts 的 computeRoutePatterns(paidRoutes())
+    # typecheck 紅；實測 x402DefaultGolden 與 facilitatorErrors（503 → 402）也紅。所以 minor
+    # 也擋，只放行 0.5.x 的 patch。
+    #
+    # x402 本體同理留在 0.5.x（2026-10-04 評估 #235，0.5.3 → 1.2.0）：
+    #   • signal-api 直接 import x402/shared 的 computeRoutePatterns／findMatchingRoute，
+    #     用意是「是否為付費路由」的判斷與付費牆（x402-hono 0.5.3 內部的 x402）**同一份程式**。
+    #     x402-hono 0.5.3 要的是 x402 ^0.5.3，單升 x402 會讓 npm 裝兩份：付費牆仍用 0.5.3，
+    #     app.ts 用 1.2.0，兩邊就不再同源。1.2.0 的 findMatchingRoute 也確實改了行為：
+    #     decodeURIComponent 失敗時不再回「不匹配」，改用原始路徑繼續比對。
+    #   • v1 golden 與 facilitator 錯誤分類目前不受影響（402 與 /verify 都在 x402-hono
+    #     內部的 0.5.3 處理），但那是兩份並存的結果，不是相容。
+    #   • 1.2.0 讓 Vercel bundle 多打進 40 個 @solana/*、@solana-program/* 套件，對 v1 路徑沒有任何好處。
+    #   • x402 的 0.x minor（例如 0.8）同樣會和 x402-hono 0.5.3 分家，所以 minor 也擋。
+    # x402 與 x402-hono 只能一起動；v1 付款路徑的後續方向是 X402_PROTOCOL=v2（@x402/*，
+    # ADR-010），不是升這兩個 v1 套件。
+    # 兩者的 patch（0.5.x）仍照常進 agent-minor-patch group。
     ignore:
       - dependency-name: "x402-hono"
-        update-types: ["version-update:semver-major"]
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
+      - dependency-name: "x402"
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
     commit-message:
       prefix: "chore(agent-deps)"
 
