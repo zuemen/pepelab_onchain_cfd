@@ -22,9 +22,12 @@ const TONE_COLOR: Record<MarketTone, { fg: string; bg: string; border: string }>
 export function MarketStatusBadge({
   status,
   variant = 'full',
+  onAccent = false,
 }: {
   status: MarketStatus
   variant?: 'full' | 'short'
+  /** 放在選中的（亮綠底）分頁上：改用深底，否則黃字在綠底上看不見。 */
+  onAccent?: boolean
 }) {
   if (variant === 'short' && (status.kind === 'always' || status.kind === 'open')) return null
   const c = TONE_COLOR[status.tone]
@@ -41,7 +44,7 @@ export function MarketStatusBadge({
         py: variant === 'full' ? 0.35 : 0.1,
         borderRadius: '6px',
         border: `1px solid ${c.border}`,
-        bgcolor: c.bg,
+        bgcolor: onAccent ? C.bg : c.bg,
         color: c.fg,
         ...monoCss,
         fontSize: variant === 'full' ? 11.5 : 10,

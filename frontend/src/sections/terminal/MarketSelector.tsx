@@ -65,7 +65,7 @@ export function MarketSelector({
             {a.symbol}
             {statusFor && (
               <Box component="span" sx={{ ml: 0.8, verticalAlign: 'middle' }}>
-                <MarketStatusBadge status={statusFor(a.id as AssetId)} variant="short" />
+                <MarketStatusBadge status={statusFor(a.id as AssetId)} variant="short" onAccent={on} />
               </Box>
             )}
           </Box>
