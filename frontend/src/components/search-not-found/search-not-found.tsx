@@ -5,6 +5,8 @@ import type { TypographyProps } from '@mui/material/Typography';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
 
+import { t } from 'src/locales';
+
 // ----------------------------------------------------------------------
 
 type SearchNotFoundProps = BoxProps & {
@@ -20,7 +22,7 @@ export function SearchNotFound({ query, sx, slotProps, ...other }: SearchNotFoun
   if (!query) {
     return (
       <Typography variant="body2" {...slotProps?.description}>
-        Please enter keywords
+        {t.common.shell.search.enterKeywords}
       </Typography>
     );
   }
@@ -47,14 +49,14 @@ export function SearchNotFound({ query, sx, slotProps, ...other }: SearchNotFoun
           ...(Array.isArray(slotProps?.title?.sx) ? slotProps.title.sx : [slotProps?.title?.sx]),
         ]}
       >
-        Not found
+        {t.common.shell.search.notFoundTitle}
       </Typography>
 
       <Typography variant="body2" {...slotProps?.description}>
-        No results found for &nbsp;
+        {t.common.shell.search.notFoundBefore}&nbsp;
         <strong>{`"${query}"`}</strong>
-        .
-        <br /> Try checking for typos or using complete words.
+        {t.common.shell.search.notFoundAfter}
+        <br /> {t.common.shell.search.notFoundHint}
       </Typography>
     </Box>
   );

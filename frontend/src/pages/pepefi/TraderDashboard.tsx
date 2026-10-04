@@ -9,7 +9,7 @@ import { validateStrategy, MIN_ALLOCATION_ASSETS, type StrategyIssue } from 'src
 import { FEATURE_COPY_TRADING } from 'src/lib/pepefi/featureFlags'
 import { TableSkeleton } from 'src/components/pepefi/Skeleton'
 import { ASSETS_LIST, ASSET_LABEL } from 'src/lib/pepefi/assetMeta'
-import { getPepeAvatar } from 'src/utils/pepefi-assets'
+import { traderAvatarSrc } from 'src/utils/pepefi-assets'
 import { t, locale, interpolate } from 'src/locales'
 import TraderRankBadge from 'src/components/pepefi/TraderRankBadge'
 import { useToast } from 'src/components/pepefi/ToastProvider'
@@ -302,7 +302,7 @@ export default function TraderDashboard() {
       {traderInfo?.isRegistered && (
         <Card sx={{ p: 3, display: 'flex', flexDirection: 'row', gap: 3, alignItems: 'center' }}>
           <Avatar
-            src={getPepeAvatar(stakeData ? stakeData.reputation : null, wallet.address || '')}
+            src={traderAvatarSrc(stakeData ? stakeData.reputation : null, wallet.address || '')}
             sx={{
               width: 80,
               height: 80,

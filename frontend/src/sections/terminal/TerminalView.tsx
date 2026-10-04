@@ -1,6 +1,6 @@
 import type { AssetId, LivePos } from './types'
 
-import { useMemo, useState, useCallback } from 'react'
+import { useMemo, useState, useEffect, useCallback } from 'react'
 
 import Box from '@mui/material/Box'
 
@@ -13,18 +13,20 @@ import { useFundingData } from 'src/hooks/useFundingData'
 import { useVaultBacking } from 'src/hooks/useVaultBacking'
 import { useTerminalLayout } from 'src/hooks/useTerminalLayout'
 import { useMarketActivity } from 'src/hooks/useMarketActivity'
-import { useTerminalAccount } from 'src/hooks/useTerminalAccount'
 import { useAssetTradingParams } from 'src/hooks/useAssetTradingParams'
+import { POSITION_STALE_MS, useTerminalAccount } from 'src/hooks/useTerminalAccount'
 
 import { t } from 'src/locales'
 import { assetPolicy } from 'src/tenant'
 import { ASSET_IDS } from 'src/contracts/addresses'
 import { usePepefiWallet } from 'src/layouts/pepefi'
 import { ASSET_META } from 'src/lib/pepefi/assetMeta'
+import { terminalTotals } from 'src/lib/pepefi/positionPnl'
 import { stalenessNotice } from 'src/lib/pepefi/priceFreshness'
 import { fundingIntervalOf } from 'src/lib/pepefi/fundingInterval'
 import { staticTradingParams } from 'src/lib/pepefi/tradingParams'
 import { type Interval, DEFAULT_INTERVAL } from 'src/lib/pepefi/candles'
+import { freshnessText, dataFreshness } from 'src/lib/pepefi/positionFreshness'
 
 import { useToast } from 'src/components/pepefi/ToastProvider'
 import PaperTradingBadge from 'src/components/pepefi/PaperTradingBadge'
@@ -92,32 +94,35 @@ export function TerminalView() {
   // null = 兩個來源都讀不到。不補任何替代數字，下游一律顯示「—」。
   const livePx = live[selAsset]?.usd ?? undefined
 
-  // 給 Activity 面板算未實現損益用。刻意用即時價（CoinGecko/live）而不是 oracle
-  // index：跟下方自己持倉表的算法一致，同一個標的的損益在兩個地方不該不一樣。
-  // 拿不到即時價就退回 oracle 價，兩者都沒有就不算（面板顯示 '—'）。
-  const activityPrice =
-    livePx !== undefined
-      ? BigInt(Math.round(livePx * 1e8)) * 10n ** 10n
-      : account.curPrice > 0n
-        ? account.curPrice
-        : undefined
-
-  // 以即時價重算未實現損益，不等鏈上刷新。
+  // 未實現損益一律用合約讀數（getPositionValue − 保證金），跟投資組合頁同一個來源。
+  // 以前這裡用鏈下參考價（CoinGecko／Coinbase）自己重算，同一個部位在終端機是 −7.46、
+  // 在投資組合是 +0.00——參考價不是結算價，合約平倉時不會用它。見 lib/pepefi/positionPnl.ts。
   const livePositions: LivePos[] = useMemo(
-    () =>
-      account.positions.map((p) => {
-        const lp = live[p.asset as AssetId]?.usd
-        const cur = lp ? BigInt(Math.round(lp * 1e8)) * 10n ** 10n : p.cur
-        const size = p.entryPrice > 0n ? (p.margin * p.leverage * 10n ** 18n) / p.entryPrice : 0n
-        let pnl = ((cur - p.entryPrice) * size) / 10n ** 18n
-        if (!p.isLong) pnl = -pnl
-        return { ...p, cur, livePnl: pnl }
-      }),
-    [account.positions, live],
+    () => account.positions.map((p) => ({ ...p, livePnl: p.pnl })),
+    [account.positions],
   )
 
-  const totalPnl = livePositions.reduce((a, p) => a + p.livePnl, 0n)
-  const equity = account.freeMgn + totalPnl
+  // 任何一個部位沒有數字（讀取失敗、無有效價格、價格過期），或有部位的 getPosition 本身讀不到
+  // （unreadCount，不在列表裡），合計就是 null，畫面顯示「—」（審查 N1）。
+  // 權益 = 可用保證金 + 各部位現在平倉可拿回的金額（鎖住的保證金＋未實現損益）。
+  const { totalPnl, equity } = terminalTotals({
+    positions: account.positions,
+    freeMargin: account.freeMgn,
+    unreadCount: account.unreadCount,
+  })
+  const [nowMs, setNowMs] = useState(() => Date.now())
+  useEffect(() => {
+    // window.setInterval：這個元件有一個叫 setInterval 的 state setter（K 線週期）。
+    const id = window.setInterval(() => setNowMs(Date.now()), 5_000)
+    return () => window.clearInterval(id)
+  }, [])
+  const freshness = dataFreshness({
+    updatedAt: account.updatedAt,
+    readFailed: account.readFailed,
+    nowMs,
+    staleAfterMs: POSITION_STALE_MS,
+  })
+  const freshnessLabel = freshnessText(freshness, account.updatedAt, POSITION_STALE_MS)
   const fi = funding[selAsset]
   const rate = fi ? Number(fi.rate) : 0
   const fundingInterval = fundingIntervalOf(funding)
@@ -189,7 +194,7 @@ export function TerminalView() {
       >
         {layout.bookAsColumn && (
           <Box sx={{ height: 520, display: 'flex' }}>
-            <BookPanel symbol={meta?.symbol} activity={activity} currentPrice={activityPrice} />
+            <BookPanel symbol={meta?.symbol} activity={activity} />
           </Box>
         )}
 
@@ -206,7 +211,7 @@ export function TerminalView() {
               這個位置很寬，所以改成訂單簿與成交併排，否則右邊會空一大片。 */}
           {!layout.bookAsColumn && (
             <Box sx={{ height: 380, display: 'flex' }}>
-              <BookPanel symbol={meta?.symbol} activity={activity} currentPrice={activityPrice} />
+              <BookPanel symbol={meta?.symbol} activity={activity} />
             </Box>
           )}
         </Box>
@@ -246,6 +251,9 @@ export function TerminalView() {
             equity={equity}
             freeMgn={account.freeMgn}
             totalPnl={totalPnl}
+            freshness={freshness}
+            freshnessLabel={freshnessLabel}
+            unreadCount={account.unreadCount}
             usdcBal={account.usdcBal}
             usdtBal={account.usdtBal}
             stable={stable}
@@ -260,6 +268,8 @@ export function TerminalView() {
         contracts={contracts}
         address={wallet.address ?? null}
         positions={livePositions}
+        freshness={freshness}
+        freshnessLabel={freshnessLabel}
         funding={funding}
         fundingInterval={fundingInterval}
         staleNoticeFor={staleNoticeFor}

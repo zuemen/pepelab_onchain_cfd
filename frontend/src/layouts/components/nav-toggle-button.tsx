@@ -4,6 +4,8 @@ import { varAlpha } from 'minimal-shared/utils';
 
 import IconButton from '@mui/material/IconButton';
 
+import { t } from 'src/locales';
+
 import { Iconify } from 'src/components/iconify';
 
 // ----------------------------------------------------------------------
@@ -18,7 +20,7 @@ export function NavToggleButton({ isNavMini, sx, ...other }: NavToggleButtonProp
       size="small"
       // Describes the outcome, not the glyph: the arrow flips with isNavMini,
       // so "collapse"/"expand" is what a screen reader user needs to hear.
-      aria-label={isNavMini ? 'Expand sidebar' : 'Collapse sidebar'}
+      aria-label={isNavMini ? t.common.shell.expandSidebarAria : t.common.shell.collapseSidebarAria}
       aria-expanded={!isNavMini}
       sx={[
         (theme) => ({

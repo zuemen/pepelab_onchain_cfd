@@ -7,7 +7,7 @@ export const portfolio: Catalog['portfolio'] = {
   netWorth: {
     title: 'Net Worth',
     unrealisedPnl: 'Unrealised PnL',
-    unrealisedPnlTooltip: 'Mark-to-market PnL on positions that are still open',
+    unrealisedPnlTooltip: 'What your open positions would net if closed now: mark-price PnL after fees and funding, the same figure as the trading terminal. Excludes the 10% performance fee some positions pay on profit; funding as of the last settlement; excludes the bankruptcy bailout. Shows — when any position cannot be read',
 
     /**
      * 單複數寫成兩條完整的句子。catalog 沒有複數引擎，而把 'balance' / 'balances'
@@ -125,7 +125,7 @@ export const portfolio: Catalog['portfolio'] = {
     entry: 'Price you opened at',
     oracle: 'On-chain price the contract settles against — this is what Unr. PnL uses',
     liveMarket: 'Off-chain feed. Moves before the oracle does, so a gap here is normal',
-    unrealizedPnl: 'Unrealised, from the Oracle price',
+    unrealizedPnl: 'How much more or less than your margin you would get back by closing now: mark-price PnL after the close fee, borrow fee and accrued funding (contract getPositionValue − margin). Excludes the 10% performance fee some positions pay on profit; funding as of the last settlement; excludes the bankruptcy bailout',
   },
 
   close: {
@@ -139,6 +139,7 @@ export const portfolio: Catalog['portfolio'] = {
   },
 
   page: {
+    positionsUnread: '{count} position(s) could not be read this time — the table and totals below are incomplete. Refresh to try again.',
     title: 'My Portfolio',
     refresh: 'Refresh',
 

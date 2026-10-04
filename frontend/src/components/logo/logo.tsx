@@ -9,6 +9,7 @@ import Typography from '@mui/material/Typography';
 
 import { RouterLink } from 'src/routes/components';
 
+import { t } from 'src/locales';
 import { tenant } from 'src/tenant';
 
 import { logoClasses } from './classes';
@@ -42,7 +43,7 @@ export function Logo({
         borderRadius: '50%',
         objectFit: 'cover',
         border: '2px solid var(--palette-primary-main)',
-        boxShadow: '0 0 8px rgba(124,193,74,0.5)',
+        boxShadow: '0 0 8px rgba(var(--palette-primary-mainChannel) / 0.5)',
         flexShrink: 0,
       }}
     />
@@ -72,7 +73,7 @@ export function Logo({
     <LogoRoot
       component={RouterLink}
       href={href}
-      aria-label="Logo"
+      aria-label={t.common.shell.logoAria}
       underline="none"
       className={mergeClasses([logoClasses.root, className])}
       sx={[

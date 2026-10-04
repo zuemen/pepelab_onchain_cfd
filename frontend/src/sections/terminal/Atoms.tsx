@@ -1,5 +1,9 @@
+import { useState, type ReactElement } from 'react'
+
 import Box from '@mui/material/Box'
 import Tooltip from '@mui/material/Tooltip'
+
+import { t } from 'src/locales'
 
 import { C } from './terminal-theme'
 
@@ -51,14 +55,62 @@ export function Stat({
   )
 
   if (!hint) return body
+  return <StatHint hint={hint}>{body}</StatHint>
+}
+
+/**
+ * 行情列的說明框。
+ *
+ * 以前是 bottom-start、滑過就開：行情列第二排（未平倉量、金庫後盾）的說明框會整個
+ * 蓋在正下方的 K 線上，游標只是路過也會跳出來。現在：
+ * - 往上開（top-start），蓋到的是行情列自己，不是圖表；上方沒空間才翻到右側，最後才往下。
+ * - 停 400ms 才開，游標路過不會閃一下。
+ * - 可關閉：Esc（MUI 內建）、移開游標、或按說明框右上角的 ×。
+ */
+function StatHint({ hint, children }: { hint: string; children: ReactElement }) {
+  const [open, setOpen] = useState(false)
   return (
     <Tooltip
       arrow
-      placement="bottom-start"
-      title={<Box sx={{ fontSize: 11.5, lineHeight: 1.6, whiteSpace: 'pre-line' }}>{hint}</Box>}
-      slotProps={{ tooltip: { sx: { maxWidth: 300 } } }}
+      open={open}
+      onOpen={() => setOpen(true)}
+      onClose={() => setOpen(false)}
+      enterDelay={400}
+      enterNextDelay={200}
+      placement="top-start"
+      title={
+        <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1 }}>
+          <Box sx={{ fontSize: 11.5, lineHeight: 1.6, whiteSpace: 'pre-line' }}>{hint}</Box>
+          <Box
+            component="button"
+            type="button"
+            aria-label={t.terminal.stats.closeHintAria}
+            onClick={() => setOpen(false)}
+            sx={{
+              flexShrink: 0,
+              border: 0,
+              p: 0,
+              lineHeight: 1,
+              fontSize: 14,
+              cursor: 'pointer',
+              color: 'inherit',
+              background: 'transparent',
+              opacity: 0.7,
+              '&:hover': { opacity: 1 },
+            }}
+          >
+            ×
+          </Box>
+        </Box>
+      }
+      slotProps={{
+        tooltip: { sx: { maxWidth: 300 } },
+        popper: {
+          modifiers: [{ name: 'flip', options: { fallbackPlacements: ['right-start', 'bottom-start'] } }],
+        },
+      }}
     >
-      {body}
+      {children}
     </Tooltip>
   )
 }

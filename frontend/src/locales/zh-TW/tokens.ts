@@ -12,6 +12,24 @@ export const tokens = {
    * #152：資產詳情面板專屬的字。chip 層級的字（等級、筆數、離散度、各種讀不到
    * 的狀態）住在 `esg.attested`,這裡只留面板自己需要的那幾句,不重複一份。
    */
+  /**
+   * 合成資產的顯示名稱（終端機代號下方的副標、ESG 頁）。代號本身（sETH）是鏈上識別碼，
+   * 不譯；`assetMeta.ts` 的 `name` 是英文原名，catalog 沒有的標的才退回它。
+   */
+  assetName: {
+    sBTC: '合成比特幣',
+    sETH: '合成以太幣',
+    sAAPL: '合成 Apple 股票',
+    sTSLA: '合成 Tesla 股票',
+    sGOLD: '合成黃金（XAU/USD）',
+    sBOND: '合成綠色債券 ETF（BGRN）',
+    sNVDA: '合成 NVIDIA 股票',
+    sMSFT: '合成 Microsoft 股票',
+    sGOOGL: '合成 Alphabet 股票',
+    sICLN: '合成 iShares 全球潔淨能源 ETF',
+    sESGU: '合成 iShares MSCI 美國 ESG ETF',
+  },
+
   attested: {
     title: '見證碳等級',
     sourceNote: '鏈上見證的中位數',

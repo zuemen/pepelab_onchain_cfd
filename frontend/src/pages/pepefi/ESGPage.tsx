@@ -13,6 +13,7 @@ import { useESG } from 'src/hooks/useESG';
 import { ASSET_IDS } from 'src/contracts/addresses';
 import { t, interpolate } from 'src/locales';
 import { ASSET_META } from 'src/lib/pepefi/assetMeta';
+import { assetDisplayName } from 'src/lib/pepefi/assetName';
 import ESGBadge from 'src/components/pepefi/ESGBadge';
 import Skeleton from 'src/components/pepefi/Skeleton';
 
@@ -410,7 +411,7 @@ export default function ESGPage() {
                         )}
                       </Box>
                       <Typography variant="caption" color="text.secondary" sx={{ display: 'block', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap', maxWidth: 220 }}>
-                        {meta?.name ?? ''}
+                        {assetDisplayName(meta)}
                       </Typography>
                     </Box>
 
@@ -501,7 +502,7 @@ export default function ESGPage() {
                   {selMeta?.symbol ?? '?'}
                 </Typography>
                 <Typography variant="caption" color="text.secondary" sx={{ display: 'block', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>
-                  {selMeta?.name ?? ''}
+                  {assetDisplayName(selMeta)}
                 </Typography>
               </Box>
               {selInfo && (

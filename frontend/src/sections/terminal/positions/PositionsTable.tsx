@@ -8,6 +8,7 @@ import { ASSET_META } from 'src/lib/pepefi/assetMeta'
 import { prettyError } from 'src/lib/pepefi/errorMessages'
 import { SHOW_LEVERAGE } from 'src/lib/pepefi/featureFlags'
 import { fUsd, fNum, fromUnits } from 'src/lib/pepefi/format'
+import { pnlStatusText } from 'src/lib/pepefi/positionFreshness'
 
 import { C, monoCss, labelCss } from '../terminal-theme'
 import { asTx, type LivePos, type TerminalContracts } from '../types'
@@ -22,12 +23,15 @@ const COLS = SHOW_LEVERAGE
 export function PositionsTable({
   contracts,
   positions,
+  dimmed = false,
   staleNoticeFor,
   notify,
   onRefresh,
 }: {
   contracts: TerminalContracts
   positions: LivePos[]
+  /** 資料可能已過期（讀取失敗或太久沒更新）：數字變灰，旁邊的狀態列會說明。 */
+  dimmed?: boolean
   /**
    * M1：`closePosition` 走的是同一顆 oracle，價格過期一樣 revert StalePrice。
    * TerminalView 的註解早就寫了「開倉／平倉／清算在鏈上都會 revert」，但實際上
@@ -98,7 +102,8 @@ export function PositionsTable({
           ) : (
             positions.map((p) => {
               const sym = ASSET_META[p.asset]?.symbol ?? p.asset.slice(0, 8)
-              const pnl = fromUnits(p.livePnl, 18)
+              const pnl = p.livePnl === null ? null : fromUnits(p.livePnl, 18)
+              const why = pnlStatusText(p.status)
               const k = String(p.id)
               const stale = staleNoticeFor(p.asset)
               return (
@@ -121,12 +126,27 @@ export function PositionsTable({
                     {p.isLong ? t.terminal.positions.long : t.terminal.positions.short}
                   </Box>
                   <Box>{fUsd(fromUnits(p.entryPrice, 18))}</Box>
-                  <Box>{fUsd(fromUnits(p.cur, 18))}</Box>
+                  <Box title={t.terminal.positions.markHint} sx={{ color: dimmed ? C.mut : undefined }}>
+                    {p.cur === null ? '—' : fUsd(fromUnits(p.cur, 18))}
+                  </Box>
                   <Box>{fNum(fromUnits(p.margin, 18))}</Box>
                   {SHOW_LEVERAGE && <Box>{String(p.leverage)}×</Box>}
-                  <Box sx={{ color: pnl >= 0 ? C.green : C.red, fontWeight: 700 }}>
-                    {fNum(pnl, { dp: 4, signed: true })}
-                  </Box>
+                  {pnl === null ? (
+                    // 沒有數字就不給數字：顯示「—」與原因，不補 0（見 lib/pepefi/positionPnl.ts）。
+                    <Box title={why?.hint} sx={{ color: C.mut, cursor: 'help' }}>
+                      —{' '}
+                      <Box component="span" sx={{ fontSize: 10.5 }}>
+                        {why?.label}
+                      </Box>
+                    </Box>
+                  ) : (
+                    <Box
+                      title={t.terminal.positions.pnlHint}
+                      sx={{ color: dimmed ? C.mut : pnl >= 0 ? C.green : C.red, fontWeight: 700 }}
+                    >
+                      {fNum(pnl, { dp: 4, signed: true })}
+                    </Box>
+                  )}
                   <Box>
                     <Button
                       onClick={() => void closePos(p.id, p.asset)}

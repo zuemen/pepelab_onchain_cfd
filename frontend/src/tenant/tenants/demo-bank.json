@@ -9,7 +9,8 @@
       "fallbackSrc": "/tenants/demo-bank/logo.svg"
     },
     "favicon": "/tenants/demo-bank/logo.svg",
-    "themeColor": "#0B1526"
+    "themeColor": "#0B1526",
+    "mascot": false
   },
   "theme": {
     "primary": {

@@ -64,6 +64,9 @@ export const landing: Catalog['landing'] = {
   oracleDisclosure: 'Oracle prices are controlled by the deployer (admin) and updated live during the demo to show PnL changes',
 
   /** 首頁最上方的即時 KPI 條（HeroKpiStrip）。網路名稱、chainId 是技術識別碼，不譯。 */
+  liveOn: 'Live on Base Sepolia · 84532',
+  logoAlt: '{name} logo',
+
   heroKpi: {
     x402Revenue: 'x402 Revenue',
     agentCallsPaid: 'Agent Calls Paid',

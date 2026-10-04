@@ -8,7 +8,7 @@ import { useESG } from 'src/hooks/useESG'
 import ESGBadge from 'src/components/pepefi/ESGBadge'
 import { ASSET_LABEL } from 'src/lib/pepefi/assetMeta'
 import StatCard from 'src/components/pepefi/StatCard'
-import { getPepeAvatar } from 'src/utils/pepefi-assets'
+import { traderAvatarSrc } from 'src/utils/pepefi-assets'
 import TraderRankBadge from 'src/components/pepefi/TraderRankBadge'
 import TraderActivity from 'src/components/pepefi/TraderActivity'
 import { useMode } from 'src/contexts/mode-context'
@@ -287,7 +287,7 @@ function TraderProfileView() {
           <Card sx={{ p: 3, display: 'flex', flexDirection: 'column', gap: 3 }}>
             <Stack direction="row" spacing={3} alignItems="center">
               <Avatar
-                src={getPepeAvatar(repScore, traderAddr)}
+                src={traderAvatarSrc(repScore, traderAddr)}
                 sx={{
                   width: 80,
                   height: 80,
