@@ -247,6 +247,10 @@ TENANT=<id> TENANT_RECORD=cache/tenants/<id>.deployed.json TENANT_PRIVILEGE_SCAN
   `TENANT_PRIVILEGE_SCAN_MAX_BLOCKS`（預設 50,000，Base 約 28 小時）時第二輪印 NOTE 略過——之後每天的 CI 只剩第一輪，
   除非換用範圍更大的 RPC 並調高上限；所以上線當下必須以 `TENANT_PRIVILEGE_SCAN_REQUIRED=true` 跑一次（略過即失敗）。
   RPC 拒絕查詢一律失敗。admin 事後在 oracle 上新增、但不在設定裡的資產沒有偵測；
+  第二輪在 CI 裡的覆蓋：單元測試的 harness 以 `vm.getRecordedLogs()` 取代它（沒有 RPC），所以真正的分段
+  `eth_getLogs` 由 `scripts/tenant-privilege-scan.mjs`（`tenant-verify.yml` 的一步）在本機 anvil 上跑：廣播一個租戶、
+  確認掃描有分段且成功；再讓 admin 把 oracle 的 KEEPER 給一個陌生位址——不讀歷史時驗證照樣通過，讀歷史時以
+  `unexpected KEEPER_ROLE holder` 失敗；`SCAN_REQUIRED=true` 而跨度超過上限時拒絕；
 - **最終歸屬**：Ownable 的 owner、AccessControl 的 admin、guardian／keeper／risk 角色各歸其位；owner 不是任何熱錢包；
   keeper／guardian／risk／marketOperator／treasury 在任何合約上都沒有 admin；
 - **部署者是真的**：紀錄裡的 `deployer` 是自報的欄位，所以每一顆合約都必須是這個地址以它用過的某個 nonce

@@ -53,5 +53,14 @@ jobs:
       - name: Self-test
         run: node --test scripts/verify-dedicated-tenants.test.mjs
 
+      # 單元測試把 VerifyTenant 的權限事件掃描換成 vm.getRecordedLogs()（沒有 RPC），而目前沒有
+      # 任何已上鏈的專屬租戶，所以真正的分段 eth_getLogs 路徑只有這一步會跑到：本機 anvil 上
+      # 廣播一個租戶，驗證乾淨時掃描成功且有分段、多一個陌生 KEEPER 時只有掃描抓得到、
+      # SCAN_REQUIRED 會拒絕讀不到的歷史。只用 anvil 的公開測試金鑰、只打 127.0.0.1。
+      - name: Privilege-history scan against a local chain (eth_getLogs path)
+        run: node scripts/tenant-privilege-scan.mjs
+
+      # 上一步（anvil 測試）失敗時仍要驗證真實租戶；前一步失敗 job 照樣是紅燈。
       - name: Verify every dedicated tenant on chain
+        if: ${{ !cancelled() }}
         run: node scripts/verify-dedicated-tenants.mjs
