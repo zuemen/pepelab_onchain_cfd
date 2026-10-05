@@ -420,11 +420,11 @@ test("(g) 持鑰 workflow：admin 守門以外的 step 不可有 if；run 不可
     const files = REAL.map((x) => (x.name === name ? { name, text: f.text.replace(from, to) } : x));
     return checkWorkflows(files, YAML, { pins: null }).problems;
   };
-  const pinned = "actions/checkout@11d5960a326750d5838078e36cf38b85af677262";
+  const pinned = "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1";
   for (const bad of [
     "actions/checkout@v4",
-    "actions/checkout@11d5960",
-    "evil/checkout@11d5960a326750d5838078e36cf38b85af677262",
+    "actions/checkout@3d3c42e",
+    "evil/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
     "./.github/actions/x",
     "docker://alpine:3",
   ]) {
