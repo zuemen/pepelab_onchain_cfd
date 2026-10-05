@@ -21,5 +21,10 @@
 | 3 | 3.1 Besu 網路設定（hard fork／evm_version、contractSizeLimit） | 待開始 | — | — |
 | 3 | 3.2 以 `DeployTenant.s.sol`＋租戶設定部署到 Besu | 待開始 | — | — |
 | 3 | 3.3 Besu 上的 keeper 與清算 bot | 待開始 | — | — |
-| 4 | 4.1 部署驗收（鏈上＝原始碼、參數核對） | 待開始 | — | — |
-| 4 | 4.2 文件與交接 | 待開始 | — | — |
+| 4 | 4.1 架構：鏈下風險引擎／鏈上 setter／風控＋法遵多簽＋timelock、QBFT 驗證者、許可制 | 完成（設計） | `docs/DESIGN_BESU.md` §1 | 2026-10-05 |
+| 4 | 4.2 隱私：Tessera 現況、承諾、ZK 保證金證明、privacy plugin 取捨 | 完成（設計） | `docs/DESIGN_BESU.md` §2 | 2026-10-05 |
+| 4 | 4.3 身分准入：合格投資人 VC × 既有 `kyc()`／`rwaAsset` 閘門、撤銷（ADR-016） | 完成（設計） | `docs/DESIGN_BESU.md` §3 | 2026-10-05 |
+| 4 | 4.4 結算資產：代幣化存款／穩定幣（對照 ADR-011） | 完成（設計） | `docs/DESIGN_BESU.md` §4 | 2026-10-05 |
+| 4 | 4.5 監理定位（需法遵確認） | 完成（設計） | `docs/DESIGN_BESU.md` §5 | 2026-10-05 |
+| 4 | 4.6 延伸研究：QAE 估計期望壞帳（只寫文字） | 完成（設計） | `docs/DESIGN_BESU.md` §6 | 2026-10-05 |
+| 4 | 4.7 與 Phase 1–3 銜接（`RISK_MODEL.md`／`BESU_CALIBRATION.md` 待填位置） | 進行中（等 Phase 1、3 產出後回填） | `docs/DESIGN_BESU.md` §7 | 2026-10-05 |
