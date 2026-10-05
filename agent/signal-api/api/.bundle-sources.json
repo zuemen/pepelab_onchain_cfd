@@ -1,5 +1,5 @@
 {
-  "digest": "cd510b6bebf44912",
+  "digest": "0e11279a7d09a1c2",
   "files": {
     "agent/shared/src/abis.ts": "872c3136604d6584",
     "agent/shared/src/addresses.ts": "a6cb279048c58a4b",
@@ -55,12 +55,12 @@
     "npm:@x402/evm@2.28.0": "pkg",
     "npm:abitype@1.2.3": "pkg",
     "npm:aes-js@4.0.0-beta.5": "pkg",
-    "npm:dotenv@18.0.4": "pkg",
+    "npm:dotenv@18.0.5": "pkg",
     "npm:ethers@6.17.0": "pkg",
-    "npm:hono@4.13.11": "pkg",
+    "npm:hono@4.13.12": "pkg",
     "npm:isows@1.0.7": "pkg",
     "npm:ox@0.14.45": "pkg",
-    "npm:viem@2.57.0": "pkg",
+    "npm:viem@2.57.2": "pkg",
     "npm:ws@8.21.0": "pkg",
     "npm:x402-hono@0.5.3": "pkg",
     "npm:x402@0.5.3": "pkg",
