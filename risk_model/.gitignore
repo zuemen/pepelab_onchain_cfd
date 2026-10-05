@@ -1,0 +1,9 @@
+# 本機虛擬環境
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+# run_all.py 的輸出：圖檔會另外複製到 docs/figures/risk_model/，這裡只保留彙總數字與表格
+output/*
+!output/summary_full.json
+!output/tables/

@@ -1,0 +1,7 @@
+# 風險模型（Phase 1）相依套件：版本全部釘死，確保圖表與數字可重現。
+# 本機以 Python 3.10 建立 .venv；CI 用 ubuntu-latest 內建 python3（這些版本都有對應 wheel）。
+numpy==2.2.6
+scipy==1.15.3
+pandas==2.3.3
+matplotlib==3.10.9
+pytest==9.1.1
