@@ -417,6 +417,10 @@ PepeAMM 的修正都只存在於原始碼；平台 FeeRouter 的 `platformTreasu
    - `cd contracts && bash script/check-vault-storage-layout.sh`（只允許尾端追加：`_lastGood` slot 12、`_unpricedExempt` slot 13、
      `__gap` 從 slot 14 起 41 格、結尾仍是 slot 55）。
    - fork 模擬：`forge script script/UpgradeVaultToV2_5.s.sol:UpgradeVaultToV2_5 --fork-url $RPC --sender $DEPLOYER`
+   - **2026-10-05 已預先驗證（未廣播）：** storage layout 檢查通過（V2_5 = V2_4 尾端追加 `_lastGood` slot 12、`_unpricedExempt`
+     slot 13，`__gap` 43→41，結尾 slot 55 不變）；對 Base Sepolia 實況做 fork 模擬成功——升級前 11 個資產、負債
+     1357.19、unpriced 0，升級後 `version()` = 2.5.0、負債不變、腳本自我核對「每個欄位與每個資產都一致」，預估 gas 約 357 萬。
+     廣播時仍要先 dispatch keeper（前提是價格都不到 6 小時），並在廣播當下重跑一次 fork 模擬。
    - broadcast：同一行改成 `--rpc-url $RPC --account $ACCOUNT --sender $DEPLOYER --broadcast --slow`。環境變數 `VAULT_PROXY`
      （預設現行金庫）、`VAULT_MAX_PRICE_AGE`（預設 21600）。
    - 驗證：`cast call 0x916D7Fc399d9afd23BAa113E2c2Cc601341ff10a "version()(string)" --rpc-url $RPC` 必須是 `"2.5.0"`；
