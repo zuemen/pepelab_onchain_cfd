@@ -49,7 +49,8 @@ export function loadTenantForBuild(
     raw = JSON.parse(fs.readFileSync(file, 'utf8'));
   } catch (e) {
     throw new Error(
-      `[tenant] config file for tenant "${id}" is not valid JSON: ${(e as Error).message}`
+      `[tenant] config file for tenant "${id}" is not valid JSON: ${(e as Error).message}`,
+      { cause: e }
     );
   }
   return { id, file, config: parseTenant(raw, id) };
