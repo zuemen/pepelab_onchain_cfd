@@ -6,7 +6,7 @@
 
 ```
 besu/
-├── docker-compose.yml        4 個 QBFT 驗證者（hyperledger/besu:26.9.0），node1 開 RPC（只綁 127.0.0.1）
+├── docker-compose.yml        4 個 QBFT 驗證者（hyperledger/besu:26.9.0@sha256 釘選），node1 開 RPC（只綁 127.0.0.1）
 ├── .env.example              可調參數範本（複製成 .env）
 ├── package.json              腳本依賴（viem 2.57.2，與 agent/ 同版）；npm 管理
 ├── scripts/
@@ -16,6 +16,7 @@ besu/
 │   ├── keeper.mjs            許可制 keeper：資金費率結算 + 清算掃描
 │   ├── e2e.sh / e2e.mjs      一鍵端到端：部署 → 推價 → 開倉 → 下跌 → 清算 → 讀回
 │   ├── fork-test.sh          forge test --fork-url 對 Besu 跑完整既有測試
+│   ├── check-rpc.mjs         shell 腳本用的連線白名單檢查（與 lib.mjs 同一套規則）
 │   ├── lib.mjs               共用工具
 │   └── lib.test.mjs          離線單元測試（npm test）
 ├── deployments/example.json  部署輸出格式範例（實際輸出 gitignored）
@@ -31,7 +32,7 @@ besu/
 | 項目 | 結論 | 來源 |
 |---|---|---|
 | Besu 目前穩定版 | **26.9.0**（2026-09-25 發布，非 prerelease；含安全修補，官方建議儘快升級） | GitHub Releases：<https://github.com/besu-eth/besu/releases/tag/26.9.0>（repo 已由 `hyperledger/besu` 移到 `besu-eth/besu`） |
-| Docker 映像 | `hyperledger/besu:26.9.0`，digest `sha256:fc1813d67d630d7660eea6ee555c01e73bfecda3e54d24f9484c1c4a52c6fcb0` | Docker Hub tags API：<https://hub.docker.com/r/hyperledger/besu/tags> |
+| Docker 映像 | `hyperledger/besu:26.9.0`，digest `sha256:fc1813d67d630d7660eea6ee555c01e73bfecda3e54d24f9484c1c4a52c6fcb0`（compose、`.env.example`、`gen-network.mjs` 都以 `tag@digest` 釘選） | Docker Hub tags API：<https://hub.docker.com/r/hyperledger/besu/tags> |
 | 文件站 | `besu.hyperledger.org` 已 308 轉址到 `docs.besu-eth.org` | 實測 HTTP 回應 |
 | QBFT genesis | `config.qbft` 內 `blockperiodseconds`（最短出塊秒數，預設 1）、`epochlength`（重置投票的區塊數，預設 30000）、`requesttimeoutseconds`（每輪逾時換輪，預設 1）；另有 `emptyblockperiodseconds`、`pertxgaslimit` 等選用欄位。`mixHash` 為 BFT 固定值；QBFT 至少 4 個驗證者才有拜占庭容錯 | <https://docs.besu-eth.org/private-networks/how-to/configure/consensus/qbft> |
 | extraData（RLP） | 格式 `RLP([32 bytes Vanity, List<Validators>, No Vote, Round=Int(0), 0 Seals])`。可用 `besu operator generate-blockchain-config`（一次產生 genesis＋節點金鑰）或 `besu rlp encode --type=QBFT_EXTRA_DATA`。本專案用前者 | 同上；教學 <https://docs.besu-eth.org/private-networks/tutorials/qbft> |
@@ -61,38 +62,69 @@ besu/
 | Foundry（forge／cast） | 1.7.x |
 | Bash | Windows 用 Git Bash；macOS／Linux 用內建 shell |
 
-記憶體：4 個 Besu 節點預設各 `-Xmx320m`、容器硬上限 `768m`（實測閒置約 180 MB／節點）。via-IR 全量編譯
-（`forge build`）另需數 GB。**Docker Desktop 的 VM 記憶體不足時整個 Docker 引擎會卡死**（見「常見錯誤」）。
+記憶體需求與低記憶體做法見下方「資源需求」。**Docker 引擎卡住時不要重啟 Docker Desktop**（見「常見錯誤」）。
 
-### 步驟（Windows Git Bash 與 macOS／Linux 相同）
+### 資源需求
+
+| 項目 | 建議 |
+|---|---|
+| 主機可用記憶體（4 節點） | 至少 **3 GB 可用**給 Docker：4 節點 × 容器上限 768 MB；實測閒置約 180 MB／節點，部署與 e2e 期間會上升 |
+| 主機可用記憶體（單節點模式） | 約 1 GB 可用 |
+| `forge build`（via-IR 全量編譯）／`forge test` | 另需數 GB，而且是在主機（不在 Docker 內）。**不要與 Besu 4 節點、其他大型容器同時擠在記憶體邊緣**；實測主機可用記憶體掉到 1 GB 以下時 Docker Desktop 的 VM 會卡死 |
+| CPU／磁碟 | 本地小鏈負擔很輕；volume 只放鏈資料 |
+
+**調整每個節點的 JVM heap**：在 `besu/.env` 設
 
 ```bash
-cd besu
-npm ci                      # 安裝 viem（只裝在 besu/node_modules）
-cp .env.example .env        # 可選：調整出塊間隔、埠號、記憶體
-npm run gen                 # 產生 network/（genesis、4 把節點金鑰、5 個角色帳戶、白名單）
-docker compose up -d        # 啟動 4 個驗證者
-npm run e2e                 # 等出塊 → 部署 → 推價 → 開倉 → 下跌 → keeper 清算 → 讀回，成功 exit 0
+BESU_JAVA_OPTS=-Xms64m -Xmx256m -XX:MaxMetaspaceSize=160m -XX:ReservedCodeCacheSize=64m -XX:MaxDirectMemorySize=64m -XX:+UseSerialGC
+BESU_MEM_LIMIT=640m          # 容器硬上限，應大於 heap + metaspace + code cache + direct memory（約 heap + 350 MB）
 ```
+
+改完 `docker compose -p pepelab-besu -f besu/docker-compose.yml up -d` 重建容器即可（genesis 不用重產）。
+
+**低記憶體：單節點開發模式**（1 個 QBFT 驗證者，沒有拜占庭容錯，但部署、推價、keeper、e2e 的流程相同）：
+
+```bash
+# 在 repo 根目錄；已有 4 節點網路時先 down -v
+BESU_VALIDATORS=1 npm --prefix besu run gen -- --force
+docker compose -p pepelab-besu -f besu/docker-compose.yml up -d node1     # 只啟動 node1
+npm --prefix besu run e2e
+```
+
+> 單節點模式的 genesis 只有 1 個驗證者（extraData 由 Besu 官方工具產生）。本次修正時依規定未啟動任何容器，
+> 這條路徑**尚未在本機實測**；4 節點模式的實測結果見第 6 節。
+
+### 步驟（Windows Git Bash 與 macOS／Linux 相同，一律在 repo 根目錄執行）
+
+```bash
+npm --prefix besu ci                                            # 安裝 viem（只裝在 besu/node_modules）
+cp besu/.env.example besu/.env                                  # 可選：調整出塊間隔、埠號、記憶體
+npm --prefix besu run gen                                       # 產生 besu/network/（genesis、4 把節點金鑰、5 個角色帳戶、白名單）
+docker compose -p pepelab-besu -f besu/docker-compose.yml up -d # 啟動 4 個驗證者
+npm --prefix besu run e2e                                       # 等出塊 → 部署 → 推價 → 開倉 → 下跌 → keeper 清算 → 讀回，成功 exit 0
+```
+
+所有 compose 指令一律寫成 `docker compose -p pepelab-besu -f besu/docker-compose.yml …`：專案名固定，
+只會動到本專案的容器、網路與 volume；`besu/.env` 仍會被讀取（compose 的專案目錄就是 `besu/`）。
 
 個別工具：
 
 ```bash
-npm run deploy                                  # 只部署（會重新部署一整套新合約）
-npm run oracle                                  # 常駐推價：GBM，sBTC+sETH，每 5 秒
-npm run oracle -- --interval 2 --assets sBTC --sigma 0.8 --seed 7
-npm run oracle -- --replay my-prices.csv        # CSV：每行 symbol,price（例：sBTC,41500.25）
-npm run oracle -- --set sBTC=41500              # 一次性指定價格
-npm run keeper                                  # 常駐 keeper，每個新區塊一輪
-npm run keeper -- --once --json                 # 只跑一輪，輸出 JSON
-npm run fork-test                               # forge test --fork-url（很久，見第 5 節）
-npm test                                        # 離線單元測試（不需節點）
+npm --prefix besu run deploy                              # 只部署（會重新部署一整套新合約）
+npm --prefix besu run oracle                              # 常駐推價：GBM，sBTC+sETH，每 5 秒
+npm --prefix besu run oracle -- --interval 2 --assets sBTC --sigma 0.8 --seed 7
+npm --prefix besu run oracle -- --replay my-prices.csv    # CSV：每行 symbol,price（例：sBTC,41500.25）
+npm --prefix besu run oracle -- --set sBTC=41500          # 一次性指定價格
+npm --prefix besu run keeper                              # 常駐 keeper，每個新區塊一輪
+npm --prefix besu run keeper -- --once --json             # 只跑一輪，輸出 JSON
+npm --prefix besu run fork-test                           # forge test --fork-url（很久、吃記憶體，見第 5 節）
+npm --prefix besu test                                    # 離線單元測試（不需節點）
+docker compose -p pepelab-besu -f besu/docker-compose.yml logs -f node1   # 看節點日誌
 ```
 
 Windows 注意事項：
 
-- 一律在 **Git Bash** 執行 `bash scripts/*.sh`；`npm run` 也會用 Git Bash 以外的 shell 呼叫 `bash`，
-  只要 `bash` 在 PATH 上即可。
+- 一律在 **Git Bash** 執行；`npm run` 底下的 `bash scripts/*.sh` 只要 `bash` 在 PATH 上即可。
 - 在 Git Bash 手動執行 `docker run -v /x:/y …` 時，MSYS 會把 `/work/...` 這類參數改寫成
   `C:/Program Files/Git/work/...`。本專案的 `gen-network.mjs` 由 Node 直接呼叫 docker，不受影響；
   自己手動下指令請加 `MSYS_NO_PATHCONV=1`。
@@ -100,20 +132,26 @@ Windows 注意事項：
 ### 停止與清除
 
 ```bash
-docker compose stop                 # 停止，保留鏈資料（下次 up 從原高度繼續）
-docker compose down                 # 移除容器與網路，保留 volume（鏈資料仍在）
-                                    # compose 專案名固定為 pepelab-besu，只影響本專案的容器／網路／volume
-docker compose down -v              # 連 volume 一起刪：鏈資料歸零（要重產 genesis 時必做）
-npm run gen -- --force              # 換一組全新的金鑰與 genesis（之後一定要 down -v）
+docker compose -p pepelab-besu -f besu/docker-compose.yml stop      # 停止，保留鏈資料（下次 up 從原高度繼續）
+docker compose -p pepelab-besu -f besu/docker-compose.yml down      # 移除容器與網路，保留 volume（鏈資料仍在）
+docker compose -p pepelab-besu -f besu/docker-compose.yml down -v   # 連 volume 一起刪：鏈資料歸零（要重產 genesis 時必做）
+npm --prefix besu run gen -- --force                                # 換一組全新的金鑰與 genesis（之後一定要 down -v）
 ```
+
+只對 `pepelab-besu` 這個 compose 專案做 up／stop／down。**不要**重啟或停止 Docker Desktop、不要
+`wsl --shutdown`、不要 `docker system prune`／`docker volume prune`，也不要啟停不屬於 `pepelab-besu`
+的容器——同一台機器上可能有別的專案的容器在跑。
 
 ---
 
 ## 3. 網路參數
 
+表中 `up -d`／`down -v` 皆指 `docker compose -p pepelab-besu -f besu/docker-compose.yml up -d`／`down -v`；`gen --force` 指 `npm --prefix besu run gen -- --force`。
+
 | 參數 | 預設 | 在哪裡設定 | 改了要做什麼 |
 |---|---|---|---|
-| 映像檔 | `hyperledger/besu:26.9.0` | `BESU_IMAGE` | `docker compose up -d` |
+| 映像檔 | `hyperledger/besu:26.9.0@sha256:fc1813d6…`（tag＋digest 雙重釘選，完整 digest 見第 1 節） | `BESU_IMAGE` | `up -d` |
+| 驗證者數量 | `4`（單節點開發模式為 `1`） | `BESU_VALIDATORS`（寫進 genesis） | `gen --force` + `down -v` |
 | chainId | `1337` | `BESU_CHAIN_ID`（寫進 genesis） | `gen --force` + `down -v` |
 | 出塊間隔 `blockperiodseconds` | `2` | `BESU_BLOCK_PERIOD`（寫進 genesis；Besu 沒有對應的 CLI 參數） | `gen --force` + `down -v` |
 | 換輪逾時 `requesttimeoutseconds` | `2 × 出塊間隔` | `BESU_REQUEST_TIMEOUT`（必須大於出塊間隔） | 同上 |
@@ -184,9 +222,13 @@ getPositionValue(id)  ≤  margin × leverage × maintenanceMarginBpsForAsset(as
 符合者再用 `eth_call` 模擬 `liquidatePosition(id)`——健康部位會 revert `PositionIsHealthy`——
 模擬通過才送交易。部位用 `nextPositionId` 游標增量掃描、維護未平倉集合。
 
+**篩選的已知落差**：`liquidatePosition` 會先呼叫 `_pokeFunding` 結算資金費，再計算 `closeAmount`；`getPositionValue` 是 view，只用「上次結算時」的資金費指數。若某資產已經跨過一個以上的 `FUNDING_INTERVAL` 還沒結算，部位可能在結算後才跌破維持保證金，而 `getPositionValue` 篩選會漏掉它。keeper 每一輪**先**對到期的資產送 `settleFunding`、**再**掃描清算，正是為了抵銷這個差距：結算後 `_pokeFunding` 在同一區間內不會再移動指數，view 與清算路徑看到的資金費一致。仍可能漏掉的情況只剩「該輪 `settleFunding` 失敗或被跳過」以及「讀取與送出之間剛好跨過區間邊界」，下一個區塊會再掃一次。
+
 **「許可制」落在網路層**：合約的 `settleFunding`／`liquidatePosition` 本來就是任何人可呼叫
 （合約設計，沒有為此新增方法）。Besu 每個節點開帳戶白名單，只有 5 個角色帳戶能送交易；
 keeper 啟動時呼叫 `perm_getAccountsAllowlist` 確認自己在名單內，不在就拒絕啟動。
+
+> **限制：本機的「許可制」並不嚴密。** node1 的 RPC 開了 `PERM` API（keeper 要用 `perm_getAccountsAllowlist`），而 `PERM` 同時包含 `perm_addAccountsToAllowlist`／`perm_removeAccountsFromAllowlist`：這台電腦上任何能連到 `127.0.0.1:8545` 的程式都能改白名單。本地開發可以接受；**正式或共用環境不要對外開放 `PERM` API**——改成只在管理用、受驗證的 RPC 端點開，或改用 Besu 的 onchain permissioning，keeper 則改由設定檔得知自己是否被授權。
 
 ---
 
@@ -208,8 +250,8 @@ fork-test.sh 把 fork 區塊釘在啟動當下（`--fork-block-number`），整�
 FOREST 儲存（完整歷史狀態），套件跑再久也讀得到該區塊的狀態。
 
 **省記憶體做法（本專案實測採用）**：fork 測試只需要 node1 提供唯讀狀態，可以先
-`docker compose stop node2 node3 node4`。剩 1／4 個驗證者時 QBFT 會停止出塊（不到 2/3），
-但 node1 仍正常回應 JSON-RPC，而 fork 區塊本來就是釘住的，對測試沒有影響。測完再 `docker compose start`。
+`docker compose -p pepelab-besu -f besu/docker-compose.yml stop node2 node3 node4`。剩 1／4 個驗證者時 QBFT 會停止出塊（不到 2/3），
+但 node1 仍正常回應 JSON-RPC，而 fork 區塊本來就是釘住的，對測試沒有影響。測完再 `docker compose -p pepelab-besu -f besu/docker-compose.yml start`。
 
 ---
 
@@ -261,11 +303,11 @@ Ran 105 test suites in 677.84s: 1232 tests passed, 1 failed, 4 skipped (1237 tot
 | 症狀 | 原因與處理 |
 |---|---|
 | `npm run gen` 回 `Output directory already exists`、但檔案其實產生了 | 直接用 `docker run hyperledger/besu:26.9.0 operator …` 時，映像檔的 `besu-entry.sh` 以 root 執行會先用 `--print-paths-and-exit` 把同一組參數跑一次，operator 子指令因此執行兩次。`gen-network.mjs` 已用 `--entrypoint /opt/besu/bin/besu` 繞開 |
-| `network/ 已存在` | 防止誤蓋金鑰。要重產：`npm run gen -- --force` 後務必 `docker compose down -v`（舊鏈資料的 genesis 不同，節點會拒絕啟動） |
-| 節點起來但 `eth_blockNumber` 一直是 0 | QBFT 需要超過 2/3 驗證者在線（4 個至少 3 個）。看 `docker compose logs node2`；常見是 `BESU_SUBNET_PREFIX` 與 static-nodes 的 IP 不一致（改了前綴要 `gen --force`） |
+| `network/ 已存在` | 防止誤蓋金鑰。要重產：`npm run gen -- --force` 後務必 `docker compose -p pepelab-besu -f besu/docker-compose.yml down -v`（舊鏈資料的 genesis 不同，節點會拒絕啟動） |
+| 節點起來但 `eth_blockNumber` 一直是 0 | QBFT 需要超過 2/3 驗證者在線（4 個至少 3 個）。看 `docker compose -p pepelab-besu -f besu/docker-compose.yml logs node2`；常見是 `BESU_SUBNET_PREFIX` 與 static-nodes 的 IP 不一致（改了前綴要 `gen --force`） |
 | `Pool overlaps with other one on this address space` | 網段衝突。在 `.env` 改 `BESU_SUBNET_PREFIX`，再 `gen --force` + `down -v` |
-| Docker 指令全部回 `500 Internal Server Error … dockerDesktopLinuxEngine`、`127.0.0.1:8545` 逾時 | Docker Desktop 的 VM 卡死。本專案實測在主機實體記憶體只剩不到 1 GB（同時開著 Elasticsearch 等大型容器與 via-IR 編譯）時發生多次，`wsl -d docker-desktop` 也連不進去。處理：`docker desktop restart`（**注意：沒有 restart 政策的其他容器會因此停止，要自己 `docker start`**）；預防：關掉不用的容器、維持本 compose 的記憶體上限、fork 測試時只留 node1 |
-| `deploy.sh` 回 `節點 chainId=31337` | 8545 被 anvil 佔走。關掉 anvil，或設 `BESU_RPC_PORT=8546` 並 `BESU_RPC_URL=http://127.0.0.1:8546` |
+| Docker 指令全部回 `500 Internal Server Error … dockerDesktopLinuxEngine`、`127.0.0.1:8545` 逾時 | Docker Desktop 的 VM 因記憶體不足卡死（實測：主機可用記憶體掉到 1 GB 以下，同時有其他專案的大型容器與 via-IR 編譯）。**禁止**用重啟 Docker Desktop（`docker desktop restart`／`quit`）、`wsl --shutdown`、`docker system prune` 來解決，也不可啟停不屬於 `pepelab-besu` 的容器——同一台機器上的其他專案會一起中斷。引擎卡住就**停手**，關閉不需要的程式（例如本機的 forge 編譯）等引擎恢復；之後降低節點記憶體（`BESU_JAVA_OPTS` 的 heap、`BESU_MEM_LIMIT`）或改用單節點開發模式（`BESU_VALIDATORS=1`，見「資源需求」）再重來；需要重啟 Docker Desktop 時交給機器的使用者決定 |
+| `deploy.sh`／keeper／推價回 `節點 chainId=31337` 或 `節點不是 Besu` | 連線白名單擋下（只接受 chainId 等於 `network/accounts.json`、`web3_clientVersion` 以 `besu/` 開頭的節點）。常見是 8545 被 anvil 佔走。關掉 anvil，或設 `BESU_RPC_PORT=8546` 並 `BESU_RPC_URL=http://127.0.0.1:8546` |
 | 交易回 `Sender account not authorized to send transactions` | 帳戶不在白名單。只能用 `network/accounts.json` 的角色帳戶 |
 | 交易一直 pending | 某個節點的最低 gas 價不是 0（compose 每個節點都有 `--min-gas-price=0`，自訂 compose 時別漏掉） |
 | `forge test --fork-url` 中途 `world state not available` | 要讀的區塊歷史狀態已被修剪。本 compose 用 FOREST（不修剪）；若自行改成 BONSAI，需加大 `--bonsai-historical-block-limit` |

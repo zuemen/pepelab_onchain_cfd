@@ -2,12 +2,13 @@
 # PepeLab Phase 2：4 個 QBFT 驗證者節點的 Hyperledger Besu 本地網路。
 #
 # 先產生網路檔（genesis、節點金鑰、帳戶、白名單，全部寫進被 gitignore 的 network/）：
-#   npm ci && npm run gen
+#   npm --prefix besu ci && npm --prefix besu run gen      （在 repo 根目錄）
 # 再啟動：
-#   docker compose up -d
+#   docker compose -p pepelab-besu -f besu/docker-compose.yml up -d      （在 repo 根目錄）
 #
 # 設計：
-#   - 映像檔釘選確切版本（不用 latest）；可用 BESU_IMAGE 覆寫。
+#   - 映像檔以 tag＋sha256 digest 雙重釘選（不用 latest）；可用 BESU_IMAGE 覆寫。
+#   - 專案名固定 pepelab-besu（下面的 name:），所有指令只作用在本專案的容器／網路／volume。
 #   - 只有 node1 開 HTTP JSON-RPC，而且只綁在本機 127.0.0.1（不對區網開放）。
 #   - 4 個節點用固定 IP + static-nodes.json 互連，關閉 discovery（私有網路不需要對外尋找節點）。
 #   - 免費 gas：genesis 的 zeroBaseFee=true，加上每個節點都 --min-gas-price=0
@@ -18,7 +19,7 @@
 #     只有 gen-network.mjs 產生的角色帳戶能送交易。
 #   - 每個節點的 command 刻意完整列出（YAML 無法合併序列），4 份只差金鑰路徑與 IP。
 #   - 出塊間隔（QBFT blockperiodseconds）寫在 genesis 裡，Besu 沒有對應的 CLI 參數；
-#     要改請設 BESU_BLOCK_PERIOD 後 `npm run gen -- --force` 並 `docker compose down -v` 重建。
+#     要改請設 BESU_BLOCK_PERIOD 後 `npm --prefix besu run gen -- --force` 並 `docker compose -p pepelab-besu -f besu/docker-compose.yml down -v` 重建。
 #
 # 可調參數放 besu/.env（範本見 .env.example），compose 會自動讀取。
 
@@ -27,7 +28,7 @@
 name: pepelab-besu
 
 x-besu-common: &besu-common
-  image: ${BESU_IMAGE:-hyperledger/besu:26.9.0}
+  image: ${BESU_IMAGE:-hyperledger/besu:26.9.0@sha256:fc1813d67d630d7660eea6ee555c01e73bfecda3e54d24f9484c1c4a52c6fcb0}
   restart: unless-stopped
   environment:
     # Besu 26.9.0 起遇到 OutOfMemoryError 會直接結束（release notes），restart 政策會把它拉起來。

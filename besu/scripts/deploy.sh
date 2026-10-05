@@ -30,24 +30,15 @@ command -v node  >/dev/null || { echo "✖ 找不到 node" >&2; exit 1; }
 # 用 node 讀 JSON（不依賴 jq）。
 acct() { node -e "const a=require(process.argv[1]); process.stdout.write(a[process.argv[2]][process.argv[3]])" "$ACCOUNTS" "$1" "$2"; }
 
-# ── 0. 只允許本地鏈 ───────────────────────────────────────────────────────────
-CHAIN_ID="$(cast chain-id --rpc-url "$RPC_URL" 2>/dev/null)" || {
-  echo "✖ 連不到 $RPC_URL。請先在 besu/ 執行 docker compose up -d，並等節點開始出塊。" >&2; exit 1; }
-case "$CHAIN_ID" in
-  1|11155111|17000|560048|8453|84532|10|42161|137|80002)
-    echo "✖ chainId $CHAIN_ID 是公開鏈；這支腳本只部署到本地 Besu。" >&2; exit 1 ;;
-esac
-EXPECTED_CHAIN_ID="$(node -e "process.stdout.write(String(require(process.argv[1]).chainId))" "$ACCOUNTS")"
-if [[ "$CHAIN_ID" != "$EXPECTED_CHAIN_ID" ]]; then
-  echo "✖ 節點 chainId=$CHAIN_ID，但 network/accounts.json 是給 chainId=$EXPECTED_CHAIN_ID 的。" >&2
-  echo "  是不是連到別的節點（例如 anvil 也佔了 8545）？" >&2
-  exit 1
-fi
+# ── 0. 只允許本機產生的 Besu 網路（白名單，與 Node 腳本共用 lib.mjs 的 assertLocalBesu）──
+# chainId 必須等於 network/accounts.json 的 chainId，且 web3_clientVersion 以 besu/ 開頭。
+GUARD="$(BESU_RPC_URL="$RPC_URL" node "$BESU_DIR/scripts/check-rpc.mjs")" || exit 1
+CHAIN_ID="${GUARD%% *}"
+CLIENT_VERSION="${GUARD#* }"
 
 DEPLOYER_PK="$(acct deployer privateKey)"
 DEPLOYER="$(acct deployer address)"
 ORACLE_SIGNER="$(acct oracle address)"
-CLIENT_VERSION="$(cast rpc web3_clientVersion --rpc-url "$RPC_URL" | tr -d '"')"
 echo "▶ 部署到 $RPC_URL（chainId $CHAIN_ID，$CLIENT_VERSION）"
 echo "  deployer = $DEPLOYER"
 

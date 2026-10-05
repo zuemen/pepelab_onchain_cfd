@@ -4,7 +4,7 @@
 //
 // 這裡只放「純函式＋讀本機檔案」；所有送交易的流程在各自的腳本裡。
 // 安全界線：本檔只會連到 BESU_RPC_URL（預設 http://127.0.0.1:8545），
-// 並在建立 client 時檢查 chainId 不是任何公開鏈（見 assertLocalChain）。
+// 並在建立 client 時用白名單確認對方是本機產生的 Besu 網路（見 assertLocalBesu）。
 
 import { readFileSync, existsSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
@@ -28,14 +28,34 @@ export const CONTRACTS_OUT = join(REPO_ROOT, 'contracts', 'out');
 
 export const DEFAULT_RPC_URL = process.env.BESU_RPC_URL || 'http://127.0.0.1:8545';
 
-// 已知公開鏈的 chainId：腳本拒絕對它們送任何交易（本工具只給本地 Besu 用）。
-// 1 Ethereum、11155111 Sepolia、17000 Holesky、560048 Hoodi、8453 Base、84532 Base Sepolia、
-// 10 OP、42161 Arbitrum、137 Polygon、80002 Amoy。
-export const PUBLIC_CHAIN_IDS = new Set([1, 11155111, 17000, 560048, 8453, 84532, 10, 42161, 137, 80002]);
+// ── 連線白名單 ────────────────────────────────────────────────────────────────
+/**
+ * 連線守門（白名單）：只有同時滿足下列兩點才放行，否則拒絕連線、不送任何交易。
+ *   1. 節點回報的 chainId 等於本機 network/accounts.json 的 chainId（gen-network.mjs 產生時寫入）
+ *   2. web3_clientVersion 以 `besu/` 開頭
+ * 用白名單而不是「公開鏈黑名單」：keeper／推價允許用環境變數覆寫 RPC 與私鑰，
+ * 黑名單擋不住沒列到的鏈（或 anvil 等其他節點），白名單只認這台機器自己產生的 Besu 網路。
+ */
+export function assertLocalBesu({ chainId, clientVersion, expectedChainId }) {
+  if (expectedChainId === undefined || expectedChainId === null) {
+    throw new Error('沒有預期的 chainId（network/accounts.json 缺少 chainId），拒絕連線。');
+  }
+  if (Number(chainId) !== Number(expectedChainId)) {
+    throw new Error(`節點 chainId=${chainId}，但本機網路是 chainId=${expectedChainId}；只允許連本機產生的 Besu 網路。`);
+  }
+  if (typeof clientVersion !== 'string' || !clientVersion.toLowerCase().startsWith('besu/')) {
+    throw new Error(`節點不是 Besu（web3_clientVersion=${clientVersion}）；只允許連本機產生的 Besu 網路。`);
+  }
+}
 
-export function assertLocalChain(chainId) {
+/**
+ * gen-network.mjs 選 genesis chainId 時的防呆：不要選到常見公開鏈的 chainId（避免錢包／工具混淆）。
+ * 這不是連線守門——連線一律走上面的白名單 assertLocalBesu。
+ */
+export const PUBLIC_CHAIN_IDS = new Set([1, 11155111, 17000, 560048, 8453, 84532, 10, 42161, 137, 80002]);
+export function rejectPublicChainIdForGenesis(chainId) {
   if (PUBLIC_CHAIN_IDS.has(Number(chainId))) {
-    throw new Error(`chainId ${chainId} 是公開鏈；besu/ 的腳本只允許連本地 Besu。`);
+    throw new Error(`chainId ${chainId} 是公開鏈使用中的 ID，本地網路請改用別的值。`);
   }
 }
 
@@ -105,13 +125,18 @@ export function fmt18(x) {
 
 // ── viem client ───────────────────────────────────────────────────────────────
 /**
- * 建立連本地 Besu 的 public／wallet client。chainId 由節點回報，
- * 並拒絕公開鏈。privateKey 可省略（只讀）。
+ * 建立連本地 Besu 的 public／wallet client。連線前先過白名單（assertLocalBesu）：
+ * chainId 必須等於 network/accounts.json 的 chainId、client 必須是 Besu。privateKey 可省略（只讀）。
+ * expectedChainId 預設讀 network/accounts.json；只有測試才需要傳。
  */
-export async function makeClients({ rpcUrl = DEFAULT_RPC_URL, privateKey } = {}) {
+export async function makeClients({ rpcUrl = DEFAULT_RPC_URL, privateKey, expectedChainId } = {}) {
+  const expected = expectedChainId ?? loadAccounts().chainId;
   const probe = createPublicClient({ transport: http(rpcUrl) });
-  const chainId = await probe.getChainId();
-  assertLocalChain(chainId);
+  const [chainId, clientVersion] = await Promise.all([
+    probe.getChainId(),
+    probe.request({ method: 'web3_clientVersion', params: [] }),
+  ]);
+  assertLocalBesu({ chainId, clientVersion, expectedChainId: expected });
   const chain = defineChain({
     id: chainId,
     name: `besu-local-${chainId}`,

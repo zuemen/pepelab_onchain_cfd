@@ -9,7 +9,7 @@
 # 後者由 e2e.sh（真的對 Besu 送交易）負責。
 #
 # 測試套件很大：via-IR 全量編譯可能超過 15 分鐘、吃數 GB 記憶體；不要同時跑多個 forge。
-# 省記憶體：fork 只需要 node1 的唯讀狀態，可先 `docker compose stop node2 node3 node4`（QBFT 會停止出塊，不影響釘住的 fork 區塊）。
+# 省記憶體：fork 只需要 node1 的唯讀狀態，可先在 repo 根目錄 `docker compose -p pepelab-besu -f besu/docker-compose.yml stop node2 node3 node4`（QBFT 會停止出塊，不影響釘住的 fork 區塊）。
 # 用法：bash scripts/fork-test.sh [其他 forge test 參數，例如 --match-contract Foo]
 # 輸出：besu/logs/fork-test-<時間>.log，最後印出通過／失敗／略過數。
 set -euo pipefail
@@ -20,13 +20,12 @@ RPC_URL="${BESU_RPC_URL:-http://127.0.0.1:8545}"
 mkdir -p "$BESU_DIR/logs"
 LOG="$BESU_DIR/logs/fork-test-$(date +%Y%m%d-%H%M%S).log"
 
-CHAIN_ID="$(cast chain-id --rpc-url "$RPC_URL")" || { echo "✖ 連不到 $RPC_URL" >&2; exit 1; }
-case "$CHAIN_ID" in
-  1|11155111|17000|560048|8453|84532|10|42161|137|80002)
-    echo "✖ chainId $CHAIN_ID 是公開鏈；這支腳本只對本地 Besu 跑。" >&2; exit 1 ;;
-esac
+# 白名單：只對本機產生的 Besu 網路跑（chainId = network/accounts.json、client = besu/…）。
+GUARD="$(BESU_RPC_URL="$RPC_URL" node "$BESU_DIR/scripts/check-rpc.mjs")" || exit 1
+CHAIN_ID="${GUARD%% *}"
+CLIENT_VERSION="${GUARD#* }"
 FORK_BLOCK="$(cast block-number --rpc-url "$RPC_URL")"
-echo "▶ forge test --fork-url $RPC_URL（chainId $CHAIN_ID，fork block $FORK_BLOCK，$(cast rpc web3_clientVersion --rpc-url "$RPC_URL" | tr -d '"')）"
+echo "▶ forge test --fork-url $RPC_URL（chainId $CHAIN_ID，fork block $FORK_BLOCK，$CLIENT_VERSION）"
 echo "  紀錄：$LOG"
 
 cd "$CONTRACTS_DIR"

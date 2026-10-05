@@ -2,8 +2,9 @@
 // 執行：npm test（= node --test scripts/lib.test.mjs）
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { createServer } from 'node:http';
 import {
-  assertLocalChain, assetId, fmt18, fmtPrice8, gbmStep, isLiquidationCandidate,
+  assertLocalBesu, makeClients, rejectPublicChainIdForGenesis, assetId, fmt18, fmtPrice8, gbmStep, isLiquidationCandidate,
   makeNormal, mulberry32, parseReplay, usdToPrice8,
 } from './lib.mjs';
 import { makeSource } from './oracle-pusher.mjs';
@@ -13,9 +14,25 @@ test('assetId：bytes32 格式、各資產不同（與鏈上 MockOracle 的比�
   assert.notEqual(assetId('sBTC'), assetId('sETH'));
 });
 
-test('拒絕公開鏈 chainId', () => {
-  for (const id of [1, 11155111, 8453, 84532]) assert.throws(() => assertLocalChain(id));
-  assert.doesNotThrow(() => assertLocalChain(1337));
+test('連線白名單：chainId 必須等於本機網路、client 必須是 Besu', () => {
+  const ok = { chainId: 1337, clientVersion: 'besu/v26.9.0/linux-x86_64/openjdk-java-25', expectedChainId: 1337 };
+  assert.doesNotThrow(() => assertLocalBesu(ok));
+  assert.doesNotThrow(() => assertLocalBesu({ ...ok, clientVersion: 'Besu/v26.9.0' }));
+  // chainId 不符：包括沒列在任何黑名單裡的鏈，以及公開鏈
+  assert.throws(() => assertLocalBesu({ ...ok, chainId: 2026 }), /chainId=2026/);
+  assert.throws(() => assertLocalBesu({ ...ok, chainId: 84532 }), /chainId=84532/);
+  // anvil（預設 chainId 31337），或 chainId 對了但不是 Besu
+  assert.throws(() => assertLocalBesu({ ...ok, chainId: 31337, clientVersion: 'anvil/v1.7.1' }));
+  assert.throws(() => assertLocalBesu({ ...ok, clientVersion: 'anvil/v1.7.1' }), /不是 Besu/);
+  assert.throws(() => assertLocalBesu({ ...ok, clientVersion: 'Geth/v1.16.0' }), /不是 Besu/);
+  assert.throws(() => assertLocalBesu({ ...ok, clientVersion: undefined }), /不是 Besu/);
+  // 沒有預期 chainId（accounts.json 不完整）一律拒絕
+  assert.throws(() => assertLocalBesu({ ...ok, expectedChainId: undefined }), /拒絕連線/);
+});
+
+test('genesis chainId 防呆：不選公開鏈使用中的 ID', () => {
+  for (const id of [1, 11155111, 8453, 84532]) assert.throws(() => rejectPublicChainIdForGenesis(id));
+  assert.doesNotThrow(() => rejectPublicChainIdForGenesis(1337));
 });
 
 test('usdToPrice8／fmtPrice8 互為反函式', () => {
@@ -55,4 +72,38 @@ test('清算候選門檻與 liquidatePosition 一致（價值 ≤ 名目 × MM�
   assert.equal(isLiquidationCandidate({ ...base, value: 250n * 10n ** 18n }), true);
   assert.equal(isLiquidationCandidate({ ...base, value: 250n * 10n ** 18n + 1n }), false);
   assert.equal(isLiquidationCandidate({ ...base, value: 0n }), true);
+});
+
+/** 假 JSON-RPC 節點（本機 HTTP，只回 eth_chainId／web3_clientVersion），驗證 makeClients 真的走白名單。 */
+async function withFakeNode({ chainIdHex, clientVersion }, fn) {
+  const server = createServer((req, res) => {
+    let body = '';
+    req.on('data', (d) => { body += d; });
+    req.on('end', () => {
+      const msgs = [].concat(JSON.parse(body));
+      const out = msgs.map(({ id, method }) => ({
+        jsonrpc: '2.0', id,
+        result: method === 'eth_chainId' ? chainIdHex : method === 'web3_clientVersion' ? clientVersion : null,
+      }));
+      res.setHeader('content-type', 'application/json');
+      res.end(JSON.stringify(Array.isArray(JSON.parse(body)) ? out : out[0]));
+    });
+  });
+  await new Promise((r) => server.listen(0, '127.0.0.1', r));
+  try {
+    return await fn(`http://127.0.0.1:${server.address().port}`);
+  } finally {
+    server.close();
+  }
+}
+
+test('makeClients：非 Besu 或 chainId 不符的節點一律拒絕連線', async () => {
+  await withFakeNode({ chainIdHex: '0x539', clientVersion: 'anvil/v1.7.1' }, (rpcUrl) =>
+    assert.rejects(makeClients({ rpcUrl, expectedChainId: 1337 }), /不是 Besu/));
+  await withFakeNode({ chainIdHex: '0x14a34', clientVersion: 'besu/v26.9.0' }, (rpcUrl) =>
+    assert.rejects(makeClients({ rpcUrl, expectedChainId: 1337 }), /chainId=84532/));
+  await withFakeNode({ chainIdHex: '0x539', clientVersion: 'besu/v26.9.0/linux-x86_64' }, async (rpcUrl) => {
+    const ctx = await makeClients({ rpcUrl, expectedChainId: 1337 });
+    assert.equal(ctx.chainId, 1337);
+  });
 });

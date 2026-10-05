@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # besu/scripts/e2e.sh
-# 一鍵端到端：在 `docker compose up -d` 之後執行。
+# 一鍵端到端：在 repo 根目錄 `docker compose -p pepelab-besu -f besu/docker-compose.yml up -d` 之後執行。
 #   等節點出塊 → 部署（deploy.sh，沿用 Deploy.s.sol）→ e2e.mjs（推價 → 開倉 → 下跌 → keeper 清算 → 讀回）
 # 成功 exit 0；任何一步失敗 exit 非 0。完整輸出同時寫到 besu/logs/e2e-<時間>.log。
 #
@@ -34,7 +34,7 @@ for i in $(seq 1 90); do
   fi
   sleep 2
   if [[ "$i" -eq 90 ]]; then
-    echo "✖ 3 分鐘內沒有新區塊。請看 docker compose logs node1（常見原因見 README「常見錯誤」）。" >&2
+    echo "✖ 3 分鐘內沒有新區塊。請在 repo 根目錄看 docker compose -p pepelab-besu -f besu/docker-compose.yml logs node1（常見原因見 README「常見錯誤」）。" >&2
     exit 1
   fi
 done
