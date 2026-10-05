@@ -1,0 +1,36 @@
+{
+  "_comment": "scripts/deploy.sh 的輸出格式範例。實際輸出 deployments/<chainId>.json 是本機鏈的位址，已被 gitignore；位址欄位這裡用佔位字串，不放任何真實位址。",
+  "network": "besu-qbft-local",
+  "chainId": 1337,
+  "client": "besu/v26.9.0/linux-x86_64/openjdk-java-25",
+  "commit": "<git short sha>",
+  "deployedAt": "<ISO-8601>",
+  "fromBlock": 0,
+  "toBlock": 0,
+  "transactions": 0,
+  "roles": {
+    "deployer": "<address>",
+    "oracle": "<address>",
+    "keeper": "<address>",
+    "trader": "<address>",
+    "lp": "<address>"
+  },
+  "contracts": {
+    "ExchangeOpsLib": "<address>",
+    "MockUSDC": "<address>",
+    "MockSwapRouter": "<address>",
+    "MockOracle": "<address>",
+    "TraderStake": "<address>",
+    "InsuranceVault": "<address>",
+    "FeeRouter": "<address>",
+    "PerpetualExchange": "<address>",
+    "StrategyRegistry": "<address>",
+    "CopyTracker": "<address>",
+    "AgentSessionManager": "<address>",
+    "KYCRegistry": "<address>",
+    "ChainlinkOracleAdapter": "<address>",
+    "PythOracleAdapter": "<address>",
+    "AggregatorOracleAdapter": "<address>"
+  },
+  "assets": ["sBTC", "sETH", "sAAPL", "sTSLA"]
+}

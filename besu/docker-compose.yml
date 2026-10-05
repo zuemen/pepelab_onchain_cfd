@@ -1,0 +1,164 @@
+# besu/docker-compose.yml
+# PepeLab Phase 2：4 個 QBFT 驗證者節點的 Hyperledger Besu 本地網路。
+#
+# 先產生網路檔（genesis、節點金鑰、帳戶、白名單，全部寫進被 gitignore 的 network/）：
+#   npm ci && npm run gen
+# 再啟動：
+#   docker compose up -d
+#
+# 設計：
+#   - 映像檔釘選確切版本（不用 latest）；可用 BESU_IMAGE 覆寫。
+#   - 只有 node1 開 HTTP JSON-RPC，而且只綁在本機 127.0.0.1（不對區網開放）。
+#   - 4 個節點用固定 IP + static-nodes.json 互連，關閉 discovery（私有網路不需要對外尋找節點）。
+#   - 免費 gas：genesis 的 zeroBaseFee=true，加上每個節點都 --min-gas-price=0
+#     （官方文件：只要有一個節點的最低 gas 價大於 0，就會默默丟掉 gas 價為 0 的交易）。
+#   - --profile=ENTERPRISE：官方建議的私有網路設定組合，其中儲存格式是 FOREST（完整歷史狀態），
+#     forge 的 fork 測試釘在舊區塊讀狀態也不會被修剪。
+#   - 帳戶白名單：每個節點都開 --permissions-accounts-config-file-enabled，
+#     只有 gen-network.mjs 產生的角色帳戶能送交易。
+#   - 每個節點的 command 刻意完整列出（YAML 無法合併序列），4 份只差金鑰路徑與 IP。
+#   - 出塊間隔（QBFT blockperiodseconds）寫在 genesis 裡，Besu 沒有對應的 CLI 參數；
+#     要改請設 BESU_BLOCK_PERIOD 後 `npm run gen -- --force` 並 `docker compose down -v` 重建。
+#
+# 可調參數放 besu/.env（範本見 .env.example），compose 會自動讀取。
+
+# 固定 compose 專案名稱：不隨資料夾名稱變動，也不會跟同一台 Docker 上的其他專案混在一起。
+# 所有 up／down／logs 只作用在這個專案的容器、網路與 volume。
+name: pepelab-besu
+
+x-besu-common: &besu-common
+  image: ${BESU_IMAGE:-hyperledger/besu:26.9.0}
+  restart: unless-stopped
+  environment:
+    # Besu 26.9.0 起遇到 OutOfMemoryError 會直接結束（release notes），restart 政策會把它拉起來。
+    # 預設刻意壓小：本地鏈狀態很小，而 Docker Desktop 的 VM 記憶體被吃光時整個引擎會卡死
+    # （實測：與其他大型容器並存時發生過），連帶拖垮同一台機器上的所有容器。
+    JAVA_OPTS: ${BESU_JAVA_OPTS:--Xms64m -Xmx320m -XX:MaxMetaspaceSize=160m -XX:ReservedCodeCacheSize=64m -XX:MaxDirectMemorySize=64m -XX:+UseSerialGC}
+  # 每個節點的記憶體硬上限：超過時只有這個容器被 OOM kill（再由 restart 拉起），不會讓整個 VM 換頁卡死。
+  mem_limit: ${BESU_MEM_LIMIT:-768m}
+  networks:
+    - besu
+
+services:
+  node1:
+    <<: *besu-common
+    container_name: pepelab-besu-node1
+    command:
+      - --genesis-file=/besu-net/genesis.json
+      - --data-path=/opt/besu/data
+      - --static-nodes-file=/besu-net/static-nodes.json
+      - --discovery-enabled=false
+      - --p2p-port=30303
+      - --profile=ENTERPRISE
+      - --min-gas-price=0
+      - --permissions-accounts-config-file-enabled
+      - --logging=${BESU_LOG_LEVEL:-INFO}
+      - --node-private-key-file=/besu-node/key
+      - --permissions-accounts-config-file=/besu-node/permissions_config.toml
+      - --p2p-host=${BESU_SUBNET_PREFIX:-10.233.66}.11
+      # JSON-RPC：容器內聽 0.0.0.0，但 ports 只把它映射到主機的 127.0.0.1。
+      - --rpc-http-enabled
+      - --rpc-http-host=0.0.0.0
+      - --rpc-http-port=8545
+      - --rpc-http-api=ETH,NET,WEB3,QBFT,TXPOOL,PERM
+      - --host-allowlist=localhost,127.0.0.1
+      # forge test --fork-url 會平行開很多連線抓狀態。
+      - --rpc-http-max-active-connections=${BESU_RPC_MAX_CONNECTIONS:-400}
+    ports:
+      - "127.0.0.1:${BESU_RPC_PORT:-8545}:8545"
+    volumes:
+      - ./network:/besu-net:ro
+      # 節點自己的目錄要可寫：Besu 啟動時會回寫帳戶白名單檔（唯讀掛載會 ERROR_ALLOWLIST_PERSIST_FAIL）。
+      - ./network/node1:/besu-node
+      - node1-data:/opt/besu/data
+    networks:
+      besu:
+        ipv4_address: ${BESU_SUBNET_PREFIX:-10.233.66}.11
+
+  node2:
+    <<: *besu-common
+    container_name: pepelab-besu-node2
+    command:
+      - --genesis-file=/besu-net/genesis.json
+      - --data-path=/opt/besu/data
+      - --static-nodes-file=/besu-net/static-nodes.json
+      - --discovery-enabled=false
+      - --p2p-port=30303
+      - --profile=ENTERPRISE
+      - --min-gas-price=0
+      - --permissions-accounts-config-file-enabled
+      - --logging=${BESU_LOG_LEVEL:-INFO}
+      - --node-private-key-file=/besu-node/key
+      - --permissions-accounts-config-file=/besu-node/permissions_config.toml
+      - --p2p-host=${BESU_SUBNET_PREFIX:-10.233.66}.12
+    volumes:
+      - ./network:/besu-net:ro
+      # 節點自己的目錄要可寫：Besu 啟動時會回寫帳戶白名單檔（唯讀掛載會 ERROR_ALLOWLIST_PERSIST_FAIL）。
+      - ./network/node2:/besu-node
+      - node2-data:/opt/besu/data
+    networks:
+      besu:
+        ipv4_address: ${BESU_SUBNET_PREFIX:-10.233.66}.12
+
+  node3:
+    <<: *besu-common
+    container_name: pepelab-besu-node3
+    command:
+      - --genesis-file=/besu-net/genesis.json
+      - --data-path=/opt/besu/data
+      - --static-nodes-file=/besu-net/static-nodes.json
+      - --discovery-enabled=false
+      - --p2p-port=30303
+      - --profile=ENTERPRISE
+      - --min-gas-price=0
+      - --permissions-accounts-config-file-enabled
+      - --logging=${BESU_LOG_LEVEL:-INFO}
+      - --node-private-key-file=/besu-node/key
+      - --permissions-accounts-config-file=/besu-node/permissions_config.toml
+      - --p2p-host=${BESU_SUBNET_PREFIX:-10.233.66}.13
+    volumes:
+      - ./network:/besu-net:ro
+      # 節點自己的目錄要可寫：Besu 啟動時會回寫帳戶白名單檔（唯讀掛載會 ERROR_ALLOWLIST_PERSIST_FAIL）。
+      - ./network/node3:/besu-node
+      - node3-data:/opt/besu/data
+    networks:
+      besu:
+        ipv4_address: ${BESU_SUBNET_PREFIX:-10.233.66}.13
+
+  node4:
+    <<: *besu-common
+    container_name: pepelab-besu-node4
+    command:
+      - --genesis-file=/besu-net/genesis.json
+      - --data-path=/opt/besu/data
+      - --static-nodes-file=/besu-net/static-nodes.json
+      - --discovery-enabled=false
+      - --p2p-port=30303
+      - --profile=ENTERPRISE
+      - --min-gas-price=0
+      - --permissions-accounts-config-file-enabled
+      - --logging=${BESU_LOG_LEVEL:-INFO}
+      - --node-private-key-file=/besu-node/key
+      - --permissions-accounts-config-file=/besu-node/permissions_config.toml
+      - --p2p-host=${BESU_SUBNET_PREFIX:-10.233.66}.14
+    volumes:
+      - ./network:/besu-net:ro
+      # 節點自己的目錄要可寫：Besu 啟動時會回寫帳戶白名單檔（唯讀掛載會 ERROR_ALLOWLIST_PERSIST_FAIL）。
+      - ./network/node4:/besu-node
+      - node4-data:/opt/besu/data
+    networks:
+      besu:
+        ipv4_address: ${BESU_SUBNET_PREFIX:-10.233.66}.14
+
+networks:
+  besu:
+    name: pepelab-besu
+    ipam:
+      config:
+        - subnet: ${BESU_SUBNET_PREFIX:-10.233.66}.0/24
+
+volumes:
+  node1-data:
+  node2-data:
+  node3-data:
+  node4-data:

@@ -1,0 +1,23 @@
+{
+  "name": "pepelab-besu",
+  "private": true,
+  "license": "SEE LICENSE IN LICENSE",
+  "version": "0.1.0",
+  "description": "PepeLab Phase 2：Hyperledger Besu（QBFT）本地網路的產生、部署、推價、keeper 與端到端腳本。只連本機 Besu，不碰任何公開鏈。",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "gen": "node scripts/gen-network.mjs",
+    "deploy": "bash scripts/deploy.sh",
+    "oracle": "node scripts/oracle-pusher.mjs",
+    "keeper": "node scripts/keeper.mjs",
+    "e2e": "bash scripts/e2e.sh",
+    "fork-test": "bash scripts/fork-test.sh",
+    "test": "node --test scripts/lib.test.mjs"
+  },
+  "dependencies": {
+    "viem": "2.57.2"
+  }
+}
