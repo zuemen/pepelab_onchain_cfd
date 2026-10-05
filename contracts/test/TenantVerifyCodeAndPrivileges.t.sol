@@ -286,6 +286,28 @@ contract TenantVerifyCodeAndPrivilegesTest is TenantFixture {
         verifier.verify(_json(s), s.id, record, s.admin);
     }
 
+    /// @dev #256: the InsuranceSeeder is a contract of the set. The full
+    ///      privilege scan (every grant since the deployment) passes — the
+    ///      seeder was granted nothing — and a privilege handed to it later
+    ///      is a failure, not an appointment.
+    function test_verify_insuranceSeeder_holdsNoPrivilege() public {
+        vm.recordLogs();
+        (Spec memory s, string memory record, TenantBase.TenantDeployed memory d) = _deploy();
+        assertFalse(PerpetualExchange(d.exchange).authorizedAgents(d.insuranceSeeder));
+        assertFalse(KYCRegistry(d.kyc).verifiers(d.insuranceSeeder));
+        verifier.verify(_json(s), s.id, record, s.admin);
+
+        uint256 snap = vm.snapshotState();
+        vm.prank(s.admin);
+        KYCRegistry(d.kyc).setVerifier(d.insuranceSeeder, true);
+        _verifyFails(s, record, bytes("verify tenant failed: unexpected KYC verifier on KYCRegistry"));
+
+        vm.revertToState(snap);
+        vm.prank(s.admin);
+        IAccessControl(d.esgRegistry).grantRole(keccak256("ATTESTOR_ROLE"), d.insuranceSeeder);
+        _verifyFails(s, record, bytes("verify tenant failed: unexpected ATTESTOR_ROLE holder on ESGRegistryV2"));
+    }
+
     // ── C4: parameters with no config field stay at the contract default ────
 
     function test_verify_fails_whenTheEsgAttestationAgeChanged() public {

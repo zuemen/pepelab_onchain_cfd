@@ -152,6 +152,9 @@ TENANT=<id> forge script script/DeployTenant.s.sol:DeployTenant \
   --fork-url "$BASE_SEPOLIA_RPC_URL" --sender 0x<部署者位址> -vv
 ```
 
+- 前提（(a) 的 `PREFLIGHT_ONLY` 也一樣）：`--sender` 的部署者位址要持有 **1 顆完整的保證金代幣**（目前的結算代幣
+  MockUSDC 是 18 位小數，即 `1e18` 個最小單位；腳本依代幣的 `decimals()` 計算）作為保險金庫種子，以及付 gas 的 ETH。
+  餘額不足時 preflight 直接拒絕（`deployer holds less than one whole settlement token …`）。
 - `--sender` 是部署者的**位址**，不是金鑰。模擬不需要任何私鑰。
 - exchange 部署出來的第一件事是 owner `pause()`（沒有到期時間），KYC、RWA 旗標、上限都設好之後、移交所有權之前
   才 `unpause()`。廣播是很多筆交易，中途被打斷時留下的是一顆暫停中的 exchange，不是一顆半設定、可以開倉的。
@@ -185,7 +188,7 @@ TENANT=<id> forge script script/DeployTenant.s.sol:DeployTenant \
 
 ## 4. 廣播（擁有者本人執行）
 
-前提：§3 的模擬通過；部署者位址有足夠的 ETH；平台的 keeper 剛跑過（價格來源夠新）。
+前提：§3 的模擬通過；部署者位址有足夠的 ETH，**以及 1 顆完整的結算代幣**（保險金庫種子，見下）；平台的 keeper 剛跑過（價格來源夠新）。
 
 ```bash
 cd contracts
@@ -194,12 +197,31 @@ TENANT=<id> forge script script/DeployTenant.s.sol:DeployTenant \
 ```
 
 - 一定要加 `--slow`：後面的交易依賴前面剛部署的合約，公共 RPC 一次收到整批容易丟交易。
-- 這次執行**不碰任何既有合約**，沒有不可逆的步驟，也沒有需要「續跑」的共用指標。中途失敗時留下的是一組沒有資金、
-  owner 還是部署者的未完成合約：用 `forge script … --resume` 接著送同一批，或直接重來一次（舊的那組作廢）。
+- **保險金庫種子**：第 3 步建出租戶的 InsuranceVault 後，立刻從部署者存入 1 顆完整結算代幣，份額轉給 `roles.treasury`，
+  然後才接 fee router 與 exchange。供給為 0 時流進來的錢永遠歸虛擬份額（`INSURANCE_VAULT_SHARES.md` §3.3），種子先關掉
+  這個洞。preflight 會擋餘額不足的部署者。
+  存入與轉份額由一顆無狀態、無 owner、不持有任何權限的 `InsuranceSeeder`（`contracts/src/InsuranceSeeder.sol`）
+  **在同一筆交易**完成：部署者 approve seeder，seeder 拉入 1 顆、`deposit`、把這次實際鑄出的份額全數轉給 treasury，
+  自己不留份額、不留代幣（事先被轉入的份額一併給 treasury，代幣退回呼叫者，所以捐贈擋不住種子）。
+  若分成 approve／deposit／transfer 三筆交易、轉帳份額在模擬時寫死，任何人在兩筆之間存 1 wei 再提走一部分改變
+  份額價格，寫死的 transfer 就在鏈上 revert，`--resume` 重送也一樣（#256 審查）。seeder 鏈上的下限是**價值**：
+  鑄出的份額要能贖回至少 99.9% 的種子。不用份額數下限，因為份額價格能被幾 wei 推高、讓份額數下限每次重試都不過，
+  而種子的價值不受影響（金庫捨入對自己有利，攻擊者留下的資產歸持有人）。seeder 位址記在部署紀錄的
+  `contracts.InsuranceSeeder`，`VerifyTenant` 把它當成這組合約的一員：code 等於本 repo 的 build、由部署者建立、
+  不持有任何角色（權限事件掃描到它持有角色就失敗，不當成 admin 的指派）。
+  **只在存入當下成立的事在 DeployTenant 裡檢查**：部署者沒有份額、seeder 什麼都不留、treasury 持有全部份額、
+  而且值滿 1 顆。這些 `require` **只在模擬時執行**（forge 先在本地跑完整個 script 才送交易），任何一項不符就不會廣播；
+  鏈上的保證來自 seeder 合約自己的 `require`。
+  之後每天跑、對每個 PR 跑的 `VerifyTenant` 只檢查 `totalSupply() > 0`（§3.3 的保護仍在）——任何人都能存 1 wei
+  再把份額轉給部署者，bailout 也會讓份額貶值，這些都不是租戶設定錯，不能讓 required check 變紅。
+  treasury 把份額轉走或贖回是租戶自己的決定，只印 NOTE；但若供給因此回到 0，驗證會失敗（那會重新打開 §3.3 的洞）。
+- 這次執行**不碰任何既有合約**，沒有不可逆的步驟，也沒有需要「續跑」的共用指標。中途失敗時留下的是一組
+  owner 還是部署者的未完成合約（過了第 3 步則保險金庫裡有那 1 顆種子，份額在 treasury）：用 `forge script … --resume` 接著送同一批，或直接重來一次（舊的那組作廢）。
 - 部署的最後一步把所有權交給 `roles.admin`：`Ownable` 的合約 `transferOwnership`，`AccessControl` 的合約
   先授予、讀回確認、才放棄部署者的 admin。**結束時部署者在任何一顆合約上都沒有權限。** 一步到位的所有權轉移無法復原，
-  而這時整組合約還沒有任何資金——admin 填錯的代價是重新部署，不是資產被鎖。
-- 執行內建完整讀回驗證，任何一項不符整個 run 就 revert（不會留下「部署了但沒驗證」的狀態）。
+  而這時整組合約除了那 1 顆保險種子之外沒有任何資金——admin 填錯的代價是重新部署（加上那 1 顆），不是資產被鎖。
+- 執行內建完整讀回驗證，任何一項不符整個 run 就 revert（不會留下「部署了但沒驗證」的狀態）。這也是模擬時的
+  保證：廣播後的鏈上狀態以事後獨立跑的 `VerifyTenant` 為準。
 - 紀錄寫到 `contracts/cache/tenants/<id>.deployed.json`，其中 `deployBlock` 是廣播開始前的區塊高度（`VerifyTenant`
   從這裡起掃角色授予事件）。
 - 最後的 `exchange.unpause()` 以固定的 gas 上限（300,000）送出：模擬時所有步驟在同一個 timestamp，估出來的
@@ -303,10 +325,14 @@ TENANT=<id> TENANT_RECORD=cache/tenants/<id>.deployed.json TENANT_PRIVILEGE_SCAN
 6. 租戶 admin 之後要做的事（都經過 multisig，不在部署腳本裡）：
    - 指派 KYC verifier（`KYCRegistry.setVerifier`）。在那之前所有 RWA 市場對所有人關閉。
    - 指派碳分級見證人（`ESGRegistryV2` 的 `ATTESTOR_ROLE`）。在那之前每檔資產都是 Unrated——槓桿 1 倍、費率最高那一級（fail-closed）。
-   - 注入保險金：**部署完成後立刻用 `InsuranceVault.deposit` 存入種子（至少 1 USDC，份額保留到金庫停用）**。DeployTenant 部署完非 RWA 市場就能交易，沒有另外的「開放交易」步驟；讓腳本自動存種子（`SEED_AMOUNT`＋VerifyTenant 檢查 `totalSupply() > 0`）列為後續。新租戶的保險金是 0。
+   - 保險金：**部署腳本已自動存入 1 顆完整結算代幣作種子，份額交給租戶的 `roles.treasury`**（§4）；
+     treasury 要把這份份額保留到金庫停用。1 顆只關掉 §3.3 的零供給問題，不是夠用的保險金：
+     admin 視交易規模與風險自行加碼（`InsuranceVault.deposit` 取得份額，或 `recapitalize` 贈與、不發份額）。
+     DeployTenant 部署完非 RWA 市場就能交易，沒有另外的「開放交易」步驟。
      P1-05 之後的 InsuranceVault 用 virtual shares：供給為 0 時進來的資產（手續費分成、清算殘值，或在沒有份額時呼叫 `recapitalize`）
-     會永久歸 virtual 份額，之後按比例分走 LP 的收益。所以 `recapitalize` 只在已有種子份額之後使用。
-     部署腳本目前在建構當下就接好 FeeRouter／exchange，種子要在開放交易之前存（[`INSURANCE_VAULT_SHARES.md`](INSURANCE_VAULT_SHARES.md) §3.3、§5.2）。
+     會永久歸 virtual 份額，之後按比例分走 LP 的收益。所以 `recapitalize` 只在已有種子份額之後使用（腳本存的種子已滿足這一點）。
+     接線順序：腳本在第 3 步建出金庫後**先存種子**，第 4 步才在 exchange 上 `setFeeRouter`／`setInsuranceVault`，
+     第 6 步才在金庫上 `setFeeRouter`／`setExchange`——任何流入來源都接在種子之後（[`INSURANCE_VAULT_SHARES.md`](INSURANCE_VAULT_SHARES.md) §3.3、§5.2）。
    - 金庫的每檔資產上限預設是 0（關閉鑄造），由 risk 金鑰逐檔開放，並 `fundVault` 注入兌付準備。
    - 若要把所有權放到 Timelock 後面，由 admin 自行部署並轉移；之後跑 `VerifyTenant` 要加 `EXPECTED_OWNER=<timelock>`
      （CI 的 `tenant-verify.yml` 目前以 `roles.admin` 為 owner；移到 Timelock 時要同步改設定或腳本）。

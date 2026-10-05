@@ -5,6 +5,7 @@ import "forge-std/Script.sol";
 import "forge-std/console.sol";
 import "@openzeppelin/contracts/access/IAccessControl.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
+import "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import "../src/PerpetualExchange.sol";
 import "../src/CopyTracker.sol";
 import "../src/StrategyRegistry.sol";
@@ -12,6 +13,7 @@ import "../src/AgentSessionManager.sol";
 import "../src/TraderStake.sol";
 import "../src/FeeRouter.sol";
 import "../src/InsuranceVault.sol";
+import "../src/InsuranceSeeder.sol";
 import "../src/KYCRegistry.sol";
 
 interface ITenantVault {
@@ -94,6 +96,14 @@ abstract contract TenantBase is Script {
     ///      seed is stamped "now". A stale seed would therefore look fresh, so
     ///      the source must have been updated within this window.
     uint256 internal constant SEED_MAX_AGE = 1 hours;
+
+    /// @dev The tenant's InsuranceVault is seeded with exactly one whole
+    ///      settlement token before anything can flow into it. With zero
+    ///      supply, every inflow accrues to the virtual shares for good
+    ///      (INSURANCE_VAULT_SHARES.md §3.3); the seed closes that before the
+    ///      fee router and exchange are wired. The shares go to the tenant's
+    ///      treasury: the deployer keeps nothing.
+    uint256 internal constant INSURANCE_SEED_WHOLE_TOKENS = 1;
     /// @dev GuardedOracle's own staleness check is switched OFF (0). Staleness
     ///      is enforced where it matters — by the exchange (`maxPriceAge`, 6h)
     ///      and by the vault (its own `maxPriceAge`) — each against the
@@ -240,6 +250,10 @@ abstract contract TenantBase is Script {
         address   assetVault;       // 0 when params.deployVault is false
         address   assetVaultImpl;   // 0 when params.deployVault is false
         address[] tokens;           // parallel to TenantConfig.assets; empty without a vault
+        /// @dev Seeds the InsuranceVault and hands the shares to the treasury
+        ///      in one transaction (`InsuranceSeeder`). Stateless, no owner,
+        ///      no role anywhere; listed so the set checks cover it.
+        address   insuranceSeeder;
     }
 
     // ── config ──────────────────────────────────────────────────────────────
@@ -509,6 +523,7 @@ abstract contract TenantBase is Script {
         vm.serializeAddress(k, "ESGRegistryV2", d.esgRegistry);
         vm.serializeAddress(k, "KYCRegistry", d.kyc);
         vm.serializeAddress(k, "InsuranceVault", d.insuranceVault);
+        vm.serializeAddress(k, "InsuranceSeeder", d.insuranceSeeder);
         vm.serializeAddress(k, "FeeRouter", d.feeRouter);
         vm.serializeAddress(k, "TraderStake", d.traderStake);
         vm.serializeAddress(k, "PerpetualExchange", d.exchange);
@@ -560,6 +575,9 @@ abstract contract TenantBase is Script {
         d.esgRegistry       = vm.parseJsonAddress(json, ".contracts.ESGRegistryV2");
         d.kyc               = vm.parseJsonAddress(json, ".contracts.KYCRegistry");
         d.insuranceVault    = vm.parseJsonAddress(json, ".contracts.InsuranceVault");
+        require(vm.keyExistsJson(json, ".contracts.InsuranceSeeder"),
+            "deployment record: contracts.InsuranceSeeder is missing (written by DeployTenant since PR #256)");
+        d.insuranceSeeder   = vm.parseJsonAddress(json, ".contracts.InsuranceSeeder");
         d.feeRouter         = vm.parseJsonAddress(json, ".contracts.FeeRouter");
         d.traderStake       = vm.parseJsonAddress(json, ".contracts.TraderStake");
         d.exchange          = vm.parseJsonAddress(json, ".contracts.PerpetualExchange");
@@ -599,6 +617,10 @@ abstract contract TenantBase is Script {
         console.log("ok  ", field, got);
     }
 
+    function _insuranceSeed(address usdc) internal view returns (uint256) {
+        return INSURANCE_SEED_WHOLE_TOKENS * 10 ** IERC20Metadata(usdc).decimals();
+    }
+
     function _check(bool cond, string memory what) internal pure {
         if (!cond) revert(string.concat("verify tenant failed: ", what));
         console.log("ok  ", what);
@@ -629,13 +651,16 @@ abstract contract TenantBase is Script {
     }
 
     /// @dev Every contract of the set, with a name for error messages. The
-    ///      tokens come last, in `assets.registered` order.
+    ///      tokens follow the vault, in `assets.registered` order; the
+    ///      InsuranceSeeder is the very last entry.
     function _tenantContracts(TenantConfig memory c, TenantDeployed memory d)
         internal pure returns (string[] memory names, address[] memory all)
     {
-        uint256 n = 10 + (c.deployVault ? 2 + d.tokens.length : 0);
+        uint256 n = 11 + (c.deployVault ? 2 + d.tokens.length : 0);
         names = new string[](n);
         all = new address[](n);
+        // Last, so the vault entries keep their indices.
+        (names[n - 1], all[n - 1]) = ("InsuranceSeeder", d.insuranceSeeder);
         (names[0], all[0]) = ("Oracle", d.oracle);
         (names[1], all[1]) = ("ESGRegistryV2", d.esgRegistry);
         (names[2], all[2]) = ("KYCRegistry", d.kyc);
@@ -768,6 +793,21 @@ abstract contract TenantBase is Script {
         _eq("insuranceVault.exchange", iv.exchange(), d.exchange);
         _eq("insuranceVault.feeRouter", iv.feeRouter(), d.feeRouter);
         _eq("insuranceVault.owner", iv.owner(), owner);
+        // §3.3: a wired vault at zero supply hands every inflow to the virtual
+        // shares. Only that invariant is checked here, every day: nobody but a
+        // share holder can break it. What the seed was worth and who held it
+        // is checked once, by DeployTenant at deposit time — afterwards anyone
+        // can deposit and send shares to the deployer, and a bailout lowers
+        // the share price, so neither belongs in a daily required check.
+        _check(iv.totalSupply() > 0, "insuranceVault is seeded (totalSupply > 0, INSURANCE_VAULT_SHARES.md 3.3)");
+        uint256 treasuryShares = iv.balanceOf(c.treasury);
+        if (treasuryShares == 0) {
+            // The treasury's own decision (it moved or redeemed the seed);
+            // supply is still > 0, so the §3.3 protection holds for now.
+            console.log("NOTE insuranceVault: the treasury holds no shares any more - supply is still > 0, but if the remaining holders exit, inflows go to the virtual shares (INSURANCE_VAULT_SHARES.md 3.3)");
+        } else {
+            console.log("ok   insuranceVault.balanceOf(treasury) > 0:", treasuryShares);
+        }
         FeeRouter fr = FeeRouter(d.feeRouter);
         _eq("feeRouter.usdc", address(fr.usdc()), c.usdc);
         _eq("feeRouter.platformTreasury", fr.platformTreasury(), c.treasury);
@@ -966,9 +1006,10 @@ abstract contract TenantBase is Script {
     function _tenantArtifacts(TenantConfig memory c, TenantDeployed memory d)
         internal pure returns (string[] memory files, string[] memory names)
     {
-        uint256 n = 10 + (c.deployVault ? 2 + d.tokens.length : 0);
+        uint256 n = 11 + (c.deployVault ? 2 + d.tokens.length : 0);
         files = new string[](n);
         names = new string[](n);
+        (files[n - 1], names[n - 1]) = ("InsuranceSeeder.sol", "InsuranceSeeder");
         if (c.guardedOracle) (files[0], names[0]) = ("GuardedOracle.sol", "GuardedOracle");
         else (files[0], names[0]) = ("MockOracle.sol", "MockOracle");
         (files[1], names[1]) = ("ESGRegistryV2.sol", "ESGRegistryV2");
@@ -1020,7 +1061,7 @@ abstract contract TenantBase is Script {
             bytes32 pinned;
             if (c.deployVault && all[i] == d.assetVaultImpl) {
                 (pin, pinned) = (true, bytes32(uint256(uint160(all[i]))));   // UUPS `__self`
-            } else if (c.deployVault && i >= 12) {
+            } else if (c.deployVault && i >= 12 && i < 12 + d.tokens.length) {
                 (pin, pinned) = (true, _assetId(c.assets[i - 12]));           // SyntheticAssetV2.assetId
             }
             _verifyRuntimeCode(labels[i], all[i], files[i], names[i], pin, pinned);

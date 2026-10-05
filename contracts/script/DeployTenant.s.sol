@@ -5,6 +5,7 @@ import "forge-std/Script.sol";
 import "forge-std/console.sol";
 import "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
+import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "../src/PerpetualExchange.sol";
 import "../src/CopyTracker.sol";
 import "../src/StrategyRegistry.sol";
@@ -12,6 +13,7 @@ import "../src/AgentSessionManager.sol";
 import "../src/TraderStake.sol";
 import "../src/FeeRouter.sol";
 import "../src/InsuranceVault.sol";
+import "../src/InsuranceSeeder.sol";
 import "../src/KYCRegistry.sol";
 import "../src/MockOracle.sol";
 import "../src/ESGRegistryV2.sol";
@@ -26,7 +28,8 @@ import "./VerifyTenant.s.sol";
 ///         What a tenant gets, all new, none shared with the live platform or
 ///         with another tenant:
 ///           oracle (GuardedOracle, or MockOracle on a testnet), ESGRegistryV2,
-///           KYCRegistry, InsuranceVault, FeeRouter (treasury = the tenant's),
+///           KYCRegistry, InsuranceVault (+ the stateless InsuranceSeeder that
+///           seeds it), FeeRouter (treasury = the tenant's),
 ///           TraderStake, PerpetualExchange, StrategyRegistry, CopyTracker,
 ///           AgentSessionManager, and — when `params.deployVault` — an
 ///           AssetVaultV2 proxy with one synthetic token per registered asset.
@@ -42,15 +45,19 @@ import "./VerifyTenant.s.sol";
 ///
 ///         UNLIKE the cutover scripts, this run touches no existing contract:
 ///         there is no irreversible step and nothing to resume. An interrupted
-///         broadcast leaves an unfinished, unfunded set owned by the deployer;
-///         use `forge script --resume` for the same broadcast, or start again.
+///         broadcast leaves an unfinished set owned by the deployer, holding
+///         at most the one-token insurance seed (its shares already with the
+///         treasury); use `forge script --resume` for the same broadcast, or
+///         start again.
 ///
 ///         THE DEPLOYER KEEPS NOTHING. The last step hands every contract to
 ///         `roles.admin` (grant → read back → renounce for AccessControl,
 ///         `transferOwnership` for Ownable) and the run then verifies that the
 ///         deployer holds no role anywhere. A one-step ownership transfer is
 ///         irreversible, and the moment it is cheapest to get wrong is now,
-///         while the set holds no funds: `VerifyTenant` fails, you redeploy.
+///         while the set holds nothing but the one-token insurance seed (its
+///         shares with the treasury): `VerifyTenant` fails, you redeploy and
+///         lose that one token at most.
 ///
 ///         Dry run (no key, nothing sent) — docs/TENANT_DEPLOYMENT.md sec.3:
 ///           TENANT=<id> forge script script/DeployTenant.s.sol:DeployTenant \
@@ -64,6 +71,8 @@ import "./VerifyTenant.s.sol";
 ///                             (testnet rehearsals only; ignored on Base
 ///                             mainnet, where the admin must be a contract)
 contract DeployTenant is TenantBase {
+    using SafeERC20 for IERC20;
+
     /// @dev See step 8 of `_execute`. On chain the call used ~75k (anvil rehearsal, 2026-10-02).
     uint256 internal constant UNPAUSE_GAS = 300_000;
 
@@ -164,6 +173,12 @@ contract DeployTenant is TenantBase {
         }
         console.log("ok   price source quotes every registered asset, all fresh:", c.assets.length);
 
+        // The insurance seed is new money from the deployer (see step 3).
+        uint256 insuranceSeed = _insuranceSeed(c.usdc);
+        require(IERC20(c.usdc).balanceOf(deployer) >= insuranceSeed,
+            "deployer holds less than one whole settlement token - needed to seed the tenant's InsuranceVault (INSURANCE_VAULT_SHARES.md 3.3)");
+        console.log("ok   insurance seed available    :", insuranceSeed);
+
         console.log("admin            :", c.admin);
         console.log("risk             :", c.risk);
         console.log("guardian         :", c.guardian);
@@ -207,6 +222,13 @@ contract DeployTenant is TenantBase {
 
         // 3. The tenant's money path. The treasury is immutable on the router.
         d.insuranceVault = address(new InsuranceVault(c.usdc));
+        //    Seed it now, while its feeRouter and exchange are still zero:
+        //    anything that arrives at zero supply belongs to the virtual shares
+        //    forever (INSURANCE_VAULT_SHARES.md §3.3), and step 6 wires inflows.
+        //    The position goes to the tenant's treasury — the deployer keeps nothing.
+        //    Deposit and share transfer happen in one transaction (InsuranceSeeder).
+        d.insuranceSeeder = address(new InsuranceSeeder());
+        _seedInsuranceVault(c, d.insuranceVault, d.insuranceSeeder, deployer);
         d.feeRouter = address(new FeeRouter(c.usdc, c.treasury, d.insuranceVault));
         d.traderStake = address(new TraderStake(c.usdc));
 
@@ -274,6 +296,45 @@ contract DeployTenant is TenantBase {
         ex.setGuardian(c.guardian);
         ex.setMarketOperator(c.marketOperator);
         return address(ex);
+    }
+
+    /// @dev Seeds the vault through `seeder`: one transaction pulls the seed
+    ///      from `deployer`, deposits it and hands every minted share to the
+    ///      treasury. A broadcast sends approve / deposit / transfer as
+    ///      separate transactions, so a share amount fixed at simulation time
+    ///      breaks as soon as anyone moves the share price in between (#256
+    ///      review); the seeder transfers what the deposit actually minted.
+    ///
+    ///      The bound the seeder enforces ON CHAIN is on value: the minted
+    ///      shares must redeem for at least 99.9% of the seed. A share-count
+    ///      bound could be pushed under for a few wei by raising the share
+    ///      price, blocking every retry; the value cannot (rounding favours
+    ///      the vault, and what the attacker leaves behind accrues to the
+    ///      holders).
+    ///
+    ///      The `require`s below run in the simulation only (forge executes
+    ///      them locally, they are not transactions). They catch a wrong
+    ///      script; on chain the seeder's own checks are the guarantee. They
+    ///      are not in `VerifyTenant` because they only hold at this moment:
+    ///      afterwards anyone can deposit and send shares to the deployer, and
+    ///      a bailout lowers the share price — neither is a fault of the tenant.
+    function _seedInsuranceVault(TenantConfig memory c, address vault, address seeder, address deployer) internal {
+        InsuranceVault iv = InsuranceVault(vault);
+        require(iv.feeRouter() == address(0) && iv.exchange() == address(0) && iv.totalSupply() == 0,
+            "insurance seed must go in before anything is wired");
+        uint256 seed = _insuranceSeed(c.usdc);
+        IERC20(c.usdc).forceApprove(seeder, seed);
+        uint256 minted = InsuranceSeeder(seeder).seed(
+            IInsuranceVaultSeedable(vault), IERC20(c.usdc), seed, c.treasury, seed - seed / 1000);
+        // Simulation-time read-back: the treasury holds every share, worth the
+        // whole seed; neither the deployer nor the seeder keeps anything.
+        require(iv.balanceOf(deployer) == 0, "insurance seed: the deployer must keep no shares");
+        require(iv.balanceOf(seeder) == 0 && IERC20(c.usdc).balanceOf(seeder) == 0,
+            "insurance seed: the seeder must keep nothing");
+        require(iv.balanceOf(c.treasury) == iv.totalSupply() && minted == iv.totalSupply() && minted > 0,
+            "insurance seed: the treasury must hold every share");
+        require(iv.previewWithdraw(iv.balanceOf(c.treasury)) >= seed,
+            "insurance seed: the treasury position must be worth the whole seed");
     }
 
     function _handOverOwnables(TenantDeployed memory d, address admin) internal {
