@@ -109,12 +109,12 @@ E = M + σ·Q·(S − S_0) − M·L·f − M·(L−1)·r·h − Φ
 | 項目 | 程式實際 | 位置 |
 |---|---|---|
 | 函式名稱 | **確實有 `_pokeFunding`**（internal）；累積邏輯在 `_accrueFunding`；對外入口是 `settleFunding(bytes32)` | `PerpetualExchange.sol:1420`、`:1458`、`:1410` |
-| 公式類型 | **OI 失衡（skew）型，不是 mark − index**。rateBps = trunc(75 × (OI_L − OI_S)/(OI_L + OI_S))，範圍 [−75, +75] 整數 bps；正值＝多方付 | `PerpetualExchange.sol:1514-1518` |
+| 公式類型 | **OI 失衡（skew）型，不是 mark − index**。rateBps = trunc(trunc(1e18·d/T)·75/1e18)，d = OI_L − OI_S、T = OI_L + OI_S，**兩段截斷**：75·d/T 恰為整數時會少 1 bps（例：OI_L:OI_S = 2:1 得 24，不是 25）。兩邊 OI 都 > 0 才累積，所以實際範圍是 [−74, +74] 整數 bps；正值＝多方付 | `PerpetualExchange.sol:1514-1518` |
 | OI 的定義 | `globalLongNotional`／`globalShortNotional`：**開倉名目**的加總，不隨價格重估 | `PerpetualExchange.sol:240-241` |
 | 付方每單位名目 | \|rate\| × 1e-4 × 區間數，加到付方的累積指數 | `PerpetualExchange.sol:1476-1488` |
-| 收方每單位名目 | 付方 × payerOI/receiverOI（總額守恆），但最多為付方的 10 倍（`MAX_FUNDING_RECEIVE_SCALE`），超過的部分留在付方 | `PerpetualExchange.sol:116`、`:1503-1509` |
+| 收方每單位名目 | 付方 × payerOI/receiverOI（未觸頂時總額守恆），但最多為付方的 10 倍（`MAX_FUNDING_RECEIVE_SCALE`）。觸頂時**付方照付全額**，收方只拿上限，差額留在 exchange 池，此時多空之間不守恆（程式註解說「留在付方那邊」，經濟上是留在池子） | `PerpetualExchange.sol:116`、`:1503-1509` |
 | 週期 | `FUNDING_INTERVAL = 8 hours`（constant），只計滿的區間 | `PerpetualExchange.sol:94`、`:1443-1445` |
-| 上限 | `MAX_FUNDING_RATE_BPS = 75`（每 8h 0.75%，每天 2.25%）；單次補算最多 `MAX_FUNDING_CATCHUP_INTERVALS = 21` 個區間（15.75%），跳過的區間雙方都免除 | `PerpetualExchange.sol:95`、`:106`、`:1446-1455` |
+| 上限 | `MAX_FUNDING_RATE_BPS = 75`（名目每 8h 0.75%、每天 2.25%；因兩段截斷且兩邊 OI 都要 > 0，實際最高 74 bps）；單次補算最多 `MAX_FUNDING_CATCHUP_INTERVALS = 21` 個區間（15.75%），跳過的區間雙方都免除 | `PerpetualExchange.sol:95`、`:106`、`:1446-1455` |
 | 不累積的情況 | 任一邊 OI = 0；全域暫停或資產 Halted 的時間（時鐘往後平移） | `PerpetualExchange.sol:1463`、`:1433-1440` |
 | 第一次觸碰 | 只啟動時鐘，不回溯累積 | `PerpetualExchange.sol:1423-1430` |
 | 結算到倉位 | Φ = M·L·(I_side − I_entry)/1e18，平倉／清算／ADL 時從權益扣（或加） | `PerpetualExchange.sol:2085-2096` |
@@ -158,7 +158,7 @@ active = (now − openedAt) − (downtimeOf(asset) − downtimeAtOpen[id])
 | 位置 | 原始碼預設 | 鏈上實際 | setter／界線 | 檢查位置 |
 |---|---|---|---|---|
 | PerpetualExchange `maxPriceAge` | 24 hours | **21,600 秒（6h）**（部署腳本設定） | `setMaxPriceAge` onlyOwner，(0, 7 days] | `PerpetualExchange.sol:139`、`:805-809`；開倉 `_freshPrice` `:1718-1725`，平倉／清算 `_requireFresh` `:1732-1736`。view 函式與 `withdrawMargin` 不檢查 |
-| AssetVaultV2_5 `maxPriceAge` | initialize 設 1h | 鏈上 proxy 實作是 V2_4（RELEASE_STATUS） | `setRiskParams` RISK_ROLE，>0；**實際有效值 = min(maxPriceAge, 6h)**（`LAST_GOOD_MAX_AGE`） | `contracts/src/v2/AssetVaultV2_5.sol:140`、`:194`、`:304`、`:400-404`、`:434-437`、`:543-566` |
+| AssetVaultV2_5 `maxPriceAge` | initialize 設 1h；原始碼 V2_5 的有效值 = min(maxPriceAge, 6h)（`LAST_GOOD_MAX_AGE`） | **鏈上 proxy 0x916D…（實作 V2_4）`maxPriceAge` = 2,592,000 秒（30 天），有效值就是 30 天**；`effectiveMaxPriceAge()`／`LAST_GOOD_MAX_AGE()` 在鏈上 revert（V2_4 沒有）。6h 上限要等 V2_5 部署後才生效 | `setRiskParams` RISK_ROLE，>0 | `contracts/src/v2/AssetVaultV2_5.sol:140`、`:194`、`:304`、`:400-404`、`:434-437`、`:543-566` |
 | GuardedOracle `maxPriceAge` | 1 hours | **2,592,000 秒（30 天）**（等於關掉，避免 keeper 讀價被擋） | `setRiskParams` DEFAULT_ADMIN | `contracts/src/v2/GuardedOracle.sol:106`、`:524-533`；租戶部署設 0（`contracts/script/VerifyTenant.s.sol:107-118`） |
 
 部署腳本的 6h：`contracts/script/Redeploy130Hardened.s.sol:357`、`contracts/script/RedeployExchange.s.sol:112`（註解寫明原始碼預設是 24h）。
@@ -200,7 +200,7 @@ active = (now − openedAt) − (downtimeOf(asset) − downtimeAtOpen[id])
 | 剩餘抵押 > 0 的分配 | 「剩餘」= closeAmount。清算人 `LIQUIDATION_REWARD_BPS` = 5%（constant）；保險庫 `liquidationPenaltyBps` = 20%（setter，鏈上也是 2,000）；**其餘 75% 退回倉位持有人** | `PerpetualExchange.sol:56`、`:301`、`:1204-1219` |
 | 平倉手續費的去處 | 留在 exchange 合約餘額（交易者資金池）；只有 `vaultFeeShareBps` 那一份實際收得到的手續費會轉進保險庫（預設 0，鏈上 0） | `PerpetualExchange.sol:276`、`:1705-1715`、`:1276-1287` |
 | 剩餘抵押 < 0（壞帳） | `_absorbShortfall`：① InsuranceVault `bailout(min(缺口, totalAssets))` 把錢補回 exchange；② `adlEnabled` 時 ADL；③ 剩下的發 `BadDebt` 事件 | `PerpetualExchange.sol:1247-1270` |
-| ADL | 掃同資產、**反方向**、目前有獲利的倉位，依索引順序最多 128 筆，削減其獲利（不收交易／借貸費，資金費照算）；`adlEnabled` 預設 false，**鏈上 true** | `PerpetualExchange.sol:133`、`:286`、`:1301-1366` |
+| ADL | 依同資產索引順序掃描，只對**反方向**、目前有獲利的倉位削減獲利。`MAX_ADL_SCAN = 128` 是**掃描的索引槽數上限**：同向、虧損、已平倉（含正在被清算的那筆）的槽也會佔用名額，所以實際能被削減的倉位可能遠少於 128 個（不收交易／借貸費，資金費照算）；`adlEnabled` 預設 false，**鏈上 true** | `PerpetualExchange.sol:133`、`:286`、`:1301-1366` |
 | 自願平倉時資不抵債 | 走同一條 `_absorbShortfall`；另外若保險庫在補完缺口後還有餘裕，付給交易者 `BAILOUT_FLOOR_BPS` = 10% 保證金 | `PerpetualExchange.sol:119`、`:1880-1890`、`:1926-1928` |
 | 壞帳最終承擔者 | 未覆蓋部分沒有自動補足，等於由所有持有 `freeMargin` 的使用者間接承擔 | `docs/RISK_WATERFALL.md:51`、`:71` |
 
@@ -220,7 +220,7 @@ active = (now − openedAt) − (downtimeOf(asset) − downtimeAtOpen[id])
 
 | 項目 | 程式實際 | 位置 |
 |---|---|---|
-| MockUSDC 小數位數 | **18**（沒有覆寫 decimals）。exchange 建構子強制抵押品是 18 位（`MIN_MARGIN` 與 `×1e10` 都寫死） | `contracts/src/MockUSDC.sol:10`、`PerpetualExchange.sol:637-650` |
+| MockUSDC 小數位數 | **18**（沒有覆寫 decimals）。exchange 建構子用 try/catch **軟性檢查**抵押品是 18 位：`decimals()` 回傳非 18 會 revert，但沒有實作 `decimals()` 的代幣會直接通過（`MIN_MARGIN` 與 `×1e10` 都假設 18 位） | `contracts/src/MockUSDC.sol:10`、`PerpetualExchange.sol:637-650` |
 | MockUSDC 權限 | `faucet()` 任何 EOA，每次 1,000、冷卻 1 天；`mint` 只有 owner 或 swapRouter；**唯一的 onlyOwner setter 是 `setSwapRouter`，只能設一次**；`burnFrom` 只有 router | `contracts/src/MockUSDC.sol:10-11`、`:32-37`、`:51-60`、`:71-72` |
 | 6 位小數 USDC 怎麼接 | 透過 `WrappedUSDC18`（settlement 路徑，見 ADR-011） | `contracts/src/settlement/WrappedUSDC18.sol` |
 | **交易所的對手方** | **協議本身（exchange 合約的 USDC 餘額）**。所有人的 `freeMargin`、保證金、手續費都存在同一個合約；獲利從這個池子付，虧損留在池子。沒有 LP 池擔任永續的對手方；InsuranceVault 是壞帳後盾（LP 賺手續費分潤），ADL 是第二道。資金費是多空之間互付 | `PerpetualExchange.sol:225`、`:1208`、`:1918` |
@@ -267,7 +267,7 @@ active = (now − openedAt) − (downtimeOf(asset) − downtimeAtOpen[id])
 | # | 任務書假設 | 程式實際 | 判定 | 位置 |
 |---|---|---|---|---|
 | 1 | ReentrancyGuard | 有，`PerpetualExchange is Ownable, ReentrancyGuard`；value-moving 函式都有 `nonReentrant`（`settleFunding`、`setAssetMode` 沒有，它們不轉帳） | 一致 | `PerpetualExchange.sol:8`、`:41` |
-| 2 | stale price 檢查 maxPriceAge = 24h | 原始碼預設 24h；**鏈上 exchange 是 6h**（部署腳本設定）；vault 有效上限 6h；GuardedOracle 鏈上 30 天 | 不同（數值） | `PerpetualExchange.sol:139`、唯讀 RPC |
+| 2 | stale price 檢查 maxPriceAge = 24h | 原始碼預設 24h；**鏈上 exchange 是 6h**（部署腳本設定）；vault 鏈上有效值 30 天（6h 上限只在原始碼 V2_5，待部署）；GuardedOracle 鏈上 30 天 | 不同（數值） | `PerpetualExchange.sol:139`、唯讀 RPC |
 | 3 | 透過 `_pokeFunding` 累積資金費率 | 有 `_pokeFunding`，實際累積在 `_accrueFunding`；入口 `settleFunding`＋開／平／清算／Halt | 一致（補充） | `PerpetualExchange.sol:1420`、`:1458` |
 | 4 | 清算獎勵 5% 清算人／95% 保險庫 | 清算人 5%、保險庫 **20%**（可調）、**其餘 75% 退回持有人**；剩餘 ≤ 0 時清算人拿 0 | 不同 | `PerpetualExchange.sol:1204-1207` |
 | 5 | MockUSDC setter 限 onlyOwner | 唯一 onlyOwner setter 是 `setSwapRouter`（只能設一次）；`mint` 是 owner **或 swapRouter**；`faucet` 任何 EOA | 大致一致（補充） | `MockUSDC.sol:32-35`、`:71-72` |
@@ -328,6 +328,7 @@ active = (now − openedAt) − (downtimeOf(asset) − downtimeAtOpen[id])
 | asset mode | `setAssetMode` | owner 任意；guardian 只能進 ReduceOnly；marketOperator Active↔ReduceOnly | | 鏈上不存在 | `:986-996`、`:2209-2266` |
 | pause | `pause`／`unpause` | guardian 或 owner／只有 owner | | 鏈上不存在 | `:861-875` |
 | 接線 | `setInsuranceVault`、`setFeeRouter`、`setCopyTracker`、`setAgentAuthorized`、`setKycRegistry`、`setRwaAsset`、`setGuardian`、`setMarketOperator` | owner | | | `:657-835` |
+| InsuranceVault 接線 | `setExchange`、`setFeeRouter`（決定誰能呼叫 `depositFromProtocol`／`bailout`） | owner（onlyOwner） | | | `InsuranceVault.sol:123-131` |
 | GuardedOracle | `setRiskParams`、`setWindowLimit`、`setReferenceSource`、`addAsset` | DEFAULT_ADMIN | 見 3.3 | | `GuardedOracle.sol:282`、`:524-550` |
 | AssetVaultV2_5 | `setRiskParams(redeemFee ≤ 1,000, minReserve ≥ 10,000, maxPriceAge > 0)`、`setAssetCap`、`setOracle` | RISK_ROLE／DEFAULT_ADMIN | | | `AssetVaultV2_5.sol:384`、`:543-566`、`:810` |
 | AggregatorOracleAdapter | `setMaxDeviationBps`、`setHaltDeviationBps`、`setAllowSingleSource` | owner | | | `AggregatorOracleAdapter.sol:117-135` |
