@@ -276,8 +276,9 @@ contract RedeployInsuranceStackTest is Test {
     /// A stranger's dust deposit makes totalSupply > 0. It must not count as
     /// the platform seed: the deployer still seeds.
     function test_resume_strangerDust_isNotTheSeed() public {
-        vm.prank(deployer);
+        vm.startPrank(deployer);
         InsuranceVault pre = new InsuranceVault(address(usdc));
+        vm.stopPrank();
         address stranger = makeAddr("stranger");
         usdc.mint(stranger, 1);
         vm.startPrank(stranger);
@@ -332,8 +333,9 @@ contract RedeployInsuranceStackTest is Test {
     }
 
     function test_resume_rejectsTheExchangesCurrentVault() public {
-        vm.prank(deployer);
+        vm.startPrank(deployer);
         InsuranceVault live = new InsuranceVault(address(usdc));
+        vm.stopPrank();
         vm.prank(address(timelock));
         exchange.setInsuranceVault(address(live));
 
