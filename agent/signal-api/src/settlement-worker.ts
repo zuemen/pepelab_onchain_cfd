@@ -56,12 +56,18 @@
 //      - blocked 與 trader 檢查 no-data 連續超過 30 分鐘 → job 失敗（計時紀錄每次刷新
 //        2 小時 TTL，中斷夠久就自然重新計時）。
 import { createHash, randomUUID } from "node:crypto";
-import { ethersReconcileChain, reconcileUnknownSettlements, type ReconcileSummary } from "./unknownReconcile.ts";
+import {
+  ethersReconcileChain,
+  reconcileAnnotations,
+  reconcileUnknownSettlements,
+  type ReconcileSummary,
+} from "./unknownReconcile.ts";
 import { fileURLToPath } from "node:url";
 import { resolve as resolvePath } from "node:path";
 import {
   assessPayoutAddress,
   checkPayoutDenylistEnv,
+  resolveSettlementToken,
   type CodeReader,
   type PayoutAssessment,
 } from "@pepelab/shared";
@@ -285,9 +291,18 @@ export const defaultDeps: WorkerDeps = {
   reconcileUnknown: async () => {
     const provider = settlementProvider();
     if (!provider) throw new Error("no settlement provider configured");
+    // payTo = the signer. main() has already run payoutPreflight (PAY_TO safe and == signer);
+    // re-check here so a reconciliation never runs against a payTo the preflight did not pass.
+    const signer = settlementSignerAddress();
+    const payTo = process.env.PAY_TO?.trim();
+    if (!signer || !payTo || payTo.toLowerCase() !== signer.toLowerCase()) {
+      throw new Error("PAY_TO is unset or differs from the settlement signer");
+    }
     return reconcileUnknownSettlements({
       chain: ethersReconcileChain(provider),
       now: () => Math.floor(Date.now() / 1000),
+      asset: resolveSettlementToken(),
+      payTo: signer,
     });
   },
 };
@@ -599,6 +614,9 @@ export interface RunSummary {
   nodataSince?: number;
   /** 全域停機旗標（本輪開始時已存在，或本輪有項目轉 STUCK）。 */
   globalHalt?: HaltInfo;
+  /** x402:settlement:unknown 對帳結果（unknownReconcile.ts）；整輪失敗時是 reconcileFailed。 */
+  reconcile?: ReconcileSummary;
+  reconcileFailed?: string;
 }
 
 /**
@@ -730,13 +748,17 @@ async function runLocked(deps: WorkerDeps, batchSize: number, s: RunSummary, ctx
   //    main, which this same round then processes. Isolated: a failure here only skips it, it
   //    never blocks settlement.
   if (deps.reconcileUnknown) {
+    let notes: string[];
     try {
       const r = await deps.reconcileUnknown();
+      s.reconcile = r;
       if (r.examined > 0) console.log(`[reconcile] ${JSON.stringify(r)}`);
-      if (r.manual > 0) console.warn(`::warning::${r.manual} unknown-settlement row(s) moved to x402:settlement:unknown:manual for a human`);
+      notes = reconcileAnnotations(r);
     } catch (err) {
-      console.warn(`::warning::unknown-settlement reconciliation skipped this round: ${(err as Error).message}`);
+      s.reconcileFailed = (err as Error).message;
+      notes = reconcileAnnotations({ failed: s.reconcileFailed });
     }
+    for (const n of notes) (n.startsWith("::error::") ? console.error : console.warn)(n);
   }
 
   const tally = (o: ProcessOutcome) => {

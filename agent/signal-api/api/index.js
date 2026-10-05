@@ -60006,6 +60006,7 @@ var QUEUE_KEY = "x402:settlement:queue";
 var UNKNOWN_SETTLEMENT_KEY = "x402:settlement:unknown";
 var UNKNOWN_SEEN_PREFIX = "x402:settlement:unknown:seen:";
 var UNKNOWN_OVERFLOW_KEY = "x402:settlement:unknown:overflow";
+var UNKNOWN_MANUAL_KEY = "x402:settlement:unknown:manual";
 var UNKNOWN_MAX_DEFAULT = 1e3;
 var SETTLE_STATE_TTL_SEC = 90 * 24 * 60 * 60;
 function isLedgerEnabled() {
@@ -60042,6 +60043,14 @@ function unknownDedupeKey(record) {
   const nonce = typeof record.nonce === "string" && /^0x[0-9a-fA-F]{64}$/.test(record.nonce) ? record.nonce : null;
   return payer && nonce ? `${payer.toLowerCase()}:${nonce.toLowerCase()}` : null;
 }
+var UNKNOWN_PUSH_SCRIPT = `-- pepelab:unknown_push
+if redis.call('LLEN', KEYS[1]) >= tonumber(ARGV[2]) then
+  redis.call('RPUSH', KEYS[2], ARGV[3])
+  redis.call('INCR', KEYS[3])
+  return 0
+end
+redis.call('RPUSH', KEYS[1], ARGV[1])
+return 1`;
 async function recordUnknownSettlement(record, max = unknownMaxFromEnv()) {
   const dedupe = unknownDedupeKey(record);
   const seenKey = dedupe ? UNKNOWN_SEEN_PREFIX + dedupe : null;
@@ -60050,13 +60059,20 @@ async function recordUnknownSettlement(record, max = unknownMaxFromEnv()) {
     if (claimed !== "OK") return "duplicate";
   }
   try {
-    const len = await command(["LLEN", UNKNOWN_SETTLEMENT_KEY]) ?? 0;
-    if (len >= max) {
-      await command(["INCR", UNKNOWN_OVERFLOW_KEY]);
-      throw new Error(`x402:settlement:unknown is full (${len}/${max}); record not queued`);
-    }
-    await command(["RPUSH", UNKNOWN_SETTLEMENT_KEY, JSON.stringify(record)]);
-    return "recorded";
+    const raw2 = JSON.stringify(record);
+    const manualRow = JSON.stringify({ raw: raw2, reason: "overflow", movedAt: Math.floor(Date.now() / 1e3) });
+    const r = await command([
+      "EVAL",
+      UNKNOWN_PUSH_SCRIPT,
+      3,
+      UNKNOWN_SETTLEMENT_KEY,
+      UNKNOWN_MANUAL_KEY,
+      UNKNOWN_OVERFLOW_KEY,
+      raw2,
+      max,
+      manualRow
+    ]);
+    return Number(r) === 1 ? "recorded" : "overflow";
   } catch (err) {
     if (seenKey) await command(["DEL", seenKey]).catch(() => void 0);
     throw err;
@@ -65704,7 +65720,9 @@ function createApp(opts = {}) {
           ledgerEntry: c.get("ledgerEntry") ?? null
         }),
         onSettlementUnknown: async (record) => {
-          await recordUnknownSettlement(record);
+          if (await recordUnknownSettlement(record) === "overflow") {
+            console.error("[x402v2] settlement_unknown list full: record persisted to x402:settlement:unknown:manual (reason overflow)");
+          }
         },
         ...opts.x402V2Timing
       });

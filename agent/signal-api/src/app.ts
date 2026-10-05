@@ -569,7 +569,11 @@ export function createApp(opts: CreateAppOptions = {}): Hono<{ Variables: AppVar
           ledgerEntry: (c as Context<{ Variables: AppVariables }>).get("ledgerEntry") ?? null,
         }),
         onSettlementUnknown: async (record) => {
-          await recordUnknownSettlement(record);
+          // Full list: the row is persisted to the manual list (not dropped) and the worker
+          // raises ::error:: on the overflow counter. Still worth a loud line here.
+          if ((await recordUnknownSettlement(record)) === "overflow") {
+            console.error("[x402v2] settlement_unknown list full: record persisted to x402:settlement:unknown:manual (reason overflow)");
+          }
         },
         ...opts.x402V2Timing,
       });
