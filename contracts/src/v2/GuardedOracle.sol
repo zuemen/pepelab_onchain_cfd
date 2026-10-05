@@ -75,7 +75,9 @@ contract GuardedOracle is AccessControl {
     ///      Once a guardian halt is no longer in force (lapsed, or lifted
     ///      early) `since` and `expiresAt` are kept as the record of when it
     ///      ACTUALLY ran: lifting early writes the lift time into `expiresAt`.
-    ///      The cross-scope rule reads the pause's record (see "guardian").
+    ///      The cross-scope rule reads the guardian's own pause record
+    ///      (`_guardianPauseStart` / `_guardianPauseEnd`), which admin pause
+    ///      actions never reset (see "guardian").
     struct Halt {
         bool   on;
         bool   pinned;             // pause only: a guardian freeze was placed while this guardian pause was in force
