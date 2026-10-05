@@ -11,6 +11,7 @@ import "../src/FeeRouter.sol";
 import "../src/CopyTracker.sol";
 import "../src/PerpetualExchange.sol";
 import "../src/TraderStake.sol";
+import "../src/StrategyRegistry.sol";
 
 /// @title  RedeployInsuranceStack — new InsuranceVault + platform FeeRouter + CopyTracker, as one batch
 /// @notice OWNER_ACTIONS.md step 5 item 4, specified in INSURANCE_VAULT_SHARES.md §5.1–§5.3.
@@ -23,13 +24,17 @@ import "../src/TraderStake.sol";
 ///         virtual-share vault can only be adopted by a router built against it.
 ///         Swapping any one of them alone means redeploying the others again later.
 ///
-///         WHY ONE BROADCAST
+///         WHY ONE BROADCAST BLOCK (AND WHY IT ONLY NARROWS THE WINDOW)
 ///         Between seeding the vault and handing it to the timelock, the deployer
 ///         owns a funded vault. A leaked deployer key in that window could
 ///         `setExchange(self)` and `bailout` the seed out (§5.3). So deploy → seed →
-///         wire → transferOwnership all happen inside a single broadcast. The
-///         read-back at the end runs against forge's simulated state, before
-///         anything is sent — only a later VERIFY_ONLY run proves the real chain.
+///         wire → transferOwnership all run inside one forge broadcast block. That
+///         is still several separate transactions: `--slow` sends them one after
+///         another, each waiting for the previous receipt, so the window between
+///         the seed deposit and the vault's transferOwnership shrinks to a few
+///         blocks — it is narrowed, not eliminated. The read-back at the end runs
+///         against forge's simulated state, before anything is sent — only a later
+///         VERIFY_ONLY run proves the real chain.
 ///
 ///         WHY SEED BEFORE WIRING
 ///         FeeRouter.routeExternalRevenue is permissionless. Once the vault has a
@@ -44,9 +49,19 @@ import "../src/TraderStake.sol";
 ///         preflight probes `marketOperator()` and refuses an exchange without it,
 ///         instead of deploying a stack that can never be cut over safely.
 ///
+///         TRADER_STAKE IS REQUIRED AND CROSS-CHECKED
+///         CopyTracker.registry and CopyTracker.traderStake are immutable. If #130
+///         ran with DEPLOY_NEW_TRADER_STAKE=true, the old TraderStake is no longer
+///         the one the registry gates on; a default would silently bind the new
+///         CopyTracker to it forever. So there is no default, the registry's
+///         stakeContract() must equal TRADER_STAKE, and the exchange's current
+///         CopyTracker (when set) must point at the same registry and stake.
+///
 ///         WHAT THIS DOES NOT DO
 ///         It does not touch the exchange or TraderStake. Repointing them is a
-///         timelock matter (48h); the exact calls are printed at the end. Do NOT set
+///         timelock matter (48h); the exact scheduleBatch / executeBatch calldata
+///         is printed at the end — one batch, so exchange.copyTracker and
+///         TraderStake.copyTracker can never disagree. Do NOT set
 ///         the old vault's `exchange` to zero afterwards — positions still open on
 ///         the old exchange would revert at liquidation (§5.3 step 6).
 ///
@@ -70,7 +85,9 @@ import "../src/TraderStake.sol";
 ///                         yet; it reopens the §5.3 key-exposure window, and the
 ///                         script says so loudly.
 ///     USDC                default Base Sepolia MockUSDC
-///     TRADER_STAKE        default current TraderStake
+///     TRADER_STAKE        (required) the TraderStake STRATEGY_REGISTRY gates on —
+///                         the new one if #130 ran with DEPLOY_NEW_TRADER_STAKE=true.
+///                         Must equal registry.stakeContract(); there is no default.
 ///     SEED_AMOUNT         default exactly 1 whole token (10**decimals); smaller is refused
 ///     MIN_TIMELOCK_DELAY  default 24h, same floor as HandoverToTimelock
 ///     RESUME_VAULT / RESUME_FEE_ROUTER / RESUME_COPY_TRACKER
@@ -99,7 +116,6 @@ import "../src/TraderStake.sol";
 contract RedeployInsuranceStack is Script {
     // Base Sepolia — same values as Redeploy102Exchange / HandoverToTimelock.
     address internal constant DEFAULT_USDC         = 0x69fd695Bc7C3aFdb35ABA35cD6890C506400b035;
-    address internal constant DEFAULT_TRADER_STAKE = 0x01aEB530bcFc69f036309ffe55acc7eA6C5a28Fe;
 
     /// Mirrors agent/shared/src/payoutSafety.ts COMPROMISED_ADDRESSES.
     address internal constant LEAKED_DEPLOYER = 0xE80A81360608C1342e66743F70a00f75d792Eb93;
@@ -158,7 +174,7 @@ contract RedeployInsuranceStack is Script {
         c.usdc              = vm.envOr("USDC", DEFAULT_USDC);
         c.exchange          = vm.envAddress("EXCHANGE");
         c.registry          = vm.envAddress("STRATEGY_REGISTRY");
-        c.traderStake       = vm.envOr("TRADER_STAKE", DEFAULT_TRADER_STAKE);
+        c.traderStake       = vm.envAddress("TRADER_STAKE");
         c.treasury          = vm.envOr("TREASURY", address(0));
         c.timelock          = vm.envOr("TIMELOCK", address(0));
         c.keepDeployerOwner = vm.envOr("KEEP_DEPLOYER_OWNER", false);
@@ -205,6 +221,12 @@ contract RedeployInsuranceStack is Script {
             "EXCHANGE predates #130 (no marketOperator) - run Redeploy130Hardened first, INSURANCE_VAULT_SHARES.md 5.3");
         require(address(PerpetualExchange(cfg.exchange).usdc()) == cfg.usdc, "EXCHANGE settles in a different USDC");
 
+        // CopyTracker.registry / .traderStake are immutable: the pair must be the
+        // one the post-#130 stack actually uses, not a stale default.
+        require(address(StrategyRegistry(cfg.registry).stakeContract()) == cfg.traderStake,
+            "TRADER_STAKE is not STRATEGY_REGISTRY.stakeContract() - the new CopyTracker would bind the wrong stake forever");
+        _checkLiveCopyTracker(cfg);
+
         // Treasury — the whole reason this batch exists is a bad treasury.
         require(cfg.treasury != address(0), "TREASURY is required and must not be zero");
         require(!_isCompromised(cfg.treasury), "TREASURY is a known-compromised address");
@@ -237,7 +259,25 @@ contract RedeployInsuranceStack is Script {
                 "EXCHANGE is not owned by TIMELOCK - run HandoverToTimelock phase 1 first; a wrong or role-less timelock would brick the stack");
             TimelockController tl = TimelockController(payable(cfg.timelock));
             require(!tl.hasRole(tl.PROPOSER_ROLE(), cfg.deployer), "deployer is a timelock proposer - no real delay");
+            require(!tl.hasRole(tl.DEFAULT_ADMIN_ROLE(), cfg.deployer), "deployer administers the timelock - no real delay");
         }
+    }
+
+    /// The exchange's current CopyTracker must already use the same registry and
+    /// stake as this config — otherwise the inputs are not the post-#130 pair.
+    /// Skipped when the exchange has no CopyTracker yet (nothing to compare).
+    /// After the cutover this is the new CopyTracker, which passes by construction.
+    function _checkLiveCopyTracker(Config memory cfg) internal view {
+        address live = PerpetualExchange(cfg.exchange).copyTracker();
+        if (live == address(0)) return;
+        (bool okR, bytes memory r) = live.staticcall(abi.encodeWithSignature("registry()"));
+        (bool okS, bytes memory st) = live.staticcall(abi.encodeWithSignature("traderStake()"));
+        require(okR && okS && r.length == 32 && st.length == 32,
+            "EXCHANGE.copyTracker() has no registry()/traderStake() - cannot cross-check STRATEGY_REGISTRY / TRADER_STAKE");
+        require(abi.decode(r, (address)) == cfg.registry,
+            "STRATEGY_REGISTRY differs from the exchange's current CopyTracker.registry()");
+        require(abi.decode(st, (address)) == cfg.traderStake,
+            "TRADER_STAKE differs from the exchange's current CopyTracker.traderStake()");
     }
 
     /// Every immutable of a resumed contract is checked against this config.
@@ -317,7 +357,8 @@ contract RedeployInsuranceStack is Script {
             if (router.copyTracker() != address(ct)) router.setCopyTracker(address(ct));
         }
 
-        // 6. Hand over inside the same broadcast — closes the §5.3 window.
+        // 6. Hand over inside the same broadcast block — narrows (does not
+        //    eliminate) the §5.3 window: these are still separate transactions.
         if (!cfg.keepDeployerOwner) {
             if (vault.owner() == cfg.deployer) vault.transferOwnership(cfg.timelock);
             if (router.owner() == cfg.deployer) router.transferOwnership(cfg.timelock);
@@ -383,21 +424,12 @@ contract RedeployInsuranceStack is Script {
             console.log("!!! ownership moves to a timelock. Hand over as soon as governance is live.");
         }
 
-        console.log("");
-        console.log("=== Schedule on the timelock (or send as owner if governance is not live) ===");
-        _printCall("PerpetualExchange.setInsuranceVault", cfg.exchange,
-            abi.encodeCall(PerpetualExchange.setInsuranceVault, (d.vault)));
-        _printCall("PerpetualExchange.setFeeRouter", cfg.exchange,
-            abi.encodeCall(PerpetualExchange.setFeeRouter, (d.router)));
-        _printCall("PerpetualExchange.setCopyTracker (authorizes new, de-authorizes old)", cfg.exchange,
-            abi.encodeCall(PerpetualExchange.setCopyTracker, (d.copyTracker)));
-        _printCall("TraderStake.setCopyTracker", cfg.traderStake,
-            abi.encodeCall(TraderStake.setCopyTracker, (d.copyTracker)));
+        _printBatch(cfg, d);
 
         console.log("");
         console.log("Migration window when the schedule matures (INSURANCE_VAULT_SHARES.md 5.3 step 5):");
         console.log("  1. marketOperator/guardian: every asset -> ReduceOnly");
-        console.log("  2. execute the scheduled calls above");
+        console.log("  2. executeBatch with the exact calldata above (same targets/values/payloads/salt)");
         console.log("  3. move protocol-owned vault positions IMMEDIATELY after step 2");
         console.log("  4. back to Active once the new vault covers the OI caps");
         console.log("Do NOT set the old vault's exchange to zero - open positions there would revert at liquidation.");
@@ -405,10 +437,88 @@ contract RedeployInsuranceStack is Script {
         console.log("      then re-run with VERIFY_ONLY=true and RESUME_* against the real chain.");
     }
 
-    function _printCall(string memory label, address target, bytes memory data) internal pure {
-        console.log(string.concat("- ", label));
-        console.log("  target:", target);
-        console.logBytes(data);
+    /// @notice The four follow-up calls as ONE timelock batch. Scheduling them
+    ///         separately lets exchange.copyTracker and TraderStake.copyTracker
+    ///         disagree (one executes without the other); a batch is all-or-nothing.
+    ///         The salt is reproducible from the script name and the new
+    ///         CopyTracker, so a re-run prints the same operation id.
+    function followUpBatch(Config memory cfg, Deployed memory d)
+        public
+        view
+        returns (
+            address[] memory targets,
+            uint256[] memory values,
+            bytes[] memory payloads,
+            bytes32 predecessor,
+            bytes32 salt,
+            uint256 delay
+        )
+    {
+        targets = new address[](4);
+        values = new uint256[](4);
+        payloads = new bytes[](4);
+        targets[0] = cfg.exchange;
+        payloads[0] = abi.encodeCall(PerpetualExchange.setInsuranceVault, (d.vault));
+        targets[1] = cfg.exchange;
+        payloads[1] = abi.encodeCall(PerpetualExchange.setFeeRouter, (d.router));
+        targets[2] = cfg.exchange;
+        payloads[2] = abi.encodeCall(PerpetualExchange.setCopyTracker, (d.copyTracker));
+        targets[3] = cfg.traderStake;
+        payloads[3] = abi.encodeCall(TraderStake.setCopyTracker, (d.copyTracker));
+        predecessor = bytes32(0);
+        salt = keccak256(abi.encodePacked("RedeployInsuranceStack", d.copyTracker));
+        delay = cfg.timelock == address(0) ? 0 : TimelockController(payable(cfg.timelock)).getMinDelay();
+    }
+
+    function _printBatch(Config memory cfg, Deployed memory d) internal view {
+        (address[] memory targets, uint256[] memory values, bytes[] memory payloads,
+         bytes32 predecessor, bytes32 salt, uint256 delay) = followUpBatch(cfg, d);
+        string[4] memory labels = [
+            "PerpetualExchange.setInsuranceVault",
+            "PerpetualExchange.setFeeRouter",
+            "PerpetualExchange.setCopyTracker (authorizes new, de-authorizes old)",
+            "TraderStake.setCopyTracker"
+        ];
+
+        console.log("");
+        console.log("=== Follow-up: ONE timelock batch (all four calls, all-or-nothing) ===");
+        console.log("Schedule AND execute these four together via scheduleBatch / executeBatch.");
+        console.log("Never schedule them one by one: exchange.copyTracker and TraderStake.copyTracker");
+        console.log("must switch in the same transaction, or copy trades and slashing disagree.");
+        for (uint256 i = 0; i < 4; i++) {
+            console.log(string.concat("- [", vm.toString(i), "] ", labels[i]));
+            console.log("  target:", targets[i]);
+            console.log("  value :", values[i]);
+            console.log("  payload:");
+            console.logBytes(payloads[i]);
+        }
+        console.log("predecessor:");
+        console.logBytes32(predecessor);
+        console.log("salt = keccak256(abi.encodePacked(\"RedeployInsuranceStack\", CopyTracker_NEW)):");
+        console.logBytes32(salt);
+
+        if (cfg.timelock == address(0)) {
+            console.log("No TIMELOCK (KEEP_DEPLOYER_OWNER): there is no atomic batch. Send the four payloads");
+            console.log("above from the owner back to back, and finish all four before anything else.");
+            return;
+        }
+
+        TimelockController tl = TimelockController(payable(cfg.timelock));
+        console.log("timelock:", cfg.timelock);
+        console.log("delay = timelock.getMinDelay():", delay);
+        console.log("operation id (hashOperationBatch):");
+        console.logBytes32(tl.hashOperationBatch(targets, values, payloads, predecessor, salt));
+        console.log("scheduleBatch calldata (to the timelock, from a PROPOSER):");
+        console.logBytes(abi.encodeCall(TimelockController.scheduleBatch,
+            (targets, values, payloads, predecessor, salt, delay)));
+        console.log("executeBatch calldata (to the timelock, from an EXECUTOR, after the delay, value 0):");
+        console.logBytes(abi.encodeCall(TimelockController.executeBatch,
+            (targets, values, payloads, predecessor, salt)));
+
+        if (Ownable(cfg.traderStake).owner() != cfg.timelock) {
+            console.log("!!! TraderStake is not owned by TIMELOCK - executeBatch would revert as a whole.");
+            console.log("!!! Hand TraderStake to the timelock before scheduling.");
+        }
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────────

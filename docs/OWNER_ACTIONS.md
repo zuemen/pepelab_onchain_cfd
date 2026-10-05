@@ -430,9 +430,9 @@ PepeAMM 的修正都只存在於原始碼；平台 FeeRouter 的 `platformTreasu
    - **仍有兩個前提，腳本會擋，不是建議：**
      1. **第 1 項（#130）必須先完成。** 腳本以 `marketOperator()` 探測 `EXCHANGE`，舊版 exchange 一律拒絕——§5.3 的遷移窗口要用
         `setAssetMode`／`marketOperator`，舊版沒有。2026-10-05 以現行 `0x827e…` 對 Base Sepolia 做 fork 模擬，確認被擋下。
-     2. **需要 timelock。** 治理移交尚未進行（`TimelockController` 尚未部署），而本項的安全性來自「存種子後、同一次 broadcast 內
-        移交 timelock」，關掉 §5.3 那段「部署者金鑰外洩可 `setExchange(self)` 再 `bailout` 走種子」的窗口。沒有 timelock 時腳本
-        預設拒絕執行；`KEEP_DEPLOYER_OWNER=true` 可明確選擇保留部署者為 owner，但等於接受那段窗口，**由擁有者決定**。
+     2. **需要 timelock。** 治理移交尚未進行（`TimelockController` 尚未部署），而本項的安全性來自「存種子後、同一個 broadcast 區塊內
+        移交 timelock」，縮短 §5.3 那段「部署者金鑰外洩可改寫金庫設定並取走種子」的窗口。注意這仍是多筆獨立交易：`--slow`
+        依序送出、每筆等上一筆確認，只是把窗口縮到幾個區塊，**不是消除**。沒有 timelock 時腳本預設拒絕執行；`KEEP_DEPLOYER_OWNER=true` 可明確選擇保留部署者為 owner，但等於接受那段窗口，**由擁有者決定**。
         給了 `TIMELOCK` 時，它必須**已經是 `EXCHANGE` 的 owner**（`HandoverToTimelock` 第 1 階段已跑完）——只有這樣才能證明它是
         proposer／executor 已核對過的那一個；指錯或沒有角色的 timelock 會讓三個新合約永遠無法再改（PR #254 審查第 4 點）。
    - 審查後追加的防護（PR #254 第一輪對抗式審查）：部署者不得是外洩地址或 7702 委派；新 CopyTracker 也一併移交 timelock
@@ -440,7 +440,13 @@ PepeAMM 的修正都只存在於原始碼；平台 FeeRouter 的 `platformTreasu
      續跑的金庫要是有 `DECIMALS_OFFSET()==6` 的新版、不能是 exchange 現役金庫、零供給時不得已有資產；`TREASURY` 不得是任何協議合約；
      `VERIFY_ONLY` 也重跑地址檢查並讀回部署者的種子部位（所以要帶 `BROADCASTER`）。種子份額仍留在部署者 EOA——
      要不要轉給 treasury 是擁有者決定，腳本不做。
-   - 用法（環境變數：`EXCHANGE`、`STRATEGY_REGISTRY`、`TREASURY` 必填；`TIMELOCK` 或 `KEEP_DEPLOYER_OWNER` 擇一；續跑用
+   - 第二輪審查追加：**`TRADER_STAKE` 改為必填、沒有預設值。** 新 CopyTracker 的 `registry`／`traderStake` 是 immutable；
+     第 1 項若帶了 `DEPLOY_NEW_TRADER_STAKE=true`，舊 TraderStake 就不再是 Registry 認的那一個，用預設值會讓新 CopyTracker
+     永久綁錯。腳本會要求 `STRATEGY_REGISTRY.stakeContract() == TRADER_STAKE`，並在 exchange 已有 CopyTracker 時要求它的
+     `registry()`／`traderStake()` 與輸入一致（exchange 尚無 CopyTracker 時略過這項比對）。部署者也不得持有 timelock 的
+     `DEFAULT_ADMIN_ROLE`（比照 `HandoverToTimelock`）。
+   - 用法（環境變數：`EXCHANGE`、`STRATEGY_REGISTRY`、`TRADER_STAKE`、`TREASURY` 必填，`TRADER_STAKE` 填第 1 項之後 Registry
+     實際使用的那一個；`TIMELOCK` 或 `KEEP_DEPLOYER_OWNER` 擇一；續跑用
      `RESUME_VAULT`／`RESUME_FEE_ROUTER`／`RESUME_COPY_TRACKER`）：
      ```bash
      cd contracts
@@ -452,7 +458,12 @@ PepeAMM 的修正都只存在於原始碼；平台 FeeRouter 的 `platformTreasu
      VERIFY_ONLY=true BROADCASTER=$DEPLOYER RESUME_VAULT=<新金庫> RESUME_FEE_ROUTER=<新 router> RESUME_COPY_TRACKER=<新 CT> \
        forge script script/RedeployInsuranceStack.s.sol:RedeployInsuranceStack --rpc-url $RPC
      ```
-     腳本結尾印出要排進 timelock 的四個呼叫（含 calldata）與 §5.3 遷移窗口的順序。
+     腳本結尾印出四個後續呼叫（`setInsuranceVault`、`setFeeRouter`、exchange 與 TraderStake 的 `setCopyTracker`）的
+     targets／values／payloads、`predecessor`（0）、`salt`（`keccak256("RedeployInsuranceStack" ‖ 新 CopyTracker)`，可重現）、
+     `delay`（`timelock.getMinDelay()`）、operation id，以及 `scheduleBatch` 與 `executeBatch` 的**完整 calldata**。
+     **必須用這一個 `scheduleBatch` 一次排程、到期後用對應的 `executeBatch` 一次執行，不要逐筆排程**——分開排就可能只有一邊生效，
+     exchange 與 TraderStake 的 `copyTracker` 不一致。TraderStake 也必須已由 timelock 持有，否則整批執行會失敗（腳本會提示）。
+     測試 `test_followUpBatch_schedulesAndExecutesThroughTheTimelock` 以腳本印出的參數實跑 schedule → 等待 → execute。
    - 為什麼要同一批：平台 FeeRouter 的 `insuranceVault` 與 `platformTreasury` 都是 immutable，CopyTracker 的 `feeRouter` 也是
      immutable（`INSURANCE_VAULT_SHARES.md` §5.1），三者要一起換。依現有腳本，**平台 FeeRouter 只會部署一次，但 CopyTracker 會部署
      兩次**：第 1 項的 `Redeploy130Hardened.s.sol` 把現行 FeeRouter 寫成常數，建出的 CopyTracker 綁的是舊 FeeRouter，這一項換
@@ -465,10 +476,10 @@ PepeAMM 的修正都只存在於原始碼；平台 FeeRouter 的 `platformTreasu
      2. broadcast 結束後讀回核對：`owner()`、`exchange()`、`feeRouter()`、`platformTreasury()`、`insuranceVault()`、`copyTracker()`、
         `totalSupply()`，任何一項不符就以非 0 結束。
      3. 印出要排進 timelock 的呼叫：`PerpetualExchange.setInsuranceVault`、`setFeeRouter`，以及 `TraderStake.setCopyTracker`、
-        交易所對新 CopyTracker 的授權。
+        交易所對新 CopyTracker 的授權——以單一 `scheduleBatch`／`executeBatch` 的完整 calldata 印出。
      4. 支援 fork 模擬（不帶金鑰）與 `RESUME_*` 續跑；用 `msg.sender` 當部署者，讓 `--account` 可用。
-   - 腳本合併後的執行順序同 §5.3：broadcast → timelock 預排（等 48 小時）→ 遷移窗口（ReduceOnly → 執行排程 → 立刻搬協議自有部位
-     → 切回 Active）。舊金庫**不要**把 `exchange` 設成 0。
+   - 腳本合併後的執行順序同 §5.3：broadcast → timelock `scheduleBatch` 預排（等 48 小時）→ 遷移窗口（ReduceOnly →
+     `executeBatch` → 立刻搬協議自有部位 → 切回 Active）。舊金庫**不要**把 `exchange` 設成 0。
    - 第 1 項之後、這一項完成之前，平台手續費仍累積在舊 FeeRouter，而它的提領只認外洩的 treasury。2026-10-04 唯讀讀到的累積額：
      `platformEarnings()` = 0.06 MockUSDC（測試幣）。本項完成前定期讀這個值；明顯增加時優先推動 #130 與 timelock（腳本本身已不是瓶頸）。
 5. **PepeIncentives**：`contracts/script/DeployPepeIncentives.s.sol`。它的 `copyTracker` 是 immutable，**要綁第 4 項之後的最終

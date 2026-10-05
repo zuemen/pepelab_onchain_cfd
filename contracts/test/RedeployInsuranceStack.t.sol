@@ -417,6 +417,106 @@ contract RedeployInsuranceStackTest is Test {
         script.verify(c, d);
     }
 
+    // ── Review round 2 (PR #254) ─────────────────────────────────────────────
+
+    /// #130 with DEPLOY_NEW_TRADER_STAKE=true: the registry gates on a new stake.
+    /// Passing any other stake would bind the new CopyTracker to it forever.
+    function test_rejects_traderStakeThatIsNotTheRegistryStake() public {
+        RedeployInsuranceStack.Config memory c = _cfg();
+        c.traderStake = address(new TraderStake(address(usdc))); // e.g. the pre-#130 stake
+        vm.expectRevert(bytes(
+            "TRADER_STAKE is not STRATEGY_REGISTRY.stakeContract() - the new CopyTracker would bind the wrong stake forever"));
+        script.runWith(c);
+    }
+
+    function _setLiveCopyTracker(address reg, address st) internal {
+        CopyTracker live = new CopyTracker(address(usdc), address(exchange), reg, address(0), st);
+        vm.prank(address(timelock));
+        exchange.setCopyTracker(address(live));
+    }
+
+    function test_rejects_registryThatDiffersFromLiveCopyTracker() public {
+        // The config pair is self-consistent, but not the pair the exchange uses.
+        TraderStake otherStake = new TraderStake(address(usdc));
+        StrategyRegistry otherRegistry = new StrategyRegistry(address(otherStake));
+        _setLiveCopyTracker(address(registry), address(stake));
+
+        RedeployInsuranceStack.Config memory c = _cfg();
+        c.registry = address(otherRegistry);
+        c.traderStake = address(otherStake);
+        vm.expectRevert(bytes("STRATEGY_REGISTRY differs from the exchange's current CopyTracker.registry()"));
+        script.runWith(c);
+    }
+
+    function test_rejects_traderStakeThatDiffersFromLiveCopyTracker() public {
+        _setLiveCopyTracker(address(registry), address(new TraderStake(address(usdc))));
+        vm.expectRevert(bytes("TRADER_STAKE differs from the exchange's current CopyTracker.traderStake()"));
+        script.runWith(_cfg());
+    }
+
+    function test_accepts_matchingLiveCopyTracker() public {
+        _setLiveCopyTracker(address(registry), address(stake));
+        RedeployInsuranceStack.Deployed memory d = script.runWith(_cfg());
+        assertEq(address(CopyTracker(d.copyTracker).traderStake()), address(stake));
+    }
+
+    function test_rejects_deployerWhoAdministersTheTimelock() public {
+        TimelockController adminTl =
+            new TimelockController(2 days, new address[](0), new address[](0), deployer);
+        vm.prank(address(timelock));
+        exchange.transferOwnership(address(adminTl));
+
+        RedeployInsuranceStack.Config memory c = _cfg();
+        c.timelock = address(adminTl);
+        vm.expectRevert(bytes("deployer administers the timelock - no real delay"));
+        script.runWith(c);
+    }
+
+    /// The printed follow-up, end to end: a real timelock with proposer and
+    /// executor roles owns the exchange and TraderStake; the script's own
+    /// scheduleBatch parameters are scheduled, matured and executed, and all
+    /// four wirings take effect in that one execution.
+    function test_followUpBatch_schedulesAndExecutesThroughTheTimelock() public {
+        address proposer = makeAddr("proposer");
+        address executor = makeAddr("executor");
+        address[] memory proposers = new address[](1);
+        proposers[0] = proposer;
+        address[] memory executors = new address[](1);
+        executors[0] = executor;
+        TimelockController gov = new TimelockController(2 days, proposers, executors, address(0));
+        vm.prank(address(timelock));
+        exchange.transferOwnership(address(gov));
+        stake.transferOwnership(address(gov));
+
+        RedeployInsuranceStack.Config memory c = _cfg();
+        c.timelock = address(gov);
+        RedeployInsuranceStack.Deployed memory d = script.runWith(c);
+
+        (address[] memory targets, uint256[] memory values, bytes[] memory payloads,
+         bytes32 predecessor, bytes32 salt, uint256 delay) = script.followUpBatch(c, d);
+        assertEq(predecessor, bytes32(0), "predecessor is zero");
+        assertEq(salt, keccak256(abi.encodePacked("RedeployInsuranceStack", d.copyTracker)), "reproducible salt");
+        assertEq(delay, gov.getMinDelay(), "delay is the timelock minDelay");
+
+        vm.prank(proposer);
+        gov.scheduleBatch(targets, values, payloads, predecessor, salt, delay);
+
+        // Not before the delay.
+        vm.prank(executor);
+        vm.expectRevert();
+        gov.executeBatch(targets, values, payloads, predecessor, salt);
+
+        vm.warp(block.timestamp + delay + 1);
+        vm.prank(executor);
+        gov.executeBatch(targets, values, payloads, predecessor, salt);
+
+        assertEq(address(exchange.insuranceVault()), d.vault, "exchange.insuranceVault");
+        assertEq(address(exchange.feeRouter()), d.router, "exchange.feeRouter");
+        assertEq(exchange.copyTracker(), d.copyTracker, "exchange.copyTracker");
+        assertTrue(exchange.authorizedAgents(d.copyTracker), "new CopyTracker authorized");
+        assertEq(stake.copyTracker(), d.copyTracker, "TraderStake.copyTracker");
+    }
+
     // No 6-decimal case: PerpetualExchange's constructor refuses any USDC that
     // is not 18 decimals, so the seed default is always 1e18 on this stack.
 }
