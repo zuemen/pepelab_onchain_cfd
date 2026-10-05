@@ -21,11 +21,11 @@
 | 2 | 部署 keeper-trigger 與 monitoring 兩個 Worker | Cloudflare | 1.5–2 小時 | Worker Logs、`gh api …/actions/runs` |
 | 3 | 凍結舊部署上外洩地址的權限 | 本機 forge（Base 先、Sepolia 後） | 2–3 小時 | `ops/freeze-legacy/readback.mjs`、`post-deploy-smoke.mjs` |
 | 4 | 換 PAY_TO、重部署 x402 FeeRouter（沿用舊 x402 保險金庫，先斷開再存種子） | 本機 forge／cast＋Vercel＋GitHub variables | 1.5–2 小時 | `cast call … platformTreasury()`、`post-deploy-smoke.mjs` |
-| 5 | 完整 cutover：#130、GuardedOracle、AssetVaultV2 升級 V2_5、InsuranceVault＋平台 FeeRouter＋CopyTracker（**阻塞：等部署腳本 PR**）、PepeIncentives、PepeAMM | 本機 forge（先 dispatch keeper） | 不含阻塞項 6–8 小時；阻塞項解除後另 2–3 小時，加 timelock 48 小時等待與 2 天緩衝 | `Verify130`、`post-deploy-smoke.mjs` |
+| 5 | 完整 cutover：#130、GuardedOracle、AssetVaultV2 升級 V2_5、InsuranceVault＋平台 FeeRouter＋CopyTracker（腳本已備；**前提：#130 完成＋timelock 或明確選擇不移交**）、PepeIncentives、PepeAMM | 本機 forge（先 dispatch keeper） | 不含阻塞項 6–8 小時；阻塞項解除後另 2–3 小時，加 timelock 48 小時等待與 2 天緩衝 | `Verify130`、`post-deploy-smoke.mjs` |
 | 6 | 每台 agent 主機 `npm run vc-status:init` | 各 agent 主機 | 每台 5 分 | `agent/.state/vc-status/index.json` 存在 |
 | 7 | 重跑發布狀態與 smoke test，確認「原始碼較新」變成「鏈上＝原始碼」 | 本機 | 45–60 分（含 `forge build`） | `check-deployment-status.mjs --offline`、`post-deploy-smoke.mjs` |
 
-**合計：動手約 15–20 小時，分散在至少 3–4 天**（第 5 步第 4 項等部署腳本 PR；timelock 48 小時等待與 cutover 後 2 天緩衝不計入動手時間）。
+**合計：動手約 15–20 小時，分散在至少 3–4 天**（第 5 步第 4 項等 #130 與治理 timelock；timelock 48 小時等待與 cutover 後 2 天緩衝不計入動手時間）。
 第 1 步必須最先做；第 2 步的 Worker 在第 1 步完成前不可以持有任何 Actions: write 憑證。
 
 每一步完成後都可以跑一次部署後 smoke test（唯讀、不需要金鑰），看 FAIL 是否如預期減少：
@@ -421,7 +421,27 @@ PepeAMM 的修正都只存在於原始碼；平台 FeeRouter 的 `platformTreasu
      （預設現行金庫）、`VAULT_MAX_PRICE_AGE`（預設 21600）。
    - 驗證：`cast call 0x916D7Fc399d9afd23BAa113E2c2Cc601341ff10a "version()(string)" --rpc-url $RPC` 必須是 `"2.5.0"`；
      更新前端 ABI（§8 第 4 點）。
-4. **InsuranceVault＋平台 FeeRouter＋CopyTracker（同一批）——阻塞：等部署腳本 PR。在那之前停在這裡，不要用 cast 自己湊。**
+4. **InsuranceVault＋平台 FeeRouter＋CopyTracker（同一批）——部署腳本已寫好：`contracts/script/RedeployInsuranceStack.s.sol`
+   （測試 `test/RedeployInsuranceStack.t.sol`）。不要用 cast 自己湊。**
+   - **仍有兩個前提，腳本會擋，不是建議：**
+     1. **第 1 項（#130）必須先完成。** 腳本以 `marketOperator()` 探測 `EXCHANGE`，舊版 exchange 一律拒絕——§5.3 的遷移窗口要用
+        `setAssetMode`／`marketOperator`，舊版沒有。2026-10-05 以現行 `0x827e…` 對 Base Sepolia 做 fork 模擬，確認被擋下。
+     2. **需要 timelock。** 治理移交尚未進行（`TimelockController` 尚未部署），而本項的安全性來自「存種子後、同一次 broadcast 內
+        移交 timelock」，關掉 §5.3 那段「部署者金鑰外洩可 `setExchange(self)` 再 `bailout` 走種子」的窗口。沒有 timelock 時腳本
+        預設拒絕執行；`KEEP_DEPLOYER_OWNER=true` 可明確選擇保留部署者為 owner，但等於接受那段窗口，**由擁有者決定**。
+   - 用法（環境變數：`EXCHANGE`、`STRATEGY_REGISTRY`、`TREASURY` 必填；`TIMELOCK` 或 `KEEP_DEPLOYER_OWNER` 擇一；續跑用
+     `RESUME_VAULT`／`RESUME_FEE_ROUTER`／`RESUME_COPY_TRACKER`）：
+     ```bash
+     cd contracts
+     # fork 模擬（不帶金鑰、不送交易）
+     forge script script/RedeployInsuranceStack.s.sol:RedeployInsuranceStack --fork-url $RPC --sender $DEPLOYER
+     # broadcast
+     forge script script/RedeployInsuranceStack.s.sol:RedeployInsuranceStack --rpc-url $RPC --account $ACCOUNT --sender $DEPLOYER --broadcast --slow
+     # 對真實鏈讀回核對（任何一項不符即非 0 結束）
+     VERIFY_ONLY=true RESUME_VAULT=<新金庫> RESUME_FEE_ROUTER=<新 router> RESUME_COPY_TRACKER=<新 CT> \
+       forge script script/RedeployInsuranceStack.s.sol:RedeployInsuranceStack --rpc-url $RPC
+     ```
+     腳本結尾印出要排進 timelock 的四個呼叫（含 calldata）與 §5.3 遷移窗口的順序。
    - 為什麼要同一批：平台 FeeRouter 的 `insuranceVault` 與 `platformTreasury` 都是 immutable，CopyTracker 的 `feeRouter` 也是
      immutable（`INSURANCE_VAULT_SHARES.md` §5.1），三者要一起換。依現有腳本，**平台 FeeRouter 只會部署一次，但 CopyTracker 會部署
      兩次**：第 1 項的 `Redeploy130Hardened.s.sol` 把現行 FeeRouter 寫成常數，建出的 CopyTracker 綁的是舊 FeeRouter，這一項換
@@ -439,7 +459,7 @@ PepeAMM 的修正都只存在於原始碼；平台 FeeRouter 的 `platformTreasu
    - 腳本合併後的執行順序同 §5.3：broadcast → timelock 預排（等 48 小時）→ 遷移窗口（ReduceOnly → 執行排程 → 立刻搬協議自有部位
      → 切回 Active）。舊金庫**不要**把 `exchange` 設成 0。
    - 第 1 項之後、這一項完成之前，平台手續費仍累積在舊 FeeRouter，而它的提領只認外洩的 treasury。2026-10-04 唯讀讀到的累積額：
-     `platformEarnings()` = 0.06 MockUSDC（測試幣）。阻塞期間定期讀這個值；明顯增加時優先推動部署腳本 PR。
+     `platformEarnings()` = 0.06 MockUSDC（測試幣）。本項完成前定期讀這個值；明顯增加時優先推動 #130 與 timelock（腳本本身已不是瓶頸）。
 5. **PepeIncentives**：`contracts/script/DeployPepeIncentives.s.sol`。它的 `copyTracker` 是 immutable，**要綁第 4 項之後的最終
    CopyTracker**——第 4 項阻塞期間這一項也等；先部署就要在第 4 項之後再部署一次。
    - 環境變數：`PRIVATE_KEY`（見上方「私鑰處理」）、`PEPE_TOKEN`（`addresses.ts` 的 PepeToken）、`PERPETUAL_EXCHANGE`（第 1 項的新
@@ -534,7 +554,7 @@ node scripts/post-deploy-smoke.mjs
 | TraderStake | 待辦，或鏈上＝原始碼 | 第 1 項帶 `DEPLOY_NEW_TRADER_STAKE=true` 才會重部署；不帶時 M2（申請 unstake 即喪失資格）不生效，列為待辦 |
 | GuardedOracle | 鏈上＝原始碼 | 第 5 步第 2 項 |
 | AssetVaultV2 | 鏈上＝原始碼 | 第 5 步第 3 項（V2_5 升級） |
-| InsuranceVault、FeeRouter（平台） | **待辦（阻塞）** | 第 5 步第 4 項等部署腳本 PR；完成前平台 FeeRouter 的 treasury 仍是外洩地址 |
+| InsuranceVault、FeeRouter（平台） | **待辦** | 第 5 步第 4 項（`RedeployInsuranceStack.s.sol`），等 #130 與 timelock；完成前平台 FeeRouter 的 treasury 仍是外洩地址 |
 | X402FeeRouter | 鏈上＝原始碼 | 第 4 步 |
 | PepeIncentives | 待辦（隨第 4 項） | 綁最終 CopyTracker（immutable），等第 5 步第 4 項 |
 | PepeAMM | 鏈上＝原始碼 | 第 5 步第 6 項 |
