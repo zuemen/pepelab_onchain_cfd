@@ -1,0 +1,15 @@
+# Besu 本地網路的所有本機產物都不入庫。
+#
+# network/：gen-network.mjs 產生的 genesis、4 把驗證者節點金鑰（node*/key）、
+#           帳戶私鑰（accounts.json）、static-nodes.json、帳戶白名單。
+#           這些是「本機開發金鑰」，每台機器各自產生，絕不 commit。
+network/
+# forge script 對 Besu 的廣播紀錄（deploy.sh 用 FOUNDRY_BROADCAST 導到這裡，
+# 不寫進 contracts/broadcast/，避免本機鏈的紀錄混進正式部署紀錄）。
+.forge-broadcast/
+# 部署位址輸出：只保留範例檔。
+deployments/*.json
+!deployments/example.json
+# 執行紀錄
+logs/
+node_modules/
