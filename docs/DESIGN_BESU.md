@@ -13,7 +13,7 @@
 | 章 | 一句話結論 |
 |---|---|
 | 1 架構 | 鏈下風險引擎算參數、鏈上合約只用**既有 setter**執行參數；每一次變更都要風控與法遵兩方簽、經 48 小時 timelock 才生效，並留下事件與變更單雜湊，任何人都能對帳。 |
-| 2 隱私 | **不採用 Tessera**（已被 Besu 標為 deprecated）。近期靠「許可鏈＋鏈上不放個資」；中期用「部位承諾＋零知識保證金證明」做在**獨立新合約**，不動既有 exchange；不自建 privacy plugin。 |
+| 2 隱私 | **不採用 Tessera**（Besu 24.12.0 列入 sunsetting、25.6.0 已移除）。近期靠「許可鏈＋鏈上不放個資」；中期用「部位承諾＋零知識保證金證明」做在**獨立新合約**，不動既有 exchange；不自建 privacy plugin。 |
 | 3 身分准入 | 沿用 exchange 既有的 `kyc()`／`rwaAsset` 閘門與 `IKyc.isVerified(address)` 介面；「合格投資人」VC 在**鏈下驗證**、結果寫進**只存旗標與到期日**的鏈上登錄，撤銷沿用 ADR-016 的狀態清單格式。 |
 | 4 結算資產 | MockUSDC 只留給 PoC。正式設計以銀行發行的**代幣化存款**為首選；exchange 只收 18 位小數，小數位不同時比照 ADR-011 用 1:1 包裝幣；凍結、贖回、對帳要在發行端與營運流程處理。 |
 | 5 監理定位 | 台灣的 CFD 屬於受監管的槓桿交易業務；本設計只定位為**內部 PoC**，或在《金融科技發展與創新實驗條例》下申請的**沙盒實驗**，都需法遵確認。 |
@@ -214,12 +214,12 @@ sequenceDiagram
 
 | 事實（查證 2026-10-05） | 來源 |
 |---|---|
-| Besu **24.12.0** 的 CHANGELOG 在「Upcoming Breaking Changes」列出要下架的功能（原文用 *sunsetting*，並說明「deprecation of these features」的理由）：Tessera privacy、onchain permissioning、Proof of Work、Fast Sync。24.10.0 與 24.9.1 沒有這段。使用者記得的「24.12.0」正確 | <https://github.com/hyperledger/besu/releases/tag/24.12.0>；CHANGELOG（repo 已改名 besu-eth/besu）<https://raw.githubusercontent.com/besu-eth/besu/main/CHANGELOG.md> |
+| Besu **24.12.0** 的 CHANGELOG 在「Upcoming Breaking Changes」列出要下架的功能（原文用 *sunsetting*，並說明「deprecation of these features」的理由）：Tessera privacy、onchain permissioning、Proof of Work、Fast Sync。24.10.0 與 24.9.1 沒有這段 | <https://github.com/hyperledger/besu/releases/tag/24.12.0>；CHANGELOG（repo 已改名 besu-eth/besu）<https://raw.githubusercontent.com/besu-eth/besu/main/CHANGELOG.md> |
 | **25.6.0 已移除**：「Remove Tessera Privacy feature [#8369]」 | <https://github.com/hyperledger/besu/releases/tag/25.6.0> |
 | **25.7.0 再移除隱私 RPC**：「Privacy RPC API groups removed: `EEA` and `PRIV` [#8803]」；26.7.0 寫「Sunsetting features is now complete」 | CHANGELOG（同上） |
 | 官方公告（2024-09-24）說明分階段下架，隱私需求建議改用應用層方案（「existing and novel app-layer solutions」） | <https://www.lfdecentralizedtrust.org/blog/sunsetting-tessera-and-simplifying-hyperledger-besu> |
 
-換句話說，Tessera 隱私在 2026-10 已經不只是「deprecated」，而是**新版 Besu 根本沒有這個功能**；要用就得停在 25.6.0 之前的舊版，等於放棄安全更新。
+換句話說，Tessera 隱私在 24.12.0 列入 sunsetting、25.6.0 已移除，**新版 Besu 根本沒有這個功能**；要用就得停在 25.6.0 之前的舊版，等於放棄安全更新。
 
 **決定：不採用 Tessera。**
 
@@ -278,7 +278,7 @@ E = M + σ·Q·(S − S_0) − M·L·f − M·(L−1)·r·h − Φ
 |---|---|---|
 | **公開輸入** | `C` | 鏈上存的承諾 |
 | | `asset` | 資產 ID |
-| | `P` | 證明所用的價格（18 位小數）。**由驗證合約自己讀 oracle 後傳入**，不由證明者提供 |
+| | `P` | 證明所用的價格（18 位小數）。由證明者在產生證明時從 oracle 讀取並當作公開輸入；**驗證合約不信任它**，驗證時自己讀 oracle 現價 `P_now`，要求 `|P_now − P| ≤ δ·P` 且價格未過期（見下方「價格綁定」） |
 | | `δ` | 價格容差（bps），見下方「價格綁定」 |
 | | `m` | 該資產目前的 MMR（bps），由驗證合約讀 `_maintenanceMarginBps` 的公開值傳入 |
 | | `I_long`、`I_short` | 兩側目前的資金費累積指數（方向是私密的，所以兩側都公開，電路依方向選一個） |
@@ -304,8 +304,8 @@ E = M + σ·Q·(S − S_0) − M·L·f − M·(L−1)·r·h − Φ
 
 | 工具 | 證明系統 | 可信設定 | 鏈上驗證 | 成熟度與維護（查證 2026-10-05） | 來源 |
 |---|---|---|---|---|---|
-| **Circom＋snarkjs** | Groth16／PLONK／Fflonk | PLONK／Fflonk 只需通用的 phase-1（Powers of Tau）；Groth16 另需每個電路各自的 phase-2（Groth16 的一般性質，本次沒有另找一手原文） | 實測（snarkjs 產生的 verifier）：Groth16 約 219k gas、PLONK 約 298k、Fflonk 約 209k | 生態最久、教材最多；Groth16 證明最小、驗證最便宜 | arXiv:2409.01976 <https://arxiv.org/abs/2409.01976>；Perpetual Powers of Tau <https://github.com/privacy-scaling-explorations/perpetualpowersoftau>（README：只要有一位參與者誠實即可信；repo 已 archived） |
-| **Noir**（Aztec，Barretenberg 後端） | Barretenberg 的證明系統 | 通用設定 | `bb write_solidity_verifier` 產生 Solidity verifier；官方頁沒有 gas 數字 | 最新 v1.0.0-rc.2（2026-09-16）；README 仍寫「early development… not been reviewed or audited… not suitable to be used in production」 | <https://github.com/noir-lang/noir>、<https://barretenberg.aztec.network/docs/how_to_guides/how-to-solidity-verifier/> |
+| **Circom＋snarkjs** | Groth16／PLONK／Fflonk | PLONK／Fflonk 只需通用的 phase-1（Powers of Tau）；Groth16 另需每個電路各自的 phase-2（Groth16 的一般性質，本次沒有另找一手原文） | 實測（snarkjs 產生的 verifier）：Groth16 約 219k gas、PLONK 約 298k、Fflonk 約 209k | 生態最久、教材最多；Groth16 證明最小、驗證成本接近最低（實測 Fflonk 約 209k 略低於 Groth16 約 219k） | arXiv:2409.01976 <https://arxiv.org/abs/2409.01976>；Perpetual Powers of Tau <https://github.com/privacy-scaling-explorations/perpetualpowersoftau>（README：只要有一位參與者誠實即可信；repo 已 archived） |
+| **Noir**（Aztec，Barretenberg 後端） | Barretenberg 的證明系統 | 通用設定 | `bb write_solidity_verifier` 產生 Solidity verifier；官方頁沒有 gas 數字 | 最新 tag 是 v1.0.0-rc.3（2026-09-18，GitHub 標為**預發行版** pre-release），1.0 仍在候選階段；README 仍寫「early development… not been reviewed or audited… not suitable to be used in production」 | <https://github.com/noir-lang/noir>、<https://barretenberg.aztec.network/docs/how_to_guides/how-to-solidity-verifier/> |
 | **halo2** | Zcash 原版：IPA，**不需要可信設定**；PSE fork：改 KZG，附 Solidity verifier | 原版無；KZG 版需通用設定 | PSE fork 有 Solidity verifier；本次沒查到一手 gas 數字 | Zcash NU5 已採用（「removing the need for the trusted setup」）；**PSE fork 2025-01 起 maintenance mode、repo 已 archived** | <https://z.cash/upgrade/nu5/>、<https://github.com/privacy-scaling-explorations/halo2> |
 | **gnark**（Consensys，Go） | Groth16、PlonK | 同各證明系統 | BN254 上可 `ExportSolidity()` 匯出 verifier | 現行 v0.16.3；Go 函式庫，適合把證明產生器整合進 Go 服務 | <https://docs.gnark.consensys.io/HowTo/prove> |
 
@@ -313,7 +313,7 @@ E = M + σ·Q·(S − S_0) − M·L·f − M·(L−1)·r·h − Φ
 
 **證明產生時間**：各工具的證明時間高度依賴電路大小與硬體，本次沒有找到能直接套用到本電路的一手數字，**需在原型階段實測**（本電路主要成本是一次 Poseidon 開啟與十幾個 128 位元範圍證明，屬於小型電路）。
 
-**選型建議**：研究原型用 **Circom＋Groth16**（驗證最便宜、工具最成熟、Solidity verifier 最常見），可信設定的 phase-2 由風控、法遵、外部稽核三方各貢獻一次（只要一方誠實即可）。若不想做逐電路設定，改用同一電路的 PLONK（實測約多 8 萬 gas）。Noir 寫起來最接近一般程式、可讀性最好，但官方仍標示不適合正式環境；gnark 適合後端是 Go 的團隊。halo2 的 PSE 版已封存，不建議新專案採用。私有鏈上 gas 價格通常可設為 0，gas 只影響區塊 gas 上限，所以驗證成本在 Besu 上不是瓶頸，**工具成熟度與電路稽核才是**。
+**選型建議**：研究原型用 **Circom＋Groth16**（證明最小、驗證成本接近最低、工具最成熟、Solidity verifier 最常見），可信設定的 phase-2 由風控、法遵、外部稽核三方各貢獻一次（只要一方誠實即可）。若不想做逐電路設定，改用同一電路的 PLONK（實測約多 8 萬 gas）。Noir 寫起來最接近一般程式、可讀性最好，但官方仍標示不適合正式環境；gnark 適合後端是 Go 的團隊。halo2 的 PSE 版已封存，不建議新專案採用。私有鏈上 gas 價格通常可設為 0，gas 只影響區塊 gas 上限，所以驗證成本在 Besu 上不是瓶頸，**工具成熟度與電路稽核才是**。
 
 #### 2.6.3 鏈上整合點與「不新增既有合約方法」
 
@@ -352,7 +352,7 @@ Tessera 下架後，官方建議改用應用層方案（§2.2）。「自己寫�
 | 方案 | 對其他機構保密 | 清算可靠度 | 改既有合約 | 工程量 | 主要風險 |
 |---|---|---|---|---|---|
 | 許可鏈＋鏈上無個資＋RPC 不外開（§2.4） | 否（節點營運者看得到） | 不受影響 | 否 | 小 | 信任其他節點營運者 |
-| Tessera | 是（交易層） | 受影響（私有狀態與公開狀態分離） | — | — | **已 deprecated**，不採用 |
+| Tessera | 是（交易層） | 受影響（私有狀態與公開狀態分離） | — | — | 24.12.0 列入 sunsetting、25.6.0 已移除，不採用 |
 | (a) 承諾＋受信 keeper | 部分（keeper 看得到） | 依賴 keeper | 否（新合約） | 中 | keeper 成為集中信任點 |
 | (a)＋(b) 承諾＋ZK 健康證明 | 是（除了 keeper，或改用 ③） | 依賴持有人或 keeper 在線 | 否（新合約） | 大 | 電路錯誤＝可以偽造保證金；需電路稽核 |
 | 每租戶一條鏈 | 是（跨租戶） | 不受影響 | 否 | 中（多套網路維運） | 維運成本、跨租戶流動性分裂 |
@@ -480,7 +480,7 @@ QualifiedInvestorCredential(
 | 項目 | 內容 | 來源 | 確認方式 |
 |---|---|---|---|
 | 母法 | 《期貨交易法》：第 3 條定義「槓桿保證金契約」（依約定方式結算差價或交付約定物之契約）；第 80 條規定槓桿交易商須經主管機關許可 | <https://law.moj.gov.tw/LawClass/LawAll.aspx?pcode=G0400100> | 打開原文 |
-| 槓桿交易商 | 《槓桿交易商管理規則》（金管會，pcode G0400151，最新修正 114-05-06）：第 1 條「本規則依期貨交易法第八十條第四項規定訂定之」；第 2 條：期貨商得申請兼營槓桿交易商，經營槓桿保證金契約自營業務 | <https://law.moj.gov.tw/LawClass/LawAll.aspx?pcode=G0400151> | 打開原文 |
+| 槓桿交易商 | 《槓桿交易商管理規則》（金管會，pcode G0400151，最新修正 114-05-06）：第 1 條「本規則依期貨交易法第八十條第四項規定訂定之」；第 5 條：期貨商得申請兼營槓桿交易商，經營槓桿保證金契約自營業務 | <https://law.moj.gov.tw/LawClass/LawAll.aspx?pcode=G0400151> | 打開原文 |
 | 槓桿交易商的業務規則 | 《財團法人中華民國證券櫃檯買賣中心槓桿交易商經營槓桿保證金契約交易業務規則》；櫃買中心 FAQ 提到「股權差價契約」 | <https://dsp.tpex.org.tw/storage/derivatives_download/槓桿交易商業務諮詢常見問答.pdf> | 打開 FAQ；「差價契約是槓桿保證金契約的型態之一」這句**只在二手來源看到，需確認** |
 | 證券商辦理 CFD | 依櫃買中心《證券商營業處所經營衍生性金融商品交易業務規則》；FAQ 2.3：「差價契約係指客戶支付一定成數之保證金，證券商提供一定槓桿倍數…以現金結算損益之衍生性金融商品契約」 | <https://dsp.tpex.org.tw/storage/derivatives_download/證券商衍生性商品業務諮詢常見問答題庫.pdf> | 打開 FAQ；開放日期**查不到一手來源** |
 | 沙盒 | 《金融科技發展與創新實驗條例》：主管機關金管會（第 2 條）；107-01-31 制定公布，自 107-04-30 施行，沒有修正紀錄 | <https://law.moj.gov.tw/LawClass/LawAll.aspx?pcode=G0380254> | 打開原文 |
@@ -538,7 +538,7 @@ QAE 的變體：原始版用量子相位估計（需要很多受控運算）；S
 ### 6.4 目前硬體的限制
 
 - **雜訊**：QAE 的加速來自很深的電路（迭代次數隨 1/ε 增加），而目前的硬體沒有容錯，深電路的雜訊會吃掉精度。Stamatopoulos et al. 2020 在 IBM 實機上只做了很小的示範。上表的 8k 邏輯量子位元指的是**經過量子錯誤更正後**的位元，需要的實體位元多很多。
-- **載入成本可能抵銷加速**：Herbert 2021 證明，對 log-concave 分布（常態、對數常態都是）用 Grover–Rudolph 方式載入時，**沒有量子加速**——載入本身的成本就把二次加速吃掉了。Zoufal et al. 2019 的 qGAN 可以用 O(poly(n)) 個閘近似載入（精確載入要 O(2ⁿ)），但近似誤差會直接成為估計誤差，而且訓練 qGAN 本身有成本。
+- **載入成本可能抵銷加速**：Herbert 2021 證明，對 log-concave 分布（例如常態分布）用 Grover–Rudolph 方式載入時，**沒有量子加速**——載入本身的成本就把二次加速吃掉了。對數常態分布**不是** log-concave，這個結論不能直接套用到對數常態；但它說明載入成本必須和 QAE 的加速一起算，不能假設載入是免費的。Zoufal et al. 2019 的 qGAN 可以用 O(poly(n)) 個閘近似載入（精確載入要 O(2ⁿ)），但近似誤差會直接成為估計誤差，而且訓練 qGAN 本身有成本。
 - **實務結論**：本專案 Phase 1–3 的壞帳估計是單一資產、少量部位，古典蒙地卡羅在一般電腦上就足夠；QAE **在可預見的硬體上不會更快**。這一章的價值是研究題目（例如：以 Phase 1 擬合的分布做 qGAN 載入、在模擬器上比較 IQAE 與古典 MC 的誤差對樣本數曲線），不是工程路線。
 
 ### 6.5 主要文獻
@@ -624,7 +624,7 @@ QAE 的變體：原始版用量子相位估計（需要很多受控運算）；S
 - EIP-197：<https://eips.ethereum.org/EIPS/eip-197>；EIP-1108：<https://eips.ethereum.org/EIPS/eip-1108>
 - snarkjs 驗證 gas 實測：<https://arxiv.org/abs/2409.01976>
 - Perpetual Powers of Tau：<https://github.com/privacy-scaling-explorations/perpetualpowersoftau>
-- Noir：<https://github.com/noir-lang/noir>；Barretenberg Solidity verifier：<https://barretenberg.aztec.network/docs/how_to_guides/how-to-solidity-verifier/>
+- Noir：<https://github.com/noir-lang/noir>、releases <https://github.com/noir-lang/noir/releases>；Barretenberg Solidity verifier：<https://barretenberg.aztec.network/docs/how_to_guides/how-to-solidity-verifier/>
 - halo2：<https://z.cash/upgrade/nu5/>、<https://github.com/privacy-scaling-explorations/halo2>
 - gnark：<https://docs.gnark.consensys.io/HowTo/prove>
 
