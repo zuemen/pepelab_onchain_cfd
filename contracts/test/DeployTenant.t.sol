@@ -313,6 +313,44 @@ contract DeployTenantTest is TenantFixture {
         verifier.verify(_json(s), s.id, record, s.admin);
     }
 
+    // ── insurance seed (INSURANCE_VAULT_SHARES.md §3.3) ─────────────────────
+
+    function test_seedsInsuranceVault_positionHeldByTreasury() public {
+        (Spec memory s, , TenantBase.TenantDeployed memory d) = _tenant("bank-a");
+        InsuranceVault iv = InsuranceVault(d.insuranceVault);
+        assertGt(iv.totalSupply(), 0, "seeded");
+        assertEq(iv.totalAssets(), 1e18, "exactly one whole token");
+        assertEq(iv.balanceOf(s.treasury), iv.totalSupply(), "every share is the treasury's");
+        assertEq(iv.balanceOf(deployer), 0, "deployer keeps no shares");
+        assertEq(usdc.balanceOf(deployer), 0, "the seed was the deployer's own token");
+    }
+
+    function test_refuses_deployerWithoutSeedFunds() public {
+        _expectRefused(_valid(), deployer, bytes(
+            "deployer holds less than one whole settlement token - needed to seed the tenant's InsuranceVault (INSURANCE_VAULT_SHARES.md 3.3)"));
+    }
+
+    function test_verify_catchesWithdrawnInsuranceSeed() public {
+        (Spec memory s, DeployTenant script, TenantBase.TenantDeployed memory d) = _tenant("bank-a");
+        string memory record = script.lastRecordJson();
+        InsuranceVault iv = InsuranceVault(d.insuranceVault);
+        uint256 snap = vm.snapshotState();
+
+        // Treasury pulls the whole seed out: supply back to zero, the trap reopens.
+        uint256 shares = iv.balanceOf(s.treasury);
+        vm.prank(s.treasury);
+        iv.withdraw(shares);
+        vm.expectRevert(bytes("verify tenant failed: insuranceVault is seeded (totalSupply > 0, INSURANCE_VAULT_SHARES.md 3.3)"));
+        verifier.verify(_json(s), s.id, record, s.admin);
+
+        // Treasury hands the position to the deployer: the deployer must keep nothing.
+        vm.revertToState(snap);
+        vm.prank(s.treasury);
+        iv.transfer(deployer, shares);
+        vm.expectRevert(bytes("verify tenant failed: insuranceVault seed position (one whole token) is held by the treasury"));
+        verifier.verify(_json(s), s.id, record, s.admin);
+    }
+
     /// @dev Rebuilds the record with a different exchange address.
     function _replaceExchange(string memory record, address newExchange) internal pure returns (string memory) {
         string memory old = vm.toString(vm.parseJsonAddress(record, ".contracts.PerpetualExchange"));
@@ -454,6 +492,7 @@ contract DeployTenantTest is TenantFixture {
 
         // An admin with code (stand-in for a multisig) needs no override.
         vm.etch(s.admin, hex"00");
+        deal(address(usdc), deployer, 1e18);   // the insurance seed
         script.runWithConfig(json, s.id);
         assertEq(PerpetualExchange(script.lastDeployed().exchange).owner(), s.admin);
     }

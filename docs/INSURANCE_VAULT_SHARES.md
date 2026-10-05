@@ -86,6 +86,7 @@ virtual 份額（10^6 個 share unit，對應 1 個資產最小單位）在帳�
 [ADR-012](ADR-012-junior-buffer-tranches.md)（proposed）規劃以 `TranchedInsuranceVault` 取代 InsuranceVault：新租戶改部署分層金庫，平台的 pIV 持有人轉成 senior 份額；它的份額會計同樣採 ERC-4626 式虛擬份額。本版 InsuranceVault 是**過渡版本**：
 
 - **租戶**：ADR-012 的實作（其 §5 階段 1、2）完成前，`DeployTenant.s.sol` 部署本版 InsuranceVault；之後改部署 `TranchedInsuranceVault`。
+  `DeployTenant.s.sol` 在接線前就存入 1 顆完整結算代幣作種子，份額歸租戶 treasury（§3.3；`VerifyTenant` 讀回）。
 - **平台（租戶零）**：LP 遷移只做一次。若下一次 exchange／CopyTracker cutover 時 ADR-012 階段 1 已完成，平台直接遷到 `TranchedInsuranceVault`，**不再部署本版**；否則部署本版，之後分層金庫上線時再依 ADR-012 §4.4 轉換。
 - `TranchedInsuranceVault` 應沿用本文的 offset、種子與遷移規則（§3.3、§5.1）。
 

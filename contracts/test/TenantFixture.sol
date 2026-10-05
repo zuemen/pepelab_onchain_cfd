@@ -173,6 +173,13 @@ abstract contract TenantFixture is Test {
         script = new DeployTenant();
         script.setBroadcasterOverride(deployer);
         script.setAllowEoaAdmin(true);   // test roles are plain addresses
+        // DeployTenant seeds the tenant's InsuranceVault with one whole token
+        // from the deployer. Fund it unless the case is about a bad token.
+        if (s.usdc.code.length > 0) {
+            try IERC20Metadata(s.usdc).decimals() returns (uint8 dec) {
+                deal(s.usdc, deployer, IERC20(s.usdc).balanceOf(deployer) + 10 ** dec);
+            } catch {}
+        }
         script.runWithConfig(_json(s), s.id);
     }
 }

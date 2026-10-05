@@ -5,6 +5,7 @@ import "forge-std/Script.sol";
 import "forge-std/console.sol";
 import "@openzeppelin/contracts/access/IAccessControl.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
+import "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import "../src/PerpetualExchange.sol";
 import "../src/CopyTracker.sol";
 import "../src/StrategyRegistry.sol";
@@ -94,6 +95,14 @@ abstract contract TenantBase is Script {
     ///      seed is stamped "now". A stale seed would therefore look fresh, so
     ///      the source must have been updated within this window.
     uint256 internal constant SEED_MAX_AGE = 1 hours;
+
+    /// @dev The tenant's InsuranceVault is seeded with exactly one whole
+    ///      settlement token before anything can flow into it. With zero
+    ///      supply, every inflow accrues to the virtual shares for good
+    ///      (INSURANCE_VAULT_SHARES.md §3.3); the seed closes that before the
+    ///      fee router and exchange are wired. The shares go to the tenant's
+    ///      treasury: the deployer keeps nothing.
+    uint256 internal constant INSURANCE_SEED_WHOLE_TOKENS = 1;
     /// @dev GuardedOracle's own staleness check is switched OFF (0). Staleness
     ///      is enforced where it matters — by the exchange (`maxPriceAge`, 6h)
     ///      and by the vault (its own `maxPriceAge`) — each against the
@@ -599,6 +608,10 @@ abstract contract TenantBase is Script {
         console.log("ok  ", field, got);
     }
 
+    function _insuranceSeed(address usdc) internal view returns (uint256) {
+        return INSURANCE_SEED_WHOLE_TOKENS * 10 ** IERC20Metadata(usdc).decimals();
+    }
+
     function _check(bool cond, string memory what) internal pure {
         if (!cond) revert(string.concat("verify tenant failed: ", what));
         console.log("ok  ", what);
@@ -768,6 +781,13 @@ abstract contract TenantBase is Script {
         _eq("insuranceVault.exchange", iv.exchange(), d.exchange);
         _eq("insuranceVault.feeRouter", iv.feeRouter(), d.feeRouter);
         _eq("insuranceVault.owner", iv.owner(), owner);
+        // §3.3: a wired vault at zero supply hands every inflow to the virtual
+        // shares. The seed position sits with the treasury, never the deployer.
+        uint256 seed = _insuranceSeed(c.usdc);
+        _check(iv.totalSupply() > 0, "insuranceVault is seeded (totalSupply > 0, INSURANCE_VAULT_SHARES.md 3.3)");
+        _check(iv.previewWithdraw(iv.balanceOf(c.treasury)) >= seed - seed / 1000,
+            "insuranceVault seed position (one whole token) is held by the treasury");
+        _eqUint("insuranceVault.balanceOf(deployer)", iv.balanceOf(d.deployer), 0);
         FeeRouter fr = FeeRouter(d.feeRouter);
         _eq("feeRouter.usdc", address(fr.usdc()), c.usdc);
         _eq("feeRouter.platformTreasury", fr.platformTreasury(), c.treasury);

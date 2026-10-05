@@ -185,7 +185,7 @@ TENANT=<id> forge script script/DeployTenant.s.sol:DeployTenant \
 
 ## 4. 廣播（擁有者本人執行）
 
-前提：§3 的模擬通過；部署者位址有足夠的 ETH；平台的 keeper 剛跑過（價格來源夠新）。
+前提：§3 的模擬通過；部署者位址有足夠的 ETH，**以及 1 顆完整的結算代幣**（保險金庫種子，見下）；平台的 keeper 剛跑過（價格來源夠新）。
 
 ```bash
 cd contracts
@@ -194,11 +194,15 @@ TENANT=<id> forge script script/DeployTenant.s.sol:DeployTenant \
 ```
 
 - 一定要加 `--slow`：後面的交易依賴前面剛部署的合約，公共 RPC 一次收到整批容易丟交易。
-- 這次執行**不碰任何既有合約**，沒有不可逆的步驟，也沒有需要「續跑」的共用指標。中途失敗時留下的是一組沒有資金、
-  owner 還是部署者的未完成合約：用 `forge script … --resume` 接著送同一批，或直接重來一次（舊的那組作廢）。
+- **保險金庫種子**：第 3 步建出租戶的 InsuranceVault 後，立刻從部署者存入 1 顆完整結算代幣，份額轉給 `roles.treasury`，
+  然後才接 fee router 與 exchange。供給為 0 時流進來的錢永遠歸虛擬份額（`INSURANCE_VAULT_SHARES.md` §3.3），種子先關掉
+  這個洞。preflight 會擋餘額不足的部署者；`VerifyTenant` 讀回金庫有供給、treasury 持有約 1 顆的部位、部署者沒有份額——
+  treasury 之後把種子領走，驗證就會失敗（那會重新打開 §3.3 的洞）。
+- 這次執行**不碰任何既有合約**，沒有不可逆的步驟，也沒有需要「續跑」的共用指標。中途失敗時留下的是一組
+  owner 還是部署者的未完成合約（過了第 3 步則保險金庫裡有那 1 顆種子，份額在 treasury）：用 `forge script … --resume` 接著送同一批，或直接重來一次（舊的那組作廢）。
 - 部署的最後一步把所有權交給 `roles.admin`：`Ownable` 的合約 `transferOwnership`，`AccessControl` 的合約
   先授予、讀回確認、才放棄部署者的 admin。**結束時部署者在任何一顆合約上都沒有權限。** 一步到位的所有權轉移無法復原，
-  而這時整組合約還沒有任何資金——admin 填錯的代價是重新部署，不是資產被鎖。
+  而這時整組合約除了那 1 顆保險種子之外沒有任何資金——admin 填錯的代價是重新部署（加上那 1 顆），不是資產被鎖。
 - 執行內建完整讀回驗證，任何一項不符整個 run 就 revert（不會留下「部署了但沒驗證」的狀態）。
 - 紀錄寫到 `contracts/cache/tenants/<id>.deployed.json`，其中 `deployBlock` 是廣播開始前的區塊高度（`VerifyTenant`
   從這裡起掃角色授予事件）。

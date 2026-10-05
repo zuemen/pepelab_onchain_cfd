@@ -164,6 +164,12 @@ contract DeployTenant is TenantBase {
         }
         console.log("ok   price source quotes every registered asset, all fresh:", c.assets.length);
 
+        // The insurance seed is new money from the deployer (see step 3).
+        uint256 insuranceSeed = _insuranceSeed(c.usdc);
+        require(IERC20(c.usdc).balanceOf(deployer) >= insuranceSeed,
+            "deployer holds less than one whole settlement token - needed to seed the tenant's InsuranceVault (INSURANCE_VAULT_SHARES.md 3.3)");
+        console.log("ok   insurance seed available    :", insuranceSeed);
+
         console.log("admin            :", c.admin);
         console.log("risk             :", c.risk);
         console.log("guardian         :", c.guardian);
@@ -207,6 +213,11 @@ contract DeployTenant is TenantBase {
 
         // 3. The tenant's money path. The treasury is immutable on the router.
         d.insuranceVault = address(new InsuranceVault(c.usdc));
+        //    Seed it now, while its feeRouter and exchange are still zero:
+        //    anything that arrives at zero supply belongs to the virtual shares
+        //    forever (INSURANCE_VAULT_SHARES.md §3.3), and step 6 wires inflows.
+        //    The position goes to the tenant's treasury — the deployer keeps nothing.
+        _seedInsuranceVault(c, d.insuranceVault);
         d.feeRouter = address(new FeeRouter(c.usdc, c.treasury, d.insuranceVault));
         d.traderStake = address(new TraderStake(c.usdc));
 
@@ -274,6 +285,16 @@ contract DeployTenant is TenantBase {
         ex.setGuardian(c.guardian);
         ex.setMarketOperator(c.marketOperator);
         return address(ex);
+    }
+
+    function _seedInsuranceVault(TenantConfig memory c, address vault) internal {
+        InsuranceVault iv = InsuranceVault(vault);
+        require(iv.feeRouter() == address(0) && iv.exchange() == address(0) && iv.totalSupply() == 0,
+            "insurance seed must go in before anything is wired");
+        uint256 seed = _insuranceSeed(c.usdc);
+        IERC20(c.usdc).approve(vault, seed);
+        uint256 shares = iv.deposit(seed);
+        require(iv.transfer(c.treasury, shares), "insurance seed: share transfer to treasury failed");
     }
 
     function _handOverOwnables(TenantDeployed memory d, address admin) internal {
