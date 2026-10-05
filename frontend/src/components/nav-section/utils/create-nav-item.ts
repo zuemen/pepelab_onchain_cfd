@@ -40,7 +40,7 @@ export function createNavItem({
   /**
    * Render @icon
    */
-  let renderIcon = null;
+  let renderIcon;
 
   if (icon && render?.navIcon && typeof icon === 'string') {
     renderIcon = render?.navIcon[icon];
@@ -51,7 +51,7 @@ export function createNavItem({
   /**
    * Render @info
    */
-  let renderInfo = null;
+  let renderInfo;
 
   if (info && render?.navInfo && Array.isArray(info)) {
     const [key, value] = info;
