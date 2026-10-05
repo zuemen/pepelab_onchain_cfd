@@ -146,9 +146,9 @@ export const GUARD_SHA256 = {
  */
 export const PINNED_WORKFLOWS = {
   "admin-base-sepolia.yml": "e8b89234c0bc83d584792aacf587b548634e60b44a5d38efae9fd1b8d11ba9cf",
-  "base-sepolia-keeper.yml": "5845cd7952a404b14b59729d96abf5665f89d8dd6c02c46c3259b8dbf59e64d6",
-  "price-keeper.yml": "e4ff9a1801593fb6e26d09aabc67b85cc22fc1a8363a937fe0e4486584988a38",
-  "x402-settlement-worker.yml": "0bd5876fd343ed8a55c62d905e82a4431e9305658d146d9a9f2d283995b27968",
+  "base-sepolia-keeper.yml": "98bdbcd9cfc2d6b23839e1a3b8ee9269848eed4e09a975b78f8a3adacee3396c",
+  "price-keeper.yml": "5048608805fa691f7249ee5a24b21bc1d008b01517c969395a7e2efaf42808c9",
+  "x402-settlement-worker.yml": "c8558cd02626ff245bc26aa17102e7c24009305f2bd4c8f01e9d5138ce53dce1",
 };
 
 /**
@@ -157,7 +157,7 @@ export const PINNED_WORKFLOWS = {
  * 所以新增租戶不需要改這裡。
  */
 export const TENANT_KEEPER_PINS = {
-  [TEMPLATE_FILE]: "b3e9a01eae4d1dbb1bedac01daac5417476e639e8587e9c53916b11346aadde4",
+  [TEMPLATE_FILE]: "9a4c68164c9ed61f2440e19909d643d876222bf40512ffea52988c123be56779",
   [LOADER_FILE]: "b14b917de24fed1bbb88ec7127fcc4248e66de1b0219d1bc58c1b77a4b4ca84f",
 };
 
