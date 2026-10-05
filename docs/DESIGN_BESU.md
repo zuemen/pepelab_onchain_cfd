@@ -18,7 +18,7 @@
 | 4 結算資產 | MockUSDC 只留給 PoC。正式設計以銀行發行的**代幣化存款**為首選；exchange 只收 18 位小數，小數位不同時比照 ADR-011 用 1:1 包裝幣；凍結、贖回、對帳要在發行端與營運流程處理。 |
 | 5 監理定位 | 台灣的 CFD 屬於受監管的槓桿交易業務；本設計只定位為**內部 PoC**，或在《金融科技發展與創新實驗條例》下申請的**沙盒實驗**，都需法遵確認。 |
 | 6 延伸研究 | 壞帳期望值可改用量子振幅估計（QAE），抽樣複雜度理論上從 O(1/ε²) 降到 O(1/ε)；但價格分布載入與容錯硬體的成本，現在會吃掉這個加速，只適合當研究題目。 |
-| 7 銜接 | 每一次參數提案都必須引用 `RISK_MODEL_CFD.md`（Phase 1）與 `BESU_CALIBRATION.md`（Phase 3）的版本與章節；這兩份還在進行，§7 先留待填位置。 |
+| 7 銜接 | 每一次參數提案都必須引用 `RISK_MODEL_CFD.md`（Phase 1）與 `BESU_CALIBRATION.md`（Phase 3）的版本與章節；兩份都已完成，§7 列出每個參數對應的章節。 |
 
 ### 0.1 名詞（白話）
 
@@ -558,23 +558,23 @@ QAE 的變體：原始版用量子相位估計（需要很多受控運算）；S
 
 ## 7. 與 Phase 1–3 的銜接
 
-| 參數 | 鏈上 setter（既有） | 依據文件（待填） | 治理類別（ADR-015 §4.2） |
+| 參數 | 鏈上 setter（既有） | 依據文件 | 治理類別（ADR-015 §4.2） |
 |---|---|---|---|
-| 逐資產 MMR `m` | `setMaintenanceMarginFor` | `RISK_MODEL_CFD.md` §⟦待填⟧（Phase 1.1／1.2）；`BESU_CALIBRATION.md` §⟦待填⟧ | 48h；對既有部位立即生效，需揭露（§1.3） |
-| 逐資產槓桿上限 | `setMaxLeverageFor`（只能比碳分級更緊） | `RISK_MODEL_CFD.md` §⟦待填⟧ | 48h |
-| OI 上限 | `setMaxOpenInterest` | `RISK_MODEL_CFD.md` §⟦待填⟧（1.2）；`BESU_CALIBRATION.md` §⟦待填⟧ | 48h |
-| 獲利上限 | `setMaxProfitBps` | `RISK_MODEL_CFD.md` §⟦待填⟧（1.2） | 48h（只適用新開部位） |
-| `maxPriceAge` | `setMaxPriceAge` | `RISK_MODEL_CFD.md` §⟦待填⟧（1.3 keeper 間隔與價格過期風險）；`BESU_CALIBRATION.md` §⟦待填⟧（3.3 Besu 上 keeper 實測間隔） | 48h |
-| 清算罰金 | `setLiquidationPenaltyBps` | `RISK_MODEL_CFD.md` §⟦待填⟧ | 48h；對既有部位立即生效 |
-| GuardedOracle 偏離與時間窗 | `setRiskParams`、`setWindowLimit` | `BESU_CALIBRATION.md` §⟦待填⟧ | 48h |
-| ZK 價格容差 δ（若做 §2.6） | 新合約參數 | `BESU_CALIBRATION.md` §⟦待填⟧ | 48h |
+| 逐資產 MMR `m` | `setMaintenanceMarginFor` | `RISK_MODEL_CFD.md` §2.2（清算價與破產價相距 m·S₀）、§6.2、§6.4（公鏈版）；`BESU_CALIBRATION.md` §5、§10（Besu 版） | 48h；對既有部位立即生效，需揭露（§1.3） |
+| 逐資產槓桿上限 | `setMaxLeverageFor`（只能比碳分級更緊） | `RISK_MODEL_CFD.md` §6.2、§6.4；`BESU_CALIBRATION.md` §5、§10 | 48h |
+| OI 上限 | `setMaxOpenInterest` | `RISK_MODEL_CFD.md` §4.4（保險庫／OI 比例 u₀）；`BESU_CALIBRATION.md` §8.3（OI 上限與保險庫、機構 ES 的參數關係）、§9（壓力測試） | 48h |
+| 獲利上限 | `setMaxProfitBps` | **尚無依據**：`RISK_MODEL_CFD.md` §7 #11 與 `BESU_CALIBRATION.md` 都沒有為它建模；依規則 1 不得提案（只收緊的變更除外） | 48h（只適用新開部位） |
+| `maxPriceAge` | `setMaxPriceAge` | `RISK_MODEL_CFD.md` §3.1、§3.5、§6.4（公鏈：下限＝實測最長推價間隔）；`BESU_CALIBRATION.md` §4（Besu：60 秒，誤擋 vs 價格時效）、§10 | 48h |
+| 清算罰金 | `setLiquidationPenaltyBps` | `RISK_MODEL_CFD.md` §4.4（保險庫分配敏感度）；`BESU_CALIBRATION.md` §6（清算人 0% 方案）、§11.2 | 48h；對既有部位立即生效 |
+| GuardedOracle 偏離與時間窗 | `setRiskParams`、`setWindowLimit` | `BESU_CALIBRATION.md` §3.4（偏離上限不低於可能的單次跳空，交給第二來源確認；尚未模擬，正式數值待接 GuardedOracle 時校準）、§9.1（單日壓力幅度） | 48h |
+| ZK 價格容差 δ（若做 §2.6） | 新合約參數 | `BESU_CALIBRATION.md` §4（價格年齡上限＝maxPriceAge，δ 應涵蓋該年齡內的價格變動；尚未模擬） | 48h |
 
 **規則**：
 
 1. 變更單（§1.4）的「依據」欄必須寫出上表文件的 **commit 雜湊＋章節**；文件還沒有對應章節的參數，不得提案（例外：只收緊、不放寬的變更，可先以 guardian／ReduceOnly 處理，事後補依據）。
 2. 校準報告的輸出檔（Phase 1 `risk_model/` 產出）以檔案雜湊記入變更單，再把變更單雜湊放進 timelock `salt`，形成「模型版本 → 報告 → 變更單 → 鏈上事件」的完整鏈。
 3. Phase 2 的 Foundry 測試（只加測試）若證明某個封閉式與合約不一致，相關參數的提案凍結到文件修正為止。
-4. Phase 1 的 exchange 風險模型在 [`RISK_MODEL_CFD.md`](RISK_MODEL_CFD.md)；[`RISK_MODEL.md`](RISK_MODEL.md) 仍是 AssetVault 的風險模型。[`BESU_CALIBRATION.md`](BESU_CALIBRATION.md) 尚未建立（Phase 3 產出），本文件的連結先指向預定位置。
+4. Phase 1 的 exchange 風險模型在 [`RISK_MODEL_CFD.md`](RISK_MODEL_CFD.md)；[`RISK_MODEL.md`](RISK_MODEL.md) 仍是 AssetVault 的風險模型。Phase 3 的 Besu 版校準在 [`BESU_CALIBRATION.md`](BESU_CALIBRATION.md)，其中有 setter 的建議值已寫進 [`besu/config/risk-params.besu.json`](../besu/config/risk-params.besu.json)（§11.1）；合約 constant 的建議只寫在文件（§11.2），由擁有者決定。
 
 ---
 

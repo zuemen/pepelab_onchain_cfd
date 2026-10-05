@@ -1,0 +1,32 @@
+{
+  "_comment": "Besu（QBFT 許可鏈）版風險參數。依據 docs/BESU_CALIBRATION.md §10 建議參數表；只含有既有 setter 的參數，由 scripts/apply-risk-params.mjs 以 owner setter 寫上鏈（npm --prefix besu run risk-params）。合約 constant（清算人 5%、資金費間隔、MAX_LEVERAGE、預設 MMR）不在這裡，見同文件 §11。前提：保險庫 ≥ 各資產 OI 的 5%（年破產 < 0.1%、單日 ES99 < 保險庫 10%）。",
+  "source": "docs/BESU_CALIBRATION.md §10",
+  "exchange": {
+    "maxPriceAgeSeconds": 60,
+    "liquidationPenaltyBps": 2000,
+    "adlEnabled": true
+  },
+  "assets": {
+    "sBTC": { "maxLeverage": 5, "maintenanceMarginBps": 500 },
+    "sETH": { "maxLeverage": 5, "maintenanceMarginBps": 500 },
+    "sAAPL": { "maxLeverage": 5, "maintenanceMarginBps": 1500 },
+    "sTSLA": { "maxLeverage": 1, "maintenanceMarginBps": 500 }
+  },
+  "offchain": {
+    "_comment": "鏈下設定（不寫上鏈，給推價程式與 keeper 的營運目標；apply-risk-params.mjs 用來檢查 maxPriceAge 的下限）。",
+    "blockPeriodSeconds": 2,
+    "oraclePushIntervalSeconds": 2,
+    "assumedTradingFeeBps": 10,
+    "keeperSla": {
+      "liquidationLatencyP99Seconds": 30,
+      "liquidationLatencyMedianSeconds": 2,
+      "monthlyAvailability": 0.999,
+      "instances": 2,
+      "settleFundingAtLeastEverySeconds": 3600
+    },
+    "alerts": {
+      "priceAgeSeconds": 30,
+      "fundingClockLagIntervals": 2
+    }
+  }
+}

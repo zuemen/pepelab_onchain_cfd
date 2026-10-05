@@ -18,7 +18,10 @@ besu/
 │   ├── fork-test.sh          forge test --fork-url 對 Besu 跑完整既有測試
 │   ├── check-rpc.mjs         shell 腳本用的連線白名單檢查（與 lib.mjs 同一套規則）
 │   ├── lib.mjs               共用工具
-│   └── lib.test.mjs          離線單元測試（npm test）
+│   ├── lib.test.mjs          離線單元測試（npm test）
+│   ├── apply-risk-params.mjs Phase 3：Besu 版風險參數以既有 setter 寫上鏈（docs/BESU_CALIBRATION.md §11）
+│   └── risk-params.test.mjs  上者的離線測試（npm test）
+├── config/risk-params.besu.json  Phase 3 Besu 版建議參數（setter 部分）
 ├── deployments/example.json  部署輸出格式範例（實際輸出 gitignored）
 ├── network/                  ← 本機產生，含私鑰，gitignored
 ├── .forge-broadcast/         ← forge 廣播紀錄，gitignored
@@ -119,6 +122,8 @@ npm --prefix besu run keeper                              # 常駐 keeper，每�
 npm --prefix besu run keeper -- --once --json             # 只跑一輪，輸出 JSON
 npm --prefix besu run fork-test                           # forge test --fork-url（很久、吃記憶體，見第 5 節）
 npm --prefix besu test                                    # 離線單元測試（不需節點）
+npm --prefix besu run risk-params -- --dry-run            # Besu 版風險參數（config/risk-params.besu.json）：只驗證、列出交易
+npm --prefix besu run risk-params                         # 用既有 owner setter 寫上鏈並讀回比對（先啟動推價；不要在 e2e 之前套用）
 docker compose -p pepelab-besu -f besu/docker-compose.yml logs -f node1   # 看節點日誌
 ```
 
