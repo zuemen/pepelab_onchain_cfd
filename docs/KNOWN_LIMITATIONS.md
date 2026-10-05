@@ -1010,8 +1010,11 @@ What the new build does:
   - while a guardian pause is in force: ends no later than the pause;
   - within 24h after a guardian pause that ran for `d` ended: is shortened by
     `d`; refused for that day if the pause ran its full 72h, or if this asset's
-    own guardian freeze window ended less than 24h before the pause started;
-  - otherwise (and under an admin pause): the full 72h.
+    own guardian freeze window ended less than 24h before the pause started.
+    This holds even if an admin pause came in between; a guardian pause the
+    admin took over counts as having ended at the takeover;
+  - otherwise (and under an admin pause with no guardian pause in the last
+    24h): the full 72h.
   A pause that is lifted at once (a false alarm, or one stolen guardian key
   trying to burn the brakes) therefore costs later freezes nothing. An earlier
   draft of this branch capped every freeze to the pause's 72h window even after
@@ -1048,14 +1051,24 @@ runs per strategy, plus deterministic worst cases):
 
 The admin revoking the role (48h) ends it sooner.
 
-**These bounds hold only while the guardian acts alone.** The cross-scope rule
-reads the record of the last *guardian* pause. Any admin action on the pause --
-an admin `setPaused(true)`, or lifting a pause (including one it took over) --
-leaves no guardian record behind, so right after it the guardian's next freeze
-gets its full length again. While a guardian key is suspected, a timelock
-proposal that lifts an oracle halt (pause or freeze) must revoke the suspected
-holder's `GUARDIAN_ROLE` in the same batch; otherwise the 144h / 192h bounds do
-not apply.
+**These bounds are measured for the guardian acting alone.** The cross-scope
+rule reads the record of the last *guardian* pause. Until 2026-10-05 that
+record lived in the pause's own slot, so any admin action on the pause -- an
+admin `setPaused(true)`, or lifting a pause it had taken over -- erased it, and
+right after it the guardian's next freeze got its full length again. The record
+is now stored separately (`_guardianPauseStart` / `_guardianPauseEnd`): an
+admin pause or lift leaves it as it was, and an admin takeover closes it at the
+takeover time, so the guardian is charged for exactly the time it held the
+pause (tests: `test_adminPauseAndLift_doNotEraseGuardianPauseRecord`,
+`test_adminTakeoverThenLift_keepsGuardianPortionOfThePause` in
+`GuardedOracleHaltExpiry.t.sol`). This is **source only** until GuardedOracle is
+redeployed. Two things still do not count against the guardian: time under an
+admin pause, and an admin lifting a guardian *freeze* early (the guardian may
+re-freeze inside that window, see below). The fuzz harness does not interleave
+admin actions when it measures 144h / 192h, so keep the operational rule: while
+a guardian key is suspected, a timelock proposal that lifts an oracle halt
+(pause or freeze) revokes the suspected holder's `GUARDIAN_ROLE` in the same
+batch.
 
 What the bound does **not** give, and what it costs:
 
