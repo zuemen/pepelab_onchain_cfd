@@ -32,7 +32,7 @@ contract InsuranceSeedHarness is DeployTenant {
         TenantConfig memory c;
         c.usdc = usdc;
         c.treasury = treasury;
-        _seedInsuranceVault(c, vault, deployer);
+        _seedInsuranceVault(c, vault, address(new InsuranceSeeder()), deployer);
     }
 }
 
@@ -334,6 +334,33 @@ contract DeployTenantTest is TenantFixture {
         assertEq(iv.balanceOf(s.treasury), iv.totalSupply(), "every share is the treasury's");
         assertEq(iv.balanceOf(deployer), 0, "deployer keeps no shares");
         assertEq(usdc.balanceOf(deployer), 0, "the seed was the deployer's own token");
+        // The seeder did it in one transaction and kept nothing.
+        assertTrue(d.insuranceSeeder.code.length > 0, "seeder deployed");
+        assertEq(iv.balanceOf(d.insuranceSeeder), 0, "seeder keeps no shares");
+        assertEq(usdc.balanceOf(d.insuranceSeeder), 0, "seeder keeps no token");
+        assertEq(usdc.allowance(d.insuranceSeeder, address(iv)), 0, "seeder leaves no allowance");
+        assertEq(usdc.allowance(deployer, d.insuranceSeeder), 0, "the deployer's approval was used up");
+    }
+
+    /// The record names the seeder; VerifyTenant holds it to the set's rules.
+    function test_record_carriesInsuranceSeeder_andVerifyChecksIt() public {
+        (Spec memory s, DeployTenant script, TenantBase.TenantDeployed memory d) = _tenant("bank-a");
+        string memory record = script.lastRecordJson();
+        assertEq(vm.parseJsonAddress(record, ".contracts.InsuranceSeeder"), d.insuranceSeeder);
+        verifier.verify(_json(s), s.id, record, s.admin);
+
+        // A seeder with the same code but not created by the recorded deployer.
+        address foreign = address(new InsuranceSeeder());
+        string memory tampered = vm.replace(record, vm.toString(d.insuranceSeeder), vm.toString(foreign));
+        vm.expectRevert(bytes("verify tenant failed: InsuranceSeeder was not created by the recorded deployer"));
+        verifier.verify(_json(s), s.id, tampered, s.admin);
+
+        // An older record without the key is refused with a reason.
+        string memory missing = vm.replace(record,
+            string.concat('"InsuranceSeeder":"', vm.toString(d.insuranceSeeder), '",'), "");
+        assertFalse(vm.keyExistsJson(missing, ".contracts.InsuranceSeeder"), "key removed");
+        vm.expectRevert(bytes("deployment record: contracts.InsuranceSeeder is missing (written by DeployTenant since PR #256)"));
+        verifier.verify(_json(s), s.id, missing, s.admin);
     }
 
     function test_refuses_deployerWithoutSeedFunds() public {
@@ -432,6 +459,106 @@ contract DeployTenantTest is TenantFixture {
         vm.mockCall(address(iv), abi.encodeWithSelector(InsuranceVault.previewWithdraw.selector), abi.encode(uint256(1e18 - 1)));
         vm.expectRevert(bytes("insurance seed: the treasury position must be worth the whole seed"));
         h.seed(address(usdc), makeAddr("treasury"), address(iv), address(h));
+    }
+
+    // ── InsuranceSeeder on chain: deposit + transfer in one transaction ─────
+
+    /// Review #256: between simulation and broadcast anyone can move the share
+    /// price (deposit 1 wei, withdraw shares that round to nothing). A share
+    /// amount fixed at simulation time then reverts on every retry; the seeder
+    /// moves what the deposit actually minted.
+    function test_seeder_survivesSharePriceManipulationBeforeTheSeed() public {
+        InsuranceVault iv = new InsuranceVault(address(usdc));
+        InsuranceSeeder seeder = new InsuranceSeeder();
+        address treasury = makeAddr("treasury");
+        uint256 simulated = iv.previewDeposit(1e18);   // what the dry run saw: 1e24
+
+        _pushSharePrice(iv);
+        deal(address(usdc), deployer, 1e18);
+
+        // The old three-transaction path: the simulated amount no longer exists.
+        uint256 snap = vm.snapshotState();
+        vm.startPrank(deployer);
+        usdc.approve(address(iv), 1e18);
+        iv.deposit(1e18);
+        vm.expectRevert();
+        iv.transfer(treasury, simulated);
+        vm.stopPrank();
+        vm.revertToState(snap);
+
+        // The seeder path.
+        vm.startPrank(deployer);
+        usdc.approve(address(seeder), 1e18);
+        uint256 minted = seeder.seed(IInsuranceVaultSeedable(address(iv)), usdc, 1e18, treasury, 1e18 - 1e18 / 1000);
+        vm.stopPrank();
+        assertLt(minted, simulated * 3 / 4, "fewer shares than simulated");
+        assertEq(iv.balanceOf(treasury), minted, "every minted share is the treasury's");
+        assertGe(iv.previewWithdraw(minted), 1e18 - 1e18 / 1000, "worth the seed");
+        assertEq(iv.balanceOf(address(seeder)), 0);
+        assertEq(usdc.balanceOf(address(seeder)), 0);
+        assertEq(iv.balanceOf(deployer), 0);
+    }
+
+    function test_seeder_refusesAPositionWorthLessThanMinValue() public {
+        InsuranceVault iv = new InsuranceVault(address(usdc));
+        InsuranceSeeder seeder = new InsuranceSeeder();
+        deal(address(usdc), deployer, 1e18);
+        vm.startPrank(deployer);
+        usdc.approve(address(seeder), 1e18);
+        vm.expectRevert(abi.encodeWithSelector(InsuranceSeeder.SeedWorthTooLittle.selector, 1e18, 1e18 + 1));
+        seeder.seed(IInsuranceVaultSeedable(address(iv)), usdc, 1e18, makeAddr("treasury"), 1e18 + 1);
+        vm.stopPrank();
+    }
+
+    /// Tokens or shares sent to the seeder beforehand cannot block a seed:
+    /// shares go along to the treasury, tokens back to the caller.
+    function test_seeder_donationsDoNotBlockTheSeed() public {
+        InsuranceVault iv = new InsuranceVault(address(usdc));
+        InsuranceSeeder seeder = new InsuranceSeeder();
+        address treasury = makeAddr("treasury");
+        address stranger = makeAddr("stranger");
+        deal(address(usdc), stranger, 10);
+        vm.startPrank(stranger);
+        usdc.approve(address(iv), 3);
+        iv.deposit(3);
+        iv.transfer(address(seeder), iv.balanceOf(stranger));
+        usdc.transfer(address(seeder), 7);
+        vm.stopPrank();
+
+        deal(address(usdc), deployer, 1e18);
+        vm.startPrank(deployer);
+        usdc.approve(address(seeder), 1e18);
+        seeder.seed(IInsuranceVaultSeedable(address(iv)), usdc, 1e18, treasury, 1e18 - 1e18 / 1000);
+        vm.stopPrank();
+        assertEq(iv.balanceOf(treasury), iv.totalSupply(), "donated shares went along");
+        assertEq(usdc.balanceOf(deployer), 7, "donated tokens went back to the caller");
+        assertEq(iv.balanceOf(address(seeder)), 0);
+        assertEq(usdc.balanceOf(address(seeder)), 0);
+    }
+
+    function test_seeder_refusesWrongTokenOrTreasury() public {
+        InsuranceVault iv = new InsuranceVault(address(usdc));
+        InsuranceSeeder seeder = new InsuranceSeeder();
+        IERC20 other = IERC20(address(new MockUSDC()));
+        vm.expectRevert(InsuranceSeeder.TokenNotVaultAsset.selector);
+        seeder.seed(IInsuranceVaultSeedable(address(iv)), other, 1e18, makeAddr("treasury"), 0);
+        vm.expectRevert(InsuranceSeeder.BadTreasury.selector);
+        seeder.seed(IInsuranceVaultSeedable(address(iv)), usdc, 1e18, address(0), 0);
+        vm.expectRevert(InsuranceSeeder.BadTreasury.selector);
+        seeder.seed(IInsuranceVaultSeedable(address(iv)), usdc, 1e18, address(seeder), 0);
+    }
+
+    /// @dev Deposit 1 wei, then burn all but one share in a withdrawal that
+    ///      pays out nothing: the share price doubles for 1 wei + gas.
+    function _pushSharePrice(InsuranceVault iv) internal {
+        address attacker = makeAddr("attacker");
+        deal(address(usdc), attacker, 1);
+        vm.startPrank(attacker);
+        usdc.approve(address(iv), 1);
+        uint256 shares = iv.deposit(1);
+        assertEq(iv.previewWithdraw(shares - 1), 0, "the slice rounds to nothing");
+        iv.withdraw(shares - 1);
+        vm.stopPrank();
     }
 
     function test_seed_happyPath_treasuryHoldsEverything() public {

@@ -13,6 +13,7 @@ import "../src/AgentSessionManager.sol";
 import "../src/TraderStake.sol";
 import "../src/FeeRouter.sol";
 import "../src/InsuranceVault.sol";
+import "../src/InsuranceSeeder.sol";
 import "../src/KYCRegistry.sol";
 import "../src/MockOracle.sol";
 import "../src/ESGRegistryV2.sol";
@@ -27,7 +28,8 @@ import "./VerifyTenant.s.sol";
 ///         What a tenant gets, all new, none shared with the live platform or
 ///         with another tenant:
 ///           oracle (GuardedOracle, or MockOracle on a testnet), ESGRegistryV2,
-///           KYCRegistry, InsuranceVault, FeeRouter (treasury = the tenant's),
+///           KYCRegistry, InsuranceVault (+ the stateless InsuranceSeeder that
+///           seeds it), FeeRouter (treasury = the tenant's),
 ///           TraderStake, PerpetualExchange, StrategyRegistry, CopyTracker,
 ///           AgentSessionManager, and — when `params.deployVault` — an
 ///           AssetVaultV2 proxy with one synthetic token per registered asset.
@@ -224,7 +226,9 @@ contract DeployTenant is TenantBase {
         //    anything that arrives at zero supply belongs to the virtual shares
         //    forever (INSURANCE_VAULT_SHARES.md §3.3), and step 6 wires inflows.
         //    The position goes to the tenant's treasury — the deployer keeps nothing.
-        _seedInsuranceVault(c, d.insuranceVault, deployer);
+        //    Deposit and share transfer happen in one transaction (InsuranceSeeder).
+        d.insuranceSeeder = address(new InsuranceSeeder());
+        _seedInsuranceVault(c, d.insuranceVault, d.insuranceSeeder, deployer);
         d.feeRouter = address(new FeeRouter(c.usdc, c.treasury, d.insuranceVault));
         d.traderStake = address(new TraderStake(c.usdc));
 
@@ -294,23 +298,40 @@ contract DeployTenant is TenantBase {
         return address(ex);
     }
 
-    /// @dev Deposits the seed from `deployer` and hands the shares to the
-    ///      treasury. Everything checked here holds only at this moment, so it
-    ///      is checked here and not in `VerifyTenant`: afterwards anyone can
-    ///      deposit and send shares to the deployer, and a bailout lowers the
-    ///      share price — neither is a fault of the tenant.
-    function _seedInsuranceVault(TenantConfig memory c, address vault, address deployer) internal {
+    /// @dev Seeds the vault through `seeder`: one transaction pulls the seed
+    ///      from `deployer`, deposits it and hands every minted share to the
+    ///      treasury. A broadcast sends approve / deposit / transfer as
+    ///      separate transactions, so a share amount fixed at simulation time
+    ///      breaks as soon as anyone moves the share price in between (#256
+    ///      review); the seeder transfers what the deposit actually minted.
+    ///
+    ///      The bound the seeder enforces ON CHAIN is on value: the minted
+    ///      shares must redeem for at least 99.9% of the seed. A share-count
+    ///      bound could be pushed under for a few wei by raising the share
+    ///      price, blocking every retry; the value cannot (rounding favours
+    ///      the vault, and what the attacker leaves behind accrues to the
+    ///      holders).
+    ///
+    ///      The `require`s below run in the simulation only (forge executes
+    ///      them locally, they are not transactions). They catch a wrong
+    ///      script; on chain the seeder's own checks are the guarantee. They
+    ///      are not in `VerifyTenant` because they only hold at this moment:
+    ///      afterwards anyone can deposit and send shares to the deployer, and
+    ///      a bailout lowers the share price — neither is a fault of the tenant.
+    function _seedInsuranceVault(TenantConfig memory c, address vault, address seeder, address deployer) internal {
         InsuranceVault iv = InsuranceVault(vault);
         require(iv.feeRouter() == address(0) && iv.exchange() == address(0) && iv.totalSupply() == 0,
             "insurance seed must go in before anything is wired");
         uint256 seed = _insuranceSeed(c.usdc);
-        IERC20(c.usdc).forceApprove(vault, seed);
-        uint256 shares = iv.deposit(seed);
-        require(iv.transfer(c.treasury, shares), "insurance seed: share transfer to treasury failed");
-        // Read back at deposit time: the treasury holds every share, worth the
-        // whole seed, and the deployer keeps none.
+        IERC20(c.usdc).forceApprove(seeder, seed);
+        uint256 minted = InsuranceSeeder(seeder).seed(
+            IInsuranceVaultSeedable(vault), IERC20(c.usdc), seed, c.treasury, seed - seed / 1000);
+        // Simulation-time read-back: the treasury holds every share, worth the
+        // whole seed; neither the deployer nor the seeder keeps anything.
         require(iv.balanceOf(deployer) == 0, "insurance seed: the deployer must keep no shares");
-        require(iv.balanceOf(c.treasury) == iv.totalSupply() && iv.totalSupply() > 0,
+        require(iv.balanceOf(seeder) == 0 && IERC20(c.usdc).balanceOf(seeder) == 0,
+            "insurance seed: the seeder must keep nothing");
+        require(iv.balanceOf(c.treasury) == iv.totalSupply() && minted == iv.totalSupply() && minted > 0,
             "insurance seed: the treasury must hold every share");
         require(iv.previewWithdraw(iv.balanceOf(c.treasury)) >= seed,
             "insurance seed: the treasury position must be worth the whole seed");

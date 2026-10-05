@@ -199,8 +199,19 @@ TENANT=<id> forge script script/DeployTenant.s.sol:DeployTenant \
 - 一定要加 `--slow`：後面的交易依賴前面剛部署的合約，公共 RPC 一次收到整批容易丟交易。
 - **保險金庫種子**：第 3 步建出租戶的 InsuranceVault 後，立刻從部署者存入 1 顆完整結算代幣，份額轉給 `roles.treasury`，
   然後才接 fee router 與 exchange。供給為 0 時流進來的錢永遠歸虛擬份額（`INSURANCE_VAULT_SHARES.md` §3.3），種子先關掉
-  這個洞。preflight 會擋餘額不足的部署者。**只在存入當下成立的事在 DeployTenant 裡當場檢查**：存完、轉完份額後立刻
-  `require` 部署者沒有份額、treasury 持有全部份額、而且值滿 1 顆；任何一項不符整個 run revert。
+  這個洞。preflight 會擋餘額不足的部署者。
+  存入與轉份額由一顆無狀態、無 owner、不持有任何權限的 `InsuranceSeeder`（`contracts/src/InsuranceSeeder.sol`）
+  **在同一筆交易**完成：部署者 approve seeder，seeder 拉入 1 顆、`deposit`、把這次實際鑄出的份額全數轉給 treasury，
+  自己不留份額、不留代幣（事先被轉入的份額一併給 treasury，代幣退回呼叫者，所以捐贈擋不住種子）。
+  若分成 approve／deposit／transfer 三筆交易、轉帳份額在模擬時寫死，任何人在兩筆之間存 1 wei 再提走一部分改變
+  份額價格，寫死的 transfer 就在鏈上 revert，`--resume` 重送也一樣（#256 審查）。seeder 鏈上的下限是**價值**：
+  鑄出的份額要能贖回至少 99.9% 的種子。不用份額數下限，因為份額價格能被幾 wei 推高、讓份額數下限每次重試都不過，
+  而種子的價值不受影響（金庫捨入對自己有利，攻擊者留下的資產歸持有人）。seeder 位址記在部署紀錄的
+  `contracts.InsuranceSeeder`，`VerifyTenant` 把它當成這組合約的一員：code 等於本 repo 的 build、由部署者建立、
+  不持有任何角色（權限事件掃描到它持有角色就失敗，不當成 admin 的指派）。
+  **只在存入當下成立的事在 DeployTenant 裡檢查**：部署者沒有份額、seeder 什麼都不留、treasury 持有全部份額、
+  而且值滿 1 顆。這些 `require` **只在模擬時執行**（forge 先在本地跑完整個 script 才送交易），任何一項不符就不會廣播；
+  鏈上的保證來自 seeder 合約自己的 `require`。
   之後每天跑、對每個 PR 跑的 `VerifyTenant` 只檢查 `totalSupply() > 0`（§3.3 的保護仍在）——任何人都能存 1 wei
   再把份額轉給部署者，bailout 也會讓份額貶值，這些都不是租戶設定錯，不能讓 required check 變紅。
   treasury 把份額轉走或贖回是租戶自己的決定，只印 NOTE；但若供給因此回到 0，驗證會失敗（那會重新打開 §3.3 的洞）。
@@ -209,7 +220,8 @@ TENANT=<id> forge script script/DeployTenant.s.sol:DeployTenant \
 - 部署的最後一步把所有權交給 `roles.admin`：`Ownable` 的合約 `transferOwnership`，`AccessControl` 的合約
   先授予、讀回確認、才放棄部署者的 admin。**結束時部署者在任何一顆合約上都沒有權限。** 一步到位的所有權轉移無法復原，
   而這時整組合約除了那 1 顆保險種子之外沒有任何資金——admin 填錯的代價是重新部署（加上那 1 顆），不是資產被鎖。
-- 執行內建完整讀回驗證，任何一項不符整個 run 就 revert（不會留下「部署了但沒驗證」的狀態）。
+- 執行內建完整讀回驗證，任何一項不符整個 run 就 revert（不會留下「部署了但沒驗證」的狀態）。這也是模擬時的
+  保證：廣播後的鏈上狀態以事後獨立跑的 `VerifyTenant` 為準。
 - 紀錄寫到 `contracts/cache/tenants/<id>.deployed.json`，其中 `deployBlock` 是廣播開始前的區塊高度（`VerifyTenant`
   從這裡起掃角色授予事件）。
 - 最後的 `exchange.unpause()` 以固定的 gas 上限（300,000）送出：模擬時所有步驟在同一個 timestamp，估出來的

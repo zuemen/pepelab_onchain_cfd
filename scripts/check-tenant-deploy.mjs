@@ -142,6 +142,7 @@ export const RECORD_CONTRACT_KEYS = [
   "ESGRegistryV2",
   "KYCRegistry",
   "InsuranceVault",
+  "InsuranceSeeder",
   "FeeRouter",
   "TraderStake",
   "PerpetualExchange",

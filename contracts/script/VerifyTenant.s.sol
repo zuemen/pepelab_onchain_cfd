@@ -13,6 +13,7 @@ import "../src/AgentSessionManager.sol";
 import "../src/TraderStake.sol";
 import "../src/FeeRouter.sol";
 import "../src/InsuranceVault.sol";
+import "../src/InsuranceSeeder.sol";
 import "../src/KYCRegistry.sol";
 
 interface ITenantVault {
@@ -249,6 +250,10 @@ abstract contract TenantBase is Script {
         address   assetVault;       // 0 when params.deployVault is false
         address   assetVaultImpl;   // 0 when params.deployVault is false
         address[] tokens;           // parallel to TenantConfig.assets; empty without a vault
+        /// @dev Seeds the InsuranceVault and hands the shares to the treasury
+        ///      in one transaction (`InsuranceSeeder`). Stateless, no owner,
+        ///      no role anywhere; listed so the set checks cover it.
+        address   insuranceSeeder;
     }
 
     // ── config ──────────────────────────────────────────────────────────────
@@ -518,6 +523,7 @@ abstract contract TenantBase is Script {
         vm.serializeAddress(k, "ESGRegistryV2", d.esgRegistry);
         vm.serializeAddress(k, "KYCRegistry", d.kyc);
         vm.serializeAddress(k, "InsuranceVault", d.insuranceVault);
+        vm.serializeAddress(k, "InsuranceSeeder", d.insuranceSeeder);
         vm.serializeAddress(k, "FeeRouter", d.feeRouter);
         vm.serializeAddress(k, "TraderStake", d.traderStake);
         vm.serializeAddress(k, "PerpetualExchange", d.exchange);
@@ -569,6 +575,9 @@ abstract contract TenantBase is Script {
         d.esgRegistry       = vm.parseJsonAddress(json, ".contracts.ESGRegistryV2");
         d.kyc               = vm.parseJsonAddress(json, ".contracts.KYCRegistry");
         d.insuranceVault    = vm.parseJsonAddress(json, ".contracts.InsuranceVault");
+        require(vm.keyExistsJson(json, ".contracts.InsuranceSeeder"),
+            "deployment record: contracts.InsuranceSeeder is missing (written by DeployTenant since PR #256)");
+        d.insuranceSeeder   = vm.parseJsonAddress(json, ".contracts.InsuranceSeeder");
         d.feeRouter         = vm.parseJsonAddress(json, ".contracts.FeeRouter");
         d.traderStake       = vm.parseJsonAddress(json, ".contracts.TraderStake");
         d.exchange          = vm.parseJsonAddress(json, ".contracts.PerpetualExchange");
@@ -642,13 +651,16 @@ abstract contract TenantBase is Script {
     }
 
     /// @dev Every contract of the set, with a name for error messages. The
-    ///      tokens come last, in `assets.registered` order.
+    ///      tokens follow the vault, in `assets.registered` order; the
+    ///      InsuranceSeeder is the very last entry.
     function _tenantContracts(TenantConfig memory c, TenantDeployed memory d)
         internal pure returns (string[] memory names, address[] memory all)
     {
-        uint256 n = 10 + (c.deployVault ? 2 + d.tokens.length : 0);
+        uint256 n = 11 + (c.deployVault ? 2 + d.tokens.length : 0);
         names = new string[](n);
         all = new address[](n);
+        // Last, so the vault entries keep their indices.
+        (names[n - 1], all[n - 1]) = ("InsuranceSeeder", d.insuranceSeeder);
         (names[0], all[0]) = ("Oracle", d.oracle);
         (names[1], all[1]) = ("ESGRegistryV2", d.esgRegistry);
         (names[2], all[2]) = ("KYCRegistry", d.kyc);
@@ -994,9 +1006,10 @@ abstract contract TenantBase is Script {
     function _tenantArtifacts(TenantConfig memory c, TenantDeployed memory d)
         internal pure returns (string[] memory files, string[] memory names)
     {
-        uint256 n = 10 + (c.deployVault ? 2 + d.tokens.length : 0);
+        uint256 n = 11 + (c.deployVault ? 2 + d.tokens.length : 0);
         files = new string[](n);
         names = new string[](n);
+        (files[n - 1], names[n - 1]) = ("InsuranceSeeder.sol", "InsuranceSeeder");
         if (c.guardedOracle) (files[0], names[0]) = ("GuardedOracle.sol", "GuardedOracle");
         else (files[0], names[0]) = ("MockOracle.sol", "MockOracle");
         (files[1], names[1]) = ("ESGRegistryV2.sol", "ESGRegistryV2");
@@ -1048,7 +1061,7 @@ abstract contract TenantBase is Script {
             bytes32 pinned;
             if (c.deployVault && all[i] == d.assetVaultImpl) {
                 (pin, pinned) = (true, bytes32(uint256(uint160(all[i]))));   // UUPS `__self`
-            } else if (c.deployVault && i >= 12) {
+            } else if (c.deployVault && i >= 12 && i < 12 + d.tokens.length) {
                 (pin, pinned) = (true, _assetId(c.assets[i - 12]));           // SyntheticAssetV2.assetId
             }
             _verifyRuntimeCode(labels[i], all[i], files[i], names[i], pin, pinned);
