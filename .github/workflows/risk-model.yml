@@ -5,15 +5,18 @@ name: Risk Model
 # 與 `run_all.py --quick`、`run_besu.py --quick`（小樣本重現所有圖表，確認整條管線可執行）。
 # 不需要任何 secret、不連任何鏈；校準參數讀 risk_model/data/calibrated_params.json（--offline），不連外部 API。
 # 用 runner 內建的 python3 建 venv，不另外引入 setup-python（沿用 master 已釘選的 action）。
+# besu-offline job：besu/ 的離線 npm test（Phase 3 的風險參數設定與套用腳本），不啟動節點、不需 secret。
 on:
   push:
     branches: [master]
     paths:
       - 'risk_model/**'
+      - 'besu/**'
       - '.github/workflows/risk-model.yml'
   pull_request:
     paths:
       - 'risk_model/**'
+      - 'besu/**'
       - '.github/workflows/risk-model.yml'
   workflow_dispatch:
 
@@ -51,3 +54,26 @@ jobs:
       # 只讀 risk_model/data/*.json（不連網），記憶體峰值數百 MB。
       - name: run_besu --quick
         run: risk_model/.venv/bin/python risk_model/run_besu.py --quick
+
+  # besu/ 的離線測試（lib.test.mjs、risk-params.test.mjs）：純函式與本機假 RPC，
+  # 不啟動 Besu 節點、不連任何鏈、不需要 secret。Phase 3 的 Besu 版風險參數設定與套用腳本在這裡驗證。
+  besu-offline:
+    name: besu npm test (offline)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: besu/package-lock.json
+
+      - name: Install
+        run: npm --prefix besu ci --no-audit --no-fund
+
+      - name: npm test
+        run: npm --prefix besu test

@@ -560,12 +560,12 @@ QAE 的變體：原始版用量子相位估計（需要很多受控運算）；S
 
 | 參數 | 鏈上 setter（既有） | 依據文件 | 治理類別（ADR-015 §4.2） |
 |---|---|---|---|
-| 逐資產 MMR `m` | `setMaintenanceMarginFor` | `RISK_MODEL_CFD.md` §2.2（清算價與破產價相距 m·S₀）、§6.2、§6.4（公鏈版）；`BESU_CALIBRATION.md` §5、§10（Besu 版） | 48h；對既有部位立即生效，需揭露（§1.3） |
-| 逐資產槓桿上限 | `setMaxLeverageFor`（只能比碳分級更緊） | `RISK_MODEL_CFD.md` §6.2、§6.4；`BESU_CALIBRATION.md` §5、§10 | 48h |
+| 逐資產 MMR `m` | `setMaintenanceMarginFor` | `RISK_MODEL_CFD.md` §2.2（清算價與破產價相距 m·S₀）、§6.2、§6.4（公鏈版）；`BESU_CALIBRATION.md` §5、§10（Besu 版） | 48h；**對既有部位立即生效**（清算門檻＝開倉名目 × 目前 MMR，調高可能讓既有部位當場可清算，例：AAPL 5x 由 5% 調到 15%，清算距離由約 15% 縮到約 5%），需事先公告與揭露（§1.3）。`besu/scripts/apply-risk-params.mjs` 在該資產仍有未平倉 OI 時拒絕調高，除非明確加 `--allow-mmr-raise-with-open-positions`（`BESU_CALIBRATION.md` §5.1、§11.1） |
+| 逐資產槓桿上限 | `setMaxLeverageFor`（只能比碳分級更緊） | `RISK_MODEL_CFD.md` §6.2、§6.4；`BESU_CALIBRATION.md` §5.1（`esgRegistry = 0` 的 PoC 部署）、§5.2（租戶部署：碳分級啟用，新資產 Unrated＝1x）、§10 | 48h |
 | OI 上限 | `setMaxOpenInterest` | `RISK_MODEL_CFD.md` §4.4（保險庫／OI 比例 u₀）；`BESU_CALIBRATION.md` §8.3（OI 上限與保險庫、機構 ES 的參數關係）、§9（壓力測試） | 48h |
 | 獲利上限 | `setMaxProfitBps` | **尚無依據**：`RISK_MODEL_CFD.md` §7 #11 與 `BESU_CALIBRATION.md` 都沒有為它建模；依規則 1 不得提案（只收緊的變更除外） | 48h（只適用新開部位） |
 | `maxPriceAge` | `setMaxPriceAge` | `RISK_MODEL_CFD.md` §3.1、§3.5、§6.4（公鏈：下限＝實測最長推價間隔）；`BESU_CALIBRATION.md` §4（Besu：60 秒，誤擋 vs 價格時效）、§10 | 48h |
-| 清算罰金 | `setLiquidationPenaltyBps` | `RISK_MODEL_CFD.md` §4.4（保險庫分配敏感度）；`BESU_CALIBRATION.md` §6（清算人 0% 方案）、§11.2 | 48h；對既有部位立即生效 |
+| 清算罰金 | `setLiquidationPenaltyBps` | `RISK_MODEL_CFD.md` §4.4（保險庫分配敏感度）；`BESU_CALIBRATION.md` §6（清算人 0% 方案：不改合約時只是上限，`liquidatePosition` 無權限限制、白名單內任何帳戶都能清算；獎勵轉入保險庫須用 `recapitalize`）、§11.2 | 48h；對既有部位立即生效 |
 | GuardedOracle 偏離與時間窗 | `setRiskParams`、`setWindowLimit` | `BESU_CALIBRATION.md` §3.4（偏離上限不低於可能的單次跳空，交給第二來源確認；尚未模擬，正式數值待接 GuardedOracle 時校準）、§9.1（單日壓力幅度） | 48h |
 | ZK 價格容差 δ（若做 §2.6） | 新合約參數 | `BESU_CALIBRATION.md` §4（價格年齡上限＝maxPriceAge，δ 應涵蓋該年齡內的價格變動；尚未模擬） | 48h |
 

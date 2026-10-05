@@ -2,7 +2,9 @@
 // 執行：npm test（package.json 的 test 會一起跑 lib.test.mjs 與本檔）
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { CONTRACT_LIMITS, loadRiskParams, planRiskParams } from './apply-risk-params.mjs';
+import {
+  CONTRACT_LIMITS, checkMmrRaises, leverageMismatchHint, loadRiskParams, planRiskParams,
+} from './apply-risk-params.mjs';
 import { assetId } from './lib.mjs';
 
 const cfg = loadRiskParams();
@@ -50,4 +52,45 @@ test('1989 bps 在 5x 時仍可開倉（與 RISK_MODEL_CFD §2.6 的整數分界
   const c = clone(cfg);
   c.assets = { sETH: { maxLeverage: 5, maintenanceMarginBps: 1_989 } };
   assert.doesNotThrow(() => planRiskParams(c));
+});
+
+// ── MMR 調高對既有倉位立即生效：有未平倉 OI 時預設拒絕 ─────────────────────────
+const AAPL = assetId('sAAPL');
+const ETH = assetId('sETH');
+const currentWith = (oi) => {
+  const cur = {};
+  for (const sym of ['sBTC', 'sETH', 'sAAPL', 'sTSLA']) cur[assetId(sym)] = { mmBps: 500n, longOI: 0n, shortOI: 0n };
+  cur[AAPL] = { mmBps: 500n, longOI: oi, shortOI: 0n };
+  return cur;
+};
+
+test('沒有未平倉 OI 時可以調高 MMR', () => {
+  const r = checkMmrRaises(planRiskParams(cfg), currentWith(0n));
+  assert.deepEqual(r, { blocked: [], warnings: [] });
+});
+
+test('有未平倉 OI 時調高 MMR（AAPL 5% → 15%）預設被擋下，加旗標才放行並警告', () => {
+  const plan = planRiskParams(cfg);
+  const r = checkMmrRaises(plan, currentWith(10n ** 21n));
+  assert.equal(r.blocked.length, 1);
+  assert.match(r.blocked[0], /sAAPL/);
+  assert.match(r.blocked[0], /當場可清算/);
+  const ok = checkMmrRaises(plan, currentWith(10n ** 21n), { allowRaiseWithOpenPositions: true });
+  assert.equal(ok.blocked.length, 0);
+  assert.equal(ok.warnings.length, 1);
+});
+
+test('調低或不變的 MMR 不受 OI 限制；讀不到目前值一律拒絕', () => {
+  const plan = planRiskParams(cfg);
+  const cur = currentWith(10n ** 21n);
+  cur[AAPL].mmBps = 2_000n;                              // 目前 20%，設定 15%：調低
+  assert.equal(checkMmrRaises(plan, cur).blocked.length, 0);
+  delete cur[ETH];
+  assert.match(checkMmrRaises(plan, cur).blocked.join(), /讀不到/);
+});
+
+test('讀回的有效槓桿低於設定值時提示碳分級上限', () => {
+  assert.match(leverageMismatchHint('maxLeverageForAsset', 5n, 1n), /碳分級/);
+  assert.equal(leverageMismatchHint('maxLeverageForAsset', 5n, 5n), '');
+  assert.equal(leverageMismatchHint('maxPriceAge', 60n, 30n), '');
 });

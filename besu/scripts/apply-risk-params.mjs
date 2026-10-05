@@ -16,6 +16,11 @@
 // 送完再用既有 view 讀回比對（maxPriceAge、liquidationPenaltyBps、vaultFeeShareBps、adlEnabled、
 // maxLeverageForAsset、maintenanceMarginBpsForAsset），不一致就 exit 1。
 //
+// MMR 調高的保護：setMaintenanceMarginFor 對既有倉位立即生效。送任何交易之前先讀該資產的未平倉 OI，
+// OI > 0 時拒絕調高 MMR（整批都不送），除非加 --allow-mmr-raise-with-open-positions（會印出警告）。
+// 槓桿的前提：本設定檔的槓桿只在 esgRegistry = 0（碳定價停用，Deploy.s.sol 的 PoC 部署）時成立；
+// 接了 esgRegistry 的部署（DeployTenant.s.sol）有效槓桿 = min(設定值, 碳分級上限)，讀回不一致時會提示。
+//
 // 順序注意：maxPriceAge 改成秒級後，推價一停交易就會 revert。請先啟動推價
 // （npm --prefix besu run oracle -- --interval 2 --assets sBTC,sETH,sAAPL,sTSLA），再套用本設定；
 // 端到端腳本 e2e 假設的是部署預設值（24h），不要在 e2e 之前套用。
@@ -24,6 +29,7 @@
 //   npm --prefix besu run risk-params -- --dry-run          # 只驗證設定並印出要送的交易，不連節點
 //   npm --prefix besu run risk-params                       # 連本機 Besu，送交易並讀回
 //   npm --prefix besu run risk-params -- --config path.json --json
+//   npm --prefix besu run risk-params -- --allow-mmr-raise-with-open-positions   # 有未平倉 OI 仍要調高 MMR（需先揭露）
 // 環境變數：BESU_RPC_URL；BESU_DEPLOYER_PRIVATE_KEY（覆寫 network/accounts.json 的 deployer；只給本地鏈用）。
 
 import { readFileSync } from 'node:fs';
@@ -115,13 +121,45 @@ export function planRiskParams(cfg) {
       continue;
     }
     const id = assetId(sym);
-    calls.push({ functionName: 'setMaxLeverageFor', args: [id, BigInt(L)], why: `BESU_CALIBRATION §5（${sym}）` });
-    calls.push({ functionName: 'setMaintenanceMarginFor', args: [id, BigInt(mm)], why: `BESU_CALIBRATION §5（${sym}）` });
-    checks.push({ view: 'maxLeverageForAsset', args: [id], expect: BigInt(L) });
-    checks.push({ view: 'maintenanceMarginBpsForAsset', args: [id], expect: BigInt(mm) });
+    calls.push({ functionName: 'setMaxLeverageFor', args: [id, BigInt(L)], asset: sym, why: `BESU_CALIBRATION §5（${sym}）` });
+    calls.push({ functionName: 'setMaintenanceMarginFor', args: [id, BigInt(mm)], asset: sym, why: `BESU_CALIBRATION §5（${sym}）` });
+    checks.push({ view: 'maxLeverageForAsset', args: [id], asset: sym, expect: BigInt(L) });
+    checks.push({ view: 'maintenanceMarginBpsForAsset', args: [id], asset: sym, expect: BigInt(mm) });
   }
   if (errs.length) throw new Error(`風險參數設定不合法：\n  - ${errs.join('\n  - ')}`);
   return { calls, checks };
+}
+
+/**
+ * MMR 調高的安全檢查（純函式）。`setMaintenanceMarginFor` 對**既有倉位立即生效**：清算門檻是
+ * 「開倉名目 × 目前的 MMR」，調高後既有倉位可能當場變成可清算（例：AAPL 5x 由 5% 調到 15%，
+ * 清算距離由約 15% 縮到約 5%）。所以該資產還有未平倉 OI 時，預設拒絕調高；
+ * 明確加 --allow-mmr-raise-with-open-positions 才放行，並列出警告。
+ * current：{ [assetId]: { mmBps, longOI, shortOI } }（bigint，由鏈上 view 讀出）。
+ * 回傳 { blocked: [訊息], warnings: [訊息] }。
+ */
+export function checkMmrRaises(plan, current, { allowRaiseWithOpenPositions = false } = {}) {
+  const blocked = [];
+  const warnings = [];
+  for (const c of plan.calls) {
+    if (c.functionName !== 'setMaintenanceMarginFor') continue;
+    const [id, next] = c.args;
+    const cur = current[id];
+    if (!cur) { blocked.push(`${c.asset ?? id}：讀不到目前的 MMR 與 OI，拒絕套用`); continue; }
+    const oi = BigInt(cur.longOI) + BigInt(cur.shortOI);
+    if (BigInt(next) <= BigInt(cur.mmBps) || oi === 0n) continue;
+    const msg = `${c.asset ?? id}：MMR ${cur.mmBps} → ${next} bps，該資產仍有未平倉 OI（多 ${cur.longOI}、空 ${cur.shortOI}）；`
+      + '調高立即套用到既有倉位，可能讓它們當場可清算';
+    (allowRaiseWithOpenPositions ? warnings : blocked).push(msg);
+  }
+  return { blocked, warnings };
+}
+
+/** 讀回的有效槓桿低於設定值時的說明（接了 esgRegistry 時有效槓桿 = min(設定值, 碳分級上限)）。 */
+export function leverageMismatchHint(view, expect, got) {
+  if (view !== 'maxLeverageForAsset' || BigInt(got) >= BigInt(expect)) return '';
+  return '：有效槓桿低於設定值，可能被碳分級上限壓低（接了 esgRegistry 時有效槓桿 = min(setMaxLeverageFor, 碳分級上限)；'
+    + '新 registry 的資產預設 Unrated＝1x）。本設定檔的槓桿只在 esgRegistry = 0 的部署成立，見 BESU_CALIBRATION §5.1';
 }
 
 export function loadRiskParams(path = DEFAULT_CONFIG) {
@@ -136,6 +174,7 @@ async function main() {
       config: { type: 'string', default: DEFAULT_CONFIG },
       'dry-run': { type: 'boolean', default: false },
       json: { type: 'boolean', default: false },
+      'allow-mmr-raise-with-open-positions': { type: 'boolean', default: false },
     },
   });
   const cfg = loadRiskParams(opt.config);
@@ -153,6 +192,24 @@ async function main() {
   const dep = loadDeployment(ctx.chainId);
   const address = dep.contracts.PerpetualExchange;
   const abi = loadAbi('PerpetualExchange');
+  // MMR 調高前先讀目前值與未平倉 OI（既有 view：maintenanceMarginBpsForAsset、globalLongNotional、globalShortNotional）
+  const read = (functionName, args) => ctx.publicClient.readContract({ address, abi, functionName, args });
+  const current = {};
+  for (const c of plan.calls.filter((x) => x.functionName === 'setMaintenanceMarginFor')) {
+    const id = c.args[0];
+    const [mmBps, longOI, shortOI] = await Promise.all([
+      read('maintenanceMarginBpsForAsset', [id]), read('globalLongNotional', [id]), read('globalShortNotional', [id]),
+    ]);
+    current[id] = { mmBps, longOI, shortOI };
+  }
+  const mm = checkMmrRaises(plan, current, { allowRaiseWithOpenPositions: opt['allow-mmr-raise-with-open-positions'] });
+  for (const w of mm.warnings) {
+    print({ event: 'warning', message: w }, `  ⚠ ${w}（已加 --allow-mmr-raise-with-open-positions，照樣送出）`);
+  }
+  if (mm.blocked.length) {
+    throw new Error(`拒絕套用（沒有送出任何交易）：\n  - ${mm.blocked.join('\n  - ')}\n`
+      + '先讓既有倉位平倉或完成揭露後再調，或確認後加 --allow-mmr-raise-with-open-positions。');
+  }
   for (const c of plan.calls) {
     const r = await sendTx(ctx, { address, abi, functionName: c.functionName, args: c.args });
     print({ event: 'sent', functionName: c.functionName, block: r.blockNumber }, `  ✔ ${c.functionName}（block ${r.blockNumber}）`);
@@ -162,8 +219,9 @@ async function main() {
     const got = await ctx.publicClient.readContract({ address, abi, functionName: k.view, args: k.args });
     const ok = got === k.expect;
     if (!ok) bad += 1;
-    print({ event: 'check', view: k.view, expect: k.expect, got, ok },
-      `  ${ok ? '✔' : '✖'} ${k.view}(${k.args.map(show).join(', ')}) = ${show(got)}（預期 ${show(k.expect)}）`);
+    const hint = ok ? '' : leverageMismatchHint(k.view, k.expect, got);
+    print({ event: 'check', view: k.view, asset: k.asset, expect: k.expect, got, ok, hint },
+      `  ${ok ? '✔' : '✖'} ${k.view}(${k.asset ?? k.args.map(show).join(', ')}) = ${show(got)}（預期 ${show(k.expect)}）${hint}`);
   }
   if (bad) {
     console.error(`[risk-params] ${bad} 項讀回不一致`);

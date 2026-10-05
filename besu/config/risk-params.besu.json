@@ -1,5 +1,5 @@
 {
-  "_comment": "Besu（QBFT 許可鏈）版風險參數。依據 docs/BESU_CALIBRATION.md §10 建議參數表；只含有既有 setter 的參數，由 scripts/apply-risk-params.mjs 以 owner setter 寫上鏈（npm --prefix besu run risk-params）。合約 constant（清算人 5%、資金費間隔、MAX_LEVERAGE、預設 MMR）不在這裡，見同文件 §11。前提：保險庫 ≥ 各資產 OI 的 5%（年破產 < 0.1%、單日 ES99 < 保險庫 10%）。",
+  "_comment": "Besu（QBFT 許可鏈）版風險參數。依據 docs/BESU_CALIBRATION.md §10 建議參數表；只含有既有 setter 的參數，由 scripts/apply-risk-params.mjs 以 owner setter 寫上鏈（npm --prefix besu run risk-params）。合約 constant（清算人 5%、資金費間隔、MAX_LEVERAGE、預設 MMR）不在這裡，見同文件 §11。前提：(1) 保險庫 ≥ 各資產 OI 的 5%（年破產 < 0.1%、單日 ES99 < 保險庫 10%）；(2) exchange 的 esgRegistry = 0（碳定價停用，Phase 2 PoC 的 Deploy.s.sol）——接了 ESGRegistryV2 的租戶部署有效槓桿 = min(設定值, 碳分級上限)，改用同文件 §5.2。調高 MMR 對既有倉位立即生效，腳本在有未平倉 OI 時預設拒絕。",
   "source": "docs/BESU_CALIBRATION.md §10",
   "exchange": {
     "maxPriceAgeSeconds": 60,

@@ -124,6 +124,7 @@ npm --prefix besu run fork-test                           # forge test --fork-ur
 npm --prefix besu test                                    # 離線單元測試（不需節點）
 npm --prefix besu run risk-params -- --dry-run            # Besu 版風險參數（config/risk-params.besu.json）：只驗證、列出交易
 npm --prefix besu run risk-params                         # 用既有 owner setter 寫上鏈並讀回比對（先啟動推價；不要在 e2e 之前套用）
+                                                          # 有未平倉 OI 時拒絕調高 MMR（對既有倉位立即生效），確認後加 --allow-mmr-raise-with-open-positions
 docker compose -p pepelab-besu -f besu/docker-compose.yml logs -f node1   # 看節點日誌
 ```
 
