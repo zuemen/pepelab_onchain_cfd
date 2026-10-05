@@ -433,6 +433,13 @@ PepeAMM 的修正都只存在於原始碼；平台 FeeRouter 的 `platformTreasu
      2. **需要 timelock。** 治理移交尚未進行（`TimelockController` 尚未部署），而本項的安全性來自「存種子後、同一次 broadcast 內
         移交 timelock」，關掉 §5.3 那段「部署者金鑰外洩可 `setExchange(self)` 再 `bailout` 走種子」的窗口。沒有 timelock 時腳本
         預設拒絕執行；`KEEP_DEPLOYER_OWNER=true` 可明確選擇保留部署者為 owner，但等於接受那段窗口，**由擁有者決定**。
+        給了 `TIMELOCK` 時，它必須**已經是 `EXCHANGE` 的 owner**（`HandoverToTimelock` 第 1 階段已跑完）——只有這樣才能證明它是
+        proposer／executor 已核對過的那一個；指錯或沒有角色的 timelock 會讓三個新合約永遠無法再改（PR #254 審查第 4 點）。
+   - 審查後追加的防護（PR #254 第一輪對抗式審查）：部署者不得是外洩地址或 7702 委派；新 CopyTracker 也一併移交 timelock
+     （`withdrawSlashReserve` 是 owner 專屬）；「是否已存種子」改看部署者自己的份額值，不看 `totalSupply`（任何人都能存 1 wei）；
+     續跑的金庫要是有 `DECIMALS_OFFSET()==6` 的新版、不能是 exchange 現役金庫、零供給時不得已有資產；`TREASURY` 不得是任何協議合約；
+     `VERIFY_ONLY` 也重跑地址檢查並讀回部署者的種子部位（所以要帶 `BROADCASTER`）。種子份額仍留在部署者 EOA——
+     要不要轉給 treasury 是擁有者決定，腳本不做。
    - 用法（環境變數：`EXCHANGE`、`STRATEGY_REGISTRY`、`TREASURY` 必填；`TIMELOCK` 或 `KEEP_DEPLOYER_OWNER` 擇一；續跑用
      `RESUME_VAULT`／`RESUME_FEE_ROUTER`／`RESUME_COPY_TRACKER`）：
      ```bash
@@ -442,7 +449,7 @@ PepeAMM 的修正都只存在於原始碼；平台 FeeRouter 的 `platformTreasu
      # broadcast
      forge script script/RedeployInsuranceStack.s.sol:RedeployInsuranceStack --rpc-url $RPC --account $ACCOUNT --sender $DEPLOYER --broadcast --slow
      # 對真實鏈讀回核對（任何一項不符即非 0 結束）
-     VERIFY_ONLY=true RESUME_VAULT=<新金庫> RESUME_FEE_ROUTER=<新 router> RESUME_COPY_TRACKER=<新 CT> \
+     VERIFY_ONLY=true BROADCASTER=$DEPLOYER RESUME_VAULT=<新金庫> RESUME_FEE_ROUTER=<新 router> RESUME_COPY_TRACKER=<新 CT> \
        forge script script/RedeployInsuranceStack.s.sol:RedeployInsuranceStack --rpc-url $RPC
      ```
      腳本結尾印出要排進 timelock 的四個呼叫（含 calldata）與 §5.3 遷移窗口的順序。

@@ -27,8 +27,9 @@ import "../src/TraderStake.sol";
 ///         Between seeding the vault and handing it to the timelock, the deployer
 ///         owns a funded vault. A leaked deployer key in that window could
 ///         `setExchange(self)` and `bailout` the seed out (§5.3). So deploy → seed →
-///         wire → transferOwnership all happen inside a single broadcast, and the
-///         state is read back before the script returns.
+///         wire → transferOwnership all happen inside a single broadcast. The
+///         read-back at the end runs against forge's simulated state, before
+///         anything is sent — only a later VERIFY_ONLY run proves the real chain.
 ///
 ///         WHY SEED BEFORE WIRING
 ///         FeeRouter.routeExternalRevenue is permissionless. Once the vault has a
@@ -55,9 +56,16 @@ import "../src/TraderStake.sol";
 ///     TREASURY            (required) platform revenue address. Not zero, not a
 ///                         known-compromised address, not EIP-7702 delegated.
 ///                         A Safe is fine — unlike x402's payTo it need not be an EOA.
+///                         Not a protocol contract either (USDC, exchange, …):
+///                         the router's treasury is immutable, fees sent there stay.
 ///     TIMELOCK            (required unless KEEP_DEPLOYER_OWNER=true) a
 ///                         TimelockController with minDelay >= MIN_TIMELOCK_DELAY
-///     KEEP_DEPLOYER_OWNER default false. Leaves vault + router owned by the
+///                         that already owns EXCHANGE — i.e. HandoverToTimelock
+///                         phase 1 has run. That is what proves it is the real
+///                         governance timelock (its proposer/executor were
+///                         cross-checked there), not a typo or a role-less one
+///                         that would brick the new contracts forever.
+///     KEEP_DEPLOYER_OWNER default false. Leaves vault + router + CopyTracker owned by the
 ///                         deployer. Only for a chain where governance is not live
 ///                         yet; it reopens the §5.3 key-exposure window, and the
 ///                         script says so loudly.
@@ -68,9 +76,19 @@ import "../src/TraderStake.sol";
 ///     RESUME_VAULT / RESUME_FEE_ROUTER / RESUME_COPY_TRACKER
 ///                         continue an interrupted run instead of starting over.
 ///                         Every immutable is checked against this config first.
-///     VERIFY_ONLY         true = no broadcast; read back the three RESUME_* addresses
-///                         against the config and exit non-zero on any mismatch.
+///                         Whether the vault still needs seeding is decided by what
+///                         the DEPLOYER's shares redeem for, not by totalSupply:
+///                         anyone can deposit, so a stranger's 1-wei deposit must
+///                         not count as the platform seed.
+///     VERIFY_ONLY         true = no broadcast; re-run the address checks, read back
+///                         the three RESUME_* addresses against the config and exit
+///                         non-zero on any mismatch. Set BROADCASTER to the address
+///                         that seeded — the seed position is read back too.
 ///                         Run this against the real chain after broadcasting.
+///
+///   Seed shares stay with the deployer. If that key ever leaks, the seed can be
+///   withdrawn and the §3.3 zero-supply trap reopens — moving the shares to the
+///   treasury is an owner decision this script does not make.
 ///
 ///   Fork simulation (no key, sends nothing):
 ///     forge script script/RedeployInsuranceStack.s.sol:RedeployInsuranceStack \
@@ -115,6 +133,7 @@ contract RedeployInsuranceStack is Script {
             Deployed memory d = Deployed(cfg.resumeVault, cfg.resumeRouter, cfg.resumeCopyTracker);
             require(d.vault != address(0) && d.router != address(0) && d.copyTracker != address(0),
                 "VERIFY_ONLY needs RESUME_VAULT, RESUME_FEE_ROUTER and RESUME_COPY_TRACKER");
+            _checkAddresses(cfg);
             verify(cfg, d);
             console.log("VERIFY_ONLY: all read-backs match.");
             return;
@@ -154,6 +173,26 @@ contract RedeployInsuranceStack is Script {
     // ── Preflight: refuse everything we can refuse before spending gas ───────
 
     function preflight(Config memory cfg) public view {
+        _checkAddresses(cfg);
+
+        uint256 unit = 10 ** _decimals(cfg.usdc);
+        if (cfg.seedAmount == 0) cfg.seedAmount = unit;
+        require(cfg.seedAmount >= unit, "SEED_AMOUNT below one whole token (INSURANCE_VAULT_SHARES.md 5.2)");
+
+        _preflightResume(cfg);
+
+        bool needsSeed = cfg.resumeVault == address(0) || !_deployerSeeded(cfg, InsuranceVault(cfg.resumeVault));
+        if (needsSeed) {
+            if (cfg.resumeVault != address(0)) _requireSeedable(InsuranceVault(cfg.resumeVault));
+            require(IERC20(cfg.usdc).balanceOf(cfg.deployer) >= cfg.seedAmount,
+                "deployer holds less USDC than SEED_AMOUNT - seed must be NEW funds, not withdrawn from the old vault");
+        }
+    }
+
+    /// Everything about the inputs that does not depend on a run being in
+    /// progress. VERIFY_ONLY runs this too, so a read-back against the real
+    /// chain re-checks the treasury instead of trusting the earlier run.
+    function _checkAddresses(Config memory cfg) internal view {
         require(cfg.usdc.code.length > 0, "USDC has no code");
         require(cfg.registry.code.length > 0, "STRATEGY_REGISTRY has no code");
         require(cfg.traderStake.code.length > 0, "TRADER_STAKE has no code");
@@ -170,6 +209,16 @@ contract RedeployInsuranceStack is Script {
         require(cfg.treasury != address(0), "TREASURY is required and must not be zero");
         require(!_isCompromised(cfg.treasury), "TREASURY is a known-compromised address");
         require(!_is7702Delegated(cfg.treasury), "TREASURY is EIP-7702 delegated - treated as taken over");
+        require(cfg.treasury != cfg.usdc && cfg.treasury != cfg.exchange && cfg.treasury != cfg.registry
+                && cfg.treasury != cfg.traderStake && cfg.treasury != cfg.timelock
+                && cfg.treasury != cfg.resumeVault && cfg.treasury != cfg.resumeRouter
+                && cfg.treasury != cfg.resumeCopyTracker,
+            "TREASURY is a protocol contract - the router's treasury is immutable, fees would be stuck");
+
+        // Deployer — it holds the seed and owns everything until the handover.
+        require(cfg.deployer != address(0), "BROADCASTER is zero");
+        require(!_isCompromised(cfg.deployer), "deployer is a known-compromised address");
+        require(!_is7702Delegated(cfg.deployer), "deployer is EIP-7702 delegated - a sweeper would take the seed");
 
         if (cfg.keepDeployerOwner) {
             require(cfg.timelock == address(0), "set TIMELOCK or KEEP_DEPLOYER_OWNER, not both");
@@ -181,18 +230,13 @@ contract RedeployInsuranceStack is Script {
             try TimelockController(payable(cfg.timelock)).getMinDelay() returns (uint256 d) { delay = d; }
             catch { revert("TIMELOCK is not a TimelockController"); }
             require(delay >= cfg.minTimelockDelay, "timelock minDelay below MIN_TIMELOCK_DELAY");
-        }
-
-        uint256 unit = 10 ** _decimals(cfg.usdc);
-        if (cfg.seedAmount == 0) cfg.seedAmount = unit;
-        require(cfg.seedAmount >= unit, "SEED_AMOUNT below one whole token (INSURANCE_VAULT_SHARES.md 5.2)");
-
-        _preflightResume(cfg);
-
-        bool needsSeed = cfg.resumeVault == address(0) || InsuranceVault(cfg.resumeVault).totalSupply() == 0;
-        if (needsSeed) {
-            require(IERC20(cfg.usdc).balanceOf(cfg.deployer) >= cfg.seedAmount,
-                "deployer holds less USDC than SEED_AMOUNT - seed must be NEW funds, not withdrawn from the old vault");
+            // Ownership moved here is final (one-step Ownable, immutables
+            // everywhere). Only accept the timelock that already governs the
+            // exchange: HandoverToTimelock cross-checked its proposer/executor.
+            require(PerpetualExchange(cfg.exchange).owner() == cfg.timelock,
+                "EXCHANGE is not owned by TIMELOCK - run HandoverToTimelock phase 1 first; a wrong or role-less timelock would brick the stack");
+            TimelockController tl = TimelockController(payable(cfg.timelock));
+            require(!tl.hasRole(tl.PROPOSER_ROLE(), cfg.deployer), "deployer is a timelock proposer - no real delay");
         }
     }
 
@@ -202,6 +246,14 @@ contract RedeployInsuranceStack is Script {
     function _preflightResume(Config memory cfg) internal view {
         if (cfg.resumeVault != address(0)) {
             require(cfg.resumeVault.code.length > 0, "RESUME_VAULT has no code");
+            // The getters below would also pass on an old pre-virtual-share vault
+            // or on the vault being replaced, so probe for the new one directly.
+            (bool ok, bytes memory ret) =
+                cfg.resumeVault.staticcall(abi.encodeWithSignature("DECIMALS_OFFSET()"));
+            require(ok && ret.length == 32 && abi.decode(ret, (uint8)) == 6,
+                "RESUME_VAULT is not a virtual-share InsuranceVault (no DECIMALS_OFFSET 6)");
+            require(cfg.resumeVault != address(PerpetualExchange(cfg.exchange).insuranceVault()),
+                "RESUME_VAULT is the exchange's current vault - the one this batch replaces");
             require(address(InsuranceVault(cfg.resumeVault).usdc()) == cfg.usdc, "RESUME_VAULT: different USDC");
         }
         if (cfg.resumeRouter != address(0)) {
@@ -227,7 +279,7 @@ contract RedeployInsuranceStack is Script {
     // ── Execute: one broadcast ───────────────────────────────────────────────
 
     function _execute(Config memory cfg) internal returns (Deployed memory d) {
-        uint256 seed = cfg.seedAmount == 0 ? 10 ** _decimals(cfg.usdc) : cfg.seedAmount;
+        uint256 seed = _seed(cfg);
 
         vm.startBroadcast(cfg.deployer);
 
@@ -236,13 +288,13 @@ contract RedeployInsuranceStack is Script {
             ? InsuranceVault(cfg.resumeVault)
             : new InsuranceVault(cfg.usdc);
 
-        // 2. Seed, only while nothing can flow in.
-        if (vault.totalSupply() == 0) {
-            require(vault.feeRouter() == address(0) && vault.exchange() == address(0),
-                "vault has zero supply but an inflow source is wired - inflows would accrue to virtual shares forever");
+        // 2. Seed, only while nothing can flow in. "Already seeded" means the
+        //    deployer's own position, not totalSupply — deposit is open to anyone.
+        if (!_deployerSeeded(cfg, vault)) {
+            _requireSeedable(vault);
             IERC20(cfg.usdc).approve(address(vault), seed);
             vault.deposit(seed);
-            require(vault.totalSupply() > 0, "seed deposit minted no shares");
+            require(_deployerSeeded(cfg, vault), "seed deposit did not give the deployer a seed-sized position");
         }
 
         // 3. Router — treasury and vault are immutable from here on.
@@ -269,6 +321,9 @@ contract RedeployInsuranceStack is Script {
         if (!cfg.keepDeployerOwner) {
             if (vault.owner() == cfg.deployer) vault.transferOwnership(cfg.timelock);
             if (router.owner() == cfg.deployer) router.transferOwnership(cfg.timelock);
+            // withdrawSlashReserve is owner-only: left with the deployer, that key
+            // would control every slashed trader stake.
+            if (ct.owner() == cfg.deployer) ct.transferOwnership(cfg.timelock);
         }
 
         vm.stopBroadcast();
@@ -289,6 +344,8 @@ contract RedeployInsuranceStack is Script {
         require(vault.feeRouter() == d.router, "readback: vault.feeRouter()");
         require(address(vault.usdc()) == cfg.usdc, "readback: vault.usdc()");
         require(vault.totalSupply() > 0, "readback: vault.totalSupply() is zero");
+        require(_deployerSeeded(cfg, vault), "readback: deployer's seed position below SEED_AMOUNT");
+        require(vault.totalAssets() >= _seed(cfg), "readback: vault.totalAssets() below SEED_AMOUNT");
 
         require(router.owner() == expectedOwner, "readback: router.owner()");
         require(router.platformTreasury() == cfg.treasury, "readback: router.platformTreasury()");
@@ -303,6 +360,10 @@ contract RedeployInsuranceStack is Script {
         require(address(ct.registry()) == cfg.registry, "readback: copyTracker.registry()");
         require(address(ct.traderStake()) == cfg.traderStake, "readback: copyTracker.traderStake()");
         require(address(ct.usdc()) == cfg.usdc, "readback: copyTracker.usdc()");
+        require(ct.owner() == expectedOwner, "readback: copyTracker.owner()");
+
+        require(cfg.treasury != d.vault && cfg.treasury != d.router && cfg.treasury != d.copyTracker,
+            "readback: platformTreasury is one of the new contracts");
     }
 
     // ── Output ───────────────────────────────────────────────────────────────
@@ -317,7 +378,7 @@ contract RedeployInsuranceStack is Script {
 
         if (cfg.keepDeployerOwner) {
             console.log("");
-            console.log("!!! KEEP_DEPLOYER_OWNER: vault and router are still owned by", cfg.deployer);
+            console.log("!!! KEEP_DEPLOYER_OWNER: vault, router and CopyTracker are still owned by", cfg.deployer);
             console.log("!!! A leaked deployer key can setExchange(self) and bailout the seed until");
             console.log("!!! ownership moves to a timelock. Hand over as soon as governance is live.");
         }
@@ -351,6 +412,28 @@ contract RedeployInsuranceStack is Script {
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────────
+
+    function _seed(Config memory cfg) internal view returns (uint256) {
+        return cfg.seedAmount == 0 ? 10 ** _decimals(cfg.usdc) : cfg.seedAmount;
+    }
+
+    /// What the deployer's shares redeem for, against SEED_AMOUNT with 0.1%
+    /// allowance for share-math rounding. A stranger's dust deposit, or a vault
+    /// drained by bailout, does not pass.
+    function _deployerSeeded(Config memory cfg, InsuranceVault v) internal view returns (bool) {
+        uint256 seed = _seed(cfg);
+        return v.previewWithdraw(v.balanceOf(cfg.deployer)) >= seed - seed / 1000;
+    }
+
+    /// §3.3: at zero supply, anything already in the vault — or anything that
+    /// can still flow in — belongs to the virtual shares permanently.
+    function _requireSeedable(InsuranceVault v) internal view {
+        if (v.totalSupply() != 0) return;
+        require(v.feeRouter() == address(0) && v.exchange() == address(0),
+            "vault has zero supply but an inflow source is wired - inflows would accrue to virtual shares forever");
+        require(v.totalAssets() == 0,
+            "vault has zero supply but holds assets - they already belong to the virtual shares; deploy a fresh vault");
+    }
 
     function _isCompromised(address a) internal pure returns (bool) {
         return a == LEAKED_DEPLOYER;
