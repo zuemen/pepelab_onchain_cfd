@@ -10,7 +10,7 @@
     "./autoload-env": "./src/autoload-env.ts"
   },
   "dependencies": {
-    "dotenv": "^18.0.4",
+    "dotenv": "^18.0.5",
     "ethers": "^6.13.4"
   }
 }

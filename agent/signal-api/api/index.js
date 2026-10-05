@@ -114,25 +114,25 @@ var require_dist = __commonJS({
           }
           let i = -1;
           if (s === 101 && r + 6 < n2 && t.charCodeAt(r + 1) === 120 && t.charCodeAt(r + 2) === 112 && t.charCodeAt(r + 3) === 111 && t.charCodeAt(r + 4) === 114 && t.charCodeAt(r + 5) === 116) {
-            let C = t.charCodeAt(r + 6);
-            if (w(C)) {
-              let d = r + 7;
-              for (; d < n2 && w(t.charCodeAt(d)); ) d++;
-              b2[t.charCodeAt(d)] && (i = r + 6, r = d);
+            let v = t.charCodeAt(r + 6);
+            if (w(v)) {
+              let u = r + 7;
+              for (; u < n2 && w(t.charCodeAt(u)); ) u++;
+              b2[t.charCodeAt(u)] && (i = r + 6, r = u);
             } else s = t.charCodeAt(r);
           }
-          let l = r, u = 0;
-          for (; r < n2 && (u = t.charCodeAt(r), b2[u]); ) r++;
+          let l = r, d = 0;
+          for (; r < n2 && (d = t.charCodeAt(r), b2[d]); ) r++;
           if (r === l) {
             for (; r < n2 && !O(t.charCodeAt(r)); ) r++;
             continue;
           }
           let p = t.slice(l, r), f2 = r;
-          if (r >= n2 && (u = 0), w(u)) do
-            r++, u = r < n2 ? t.charCodeAt(r) : 0;
-          while (w(u));
-          if (u === 61) r++;
-          else if (u === 58 && r === f2 && r + 1 < n2 && w(t.charCodeAt(r + 1))) r += 2;
+          if (r >= n2 && (d = 0), w(d)) do
+            r++, d = r < n2 ? t.charCodeAt(r) : 0;
+          while (w(d));
+          if (d === 61) r++;
+          else if (d === 58 && r === f2 && r + 1 < n2 && w(t.charCodeAt(r + 1))) r += 2;
           else {
             for (r = i === -1 ? f2 : i; r < n2 && !O(t.charCodeAt(r)); ) r++;
             continue;
@@ -141,29 +141,30 @@ var require_dist = __commonJS({
           for (; a < n2 && w(t.charCodeAt(a)); ) a++;
           let g = t.charCodeAt(a), h, y = false;
           if (g === 39 || g === 34 || g === 96) {
-            let C = t[a], d = t.indexOf(C, a + 1), m = -1, v = -1;
-            for (; d !== -1; ) {
-              let q = t.charCodeAt(d - 1) === 92, A = d + 1;
-              for (; A < n2 && !O(t.charCodeAt(A)) && w(t.charCodeAt(A)); ) A++;
-              if ((A === n2 || O(t.charCodeAt(A)) || t.charCodeAt(A) === 35) && (m = d, v = A), !q) break;
-              d = t.indexOf(C, d + 1);
+            let v = t[a], u = t.indexOf(v, a + 1), m = -1, C = -1;
+            for (; u !== -1; ) {
+              let q = t.charCodeAt(u - 1) === 92, E = u + 1;
+              for (; E < n2 && !O(t.charCodeAt(E)) && w(t.charCodeAt(E)); ) E++;
+              if ((E === n2 || O(t.charCodeAt(E)) || t.charCodeAt(E) === 35) && (m = u, C = E), !q) break;
+              u = t.indexOf(v, u + 1);
             }
             if (m !== -1) {
-              if (h = t.slice(a + 1, m), r = v, t.charCodeAt(r) === 35) for (; r < n2 && !O(t.charCodeAt(r)); ) r++;
+              if (h = t.slice(a + 1, m), r = C, t.charCodeAt(r) === 35) for (; r < n2 && !O(t.charCodeAt(r)); ) r++;
               y = true;
             }
           }
           if (!y) {
-            let C = t.indexOf(`
+            let v = t.indexOf(`
 `, c);
-            C === -1 && (C = n2);
-            let d = t.indexOf("#", c);
-            (d === -1 || d > C) && (d = C);
-            let m = c, v = d;
-            for (; m < v && w(t.charCodeAt(m)); ) m++;
-            for (; v > m && w(t.charCodeAt(v - 1)); ) v--;
+            v === -1 && (v = n2);
+            let u;
+            if (n2 < 4096) u = t.indexOf("#", c), (u === -1 || u > v) && (u = v);
+            else for (u = c; u < v && t.charCodeAt(u) !== 35; ) u++;
+            let m = c, C = u;
+            for (; m < C && w(t.charCodeAt(m)); ) m++;
+            for (; C > m && w(t.charCodeAt(C - 1)); ) C--;
             let q = t.charCodeAt(m);
-            if (v - m >= 2 && (q === 39 || q === 34 || q === 96) && t.charCodeAt(v - 1) === q ? h = t.slice(m + 1, v - 1) : h = t.slice(m, v), r = d, d < C) for (; r < n2 && !O(t.charCodeAt(r)); ) r++;
+            if (C - m >= 2 && (q === 39 || q === 34 || q === 96) && t.charCodeAt(C - 1) === q ? h = t.slice(m + 1, C - 1) : h = t.slice(m, C), r = u, u < v) for (; r < n2 && !O(t.charCodeAt(r)); ) r++;
           }
           g === 34 && (y || a < r) && h.indexOf("\\") !== -1 && (h = h.replace(/\\n/g, `
 `).replace(/\\r/g, "\r")), o[p] = h;
@@ -197,14 +198,14 @@ var require_dist = __commonJS({
           s = [];
           for (let c of e.path) s.push(V(c));
         }
-        let i, l = {}, u = { fast: e.fast };
+        let i, l = {}, d = { fast: e.fast };
         for (let c of s) try {
-          let a = E.parse(Y.readFileSync(c, { encoding: t }), u);
-          E.populate(l, a, e);
+          let a = A.parse(Y.readFileSync(c, { encoding: t }), d);
+          A.populate(l, a, e);
         } catch (a) {
           r && T(`failed to load ${c} ${a.message}`), i = a;
         }
-        let p = E.populate(n2, l, e), f2 = k(Object.prototype.hasOwnProperty.call(e, "quiet") ? e.quiet : B(n2).quiet);
+        let p = A.populate(n2, l, e), f2 = k(Object.prototype.hasOwnProperty.call(e, "quiet") ? e.quiet : B(n2).quiet);
         if (r || !f2) {
           let c = Object.keys(p).length, a = [];
           for (let g of s) try {
@@ -218,7 +219,7 @@ var require_dist = __commonJS({
         return i ? { parsed: l, error: i } : { parsed: l };
       }
       function ae(e) {
-        return E.configDotenv(e);
+        return A.configDotenv(e);
       }
       function le(e, o, t = {}) {
         let n2 = !!(t && t.debug), r = !!(t && t.override), s = {};
@@ -229,12 +230,12 @@ var require_dist = __commonJS({
         for (let i of Object.keys(o)) Object.prototype.hasOwnProperty.call(e, i) ? (r === true && (e[i] = o[i], s[i] = o[i]), n2 && T(r === true ? `"${i}" is already defined and WAS overwritten` : `"${i}" is already defined and was NOT overwritten`)) : (e[i] = o[i], s[i] = o[i]);
         return s;
       }
-      var E = { configDotenv: ce, config: ae, parse: ne, populate: le };
-      x.exports.configDotenv = E.configDotenv;
-      x.exports.config = E.config;
-      x.exports.parse = E.parse;
-      x.exports.populate = E.populate;
-      x.exports = E;
+      var A = { configDotenv: ce, config: ae, parse: ne, populate: le };
+      x.exports.configDotenv = A.configDotenv;
+      x.exports.config = A.config;
+      x.exports.parse = A.parse;
+      x.exports.populate = A.populate;
+      x.exports = A;
     });
     var M = I((Te, W) => {
       var _ = __require("child_process"), fe = __require("fs"), L = __require("path");
@@ -266,8 +267,8 @@ var require_dist = __commonJS({
       }
       function de(e, o, t) {
         let n2 = (P(o, "PATHEXT") || ".COM;.EXE;.BAT;.CMD").split(";").filter(Boolean), s = n2.some((l) => e.toLowerCase().endsWith(l.toLowerCase())) ? ["", ...n2] : [...n2, ""], i = /[\\/]/.test(e) ? [t] : [t, ...(P(o, "PATH") || "").split(";")];
-        for (let l of i) for (let u of s) {
-          let p = L.resolve(t, l.replace(/^"|"$/g, ""), e + u);
+        for (let l of i) for (let d of s) {
+          let p = L.resolve(t, l.replace(/^"|"$/g, ""), e + d);
           try {
             if (fe.statSync(p).isFile()) return p;
           } catch {
@@ -279,7 +280,7 @@ var require_dist = __commonJS({
         let n2 = t.env || process.env, r = de(e, n2, t.cwd || process.cwd());
         if (r && /\.(?:exe|com)$/i.test(r)) return _.spawn(r, o, t);
         let s = /\.(?:bat|cmd)$/i.test(r || e), i = [H(L.normalize(r || e))];
-        for (let u of o) i.push(H(ue(u), s ? 2 : 1));
+        for (let d of o) i.push(H(ue(d), s ? 2 : 1));
         let l = i.join(" ");
         return _.spawn(P(n2, "COMSPEC") || "cmd.exe", ["/d", "/v:off", "/s", "/c", `"${l}"`], { ...t, windowsVerbatimArguments: true });
       }
@@ -328,20 +329,20 @@ var require_dist = __commonJS({
           l = p;
           break;
         }
-        let u = l === -1 ? [] : e.slice(l);
-        return { paths: o, pathSet: t, quiet: n2, debug: r, override: s, fast: i, command: u };
-      }
-      function Ee(e) {
-        return e[0] === "~" ? Q.join(ge.homedir(), e.slice(1)) : e;
+        let d = l === -1 ? [] : e.slice(l);
+        return { paths: o, pathSet: t, quiet: n2, debug: r, override: s, fast: i, command: d };
       }
       function Ae(e) {
+        return e[0] === "~" ? Q.join(ge.homedir(), e.slice(1)) : e;
+      }
+      function Ee(e) {
         let o = Ce(), t = { encoding: o.encoding || "utf8", quiet: o.quiet === true, debug: o.debug === true, override: o.override === true, fast: o.fast === true, paths: [".env"], defaultPath: true };
         return o.path != null && (t.paths = [o.path], t.defaultPath = false), e.pathSet && (t.paths = e.paths, t.defaultPath = false), e.quiet != null && (t.quiet = e.quiet), e.debug != null && (t.debug = e.debug), e.override != null && (t.override = e.override), e.fast != null && (t.fast = e.fast), t;
       }
       function be(e) {
         let o = {}, t = [], n2 = { override: e.override, debug: e.debug };
         for (let s of e.paths) {
-          let i = Q.resolve(process.cwd(), Ee(s));
+          let i = Q.resolve(process.cwd(), Ae(s));
           try {
             let l = R.parse(he.readFileSync(i, { encoding: e.encoding }), { fast: e.fast });
             R.populate(o, l, n2), t.push(s);
@@ -374,7 +375,7 @@ var require_dist = __commonJS({
           $(), process.exitCode = 1;
           return;
         }
-        let n2 = Ae(t);
+        let n2 = Ee(t);
         try {
           let c = be(n2);
           if (!n2.quiet) {
@@ -385,7 +386,7 @@ var require_dist = __commonJS({
           console.error(`dotenv: ${c.message}`), process.exitCode = 1;
           return;
         }
-        let r = !!process.stdin.isTTY, s = process.platform !== "win32" && !r, i = ve(t.command[0], t.command.slice(1), { stdio: "inherit", detached: s }), l = /* @__PURE__ */ new Map(), u = 0;
+        let r = !!process.stdin.isTTY, s = process.platform !== "win32" && !r, i = ve(t.command[0], t.command.slice(1), { stdio: "inherit", detached: s }), l = /* @__PURE__ */ new Map(), d = 0;
         function p(c) {
           if (!(!i.pid || i.exitCode !== null || i.signalCode !== null)) {
             if (process.platform === "win32") {
@@ -405,9 +406,9 @@ var require_dist = __commonJS({
         for (let c of ["SIGINT", "SIGTERM", "SIGHUP", "SIGQUIT"]) {
           let a = () => {
             if (c === "SIGINT") {
-              if (u++, r && process.platform !== "win32" && u === 1) return;
-              if (u > 1) {
-                p(u === 2 ? "SIGTERM" : "SIGKILL");
+              if (d++, r && process.platform !== "win32" && d === 1) return;
+              if (d > 1) {
+                p(d === 2 ? "SIGTERM" : "SIGKILL");
                 return;
               }
             }
@@ -5109,7 +5110,7 @@ var init_size = __esm({
 var version3;
 var init_version2 = __esm({
   "../node_modules/viem/_esm/errors/version.js"() {
-    version3 = "2.57.0";
+    version3 = "2.57.2";
   }
 });
 
