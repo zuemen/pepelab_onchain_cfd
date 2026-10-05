@@ -18,8 +18,18 @@
 //
 // 只用 anvil 預設助記詞的公開測試金鑰，只打 127.0.0.1。寫進 deploy/tenants/ 的設定檔與
 // cache/tenants/ 的紀錄在結束時刪掉。
+//
+// 連到的一定是自己起的 anvil：啟動前埠上已經有人回應就中止；anvil 子程序提早結束（例如埠
+// 被占用）就立刻失敗；送任何交易前先確認 eth_chainId = 0x7a69 且 web3_clientVersion 是 anvil。
+//
+// contracts/broadcast/<script>/31337/ 是開發者自己在本機 anvil 部署時也會用到的目錄（已被
+// .gitignore 排除）。開始前若已存在，先改名成 31337.bak-tenant-privilege-scan，結束時刪掉這次
+// 產生的、再改名回來；程序被強制終止而沒還原時，備份會留在那個名字底下（下次執行會拒絕開始）。
+//
+// 每個 forge／cast 呼叫最多 10 分鐘（SCAN_STEP_TIMEOUT_MS 可調），逾時視為失敗。
 import { spawn, spawnSync } from "node:child_process";
-import { existsSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { connect } from "node:net";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -30,7 +40,10 @@ const RPC = `http://127.0.0.1:${PORT}`;
 const TENANT = "ci-privilege-scan";
 const CONFIG = join(ROOT, "deploy", "tenants", `${TENANT}.json`);
 const RECORD = join(CONTRACTS, "cache", "tenants", `${TENANT}.deployed.json`);
-const CHUNK = 7; // 小到讓 ~150 個區塊一定要分很多段
+const CHUNK = 7; // 小到讓整段部署歷史一定要分很多段（實際區塊數見輸出）
+const STEP_TIMEOUT_MS = Number(process.env.SCAN_STEP_TIMEOUT_MS ?? 10 * 60 * 1000);
+const BROADCAST_SCRIPTS = ["DeployTenant.s.sol", "VerifyTenant.s.sol", "MockUSDC.sol", "MockOracle.sol"];
+const BACKUP_SUFFIX = ".bak-tenant-privilege-scan";
 
 // anvil 預設助記詞 "test test … junk" 的帳號 0–7。公開的測試金鑰，不是任何人的資產。
 const A = [
@@ -54,7 +67,12 @@ function run(cmd, args, { env = {}, expectFail = false } = {}) {
     env: { ...process.env, ...env },
     encoding: "utf8",
     maxBuffer: 64 * 1024 * 1024,
+    timeout: STEP_TIMEOUT_MS,
+    killSignal: "SIGKILL",
   });
+  if (r.error?.code === "ETIMEDOUT") {
+    throw new Error(`${cmd} ${args.slice(0, 3).join(" ")} … 逾時（超過 ${STEP_TIMEOUT_MS / 1000} 秒），視為失敗`);
+  }
   if (r.error) throw r.error;
   const out = `${r.stdout ?? ""}${r.stderr ?? ""}`;
   if (!expectFail && r.status !== 0) {
@@ -75,19 +93,97 @@ function deployed(out) {
   return m[1];
 }
 
+async function rpc(method) {
+  const res = await fetch(RPC, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params: [] }),
+  });
+  if (!res.ok) throw new Error(`${method}: HTTP ${res.status}`);
+  const body = await res.json();
+  if (body.error) throw new Error(`${method}: ${JSON.stringify(body.error)}`);
+  return body.result;
+}
+
+// 啟動 anvil 之前：埠上已經有東西在聽，就不是我們的鏈——直接中止。
+function portInUse() {
+  return new Promise((resolve) => {
+    const sock = connect({ host: "127.0.0.1", port: PORT });
+    sock.once("connect", () => { sock.destroy(); resolve(true); });
+    sock.once("error", () => resolve(false));
+  });
+}
+
+// anvil 子程序提早結束或起不來時 reject；之後每一步都先看 anvilGone。
+let anvilGone = null;
+let anvilStderr = "";
+function watchAnvil(child) {
+  return new Promise((_, reject) => {
+    child.stderr?.on("data", (d) => { anvilStderr = (anvilStderr + d).slice(-4000); });
+    child.once("error", (e) => {
+      anvilGone = `anvil 無法啟動：${e.message}`;
+      reject(new Error(anvilGone));
+    });
+    child.once("exit", (code, signal) => {
+      anvilGone = `anvil 提早結束（exit ${code ?? signal}）——${PORT} 埠可能被占用。` +
+        (anvilStderr ? `
+anvil stderr：
+${anvilStderr}` : "");
+      reject(new Error(anvilGone));
+    });
+  });
+}
+
 async function waitForRpc() {
   for (let i = 0; i < 100; i++) {
+    if (anvilGone) throw new Error(anvilGone);
     try {
-      const res = await fetch(RPC, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "eth_chainId", params: [] }),
-      });
-      if (res.ok) return;
+      await rpc("eth_chainId");
+      return;
     } catch {}
     await new Promise((r) => setTimeout(r, 100));
   }
   throw new Error(`anvil 沒有在 ${RPC} 起來`);
+}
+
+// 送任何交易之前：確認回應的是 anvil、chainId 31337，而且我們的子程序還活著。
+async function assertOwnAnvil() {
+  const chainId = await rpc("eth_chainId");
+  const client = await rpc("web3_clientVersion");
+  if (chainId !== "0x7a69" || typeof client !== "string" || !client.toLowerCase().startsWith("anvil")) {
+    throw new Error(`${RPC} 不是本腳本起的 anvil（eth_chainId=${chainId}、web3_clientVersion=${client}），中止、不送任何交易`);
+  }
+  if (anvilGone) throw new Error(anvilGone);
+  console.log(`✓ connected to own anvil at ${RPC} (${client})`);
+}
+
+function backupBroadcasts() {
+  for (const s of BROADCAST_SCRIPTS) {
+    const dir = join(CONTRACTS, "broadcast", s, "31337");
+    if (existsSync(dir + BACKUP_SUFFIX)) {
+      throw new Error(`${dir + BACKUP_SUFFIX} 已存在（上次執行沒有還原？）。請先手動確認並改回 31337，再重跑。`);
+    }
+  }
+  const moved = [];
+  for (const s of BROADCAST_SCRIPTS) {
+    const dir = join(CONTRACTS, "broadcast", s, "31337");
+    if (existsSync(dir)) {
+      renameSync(dir, dir + BACKUP_SUFFIX);
+      moved.push(dir);
+      console.log(`  (備份既有的 ${dir} → ${BACKUP_SUFFIX}，結束時還原)`);
+    }
+  }
+  return moved;
+}
+
+function restoreBroadcasts(moved) {
+  for (const s of BROADCAST_SCRIPTS) {
+    rmSync(join(CONTRACTS, "broadcast", s, "31337"), { recursive: true, force: true });
+  }
+  for (const dir of moved) {
+    renameSync(dir + BACKUP_SUFFIX, dir);
+    console.log(`  (已還原 ${dir})`);
+  }
 }
 
 function verify(env, opts) {
@@ -103,10 +199,18 @@ function assertIncludes(out, needle, what) {
   console.log(`✓ ${what}`);
 }
 
-const anvil = spawn("anvil", ["--port", String(PORT), "--chain-id", "31337", "--silent"], { stdio: "ignore" });
+if (await portInUse()) {
+  console.error(`127.0.0.1:${PORT} 已經有程式在聽（不是本腳本起的 anvil），中止、不送任何交易。可用 SCAN_ANVIL_PORT 換埠。`);
+  process.exit(1);
+}
+const moved = backupBroadcasts();
+const anvil = spawn("anvil", ["--port", String(PORT), "--chain-id", "31337", "--silent"], { stdio: ["ignore", "ignore", "pipe"] });
+const anvilDied = watchAnvil(anvil);
+anvilDied.catch(() => {});
 let failed = false;
 try {
-  await waitForRpc();
+  await Promise.race([waitForRpc(), anvilDied]);
+  await assertOwnAnvil();
 
   // ── 共用元件：結算代幣與價格來源（DeployTenant 從它讀種子價） ─────────────
   const usdc = deployed(run("forge", ["create", "src/MockUSDC.sol:MockUSDC", "--broadcast",
@@ -156,7 +260,7 @@ try {
   console.log(`✓ clean tenant: ${blocks} blocks in ${Math.ceil(blocks / CHUNK)} chunks, ${calls} eth_getLogs calls, ${grants} grant events`);
 
   // ── 2. 鏈上多一個陌生的 KEEPER ────────────────────────────────────────────
-  const record = JSON.parse((await import("node:fs")).readFileSync(RECORD, "utf8"));
+  const record = JSON.parse(readFileSync(RECORD, "utf8"));
   const oracle = record.contracts.Oracle;
   const keeperRole = keccak("KEEPER_ROLE");
   cast("send", oracle, "grantRole(bytes32,address)", keeperRole, STRANGER, "--private-key", ADMIN_KEY);
@@ -175,11 +279,11 @@ try {
   failed = true;
   console.error(e.message ?? e);
 } finally {
+  anvil.removeAllListeners("exit");
   anvil.kill();
   rmSync(CONFIG, { force: true });
   rmSync(RECORD, { force: true });
-  for (const s of ["DeployTenant.s.sol", "VerifyTenant.s.sol", "MockUSDC.sol", "MockOracle.sol"]) {
-    rmSync(join(CONTRACTS, "broadcast", s, "31337"), { recursive: true, force: true });
-  }
+  restoreBroadcasts(moved);
 }
-process.exit(failed ? 1 : 0);
+// 不用 process.exit()：Windows 上 fetch／子程序的 handle 還在關閉時硬退會觸發 libuv 斷言。
+process.exitCode = failed ? 1 : 0;

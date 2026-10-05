@@ -60,5 +60,7 @@ jobs:
       - name: Privilege-history scan against a local chain (eth_getLogs path)
         run: node scripts/tenant-privilege-scan.mjs
 
+      # 上一步（anvil 測試）失敗時仍要驗證真實租戶；前一步失敗 job 照樣是紅燈。
       - name: Verify every dedicated tenant on chain
+        if: ${{ !cancelled() }}
         run: node scripts/verify-dedicated-tenants.mjs
