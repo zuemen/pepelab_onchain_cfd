@@ -150,6 +150,46 @@ export async function enqueueSettlement(entry: LedgerEntry): Promise<void> {
   await command(["RPUSH", QUEUE_KEY, JSON.stringify(entry)]);
 }
 
+/**
+ * One marker per EIP-3009 authorization that has been credited, whichever path credited it:
+ * `<prefix><chain>:<token>:<payer>:<nonce>` (lowercase) → the idempotency key it was credited
+ * under. The success path keys revenue by the tx hash the facilitator reported, and the
+ * reconciler by the tx that emitted AuthorizationUsed; if those ever differ, the two `tx:` keys
+ * differ too, but the authorization is the same. Both paths enqueue through an atomic
+ * "SET marker NX, then RPUSH" (the reconciler's script also removes its row), so one
+ * authorization can enter the settlement queue at most once. Kept as long as settlement state.
+ */
+export const AUTHZ_MARKER_PREFIX = "x402:settlement:authz:";
+
+export function authorizationMarkerKey(a: { network?: unknown; asset?: unknown; payer?: unknown; nonce?: unknown }): string | null {
+  const ok =
+    typeof a.network === "string" && /^eip155:[0-9]+$/.test(a.network) &&
+    typeof a.asset === "string" && /^0x[0-9a-fA-F]{40}$/.test(a.asset) &&
+    typeof a.payer === "string" && /^0x[0-9a-fA-F]{40}$/.test(a.payer) &&
+    typeof a.nonce === "string" && /^0x[0-9a-fA-F]{64}$/.test(a.nonce);
+  if (!ok) return null;
+  return `${AUTHZ_MARKER_PREFIX}${[a.network, a.asset, a.payer, a.nonce].map((v) => String(v).toLowerCase()).join(":")}`;
+}
+
+/** KEYS: marker, queue   ARGV: marker value, entry, ttl. 1 = queued, 0 = authorization already credited. */
+const ENQUEUE_ONCE_SCRIPT = `-- pepelab:enqueue_once
+if redis.call('SET', KEYS[1], ARGV[1], 'NX', 'EX', tonumber(ARGV[3])) then
+  redis.call('RPUSH', KEYS[2], ARGV[2])
+  return 1
+end
+return 0`;
+
+/**
+ * Success-path enqueue for a payment whose authorization is known: queued only if no revenue
+ * row was ever queued for the same authorization (see AUTHZ_MARKER_PREFIX).
+ */
+export async function enqueueSettlementOnce(entry: LedgerEntry, marker: string): Promise<"queued" | "already_credited"> {
+  const r = await command<number>([
+    "EVAL", ENQUEUE_ONCE_SCRIPT, 2, marker, QUEUE_KEY, entry.idempotencyKey ?? "?", JSON.stringify(entry), SETTLE_STATE_TTL_SEC,
+  ]);
+  return Number(r) === 1 ? "queued" : "already_credited";
+}
+
 export function unknownMaxFromEnv(env: NodeJS.ProcessEnv = process.env): number {
   const n = Number(env.X402_UNKNOWN_MAX);
   return Number.isInteger(n) && n > 0 ? n : UNKNOWN_MAX_DEFAULT;
@@ -250,10 +290,35 @@ export async function moveUnknownToManual(raw: string, reason: string, extra: ob
   return Number(r) === 1;
 }
 
-/** Credit a reconciled row: remove it and enqueue `entry` into the main queue, atomically. */
-export async function creditUnknownSettlement(raw: string, entry: LedgerEntry): Promise<boolean> {
-  const r = await command<number>(["EVAL", UNKNOWN_MOVE_SCRIPT, 2, UNKNOWN_SETTLEMENT_KEY, QUEUE_KEY, raw, JSON.stringify(entry)]);
-  return Number(r) === 1;
+/**
+ * KEYS: unknown list, queue, authorization marker   ARGV: row, entry, marker value, ttl.
+ * 2 = the authorization was already credited (nothing changed), 1 = credited, 0 = row gone.
+ */
+const UNKNOWN_CREDIT_SCRIPT = `-- pepelab:unknown_credit
+if redis.call('EXISTS', KEYS[3]) == 1 then
+  return 2
+end
+if redis.call('LREM', KEYS[1], 1, ARGV[1]) == 1 then
+  redis.call('SET', KEYS[3], ARGV[3], 'EX', tonumber(ARGV[4]))
+  redis.call('RPUSH', KEYS[2], ARGV[2])
+  return 1
+end
+return 0`;
+
+/**
+ * Credit a reconciled row, atomically: unless the authorization marker already exists, remove
+ * the row, set the marker and enqueue `entry` into the main queue.
+ */
+export async function creditUnknownSettlement(
+  raw: string,
+  entry: LedgerEntry,
+  marker: string,
+): Promise<"credited" | "already_credited" | "gone"> {
+  const r = Number(await command<number>([
+    "EVAL", UNKNOWN_CREDIT_SCRIPT, 3, UNKNOWN_SETTLEMENT_KEY, QUEUE_KEY, marker,
+    raw, JSON.stringify(entry), entry.idempotencyKey ?? "?", SETTLE_STATE_TTL_SEC,
+  ]));
+  return r === 1 ? "credited" : r === 2 ? "already_credited" : "gone";
 }
 
 /** Per-row consecutive error counter, keyed by a hash of the exact row. */

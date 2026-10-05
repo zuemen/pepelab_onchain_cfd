@@ -24,7 +24,7 @@ type ChainReceipt = import("./unknownReconcile.ts").ChainReceipt;
 const {
   UNKNOWN_SETTLEMENT_KEY, UNKNOWN_MANUAL_KEY, UNKNOWN_OVERFLOW_KEY, UNKNOWN_SEEN_PREFIX,
   QUEUE_KEY, RETRY_KEY, DEAD_KEY, SETTLE_STATE_PREFIX, recordUnknownSettlement,
-  moveUnknownToManual, creditUnknownSettlement, unknownRowErrorsKey,
+  moveUnknownToManual, creditUnknownSettlement, unknownRowErrorsKey, authorizationMarkerKey, enqueueSettlementOnce,
 } = ledger;
 
 const ASSET = "0x036CbD53842c5426634e7929541eC2318f3dCF7e";
@@ -82,7 +82,7 @@ function world() {
     async latestBlock() {
       return w.latest;
     },
-    async authorizationUsed(_a: string, p: string, n: string) {
+    async authorizationUsed(_a: string, p: string, n: string, _tag: number) {
       w.calls.used += 1;
       if (w.throws) throw new Error("rpc down");
       return w.used.get(k(p, n)) ?? false;
@@ -173,9 +173,12 @@ reset();
   assert.equal(manual().length, 1);
   fake.list(UNKNOWN_SETTLEMENT_KEY).push(raw);
   const e = { trader: TRADER, feeUsd: 0.01, at: OLD, source: "signals" as const, idempotencyKey: `tx:${TX1}` };
-  assert.equal(await creditUnknownSettlement(raw, e), true);
-  assert.equal(await creditUnknownSettlement(raw, e), false);
+  const mk = authorizationMarkerKey(row())!;
+  assert.equal(await creditUnknownSettlement(raw, e, mk), "credited");
+  assert.equal(await creditUnknownSettlement(raw, e, mk), "already_credited");
+  assert.equal(await creditUnknownSettlement(raw, e, mk + "x"), "gone");
   assert.equal(queue().length, 1, "one revenue row");
+  assert.equal(fake.strings.get(mk), `tx:${TX1}`, "authorization marker set with the credit");
   console.log("✓ manual and credit moves happen at most once per row");
 }
 
@@ -490,14 +493,16 @@ reset();
 
 // ── ethersReconcileChain against a mock provider ─────────────────────────────
 
-function mockProvider(o: { latest: number; logAt?: number; maxRange?: number; receipts?: Record<string, unknown> }) {
+function mockProvider(o: { latest: number; logAt?: number; maxRange?: number; receipts?: Record<string, unknown>; consumedAtBlock?: number }) {
   const ranges: [number, number][] = [];
   const calls: string[] = [];
+  const callTags: unknown[] = [];
   const blockTs = (n: number) => NOW - (o.latest - n) * 2;
   const iface = new ethers.Interface(["function authorizationState(address,bytes32) view returns (bool)"]);
   const p = {
     ranges,
     calls,
+    callTags,
     async getBlock(tag: number | string) {
       const n = tag === "latest" ? o.latest : Number(tag);
       return { number: n, timestamp: blockTs(n) };
@@ -515,9 +520,15 @@ function mockProvider(o: { latest: number; logAt?: number; maxRange?: number; re
     async getTransactionReceipt(h: string) {
       return (o.receipts?.[h] as never) ?? null;
     },
-    async call(tx: { to: string; data: string }) {
+    async call(tx: { to: string; data: string; blockTag?: unknown }) {
       calls.push(tx.to);
+      callTags.push(tx.blockTag);
       const [, n] = iface.decodeFunctionData("authorizationState", tx.data);
+      if (o.consumedAtBlock !== undefined) {
+        // A load-balanced node that lags: "latest" (no blockTag) is behind the consumption.
+        const used = typeof tx.blockTag === "number" && tx.blockTag >= o.consumedAtBlock;
+        return iface.encodeFunctionResult("authorizationState", [used && n === nonce(1)]);
+      }
       return iface.encodeFunctionResult("authorizationState", [n === nonce(1)]);
     },
   };
@@ -548,9 +559,10 @@ function mockProvider(o: { latest: number; logAt?: number; maxRange?: number; re
   const searched = capped.ranges.reduce((n, [a, b]) => n + b - a + 1, 0);
   assert.ok(searched <= 5_000, `search capped (${searched})`);
 
-  assert.equal(await c.authorizationUsed(ASSET, PAYER, nonce(1)), true);
-  assert.equal(await c.authorizationUsed(ASSET, PAYER, nonce(2)), false);
+  assert.equal(await c.authorizationUsed(ASSET, PAYER, nonce(1), 50_000), true);
+  assert.equal(await c.authorizationUsed(ASSET, PAYER, nonce(2), 50_000), false);
   assert.equal(p.calls[0], ASSET);
+  assert.deepEqual(p.callTags, [50_000, 50_000], "eth_call pinned to the given block");
   assert.equal(await c.receipt(TX2), null);
   console.log("✓ ethersReconcileChain: getLogs ≤ 1000 blocks/call (env-tunable, capped), authorizationState via eth_call");
 }
@@ -580,6 +592,49 @@ reset();
   assert.equal(s2.manual, 1);
   assert.equal(queue().length, 0);
   console.log("✓ ethersReconcileChain end to end: match → credited; Transfer to payer → manual");
+}
+
+reset();
+{
+  // authorizationState and expiry time come from the SAME block. The row looks expired by the
+  // latest block's time; a lagging node would answer "unused" for latest. Pinned to the tip's
+  // number, the call sees the consumption and the payment is credited, not closed.
+  const vb = NOW - 3600;
+  const p = mockProvider({
+    latest: 50_000,
+    logAt: 48_000,
+    consumedAtBlock: 48_000,
+    receipts: { [TX1]: { hash: TX1, status: 1, blockNumber: 48_000, logs: twaLogs() } },
+  });
+  pushRaw(row({ at: vb - 120, validBefore: String(vb) }));
+  const s = await reconcileUnknownSettlements({ chain: ethersReconcileChain(p as never), now: () => NOW, asset: ASSET, payTo: PAY_TO });
+  assert.equal(s.expired, 0, "not closed as expired");
+  assert.equal(s.credited, 1);
+  assert.ok(p.callTags.length > 0 && p.callTags.every((t) => t === 50_000), "authorizationState read at the tip block used for time");
+  console.log("✓ authorizationState and expiry use the same blockTag (lagging node cannot close a landed payment)");
+}
+
+reset();
+{
+  // Success path credited this authorization as tx:A (the hash the facilitator reported); the
+  // event later shows tx:B consumed the nonce. Same authorization → no second credit.
+  const A = hash(0xa);
+  const mk = authorizationMarkerKey(row())!;
+  const e = { trader: TRADER, feeUsd: 0.01, at: OLD, source: "signals" as const, idempotencyKey: `tx:${A}` };
+  assert.equal(await enqueueSettlementOnce(e, mk), "queued");
+  assert.equal(await enqueueSettlementOnce({ ...e, idempotencyKey: `tx:${TX2}` }, mk), "already_credited", "same authorization never queued twice");
+  // The worker settles it and the queue row is gone; only settle:tx:A and the marker remain.
+  fake.list(QUEUE_KEY).length = 0;
+  fake.strings.set(`${SETTLE_STATE_PREFIX}tx:${A}`, JSON.stringify({ status: "DONE" }));
+  pushRaw(row());
+  const { consume, deps } = world();
+  consume(TX2);
+  const s = await reconcileUnknownSettlements(deps());
+  assert.equal(s.alreadyCredited, 1);
+  assert.equal(s.credited, 0);
+  assert.equal(queue().length, 0, "no tx:B revenue row");
+  assert.equal(fake.list(UNKNOWN_SETTLEMENT_KEY).length, 0);
+  console.log("✓ success path credited tx:A, chain shows tx:B → authorization marker blocks a second credit");
 }
 
 await fake.close();

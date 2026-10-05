@@ -60034,6 +60034,31 @@ async function command(cmd) {
 async function enqueueSettlement(entry) {
   await command(["RPUSH", QUEUE_KEY, JSON.stringify(entry)]);
 }
+var AUTHZ_MARKER_PREFIX = "x402:settlement:authz:";
+function authorizationMarkerKey(a) {
+  const ok = typeof a.network === "string" && /^eip155:[0-9]+$/.test(a.network) && typeof a.asset === "string" && /^0x[0-9a-fA-F]{40}$/.test(a.asset) && typeof a.payer === "string" && /^0x[0-9a-fA-F]{40}$/.test(a.payer) && typeof a.nonce === "string" && /^0x[0-9a-fA-F]{64}$/.test(a.nonce);
+  if (!ok) return null;
+  return `${AUTHZ_MARKER_PREFIX}${[a.network, a.asset, a.payer, a.nonce].map((v) => String(v).toLowerCase()).join(":")}`;
+}
+var ENQUEUE_ONCE_SCRIPT = `-- pepelab:enqueue_once
+if redis.call('SET', KEYS[1], ARGV[1], 'NX', 'EX', tonumber(ARGV[3])) then
+  redis.call('RPUSH', KEYS[2], ARGV[2])
+  return 1
+end
+return 0`;
+async function enqueueSettlementOnce(entry, marker) {
+  const r = await command([
+    "EVAL",
+    ENQUEUE_ONCE_SCRIPT,
+    2,
+    marker,
+    QUEUE_KEY,
+    entry.idempotencyKey ?? "?",
+    JSON.stringify(entry),
+    SETTLE_STATE_TTL_SEC
+  ]);
+  return Number(r) === 1 ? "queued" : "already_credited";
+}
 function unknownMaxFromEnv(env = process.env) {
   const n2 = Number(env.X402_UNKNOWN_MAX);
   return Number.isInteger(n2) && n2 > 0 ? n2 : UNKNOWN_MAX_DEFAULT;
@@ -65606,7 +65631,21 @@ async function applyLedgerRecording(entry, res, paymentHeader, protocol = "v1") 
         );
       }
       const pid = v2Payload ? readPaymentIdentifier(v2Payload) : null;
-      await enqueueSettlement({ ...entry, idempotencyKey, ...pid?.valid && pid.id ? { paymentId: pid.id } : {} });
+      const full = { ...entry, idempotencyKey, ...pid?.valid && pid.id ? { paymentId: pid.id } : {} };
+      const v2 = v2Payload;
+      const marker = v2 ? authorizationMarkerKey({
+        network: v2.accepted?.network,
+        asset: v2.accepted?.asset,
+        payer: v2.payload?.authorization?.from,
+        nonce: v2.payload?.authorization?.nonce
+      }) : null;
+      if (marker) {
+        if (await enqueueSettlementOnce(full, marker) === "already_credited") {
+          console.warn(`[ledger] authorization already credited (${marker}); not queued again: ${JSON.stringify(full)}`);
+        }
+      } else {
+        await enqueueSettlement(full);
+      }
       queued = true;
     } catch (err) {
       settleError = "ledger_enqueue_failed\uFF1A\u5DF2\u6536\u6B3E\u4F46\u5206\u6F64\u7D00\u9304\u672A\u80FD\u6392\u5165\u4F47\u5217\uFF08\u5DF2\u8A18\u9304\u65BC\u4F3A\u670D\u5668 log\uFF09";

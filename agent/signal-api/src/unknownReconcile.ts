@@ -24,6 +24,9 @@
 //      key nor the `auth:<payer>:<nonce>` key (the success path's fallback form) has settlement
 //      state or sits in any settlement queue. A success-path enqueue for that settlement would
 //      have happened within its own request, long before MIN_AGE_SEC.
+//   5. No revenue row was ever queued for this authorization (chain + token + payer + nonce
+//      marker, set atomically by the success path and by this path; ledger.ts
+//      AUTHZ_MARKER_PREFIX). This holds even if the success path credited a different tx hash.
 //   Then: credit with idempotency key `tx:<hash>` — the key the success path uses — so the
 //   worker's `settle:<key> NX` claim absorbs any overlap. There is no `auth:` credit path.
 //
@@ -39,6 +42,7 @@ import { ethers } from "ethers";
 import {
   bumpUnknownRowErrors,
   clearUnknownRowErrors,
+  authorizationMarkerKey,
   creditUnknownSettlement,
   hasSettleState,
   idempotencyKeysInQueues,
@@ -83,8 +87,12 @@ export interface ChainReceipt {
 
 export interface ReconcileChain {
   latestBlock(): Promise<{ number: number; timestamp: number }>;
-  /** EIP-3009 `authorizationState(authorizer, nonce)` on `asset`. */
-  authorizationUsed(asset: string, payer: string, nonce: string): Promise<boolean>;
+  /**
+   * EIP-3009 `authorizationState(authorizer, nonce)` on `asset`, read AT `blockTag` — the same
+   * block whose timestamp decides expiry, so a lagging load-balanced node cannot pair an old
+   * "unused" answer with a newer time and close a payment that has landed.
+   */
+  authorizationUsed(asset: string, payer: string, nonce: string, blockTag: number): Promise<boolean>;
   /** Hashes of txs whose logs carry `AuthorizationUsed(payer, nonce)` from `asset`, searched in the time window. */
   findAuthorizationUsedTxs(asset: string, payer: string, nonce: string, fromUnix: number, toUnix: number): Promise<string[]>;
   receipt(txHash: string): Promise<ChainReceipt | null>;
@@ -129,6 +137,7 @@ const topicAddr = (a: string) => ethers.zeroPadValue(a.toLowerCase(), 32).toLowe
 
 interface Row {
   at: number;
+  network: string;
   asset: string;
   payTo: string;
   payer: string;
@@ -150,6 +159,7 @@ function parseRow(raw: string): Row | string {
   if (!r || typeof r !== "object") return "unparseable";
   const at = Number(r.at);
   if (!Number.isFinite(at) || at <= 0) return "missing_at";
+  if (typeof r.network !== "string" || !/^eip155:[0-9]+$/.test(r.network)) return "missing_network";
   if (typeof r.asset !== "string" || !ADDR.test(r.asset)) return "missing_asset";
   if (typeof r.payTo !== "string" || !ADDR.test(r.payTo)) return "missing_payto";
   if (typeof r.payer !== "string" || !ADDR.test(r.payer)) return "missing_payer";
@@ -166,6 +176,7 @@ function parseRow(raw: string): Row | string {
       : null;
   return {
     at,
+    network: r.network,
     asset: r.asset.toLowerCase(),
     payTo: r.payTo.toLowerCase(),
     payer: r.payer.toLowerCase(),
@@ -248,9 +259,10 @@ export async function reconcileUnknownSettlements(deps: ReconcileDeps): Promise<
     if (row.asset !== cfgAsset) return { kind: "manual", reason: "asset_mismatch" };
     if (row.payTo !== cfgPayTo) return { kind: "manual", reason: "payto_mismatch" };
 
-    const used = await deps.chain.authorizationUsed(row.asset, row.payer, row.nonce);
+    // State and time from the same block: read the tip first, then authorizationState AT it.
+    const tip = await chainNow();
+    const used = await deps.chain.authorizationUsed(row.asset, row.payer, row.nonce, tip.number);
     if (!used) {
-      const tip = await chainNow();
       // Past validBefore by chain time the contract rejects it: it can never be consumed.
       return tip.timestamp > row.validBefore + EXPIRY_GRACE_SEC ? { kind: "expired" } : { kind: "pending" };
     }
@@ -277,7 +289,6 @@ export async function reconcileUnknownSettlements(deps: ReconcileDeps): Promise<
     const bad = verifyReceipt(rc, want);
     if (bad) return { kind: "manual", reason: bad, extra: { transaction: tx } };
 
-    const tip = await chainNow();
     if (tip.timestamp - rc.blockTimestamp < MIN_AGE_SEC) return { kind: "pending" };
 
     const keys = [`tx:${tx}`, `auth:${row.payer}:${row.nonce}`];
@@ -289,8 +300,16 @@ export async function reconcileUnknownSettlements(deps: ReconcileDeps): Promise<
     if (!row.ledgerEntry) return { kind: "manual", reason: "no_ledger_entry", extra: { transaction: tx } };
 
     const entry: LedgerEntry = { ...row.ledgerEntry, at: row.at, idempotencyKey: keys[0] };
-    // Atomic: the revenue row is pushed only if this call removed the unknown row.
-    if (!(await creditUnknownSettlement(raw, entry))) return { kind: "pending" };
+    const marker = authorizationMarkerKey(row);
+    if (!marker) return { kind: "manual", reason: "missing_network" };
+    // Atomic: refused if this authorization was ever credited (by either path, under any tx
+    // hash); otherwise the row is removed, the marker set and the revenue row pushed together.
+    const r = await creditUnknownSettlement(raw, entry, marker);
+    if (r === "already_credited") {
+      await removeUnknownSettlement(raw);
+      return { kind: "alreadyCredited" };
+    }
+    if (r === "gone") return { kind: "pending" };
     queued.add(keys[0]);
     console.log(`[reconcile] credited ${entry.idempotencyKey} → ${entry.trader} $${entry.feeUsd}`);
     return { kind: "credited" };
@@ -399,9 +418,9 @@ export function ethersReconcileChain(
   return {
     latestBlock,
 
-    async authorizationUsed(asset, payer, nonce) {
+    async authorizationUsed(asset, payer, nonce, blockTag) {
       const data = EIP3009.encodeFunctionData("authorizationState", [payer, nonce]);
-      const out = await provider.call({ to: asset, data });
+      const out = await provider.call({ to: asset, data, blockTag });
       return Boolean(EIP3009.decodeFunctionResult("authorizationState", out)[0]);
     },
 

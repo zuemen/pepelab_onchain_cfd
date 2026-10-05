@@ -112,6 +112,22 @@ export async function startFakeUpstash(): Promise<FakeUpstash> {
           list(KEYS[0]).push(ARGV[0]);
           return ok(1);
         }
+        if (script.startsWith("-- pepelab:enqueue_once")) {
+          if (strings.has(KEYS[0])) return ok(0);
+          strings.set(KEYS[0], ARGV[0]);
+          list(KEYS[1]).push(ARGV[1]);
+          return ok(1);
+        }
+        if (script.startsWith("-- pepelab:unknown_credit")) {
+          if (strings.has(KEYS[2])) return ok(2);
+          const l = list(KEYS[0]);
+          const i = l.indexOf(ARGV[0]);
+          if (i < 0) return ok(0);
+          l.splice(i, 1);
+          strings.set(KEYS[2], ARGV[2]);
+          list(KEYS[1]).push(ARGV[1]);
+          return ok(1);
+        }
         if (script.startsWith("-- pepelab:unknown_move")) {
           const l = list(KEYS[0]);
           const i = l.indexOf(ARGV[0]);

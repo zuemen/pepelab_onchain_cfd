@@ -42,6 +42,8 @@ import { randomUUID } from "node:crypto";
 import {
   isLedgerEnabled,
   enqueueSettlement,
+  enqueueSettlementOnce,
+  authorizationMarkerKey,
   deriveIdempotencyKey,
   deriveIdempotencyKeyV2,
   recordUnknownSettlement,
@@ -393,7 +395,26 @@ export async function applyLedgerRecording(
         );
       }
       const pid = v2Payload ? readPaymentIdentifier(v2Payload) : null;
-      await enqueueSettlement({ ...entry, idempotencyKey, ...(pid?.valid && pid.id ? { paymentId: pid.id } : {}) });
+      const full: LedgerEntry = { ...entry, idempotencyKey, ...(pid?.valid && pid.id ? { paymentId: pid.id } : {}) };
+      // v2: one revenue row per EIP-3009 authorization, whichever tx hash the facilitator
+      // reported (ledger.ts AUTHZ_MARKER_PREFIX). `accepted` was matched exactly against our
+      // requirements by the paywall, so its network/asset are ours.
+      const v2 = v2Payload as { accepted?: { network?: unknown; asset?: unknown }; payload?: { authorization?: { from?: unknown; nonce?: unknown } } } | null;
+      const marker = v2
+        ? authorizationMarkerKey({
+            network: v2.accepted?.network,
+            asset: v2.accepted?.asset,
+            payer: v2.payload?.authorization?.from,
+            nonce: v2.payload?.authorization?.nonce,
+          })
+        : null;
+      if (marker) {
+        if ((await enqueueSettlementOnce(full, marker)) === "already_credited") {
+          console.warn(`[ledger] authorization already credited (${marker}); not queued again: ${JSON.stringify(full)}`);
+        }
+      } else {
+        await enqueueSettlement(full);
+      }
       queued = true;
     } catch (err) {
       settleError = "ledger_enqueue_failed：已收款但分潤紀錄未能排入佇列（已記錄於伺服器 log）";

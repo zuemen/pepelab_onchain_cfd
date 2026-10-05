@@ -139,8 +139,9 @@ signal-api 的付費端點（`/signals/:trader`、`/oracle/:asset`）目前用 x
 - `both` 模式下 v2 的 `/supported` 失敗或 2.5 秒內沒回應時，該次 402 只宣告 v1（v1 client 不受影響，v2 client 會看不到 v2 選項）；失敗後 30 秒內不重試。
 - 沒有請求層冪等：帶同一個 payment-identifier 重送仍會簽一張新授權，兩筆都結算就是兩筆付款（各自分潤）。所以伺服器不宣告 payment-identifier（見 `KNOWN_LIMITATIONS.md` §16b）。
 - settle 結果未知的付款進 `x402:settlement:unknown`，**由結算 worker 每輪自動對帳**（`signal-api/src/unknownReconcile.ts`）。原則：**只有鏈上逐項核對完全吻合才補分潤，其餘一律交人工；寧可交人工，不可重複或錯誤入帳。**
-  - **唯一可入帳條件**（全部成立）：紀錄欄位齊全，且 `asset`＝設定的結算 token、`payTo`＝目前的 payTo（＝結算 signer，已過收款地址守門）；以資產合約的 `AuthorizationUsed(payer, nonce)` 事件找出實際消耗 nonce 的交易（紀錄上的 `transaction` 只有在其 receipt 正好帶有該事件時才採用）；該交易的**同一筆 receipt** 成功，且緊接在事件後的是同一資產合約的 `Transfer(payer → payTo)`、金額 ≥ 紀錄的授權金額；該區塊依鏈上時間已超過 10 分鐘；`tx:<hash>` 與 `auth:<payer>:<nonce>` 兩種鍵都不在結算狀態或任何佇列中。成立才以 `tx:<該 hash>` 入主佇列（與成功路徑同鍵，worker 的 `settle:<鍵> NX` 吸收任何重疊）。**沒有 `auth:` 鍵的入帳路徑。**
-  - nonce 未消耗且**鏈上最新區塊時間**已過 `validBefore`＋60 秒＝不可能再上鏈，結案；未過期則留待下一輪。
+  - **唯一可入帳條件**（全部成立）：紀錄欄位齊全，且 `asset`＝設定的結算 token、`payTo`＝目前的 payTo（＝結算 signer，已過收款地址守門）；以資產合約的 `AuthorizationUsed(payer, nonce)` 事件找出實際消耗 nonce 的交易（紀錄上的 `transaction` 只有在其 receipt 正好帶有該事件時才採用）；該交易的**同一筆 receipt** 成功，且緊接在事件後的是同一資產合約的 `Transfer(payer → payTo)`、金額 ≥ 紀錄的授權金額；該區塊依鏈上時間已超過 10 分鐘；`tx:<hash>` 與 `auth:<payer>:<nonce>` 兩種鍵都不在結算狀態或任何佇列中；且這張授權沒有「已入帳」標記。成立才以 `tx:<該 hash>` 入主佇列（與成功路徑同鍵，worker 的 `settle:<鍵> NX` 吸收任何重疊）。
+  - **授權層級的入帳標記** `x402:settlement:authz:<chain>:<token>:<payer>:<nonce>`（值＝入帳鍵，保留 90 天）：成功路徑與對帳入帳都以 Lua 原子地「標記不存在才寫入標記並入列」，所以同一張授權最多入列一次——即使 facilitator 回報的 tx hash 與實際消耗 nonce 的交易不同。**沒有 `auth:` 鍵的入帳路徑。**
+  - nonce 未消耗且**鏈上最新區塊時間**已過 `validBefore`＋60 秒＝不可能再上鏈，結案；未過期則留待下一輪。`authorizationState` 以同一個區塊號（blockTag）讀取，狀態與時間出自同一區塊。
   - 其餘（找不到事件、receipt 不符、nonce 已消耗但沒有對應 Transfer、轉帳對象不是 payTo、金額不足、payTo／資產不符、欄位缺漏、紀錄超過 30 天、同一列連續 5 次 RPC/Redis 錯誤）→ 移到 `x402:settlement:unknown:manual`，每列附原因碼，不入帳。移動與入帳都用 Lua 原子完成（從 unknown 移除成功才寫入目的地），重試不會產生第二份。
   - 每輪以輪轉方式取最多 50 列（頭→尾），卡住的列不會擋住後面的列；事件查詢每次 `eth_getLogs` ≤ 1,000 塊（`X402_RECONCILE_LOG_CHUNK`，預設 1000、上限 1000），每列最多搜尋 20,000 塊。
   - 清單以 payer+nonce 去重、長度上限 `X402_UNKNOWN_MAX`（預設 1000）；上限檢查與寫入是同一支 Lua。滿了的紀錄**不丟棄**：完整寫入 manual（原因 `overflow`）並累計 `x402:settlement:unknown:overflow`。worker 在 overflow > 0 時輸出 `::error::`，有列錯誤或新的 manual 列時輸出 `::warning::`；處理方式見 `agent/README.md`「x402 結算結果未知的人工處理」。

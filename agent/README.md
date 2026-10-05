@@ -168,7 +168,7 @@ worker 每輪自動對帳 `x402:settlement:unknown`，**只有鏈上逐項吻合
    `Transfer(payer → 目前的 payTo)` 且金額 ≥ `amount`。不成立（例如 nonce 被取消、轉給別人、金額不足、
    payTo 不是目前的 signer）→ 沒有收到款，不補分潤，直接從 manual 移除該列。
 3. 成立 → 先確認 `settle:tx:<hash>`、`settle:auth:<payer>:<nonce>` 都不存在，且主佇列／retry／
-   unconfirmed／dead／processing 都沒有這兩個鍵；都沒有才 `RPUSH x402:settlement:queue`
+   unconfirmed／dead／processing 都沒有這兩個鍵，且 `x402:settlement:authz:<chain>:<token>:<payer>:<nonce>`（全小寫）不存在；都沒有才先 `SET` 該標記（值＝入帳鍵）再 `RPUSH x402:settlement:queue`
    一筆以 `tx:<hash>` 為 `idempotencyKey` 的分潤項目（缺 `ledgerEntry` 的列要依 route 與金額人工判斷受益者）。
 4. `reason` 是 `repeated_errors` 的列多半是 RPC 問題：確認 RPC 恢復後可把 `raw` 原樣 `RPUSH` 回
    `x402:settlement:unknown` 讓 worker 重判。

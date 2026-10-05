@@ -35,7 +35,7 @@ process.env.UPSTASH_REDIS_REST_TOKEN = "test-token";
 for (const k of ["X402_PROTOCOL", "PAY_TO", "SIGNAL_API_PUBLIC_URL", "X402_FACILITATOR_TIMEOUT_MS"]) delete process.env[k];
 
 const { createApp, MAX_TIMEOUT_SECONDS } = await import("./app.ts");
-const { QUEUE_KEY, UNKNOWN_SETTLEMENT_KEY, deriveIdempotencyKeyV2 } = await import("./ledger.ts");
+const { QUEUE_KEY, UNKNOWN_SETTLEMENT_KEY, deriveIdempotencyKeyV2, authorizationMarkerKey } = await import("./ledger.ts");
 const { runWorker } = await import("./settlement-worker.ts");
 const { classifyV2FacilitatorError, resolveX402Protocol, toCaip2Network, resolveFacilitatorTimeoutMs } = await import(
   "./x402v2.ts"
@@ -329,6 +329,9 @@ const goldenAccept = JSON.parse(v1Golden[0]!.body!).accepts[0] as Record<string,
   assert.equal(q.length, 1);
   assert.deepEqual({ trader: q[0]!.trader, feeUsd: q[0]!.feeUsd, source: q[0]!.source }, { trader: TRADER, feeUsd: 0.01, source: "signals" });
   assert.equal(q[0]!.idempotencyKey, `tx:${settle.transaction}`, "沒帶 payment-identifier → 結算 tx hash");
+  // 成功路徑同時寫下「這張授權已入帳」標記（鏈＋token＋付款人＋nonce），對帳不會再以別的 tx 鍵入帳。
+  const marker = authorizationMarkerKey({ network: "eip155:84532", asset: sent.accepted.asset, payer: auth.from, nonce: auth.nonce })!;
+  assert.equal(upstash.strings.get(marker), `tx:${settle.transaction}`, "授權標記與入帳鍵一起寫入");
 
   // 同一張授權重送：facilitator 拒絕（nonce 已用）→ 402，不再入列、不再交付資料。
   const replay = await app.request(SIGNALS, { headers: { "PAYMENT-SIGNATURE": sig } });
