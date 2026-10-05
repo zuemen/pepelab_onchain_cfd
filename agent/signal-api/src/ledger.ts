@@ -42,6 +42,26 @@ export const DEAD_KEY = "x402:settlement:dead";
  */
 export const UNKNOWN_SETTLEMENT_KEY = "x402:settlement:unknown";
 /**
+ * Dedup marker per authorization: `<prefix><payer>:<nonce>` (lowercase). An EIP-3009 nonce can
+ * be consumed at most once per payer, so this pair identifies one payment. Without it every
+ * resend of the same authorization during a facilitator outage added another row.
+ * Kept as long as the idempotency state, so a later resend is still recognised.
+ */
+export const UNKNOWN_SEEN_PREFIX = "x402:settlement:unknown:seen:";
+/**
+ * Writes refused because the list was full. Should stay 0. Nothing alerts on it yet — wiring it
+ * into ops/monitoring is a follow-up; until then check it by hand after a facilitator outage.
+ */
+export const UNKNOWN_OVERFLOW_KEY = "x402:settlement:unknown:overflow";
+/**
+ * Rows the reconciler could not settle on its own: the authorization was consumed on chain but
+ * the row has no ledger entry (written before reconciliation existed), or the row is malformed.
+ * These need a human; everything else in UNKNOWN_SETTLEMENT_KEY is handled automatically.
+ */
+export const UNKNOWN_MANUAL_KEY = "x402:settlement:unknown:manual";
+/** Default cap on UNKNOWN_SETTLEMENT_KEY; override with X402_UNKNOWN_MAX. */
+export const UNKNOWN_MAX_DEFAULT = 1000;
+/**
  * 舊格式項目（沒有冪等鍵）以內容雜湊作鍵時，同一個雜湊第二次出現：可能是同一筆的重複，
  * 也可能是「同 trader、同金額、同一秒、同端點」的另一筆真實付款——無法分辨。
  * 不結算、不丟棄，放進這裡交人工核對，並累計衝突筆數。
@@ -127,12 +147,98 @@ export async function enqueueSettlement(entry: LedgerEntry): Promise<void> {
   await command(["RPUSH", QUEUE_KEY, JSON.stringify(entry)]);
 }
 
+export function unknownMaxFromEnv(env: NodeJS.ProcessEnv = process.env): number {
+  const n = Number(env.X402_UNKNOWN_MAX);
+  return Number.isInteger(n) && n > 0 ? n : UNKNOWN_MAX_DEFAULT;
+}
+
+/** `<payer>:<nonce>` lowercase, or null when the row cannot identify its authorization. */
+export function unknownDedupeKey(record: { payer?: unknown; nonce?: unknown }): string | null {
+  const payer = typeof record.payer === "string" && /^0x[0-9a-fA-F]{40}$/.test(record.payer) ? record.payer : null;
+  const nonce = typeof record.nonce === "string" && /^0x[0-9a-fA-F]{64}$/.test(record.nonce) ? record.nonce : null;
+  return payer && nonce ? `${payer.toLowerCase()}:${nonce.toLowerCase()}` : null;
+}
+
+export type RecordUnknownResult = "recorded" | "duplicate";
+
 /**
  * 把一筆「結算結果未知」的 v2 付款推進對帳佇列（UNKNOWN_SETTLEMENT_KEY）。ledger 未設定或
  * 寫入失敗會丟錯，由呼叫端 log——不可以因此改變回給買方的狀態碼。
+ *
+ * Deduplicated per authorization and capped. The cap is a bound against unbounded growth, not a
+ * place where rows are dropped quietly: a full list throws (so the caller logs the record — x402v2
+ * already printed it in full) and counts the refusal in UNKNOWN_OVERFLOW_KEY for monitoring.
+ * The dedup marker is only kept when the row actually landed, so a refused or failed write can be
+ * recorded on the next resend instead of being mistaken for a duplicate forever.
  */
-export async function recordUnknownSettlement(record: object): Promise<void> {
-  await command(["RPUSH", UNKNOWN_SETTLEMENT_KEY, JSON.stringify(record)]);
+export async function recordUnknownSettlement(
+  record: object,
+  max: number = unknownMaxFromEnv(),
+): Promise<RecordUnknownResult> {
+  const dedupe = unknownDedupeKey(record as { payer?: unknown; nonce?: unknown });
+  const seenKey = dedupe ? UNKNOWN_SEEN_PREFIX + dedupe : null;
+  if (seenKey) {
+    const claimed = await command<string | null>(["SET", seenKey, "1", "NX", "EX", SETTLE_STATE_TTL_SEC]);
+    if (claimed !== "OK") return "duplicate";
+  }
+  try {
+    const len = (await command<number | null>(["LLEN", UNKNOWN_SETTLEMENT_KEY])) ?? 0;
+    if (len >= max) {
+      await command(["INCR", UNKNOWN_OVERFLOW_KEY]);
+      throw new Error(`x402:settlement:unknown is full (${len}/${max}); record not queued`);
+    }
+    await command(["RPUSH", UNKNOWN_SETTLEMENT_KEY, JSON.stringify(record)]);
+    return "recorded";
+  } catch (err) {
+    if (seenKey) await command(["DEL", seenKey]).catch(() => undefined);
+    throw err;
+  }
+}
+
+/** Up to `max` rows of UNKNOWN_SETTLEMENT_KEY, oldest first. */
+export async function listUnknownSettlements(max: number): Promise<string[]> {
+  return (await command<string[] | null>(["LRANGE", UNKNOWN_SETTLEMENT_KEY, 0, Math.max(0, max - 1)])) ?? [];
+}
+
+/** Remove one exact row. */
+export async function removeUnknownSettlement(raw: string): Promise<void> {
+  await command(["LREM", UNKNOWN_SETTLEMENT_KEY, 1, raw]);
+}
+
+/** Hand a row to a human: append to UNKNOWN_MANUAL_KEY first, then remove (never lose it). */
+export async function moveUnknownToManual(raw: string, reason: string, extra: object = {}): Promise<void> {
+  await command(["RPUSH", UNKNOWN_MANUAL_KEY, JSON.stringify({ raw, reason, ...extra, movedAt: Math.floor(Date.now() / 1000) })]);
+  await command(["LREM", UNKNOWN_SETTLEMENT_KEY, 1, raw]);
+}
+
+/**
+ * True when any of `keys` already has a settlement state, or is sitting in a queue / processing
+ * list. Used before crediting a reconciled payment: a retry of the same authorization may already
+ * have been credited through the normal path, possibly under the other key form (`tx:` vs `auth:`).
+ */
+export async function isIdempotencyKeyKnown(keys: string[]): Promise<boolean> {
+  for (const k of keys) {
+    if ((await command<string | null>(["GET", SETTLE_STATE_PREFIX + k])) !== null) return true;
+  }
+  const lists = [QUEUE_KEY, RETRY_KEY, UNCONFIRMED_KEY, DEAD_KEY, PROCESSING_KEY, ...Object.values(PROCESSING_KEYS)];
+  const want = new Set(keys);
+  for (const l of lists) {
+    const rows = (await command<string[] | null>(["LRANGE", l, 0, -1])) ?? [];
+    for (const raw of rows) {
+      try {
+        const o = JSON.parse(raw) as { idempotencyKey?: unknown; raw?: unknown };
+        if (typeof o.idempotencyKey === "string" && want.has(o.idempotencyKey)) return true;
+        // Dead / retry rows wrap the original entry as `{ raw, attempts, lastError }`.
+        if (typeof o.raw === "string") {
+          const inner = (JSON.parse(o.raw) as { idempotencyKey?: unknown }).idempotencyKey;
+          if (typeof inner === "string" && want.has(inner)) return true;
+        }
+      } catch {
+        /* unparseable rows are handled by the worker, not here */
+      }
+    }
+  }
+  return false;
 }
 
 /**

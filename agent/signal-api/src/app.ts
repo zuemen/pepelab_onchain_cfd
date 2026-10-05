@@ -563,7 +563,14 @@ export function createApp(opts: CreateAppOptions = {}): Hono<{ Variables: AppVar
           description: r.config.description,
         })),
         onFacilitatorFailure: (_c, f) => facilitatorFailureResponse(f),
-        onSettlementUnknown: (record) => recordUnknownSettlement(record),
+        // What the handler left for the ledger: if the reconciler later finds the authorization
+        // consumed on chain, this is who gets credited and for how much.
+        unknownRecordContext: (c) => ({
+          ledgerEntry: (c as Context<{ Variables: AppVariables }>).get("ledgerEntry") ?? null,
+        }),
+        onSettlementUnknown: async (record) => {
+          await recordUnknownSettlement(record);
+        },
         ...opts.x402V2Timing,
       });
     } catch (err) {

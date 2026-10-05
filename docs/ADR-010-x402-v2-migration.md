@@ -138,7 +138,7 @@ signal-api 的付費端點（`/signals/:trader`、`/oracle/:asset`）目前用 x
 - **v2 從未對真 facilitator 實付過**：所有付款測試都用本機假 facilitator（會真的驗 EIP-712 簽章，但不上鏈）。依規定本次不付款、不送交易；切換步驟 2 的一次小額實付是上線前必要的驗收。
 - `both` 模式下 v2 的 `/supported` 失敗或 2.5 秒內沒回應時，該次 402 只宣告 v1（v1 client 不受影響，v2 client 會看不到 v2 選項）；失敗後 30 秒內不重試。
 - 沒有請求層冪等：帶同一個 payment-identifier 重送仍會簽一張新授權，兩筆都結算就是兩筆付款（各自分潤）。所以伺服器不宣告 payment-identifier（見 `KNOWN_LIMITATIONS.md` §16b）。
-- settle 結果未知的付款只進 `x402:settlement:unknown`，沒有自動對帳；確定上鏈、且主佇列沒有同鍵的才人工補分潤。這個清單目前沒有去重也沒有長度上限（同一張授權在 settle 故障期間每重送一次就多一筆）。
+- settle 結果未知的付款進 `x402:settlement:unknown`，**由結算 worker 每輪自動對帳**（`signal-api/src/unknownReconcile.ts`）：以資產合約的 EIP-3009 `authorizationState(payer, nonce)` 判定——已被消耗＝錢已到，補一筆分潤；未消耗且已過 `validBefore`＝不可能再上鏈，結案；其餘留待下一輪。補分潤的冪等鍵取自消耗該 nonce 的那筆 tx（`AuthorizationUsed` 事件），與成功路徑的 `tx:` 鍵一致，並先確認 `tx:`／`auth:` 兩種鍵都不在結算狀態或任何佇列中，避免重送成功過的同一張授權被重複分潤；10 分鐘內的新紀錄不碰。清單以 payer+nonce 去重、長度上限 `X402_UNKNOWN_MAX`（預設 1000，滿了拒收並計入 `x402:settlement:unknown:overflow`）。紀錄缺 `ledgerEntry`（自動對帳上線前寫入的舊資料）或格式壞掉的，移到 `x402:settlement:unknown:manual` 交人工。
 - 自寫 adapter 依賴 `@x402/core` 的內部流程順序；升級時必須重新對照上游 hono middleware（已精確鎖 `2.28.0`）。
 - `v2` 模式是對外破壞性變更（v1 client 付不了款）。
 

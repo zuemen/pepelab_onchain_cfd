@@ -60003,6 +60003,9 @@ function credentials() {
 }
 var QUEUE_KEY = "x402:settlement:queue";
 var UNKNOWN_SETTLEMENT_KEY = "x402:settlement:unknown";
+var UNKNOWN_SEEN_PREFIX = "x402:settlement:unknown:seen:";
+var UNKNOWN_OVERFLOW_KEY = "x402:settlement:unknown:overflow";
+var UNKNOWN_MAX_DEFAULT = 1e3;
 var SETTLE_STATE_TTL_SEC = 90 * 24 * 60 * 60;
 function isLedgerEnabled() {
   return credentials() !== null;
@@ -60029,8 +60032,34 @@ async function command(cmd) {
 async function enqueueSettlement(entry) {
   await command(["RPUSH", QUEUE_KEY, JSON.stringify(entry)]);
 }
-async function recordUnknownSettlement(record) {
-  await command(["RPUSH", UNKNOWN_SETTLEMENT_KEY, JSON.stringify(record)]);
+function unknownMaxFromEnv(env = process.env) {
+  const n2 = Number(env.X402_UNKNOWN_MAX);
+  return Number.isInteger(n2) && n2 > 0 ? n2 : UNKNOWN_MAX_DEFAULT;
+}
+function unknownDedupeKey(record) {
+  const payer = typeof record.payer === "string" && /^0x[0-9a-fA-F]{40}$/.test(record.payer) ? record.payer : null;
+  const nonce = typeof record.nonce === "string" && /^0x[0-9a-fA-F]{64}$/.test(record.nonce) ? record.nonce : null;
+  return payer && nonce ? `${payer.toLowerCase()}:${nonce.toLowerCase()}` : null;
+}
+async function recordUnknownSettlement(record, max = unknownMaxFromEnv()) {
+  const dedupe = unknownDedupeKey(record);
+  const seenKey = dedupe ? UNKNOWN_SEEN_PREFIX + dedupe : null;
+  if (seenKey) {
+    const claimed = await command(["SET", seenKey, "1", "NX", "EX", SETTLE_STATE_TTL_SEC]);
+    if (claimed !== "OK") return "duplicate";
+  }
+  try {
+    const len = await command(["LLEN", UNKNOWN_SETTLEMENT_KEY]) ?? 0;
+    if (len >= max) {
+      await command(["INCR", UNKNOWN_OVERFLOW_KEY]);
+      throw new Error(`x402:settlement:unknown is full (${len}/${max}); record not queued`);
+    }
+    await command(["RPUSH", UNKNOWN_SETTLEMENT_KEY, JSON.stringify(record)]);
+    return "recorded";
+  } catch (err) {
+    if (seenKey) await command(["DEL", seenKey]).catch(() => void 0);
+    throw err;
+  }
 }
 function deriveIdempotencyKey(paymentResponseHeader, paymentHeader) {
   const decode3 = (h) => {
@@ -64254,7 +64283,8 @@ function createX402V2(opts) {
           amount: str(auth?.value) ?? str(paymentRequirements.amount),
           validBefore: str(auth?.validBefore),
           transaction,
-          reason: (str(detail.reason) ?? message).slice(0, 200)
+          reason: (str(detail.reason) ?? message).slice(0, 200),
+          ...opts.unknownRecordContext ? opts.unknownRecordContext(c) : {}
         };
         console.error(`[x402v2] settlement_unknown ${JSON.stringify(record)}`);
         if (opts.onSettlementUnknown) {
@@ -65667,7 +65697,14 @@ function createApp(opts = {}) {
           description: r.config.description
         })),
         onFacilitatorFailure: (_c, f2) => facilitatorFailureResponse(f2),
-        onSettlementUnknown: (record) => recordUnknownSettlement(record),
+        // What the handler left for the ledger: if the reconciler later finds the authorization
+        // consumed on chain, this is who gets credited and for how much.
+        unknownRecordContext: (c) => ({
+          ledgerEntry: c.get("ledgerEntry") ?? null
+        }),
+        onSettlementUnknown: async (record) => {
+          await recordUnknownSettlement(record);
+        },
         ...opts.x402V2Timing
       });
     } catch (err) {

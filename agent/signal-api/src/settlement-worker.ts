@@ -56,6 +56,7 @@
 //      - blocked 與 trader 檢查 no-data 連續超過 30 分鐘 → job 失敗（計時紀錄每次刷新
 //        2 小時 TTL，中斷夠久就自然重新計時）。
 import { createHash, randomUUID } from "node:crypto";
+import { ethersReconcileChain, reconcileUnknownSettlements, type ReconcileSummary } from "./unknownReconcile.ts";
 import { fileURLToPath } from "node:url";
 import { resolve as resolvePath } from "node:path";
 import {
@@ -268,6 +269,11 @@ export interface WorkerDeps {
   assessTrader: (trader: string) => Promise<PayoutAssessment>;
   /** signer 的 nonce（latest / pending）。 */
   nonceStatus: () => Promise<{ latest: number; pending: number }>;
+  /**
+   * Resolve x402:settlement:unknown rows against chain (unknownReconcile.ts). Optional so tests
+   * that build WorkerDeps by hand opt in explicitly; absent = skipped.
+   */
+  reconcileUnknown?: () => Promise<ReconcileSummary>;
 }
 
 export const defaultDeps: WorkerDeps = {
@@ -276,6 +282,14 @@ export const defaultDeps: WorkerDeps = {
   now: () => Date.now(),
   assessTrader: (t) => assessPayoutAddress(settlementProvider()!, t),
   nonceStatus: getNonceStatus,
+  reconcileUnknown: async () => {
+    const provider = settlementProvider();
+    if (!provider) throw new Error("no settlement provider configured");
+    return reconcileUnknownSettlements({
+      chain: ethersReconcileChain(provider),
+      now: () => Math.floor(Date.now() / 1000),
+    });
+  },
 };
 
 export interface RunContext {
@@ -711,6 +725,19 @@ export async function recoverAll(s: RunSummary, max = 10_000): Promise<void> {
 async function runLocked(deps: WorkerDeps, batchSize: number, s: RunSummary, ctx: RunContext): Promise<RunSummary> {
   await recoverAll(s);
   if (s.recovered > 0) console.warn(`::warning::回收 processing 遺留項目 ${s.recovered} 筆（上一輪可能中途中止）`);
+
+  // 0) Unknown-settlement reconciliation. Read-only on chain; it may enqueue a revenue row into
+  //    main, which this same round then processes. Isolated: a failure here only skips it, it
+  //    never blocks settlement.
+  if (deps.reconcileUnknown) {
+    try {
+      const r = await deps.reconcileUnknown();
+      if (r.examined > 0) console.log(`[reconcile] ${JSON.stringify(r)}`);
+      if (r.manual > 0) console.warn(`::warning::${r.manual} unknown-settlement row(s) moved to x402:settlement:unknown:manual for a human`);
+    } catch (err) {
+      console.warn(`::warning::unknown-settlement reconciliation skipped this round: ${(err as Error).message}`);
+    }
+  }
 
   const tally = (o: ProcessOutcome) => {
     if (o.outcome === "settled") s.settled += 1;
