@@ -3,10 +3,12 @@
 用法（在 repo 根目錄）：
     risk_model/.venv/Scripts/python.exe risk_model/run_all.py           # 完整模式（本機約 10–20 分鐘）
     python3 risk_model/run_all.py --quick                               # CI 用小樣本（數分鐘內）
-選項：--refresh-data 重抓歷史資料並覆寫快取；--offline 不連網（沒有快取時用內建預設）；
+選項：預設讀 risk_model/data/calibrated_params.json（不連網）；--refresh-data 重抓歷史資料、重新校準並更新
+      參數檔；--offline 禁止連網（與 --refresh-data 併用時改用本機快取 CSV 重新校準）；
+      --only 只跑部分段落；
       --vault-to-oi 保險庫規模／OI（預設 0.05）；--es-frac 單日 ES_99 上限佔保險庫比例（預設 0.10）；
       --ruin-target 年破產機率上限（預設 0.001）；--seed 亂數種子（預設 20261005）。
-輸出：完整模式寫到 risk_model/output/（圖檔、tables/*.csv、summary_full.json），圖檔另複製到
+輸出（不進版控）：完整模式寫到 risk_model/output/（圖檔、tables/*.csv、summary_full.json），圖檔另複製到
       docs/figures/risk_model/ 供文件引用；--quick 寫到 risk_model/output/quick/，不覆寫文件用的圖表。
 """
 from __future__ import annotations
@@ -118,6 +120,8 @@ def section_calibration(args, S, summary):
     df.to_csv(TABLES / "calibration.csv", index=False, encoding="utf-8")
     summary["calibration"] = {a: c.to_dict() for a, c in cals.items()}
 
+    if not want(args, "calibration"):
+        return cals  # --only 未含 calibration：只取參數，不重畫圖 1（避免沒有本機快取時覆寫文件用圖）
     fig, axes = plt.subplots(2, 2, figsize=(11, 7.5))
     for ax, (a, c) in zip(axes.ravel(), cals.items()):
         dfp, _ = cal.load_prices(a, offline=True)

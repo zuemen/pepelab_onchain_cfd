@@ -10,7 +10,7 @@
     多單：S_b = S_0·(1 − 1/L + f + β + φ)；空單：S_b = S_0·(1 + 1/L − f − β − φ)
 任務書（MM 以現價名目 m·Q·S 計）：
     多單：S*_tb = S_0·(1 − 1/L)/(1 − m)；空單：S*_tb = S_0·(1 + 1/L)/(1 + m)
-推導細節見 docs/RISK_MODEL.md 第二部 §2。
+推導細節見 docs/RISK_MODEL_CFD.md §2。
 """
 from __future__ import annotations
 

@@ -62,6 +62,21 @@ def test_snapshot_matches_parameters(monkeypatch, tmp_path):
         assert c.thr_sigma == snap[a]["thr_sigma"] and c.thr_lam == snap[a]["thr_lam"]
 
 
+def test_default_calibration_never_touches_network_or_snapshot(monkeypatch, tmp_path):
+    """沒有 CSV、沒有任何旗標時：不呼叫網路、不改參數檔，直接讀參數檔。"""
+    def boom(*a, **k):
+        raise AssertionError("不應該連網")
+
+    monkeypatch.setattr(cal, "cache_path", lambda a: tmp_path / "absent.csv")
+    monkeypatch.setattr(cal, "fetch_binance_klines", boom)
+    monkeypatch.setattr(cal, "fetch_yahoo_daily", boom)
+    monkeypatch.setattr(cal, "_get_json", boom)
+    before = cal.SNAPSHOT.read_bytes()
+    out = cal.calibrate_all()
+    assert all(c.from_snapshot for c in out.values())
+    assert cal.SNAPSHOT.read_bytes() == before
+
+
 def test_ruin_max_stat_matches_path_simulation():
     """「打穿所需初始規模」M 的分布，與逐日模擬保險庫餘額得到的破產機率一致。"""
     rng = np.random.default_rng(8)

@@ -1,9 +1,9 @@
 name: Risk Model
 
-# Phase 1 金融風險模型（risk_model/，見 docs/RISK_MODEL.md 第二部）。
+# Phase 1 金融風險模型（risk_model/，見 docs/RISK_MODEL_CFD.md）。
 # 跑 pytest（封閉解 vs Monte Carlo、清算價邊界、程式不等式逐點對照、Δ→0 壞帳趨近 0…）
 # 與 `run_all.py --quick`（小樣本重現所有圖表，確認整條管線可執行）。
-# 不需要任何 secret、不連任何鏈；歷史價格讀 repo 內的快取 CSV（--offline），不連外部 API。
+# 不需要任何 secret、不連任何鏈；校準參數讀 risk_model/data/calibrated_params.json（--offline），不連外部 API。
 # 用 runner 內建的 python3 建 venv，不另外引入 setup-python（沿用 master 已釘選的 action）。
 on:
   push:

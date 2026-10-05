@@ -5,11 +5,11 @@
 - 股票：Yahoo Finance chart API（`query1.finance.yahoo.com/v8/finance/chart`），日 K 收盤價（已含除權息調整前的收盤）。
 抓到的資料快取成 `risk_model/data/<代號>_<頻率>.csv`（檔頭以 `#` 註明來源與抓取日期）。
 **原始價格不進版控**（資料提供者的使用條款未明確允許再散布），只 commit 校準後的參數
-`risk_model/data/calibrated_params.json`（摘要統計量）。優先順序：
-  1. 本機快取 CSV（`--refresh-data` 重抓）；
-  2. 沒有快取時自動下載（`--offline` 時跳過）；
-  3. 下載不到或離線時，讀 `calibrated_params.json`（與當初用原始資料校準的結果完全相同）；
-  4. 連參數檔都沒有時，退回 `DEFAULTS` 的文獻／保守預設，並在輸出中註明。
+`risk_model/data/calibrated_params.json`（摘要統計量）。為了可重現：
+  - **預設**一律讀 `calibrated_params.json`，不連網、不改參數檔；
+  - 只有明確 `refresh=True`（`run_all.py --refresh-data`）才下載當天資料、重新校準並更新參數檔
+    （同時加 `--offline` 時不下載，改用本機快取 CSV 重新校準）；
+  - 參數檔不存在時，用本機快取 CSV 校準；連快取都沒有，才退回 `DEFAULTS` 的文獻／保守預設並註明。
 
 校準方法：
 1. GBM：σ̂ = 樣本標準差/√dt，μ̂ = 平均/dt + σ̂²/2。
@@ -154,14 +154,13 @@ def read_cache(asset: str) -> tuple[pd.DataFrame, list[str]] | None:
 
 
 def load_prices(asset: str, refresh: bool = False, offline: bool = False) -> tuple[pd.DataFrame | None, str]:
-    """回傳 (價格表, 來源說明)。優先讀快取；refresh=True 時重抓並覆寫快取。"""
+    """回傳 (價格表, 來源說明)。只有 refresh=True 且未 offline 時才連網重抓並覆寫快取；否則只讀本機快取。"""
     src, sym, freq, _ = ASSETS[asset]
-    if not refresh:
+    if not refresh or offline:
         c = read_cache(asset)
         if c is not None:
             return c[0], "；".join(c[1][:2])
-    if offline:
-        return None, "無快取且離線：使用內建預設參數"
+        return None, "沒有本機快取（未要求重抓，不連網）"
     try:
         if src == "binance":
             df = fetch_binance_klines(sym, freq, days=365)
@@ -289,18 +288,28 @@ def merton_mle(r: np.ndarray, dt: float, init: dict) -> tuple[MertonParams, floa
     return p, -float(best.fun)
 
 
+def _from_snapshot(asset: str) -> CalibrationResult | None:
+    if not SNAPSHOT.exists():
+        return None
+    snap = json.loads(SNAPSHOT.read_text(encoding="utf-8")).get("assets", {})
+    if asset not in snap:
+        return None
+    d = dict(snap[asset])
+    d["source"] = f"{d.get('source', '')}（讀 calibrated_params.json）"
+    d["from_snapshot"] = True
+    d["used_defaults"] = False
+    return CalibrationResult(**d)
+
+
 def calibrate(asset: str, refresh: bool = False, offline: bool = False) -> CalibrationResult:
+    """預設讀參數檔（不連網）；refresh=True 才用（重抓或本機快取的）原始價格重新校準。"""
     src, sym, freq, per_year = ASSETS[asset]
     dt = 1.0 / per_year
+    if not refresh:
+        snap = _from_snapshot(asset)
+        if snap is not None:
+            return snap
     df, desc = load_prices(asset, refresh=refresh, offline=offline)
-    if df is None and SNAPSHOT.exists():
-        snap = json.loads(SNAPSHOT.read_text(encoding="utf-8")).get("assets", {})
-        if asset in snap:
-            d = dict(snap[asset])
-            d["source"] = f"{d.get('source', '')}（無原始資料，讀 calibrated_params.json）"
-            d["from_snapshot"] = True
-            d["used_defaults"] = False
-            return CalibrationResult(**d)
     if df is None:
         d = DEFAULTS[asset]
         return CalibrationResult(asset, desc, 0, 0.0, dt, d.sigma, 0.0, d.sigma, d.lam, d.mu_j, d.sigma_j, 0,
@@ -325,7 +334,8 @@ def calibrate(asset: str, refresh: bool = False, offline: bool = False) -> Calib
 
 def calibrate_all(refresh: bool = False, offline: bool = False) -> dict[str, CalibrationResult]:
     out = {a: calibrate(a, refresh=refresh, offline=offline) for a in ASSETS}
-    if all(not (c.used_defaults or c.from_snapshot) for c in out.values()):
+    # 只有明確要求重新校準時才更新已進版控的參數檔
+    if refresh and all(not (c.used_defaults or c.from_snapshot) for c in out.values()):
         write_snapshot(out)
     return out
 

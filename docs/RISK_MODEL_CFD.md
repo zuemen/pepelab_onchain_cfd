@@ -62,7 +62,7 @@ ln S_t = ln S₀ + νt + σW_t + Σ_{i=1}^{N_t} Y_i，N_t ~ Poisson(λt)，Y_i ~
 | AAPL | Yahoo Finance chart API | 1 日，2021-10-04 ~ 2026-10-02 | 1,255 |
 | TSLA | Yahoo Finance chart API | 1 日，同上 | 1,255 |
 
-**原始價格不進版控**：資料提供者的使用條款沒有明確允許再散布，所以 repo 只放校準後的參數 `risk_model/data/calibrated_params.json`（下表的摘要統計量）。`run_all.py` 的順序是：本機快取 `risk_model/data/*.csv`（已 gitignore）→ 沒有快取時自動下載 → 離線或下載失敗時讀 `calibrated_params.json`（與用原始資料校準的結果逐位相同，有測試）→ 都沒有時才用 `calibration.DEFAULTS` 的保守預設並在輸出中註明。
+**原始價格不進版控**：資料提供者的使用條款沒有明確允許再散布，所以 repo 只放校準後的參數 `risk_model/data/calibrated_params.json`（下表的摘要統計量）。為了可重現，`run_all.py` **預設一律讀這個參數檔**，不連網、不改參數檔；只有明確加 `--refresh-data` 才下載當天資料（存到已 gitignore 的 `risk_model/data/*.csv`）、重新校準並更新參數檔（同時加 `--offline` 時改用本機快取 CSV）。參數檔不存在時才用本機快取校準，連快取都沒有時用 `calibration.DEFAULTS` 的保守預設並在輸出中註明。校準圖（圖 1 的經驗分布）需要本機快取才畫得出來。
 
 | 資產 | GBM σ | 門檻 σ | 門檻 λ（次/年） | 門檻 μ_J | 門檻 σ_J | MLE σ | MLE λ | MLE σ_J | LR 統計量 |
 |---|---|---|---|---|---|---|---|---|---|
@@ -607,7 +607,7 @@ ETH Low 5x、MMR 5%，每格 8,000 天、同一批帳簿與市價路徑（common
 | 12 | mark = index（`markPremiumCapBps = 0`） | — | 與鏈上一致 |
 | 13 | 資金費在壞帳模型中取 φ = 0 | 偏樂觀 | 擁擠方付資金費會讓清算價往不利方向移；§5.5 給了量級 |
 | 14 | 資金費的回復彈性 θ 是假設參數 | — | 半衰期以 θ 的函數呈現，沒有實證校準 |
-| 15 | 蒙地卡羅誤差 | — | 不同樣本之間「最小保險庫」的差異約 ±1% of OI（例如 sETH 5x 改善情境：反推用的樣本 2.2%、推價掃描的樣本 3.6%）；年破產機率的標準誤列在 `summary_full.json`（`annual_ruin_se`）；網格與推價掃描用 common random numbers 降低格與格之間的雜訊 |
+| 15 | 蒙地卡羅誤差 | — | 不同樣本之間「最小保險庫」的差異約 ±1% of OI（例如 sETH 5x 改善情境：反推用的樣本 2.2%、推價掃描的樣本 3.6%）；年破產機率的標準誤由 `run_all.py` 寫到 `risk_model/output/summary_full.json` 的 `annual_ruin_se`（輸出不進版控，重跑即可產生）；網格與推價掃描用 common random numbers 降低格與格之間的雜訊 |
 | 16 | 股票跳躍參數只由少數跳空估計（AAPL 7 次、TSLA 6 次） | 不確定 | 股票相關的保險庫需求與建議槓桿不確定性大 |
 | 17 | 資金費分析假設倉位相對 OI 無限小，且沒有模擬單次最多補算 21 個區間的上限 | — | 見 §5.4 |
 
