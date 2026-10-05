@@ -5,6 +5,7 @@ import "forge-std/Script.sol";
 import "forge-std/console.sol";
 import "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
+import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "../src/PerpetualExchange.sol";
 import "../src/CopyTracker.sol";
 import "../src/StrategyRegistry.sol";
@@ -42,15 +43,19 @@ import "./VerifyTenant.s.sol";
 ///
 ///         UNLIKE the cutover scripts, this run touches no existing contract:
 ///         there is no irreversible step and nothing to resume. An interrupted
-///         broadcast leaves an unfinished, unfunded set owned by the deployer;
-///         use `forge script --resume` for the same broadcast, or start again.
+///         broadcast leaves an unfinished set owned by the deployer, holding
+///         at most the one-token insurance seed (its shares already with the
+///         treasury); use `forge script --resume` for the same broadcast, or
+///         start again.
 ///
 ///         THE DEPLOYER KEEPS NOTHING. The last step hands every contract to
 ///         `roles.admin` (grant → read back → renounce for AccessControl,
 ///         `transferOwnership` for Ownable) and the run then verifies that the
 ///         deployer holds no role anywhere. A one-step ownership transfer is
 ///         irreversible, and the moment it is cheapest to get wrong is now,
-///         while the set holds no funds: `VerifyTenant` fails, you redeploy.
+///         while the set holds nothing but the one-token insurance seed (its
+///         shares with the treasury): `VerifyTenant` fails, you redeploy and
+///         lose that one token at most.
 ///
 ///         Dry run (no key, nothing sent) — docs/TENANT_DEPLOYMENT.md sec.3:
 ///           TENANT=<id> forge script script/DeployTenant.s.sol:DeployTenant \
@@ -64,6 +69,8 @@ import "./VerifyTenant.s.sol";
 ///                             (testnet rehearsals only; ignored on Base
 ///                             mainnet, where the admin must be a contract)
 contract DeployTenant is TenantBase {
+    using SafeERC20 for IERC20;
+
     /// @dev See step 8 of `_execute`. On chain the call used ~75k (anvil rehearsal, 2026-10-02).
     uint256 internal constant UNPAUSE_GAS = 300_000;
 
@@ -217,7 +224,7 @@ contract DeployTenant is TenantBase {
         //    anything that arrives at zero supply belongs to the virtual shares
         //    forever (INSURANCE_VAULT_SHARES.md §3.3), and step 6 wires inflows.
         //    The position goes to the tenant's treasury — the deployer keeps nothing.
-        _seedInsuranceVault(c, d.insuranceVault);
+        _seedInsuranceVault(c, d.insuranceVault, deployer);
         d.feeRouter = address(new FeeRouter(c.usdc, c.treasury, d.insuranceVault));
         d.traderStake = address(new TraderStake(c.usdc));
 
@@ -287,14 +294,26 @@ contract DeployTenant is TenantBase {
         return address(ex);
     }
 
-    function _seedInsuranceVault(TenantConfig memory c, address vault) internal {
+    /// @dev Deposits the seed from `deployer` and hands the shares to the
+    ///      treasury. Everything checked here holds only at this moment, so it
+    ///      is checked here and not in `VerifyTenant`: afterwards anyone can
+    ///      deposit and send shares to the deployer, and a bailout lowers the
+    ///      share price — neither is a fault of the tenant.
+    function _seedInsuranceVault(TenantConfig memory c, address vault, address deployer) internal {
         InsuranceVault iv = InsuranceVault(vault);
         require(iv.feeRouter() == address(0) && iv.exchange() == address(0) && iv.totalSupply() == 0,
             "insurance seed must go in before anything is wired");
         uint256 seed = _insuranceSeed(c.usdc);
-        IERC20(c.usdc).approve(vault, seed);
+        IERC20(c.usdc).forceApprove(vault, seed);
         uint256 shares = iv.deposit(seed);
         require(iv.transfer(c.treasury, shares), "insurance seed: share transfer to treasury failed");
+        // Read back at deposit time: the treasury holds every share, worth the
+        // whole seed, and the deployer keeps none.
+        require(iv.balanceOf(deployer) == 0, "insurance seed: the deployer must keep no shares");
+        require(iv.balanceOf(c.treasury) == iv.totalSupply() && iv.totalSupply() > 0,
+            "insurance seed: the treasury must hold every share");
+        require(iv.previewWithdraw(iv.balanceOf(c.treasury)) >= seed,
+            "insurance seed: the treasury position must be worth the whole seed");
     }
 
     function _handOverOwnables(TenantDeployed memory d, address admin) internal {

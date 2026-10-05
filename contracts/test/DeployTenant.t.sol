@@ -25,6 +25,17 @@ contract Rwa130Harness is Cutover130Base {
     function isRwa(string calldata sym) external pure returns (bool) { return _isRwa(sym); }
 }
 
+/// @dev Runs DeployTenant's seed step on its own; the harness is the depositor
+///      (the broadcaster, in a real run).
+contract InsuranceSeedHarness is DeployTenant {
+    function seed(address usdc, address treasury, address vault, address deployer) external {
+        TenantConfig memory c;
+        c.usdc = usdc;
+        c.treasury = treasury;
+        _seedInsuranceVault(c, vault, deployer);
+    }
+}
+
 /// @notice ADR-008 — `DeployTenant` / `VerifyTenant` against mocks on the local
 ///         chain. No fork, no file written: the config is built in memory
 ///         (`TenantFixture`), the settlement token is a fresh `MockUSDC` and
@@ -334,7 +345,6 @@ contract DeployTenantTest is TenantFixture {
         (Spec memory s, DeployTenant script, TenantBase.TenantDeployed memory d) = _tenant("bank-a");
         string memory record = script.lastRecordJson();
         InsuranceVault iv = InsuranceVault(d.insuranceVault);
-        uint256 snap = vm.snapshotState();
 
         // Treasury pulls the whole seed out: supply back to zero, the trap reopens.
         uint256 shares = iv.balanceOf(s.treasury);
@@ -342,13 +352,97 @@ contract DeployTenantTest is TenantFixture {
         iv.withdraw(shares);
         vm.expectRevert(bytes("verify tenant failed: insuranceVault is seeded (totalSupply > 0, INSURANCE_VAULT_SHARES.md 3.3)"));
         verifier.verify(_json(s), s.id, record, s.admin);
+    }
 
-        // Treasury hands the position to the deployer: the deployer must keep nothing.
-        vm.revertToState(snap);
+    /// The treasury moving its own seed position is the tenant's decision:
+    /// supply stays > 0, so the daily check stays green (a NOTE, not a failure).
+    function test_verify_passes_treasuryMovesSeedShares() public {
+        (Spec memory s, DeployTenant script, TenantBase.TenantDeployed memory d) = _tenant("bank-a");
+        InsuranceVault iv = InsuranceVault(d.insuranceVault);
+        uint256 shares = iv.balanceOf(s.treasury);
         vm.prank(s.treasury);
         iv.transfer(deployer, shares);
-        vm.expectRevert(bytes("verify tenant failed: insuranceVault seed position (one whole token) is held by the treasury"));
-        verifier.verify(_json(s), s.id, record, s.admin);
+        assertEq(iv.balanceOf(s.treasury), 0);
+        verifier.verify(_json(s), s.id, script.lastRecordJson(), s.admin);
+    }
+
+    /// Review #256 (high): anyone can deposit 1 wei and send the shares to the
+    /// deployer. That must not turn the daily required check red.
+    function test_verify_passes_strangerSendsSharesToDeployer() public {
+        (Spec memory s, DeployTenant script, TenantBase.TenantDeployed memory d) = _tenant("bank-a");
+        InsuranceVault iv = InsuranceVault(d.insuranceVault);
+        address stranger = makeAddr("stranger");
+        deal(address(usdc), stranger, 1);
+        vm.startPrank(stranger);
+        usdc.approve(address(iv), 1);
+        iv.deposit(1);
+        iv.transfer(deployer, iv.balanceOf(stranger));
+        vm.stopPrank();
+        assertGt(iv.balanceOf(deployer), 0, "the deployer now holds shares it never asked for");
+        verifier.verify(_json(s), s.id, script.lastRecordJson(), s.admin);
+    }
+
+    /// Review #256 (medium): a bailout lowers the share price. That is the vault
+    /// doing its job, not a misconfiguration.
+    function test_verify_passes_afterBailoutLowersSharePrice() public {
+        (Spec memory s, DeployTenant script, TenantBase.TenantDeployed memory d) = _tenant("bank-a");
+        InsuranceVault iv = InsuranceVault(d.insuranceVault);
+        vm.prank(d.exchange);
+        iv.bailout(0.6e18, trader);
+        assertLt(iv.previewWithdraw(iv.balanceOf(s.treasury)), 0.999e18, "the seed position lost value");
+        verifier.verify(_json(s), s.id, script.lastRecordJson(), s.admin);
+
+        // Drained to zero: supply is still > 0, so the §3.3 protection holds.
+        uint256 rest = iv.totalAssets();
+        vm.prank(d.exchange);
+        iv.bailout(rest, trader);
+        assertEq(iv.totalAssets(), 0);
+        verifier.verify(_json(s), s.id, script.lastRecordJson(), s.admin);
+    }
+
+    // ── insurance seed: the deposit-time checks inside DeployTenant ─────────
+
+    function test_seed_refuses_vaultAlreadyHoldingShares() public {
+        InsuranceSeedHarness h = new InsuranceSeedHarness();
+        InsuranceVault iv = new InsuranceVault(address(usdc));
+        address stranger = makeAddr("stranger");
+        deal(address(usdc), stranger, 1);
+        vm.startPrank(stranger);
+        usdc.approve(address(iv), 1);
+        iv.deposit(1);                       // front-runs the seed
+        vm.stopPrank();
+        deal(address(usdc), address(h), 1e18);
+        vm.expectRevert(bytes("insurance seed must go in before anything is wired"));
+        h.seed(address(usdc), makeAddr("treasury"), address(iv), address(h));
+    }
+
+    function test_seed_refuses_deployerKeepingShares() public {
+        InsuranceSeedHarness h = new InsuranceSeedHarness();
+        InsuranceVault iv = new InsuranceVault(address(usdc));
+        deal(address(usdc), address(h), 1e18);
+        // The treasury is the depositing deployer itself: the shares never leave.
+        vm.expectRevert(bytes("insurance seed: the deployer must keep no shares"));
+        h.seed(address(usdc), address(h), address(iv), address(h));
+    }
+
+    function test_seed_refuses_positionWorthLessThanSeed() public {
+        InsuranceSeedHarness h = new InsuranceSeedHarness();
+        InsuranceVault iv = new InsuranceVault(address(usdc));
+        deal(address(usdc), address(h), 1e18);
+        vm.mockCall(address(iv), abi.encodeWithSelector(InsuranceVault.previewWithdraw.selector), abi.encode(uint256(1e18 - 1)));
+        vm.expectRevert(bytes("insurance seed: the treasury position must be worth the whole seed"));
+        h.seed(address(usdc), makeAddr("treasury"), address(iv), address(h));
+    }
+
+    function test_seed_happyPath_treasuryHoldsEverything() public {
+        InsuranceSeedHarness h = new InsuranceSeedHarness();
+        InsuranceVault iv = new InsuranceVault(address(usdc));
+        address treasury = makeAddr("treasury");
+        deal(address(usdc), address(h), 1e18);
+        h.seed(address(usdc), treasury, address(iv), address(h));
+        assertEq(iv.balanceOf(treasury), iv.totalSupply());
+        assertEq(iv.previewWithdraw(iv.balanceOf(treasury)), 1e18);
+        assertEq(usdc.allowance(address(h), address(iv)), 0, "the approval was used up exactly");
     }
 
     /// @dev Rebuilds the record with a different exchange address.

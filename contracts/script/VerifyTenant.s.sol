@@ -782,12 +782,20 @@ abstract contract TenantBase is Script {
         _eq("insuranceVault.feeRouter", iv.feeRouter(), d.feeRouter);
         _eq("insuranceVault.owner", iv.owner(), owner);
         // §3.3: a wired vault at zero supply hands every inflow to the virtual
-        // shares. The seed position sits with the treasury, never the deployer.
-        uint256 seed = _insuranceSeed(c.usdc);
+        // shares. Only that invariant is checked here, every day: nobody but a
+        // share holder can break it. What the seed was worth and who held it
+        // is checked once, by DeployTenant at deposit time — afterwards anyone
+        // can deposit and send shares to the deployer, and a bailout lowers
+        // the share price, so neither belongs in a daily required check.
         _check(iv.totalSupply() > 0, "insuranceVault is seeded (totalSupply > 0, INSURANCE_VAULT_SHARES.md 3.3)");
-        _check(iv.previewWithdraw(iv.balanceOf(c.treasury)) >= seed - seed / 1000,
-            "insuranceVault seed position (one whole token) is held by the treasury");
-        _eqUint("insuranceVault.balanceOf(deployer)", iv.balanceOf(d.deployer), 0);
+        uint256 treasuryShares = iv.balanceOf(c.treasury);
+        if (treasuryShares == 0) {
+            // The treasury's own decision (it moved or redeemed the seed);
+            // supply is still > 0, so the §3.3 protection holds for now.
+            console.log("NOTE insuranceVault: the treasury holds no shares any more - supply is still > 0, but if the remaining holders exit, inflows go to the virtual shares (INSURANCE_VAULT_SHARES.md 3.3)");
+        } else {
+            console.log("ok   insuranceVault.balanceOf(treasury) > 0:", treasuryShares);
+        }
         FeeRouter fr = FeeRouter(d.feeRouter);
         _eq("feeRouter.usdc", address(fr.usdc()), c.usdc);
         _eq("feeRouter.platformTreasury", fr.platformTreasury(), c.treasury);
