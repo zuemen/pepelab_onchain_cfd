@@ -18,7 +18,7 @@
 | 4 結算資產 | MockUSDC 只留給 PoC。正式設計以銀行發行的**代幣化存款**為首選；exchange 只收 18 位小數，小數位不同時比照 ADR-011 用 1:1 包裝幣；凍結、贖回、對帳要在發行端與營運流程處理。 |
 | 5 監理定位 | 台灣的 CFD 屬於受監管的槓桿交易業務；本設計只定位為**內部 PoC**，或在《金融科技發展與創新實驗條例》下申請的**沙盒實驗**，都需法遵確認。 |
 | 6 延伸研究 | 壞帳期望值可改用量子振幅估計（QAE），抽樣複雜度理論上從 O(1/ε²) 降到 O(1/ε)；但價格分布載入與容錯硬體的成本，現在會吃掉這個加速，只適合當研究題目。 |
-| 7 銜接 | 每一次參數提案都必須引用 `RISK_MODEL.md`（Phase 1）與 `BESU_CALIBRATION.md`（Phase 3）的版本與章節；這兩份還在進行，§7 先留待填位置。 |
+| 7 銜接 | 每一次參數提案都必須引用 `RISK_MODEL_CFD.md`（Phase 1）與 `BESU_CALIBRATION.md`（Phase 3）的版本與章節；這兩份還在進行，§7 先留待填位置。 |
 
 ### 0.1 名詞（白話）
 
@@ -60,7 +60,7 @@
 
 | 層 | 負責 | 不負責 | 對應 |
 |---|---|---|---|
-| **鏈下：風險引擎** | 用歷史與模擬資料**算出**建議參數（MMR、槓桿上限、OI 上限、獲利上限、`maxPriceAge`、清算罰金…），產出校準報告 | 不持有任何能改鏈上狀態的金鑰 | Phase 1 `risk_model/`、[`RISK_MODEL.md`](RISK_MODEL.md)；Phase 3 [`BESU_CALIBRATION.md`](BESU_CALIBRATION.md)（待產出） |
+| **鏈下：風險引擎** | 用歷史與模擬資料**算出**建議參數（MMR、槓桿上限、OI 上限、獲利上限、`maxPriceAge`、清算罰金…），產出校準報告 | 不持有任何能改鏈上狀態的金鑰 | Phase 1 `risk_model/`、[`RISK_MODEL_CFD.md`](RISK_MODEL_CFD.md)；Phase 3 [`BESU_CALIBRATION.md`](BESU_CALIBRATION.md)（待產出） |
 | **治理：多簽＋timelock** | 決定**要不要**採用建議；風控與法遵兩方都簽才能排程；排程後公開等待 48 小時 | 不計算參數 | `GOVERNANCE_HANDOVER.md`、ADR-015 §4.2 |
 | **鏈上：合約** | **強制執行**目前生效的參數：開倉檢查槓桿與 KYC、清算檢查保證金、價格過期就拒絕 | 不判斷參數好不好；只檢查硬上下限（例如 `MAX_LEVERAGE = 5`、MMR ≤ 9,999 bps） | `PARAMS_INVENTORY.md` §8 |
 
@@ -117,7 +117,7 @@ sequenceDiagram
   participant T as Timelock（48h）
   participant X as PerpetualExchange
   participant M as 監控
-  R->>R: 依 RISK_MODEL.md／BESU_CALIBRATION.md 算出建議值
+  R->>R: 依 RISK_MODEL_CFD.md／BESU_CALIBRATION.md 算出建議值
   R->>RK: 變更單（舊值、新值、依據章節、報告雜湊）
   R->>CP: 同一份變更單
   RK->>G: 風控簽核（審風險依據）
@@ -149,7 +149,7 @@ sequenceDiagram
 |---|---|---|
 | 誰提的、何時排程、何時執行 | Timelock 的 `CallScheduled`、`CallExecuted`、`Cancelled`、`CallSalt` 事件（OpenZeppelin `TimelockController`，`contracts/lib/openzeppelin-contracts/contracts/governance/TimelockController.sol:72`、`:90`） | Safe 交易本身也有簽署人紀錄 |
 | 改了什麼 | exchange setter 事件（`MaintenanceMarginSet`、`MaxLeverageSet`、`MaxOpenInterestSet`、`MaxProfitBpsSet`、`MaxPriceAgeSet`、`LiquidationPenaltyBpsSet`、`KycRegistrySet`、`RwaAssetSet`…） | 都已存在，不用改合約 |
-| 為什麼改 | 鏈下變更單 `docs/param-changes/<日期>-<資產>-<參數>.md`（建議新增）：舊值、新值、引用 `RISK_MODEL.md`／`BESU_CALIBRATION.md` 的版本與章節、校準報告檔案雜湊、兩方簽核人 | 變更單的 keccak256 放進 timelock 的 `salt`，鏈上事件 `CallSalt` 就把「鏈上這筆變更」綁到「鏈下這份理由」 |
+| 為什麼改 | 鏈下變更單 `docs/param-changes/<日期>-<資產>-<參數>.md`（建議新增）：舊值、新值、引用 `RISK_MODEL_CFD.md`／`BESU_CALIBRATION.md` 的版本與章節、校準報告檔案雜湊、兩方簽核人 | 變更單的 keccak256 放進 timelock 的 `salt`，鏈上事件 `CallSalt` 就把「鏈上這筆變更」綁到「鏈下這份理由」 |
 | 實際生效值對不對 | 監控在 `CallExecuted` 後讀回鏈上值、比對變更單 | 沿用 ADR-009 的告警管道 |
 
 `salt` 的用法是 OpenZeppelin `TimelockController` 原本就有的欄位（同一筆呼叫要靠不同 salt 才能重複排程），這裡只是約定它的內容，不需要改 timelock。
@@ -560,12 +560,12 @@ QAE 的變體：原始版用量子相位估計（需要很多受控運算）；S
 
 | 參數 | 鏈上 setter（既有） | 依據文件（待填） | 治理類別（ADR-015 §4.2） |
 |---|---|---|---|
-| 逐資產 MMR `m` | `setMaintenanceMarginFor` | `RISK_MODEL.md` §⟦待填⟧（Phase 1.1／1.2）；`BESU_CALIBRATION.md` §⟦待填⟧ | 48h；對既有部位立即生效，需揭露（§1.3） |
-| 逐資產槓桿上限 | `setMaxLeverageFor`（只能比碳分級更緊） | `RISK_MODEL.md` §⟦待填⟧ | 48h |
-| OI 上限 | `setMaxOpenInterest` | `RISK_MODEL.md` §⟦待填⟧（1.2）；`BESU_CALIBRATION.md` §⟦待填⟧ | 48h |
-| 獲利上限 | `setMaxProfitBps` | `RISK_MODEL.md` §⟦待填⟧（1.2） | 48h（只適用新開部位） |
-| `maxPriceAge` | `setMaxPriceAge` | `RISK_MODEL.md` §⟦待填⟧（1.3 keeper 間隔與價格過期風險）；`BESU_CALIBRATION.md` §⟦待填⟧（3.3 Besu 上 keeper 實測間隔） | 48h |
-| 清算罰金 | `setLiquidationPenaltyBps` | `RISK_MODEL.md` §⟦待填⟧ | 48h；對既有部位立即生效 |
+| 逐資產 MMR `m` | `setMaintenanceMarginFor` | `RISK_MODEL_CFD.md` §⟦待填⟧（Phase 1.1／1.2）；`BESU_CALIBRATION.md` §⟦待填⟧ | 48h；對既有部位立即生效，需揭露（§1.3） |
+| 逐資產槓桿上限 | `setMaxLeverageFor`（只能比碳分級更緊） | `RISK_MODEL_CFD.md` §⟦待填⟧ | 48h |
+| OI 上限 | `setMaxOpenInterest` | `RISK_MODEL_CFD.md` §⟦待填⟧（1.2）；`BESU_CALIBRATION.md` §⟦待填⟧ | 48h |
+| 獲利上限 | `setMaxProfitBps` | `RISK_MODEL_CFD.md` §⟦待填⟧（1.2） | 48h（只適用新開部位） |
+| `maxPriceAge` | `setMaxPriceAge` | `RISK_MODEL_CFD.md` §⟦待填⟧（1.3 keeper 間隔與價格過期風險）；`BESU_CALIBRATION.md` §⟦待填⟧（3.3 Besu 上 keeper 實測間隔） | 48h |
+| 清算罰金 | `setLiquidationPenaltyBps` | `RISK_MODEL_CFD.md` §⟦待填⟧ | 48h；對既有部位立即生效 |
 | GuardedOracle 偏離與時間窗 | `setRiskParams`、`setWindowLimit` | `BESU_CALIBRATION.md` §⟦待填⟧ | 48h |
 | ZK 價格容差 δ（若做 §2.6） | 新合約參數 | `BESU_CALIBRATION.md` §⟦待填⟧ | 48h |
 
@@ -574,7 +574,7 @@ QAE 的變體：原始版用量子相位估計（需要很多受控運算）；S
 1. 變更單（§1.4）的「依據」欄必須寫出上表文件的 **commit 雜湊＋章節**；文件還沒有對應章節的參數，不得提案（例外：只收緊、不放寬的變更，可先以 guardian／ReduceOnly 處理，事後補依據）。
 2. 校準報告的輸出檔（Phase 1 `risk_model/` 產出）以檔案雜湊記入變更單，再把變更單雜湊放進 timelock `salt`，形成「模型版本 → 報告 → 變更單 → 鏈上事件」的完整鏈。
 3. Phase 2 的 Foundry 測試（只加測試）若證明某個封閉式與合約不一致，相關參數的提案凍結到文件修正為止。
-4. [`RISK_MODEL.md`](RISK_MODEL.md) 目前的內容是 AssetVault 的風險模型；Phase 1 會擴充 exchange 的部分。[`BESU_CALIBRATION.md`](BESU_CALIBRATION.md) 尚未建立（Phase 3 產出），本文件的連結先指向預定位置。
+4. Phase 1 的 exchange 風險模型在 [`RISK_MODEL_CFD.md`](RISK_MODEL_CFD.md)；[`RISK_MODEL.md`](RISK_MODEL.md) 仍是 AssetVault 的風險模型。[`BESU_CALIBRATION.md`](BESU_CALIBRATION.md) 尚未建立（Phase 3 產出），本文件的連結先指向預定位置。
 
 ---
 

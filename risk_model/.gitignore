@@ -1,0 +1,9 @@
+# 本機虛擬環境
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+# run_all.py 的輸出（圖檔、表格、彙總數字）一律不進版控；文件引用的圖另存在 docs/figures/risk_model/
+output/
+# 原始價格快取不進版控（資料條款未明確允許再散布），只保留校準後的參數 calibrated_params.json
+data/*.csv

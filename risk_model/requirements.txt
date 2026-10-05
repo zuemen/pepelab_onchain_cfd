@@ -1,0 +1,7 @@
+# Phase 1 risk model dependencies. Versions are pinned so figures and numbers are reproducible.
+# Local: Python 3.10 venv at risk_model/.venv. CI: ubuntu-latest system python3 (wheels exist for these versions).
+numpy==2.2.6
+scipy==1.15.3
+pandas==2.3.3
+matplotlib==3.10.9
+pytest==9.1.1

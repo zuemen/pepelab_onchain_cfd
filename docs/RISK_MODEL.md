@@ -146,3 +146,5 @@ vault as `immutable` and did not have this property.
       to clear it once a breach recovers (see `agent/.env.example`)
 - [ ] Runbook for `clearMintingHalt()` — when it is and isn't appropriate to
       use, and who holds `RISK_ROLE`
+
+> PerpetualExchange（永續合約交易引擎）的金融風險模型（Phase 1）見 [`RISK_MODEL_CFD.md`](RISK_MODEL_CFD.md)。
