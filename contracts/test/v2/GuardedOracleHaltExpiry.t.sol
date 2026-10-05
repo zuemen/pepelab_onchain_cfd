@@ -1054,6 +1054,77 @@ contract GuardedOracleHaltExpiryTest is Test {
         vm.warp(T0 + DURATION + 1);
         assertEq(_frozen(ID), takeOver);
     }
+
+    // ── The guardian pause record survives the admin ────────────────────────
+    //
+    // The cross-scope rule reads the latest guardian pause as it actually ran.
+    // It used to live in the pause's own slot, so an admin pause (or an admin
+    // lift of a taken-over pause) wiped it and handed the guardian a full,
+    // fresh freeze right after a pause it had held itself.
+
+    /// @dev Guardian pause runs its full 72h; minutes later the admin pauses
+    ///      and lifts. The guardian's record must still refuse a freeze until
+    ///      the cooldown after its own pause.
+    function test_adminPauseAndLift_doNotEraseGuardianPauseRecord() public {
+        _gPause();
+        vm.warp(T0 + DURATION + 1 hours);     // lapsed on its own
+        oracle.setPaused(true);               // admin
+        vm.warp(T0 + DURATION + 2 hours);
+        oracle.setPaused(false);              // admin
+
+        (uint256 s, uint256 e) = oracle.lastGuardianPause();
+        assertEq(s, T0, "record start kept");
+        assertEq(e, T0 + DURATION, "record end kept");
+
+        vm.warp(T0 + DURATION + 3 hours);
+        (, uint256 allowedAt) = oracle.guardianFreezeTerms(ID);
+        assertEq(allowedAt, T0 + DURATION + COOLDOWN, "full-length pause: the asset gets its clean day first");
+        vm.prank(guardian);
+        vm.expectRevert(abi.encodeWithSelector(GuardedOracle.GuardianCooldown.selector, T0 + DURATION + COOLDOWN));
+        oracle.setAssetFrozen(ID, true);
+    }
+
+    /// @dev The admin takes a guardian pause over after 10h and lifts it an
+    ///      hour later. The guardian held it for 10h: a freeze right after is
+    ///      shortened by those 10h, as it would be had the guardian lifted it.
+    function test_adminTakeoverThenLift_keepsGuardianPortionOfThePause() public {
+        _gPause();
+        vm.warp(T0 + 10 hours);
+        oracle.takeOverPause();
+        vm.warp(T0 + 11 hours);
+        oracle.setPaused(false);
+
+        (uint256 s, uint256 e) = oracle.lastGuardianPause();
+        assertEq(s, T0);
+        assertEq(e, T0 + 10 hours, "guardian's part ended at the takeover");
+
+        vm.warp(T0 + 12 hours);
+        _gFreeze(ID);
+        (, , uint256 expiresAt, ) = oracle.freezeOf(ID);
+        assertEq(expiresAt, T0 + 12 hours + DURATION - 10 hours);
+    }
+
+    /// @dev Same through `setPaused(true)` by the admin (the other takeover path).
+    function test_adminSetPausedOnGuardianPause_recordsTakeoverTime() public {
+        _gPause();
+        vm.warp(T0 + 5 hours);
+        oracle.setPaused(true);
+        (uint256 s, uint256 e) = oracle.lastGuardianPause();
+        assertEq(s, T0, "readable while the admin's pause is in force");
+        assertEq(e, T0 + 5 hours);
+    }
+
+    /// @dev An admin pause by itself still does not limit the guardian: with
+    ///      no guardian pause on record, a freeze under it gets the full window.
+    function test_adminPauseAlone_stillLeavesTheFullFreezeWindow() public {
+        oracle.setPaused(true);
+        vm.warp(T0 + 1 hours);
+        _gFreeze(ID);
+        (, , uint256 expiresAt, ) = oracle.freezeOf(ID);
+        assertEq(expiresAt, T0 + 1 hours + DURATION);
+        (uint256 s, uint256 e) = oracle.lastGuardianPause();
+        assertEq(s + e, 0);
+    }
 }
 
 /// @notice The consumer's view: a V2 vault reading the oracle. A guardian

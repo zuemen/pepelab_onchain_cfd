@@ -86,6 +86,16 @@ contract GuardedOracle is AccessControl {
     mapping(bytes32 => Halt) private _freezes;
     Halt private _pause;
 
+    /// @dev The latest guardian pause as it ACTUALLY ran, kept apart from
+    ///      `_pause` so that nothing the admin does to the pause erases it.
+    ///      Set when a guardian pause starts (end = its expiry); the end moves
+    ///      to the lift time if it is lifted early, or to the takeover time if
+    ///      the admin takes it over (from there on the pause is the admin's).
+    ///      An admin pause starting or being lifted does not touch it. The
+    ///      cross-scope rule reads this (see "guardian").
+    uint64 private _guardianPauseStart;
+    uint64 private _guardianPauseEnd;
+
     /// @notice Max move per update, in bps of the previous price. 0 = unlimited
     ///         (only sane before the first price is seeded).
     uint256 public maxDeviationBps = 1_000;   // 10%
@@ -256,12 +266,13 @@ contract GuardedOracle is AccessControl {
 
     /// @notice When the latest guardian pause ACTUALLY ran, once it is no
     ///         longer in force: `end` is the lift time if it was lifted early,
-    ///         else its expiry. (0, 0) while a pause is in force, or when the
-    ///         latest pause was the admin's. This is what the cross-scope rule
-    ///         reads (see "guardian").
+    ///         the takeover time if the admin took it over, else its expiry.
+    ///         (0, 0) while a guardian pause is in force, or before the first
+    ///         one. An admin pause in between, or an admin lift, leaves it as
+    ///         it was. This is what the cross-scope rule reads (see "guardian").
     function lastGuardianPause() external view returns (uint256 start, uint256 end) {
-        if (_inForce(_pause) || _pause.expiresAt == 0) return (0, 0);
-        return (_pause.since, _pause.expiresAt);
+        if (_guardianPauseInForce()) return (0, 0);
+        return (_guardianPauseStart, _guardianPauseEnd);
     }
 
     // ── keeper writes ────────────────────────────────────────────────────────
@@ -443,10 +454,11 @@ contract GuardedOracle is AccessControl {
     // unbroken guardian halt lasts longer than 2 x GUARDIAN_HALT_DURATION
     // (144h: a freeze, then a pause opened before it ends), and the halted
     // stretch between two clean GUARDIAN_HALT_COOLDOWN spans is under 192h,
-    // so a clean day starts at most 216h after the previous one did. These
-    // bounds hold for the guardian ACTING ALONE: an admin pause, or an admin
-    // lift of a pause, leaves no guardian pause record for the rule above to
-    // read. See docs/KNOWN_LIMITATIONS.md #27.
+    // so a clean day starts at most 216h after the previous one did. The
+    // guardian pause record lives outside the pause itself, so an admin pause,
+    // an admin lift, or an admin takeover does not erase it: a guardian pause
+    // the admin ended (or took over) still counts for as long as the guardian
+    // held it. See docs/KNOWN_LIMITATIONS.md #27.
     //
     // A lapse only removes the halt. The stored price is as old as the halt,
     // so `maxPriceAge` (here and in each consumer) still decides whether it is
@@ -480,6 +492,7 @@ contract GuardedOracle is AccessControl {
                 emit PausedSet(true);
                 emit PauseStarted(msg.sender, expiresAt);
             } else if (outcome == HaltOutcome.TakenOver) {
+                _guardianPauseEnd = uint64(block.timestamp);
                 emit PauseTakenOver(msg.sender);
             }
         } else if (_lift(_pause, true)) {
@@ -500,6 +513,7 @@ contract GuardedOracle is AccessControl {
     /// @notice Admin only: same as `takeOverAssetFreeze`, for the pause.
     function takeOverPause() external onlyRole(DEFAULT_ADMIN_ROLE) {
         _takeOver(_pause);
+        _guardianPauseEnd = uint64(block.timestamp);
         emit PauseTakenOver(msg.sender);
     }
 
@@ -543,6 +557,10 @@ contract GuardedOracle is AccessControl {
         return h.on && (h.expiresAt == 0 || block.timestamp < h.expiresAt);
     }
 
+    function _guardianPauseInForce() internal view returns (bool) {
+        return _pause.expiresAt != 0 && _inForce(_pause);
+    }
+
     function _describe(Halt storage h)
         internal view
         returns (bool inForce, uint256 since, uint256 expiresAt, uint256 guardianWindowEnd)
@@ -578,20 +596,22 @@ contract GuardedOracle is AccessControl {
         expiresAt = block.timestamp + GUARDIAN_HALT_DURATION;
         if (!isAsset) return (expiresAt, 0);
 
-        // Cross-scope: the pause as it actually ran. An admin pause (no
-        // expiry) is the admin's call and does not limit the guardian here.
-        Halt storage p = _pause;
-        uint256 pEnd = p.expiresAt;
-        if (pEnd == 0) return (expiresAt, 0);
-        if (_inForce(p)) {
+        // Cross-scope: the guardian's pause as it actually ran. An admin
+        // pause (no expiry) is the admin's call and does not limit the
+        // guardian here — but it does not wipe the guardian's own record
+        // either.
+        if (_guardianPauseInForce()) {
             // A guardian pause is running: end with it.
-            if (pEnd < expiresAt) expiresAt = pEnd;
+            uint256 runningEnd = _pause.expiresAt;
+            if (runningEnd < expiresAt) expiresAt = runningEnd;
             return (expiresAt, 0);
         }
+        uint256 pEnd = _guardianPauseEnd;
+        if (pEnd == 0) return (expiresAt, 0);
         // forge-lint: disable-next-line(block-timestamp)
         if (block.timestamp < pEnd + GUARDIAN_HALT_COOLDOWN) {
             // A guardian pause ended less than a cooldown ago.
-            uint256 pStart = p.since;
+            uint256 pStart = _guardianPauseStart;
             uint256 ran = pEnd - pStart;
             // The asset was frozen by the guardian shortly before (or during)
             // that pause, or the pause ran its full length: the asset gets
@@ -629,6 +649,8 @@ contract GuardedOracle is AccessControl {
             if (_pause.expiresAt != 0 && _inForce(_pause)) _pause.pinned = true;
         } else {
             h.pinned = false;
+            _guardianPauseStart = uint64(block.timestamp);
+            _guardianPauseEnd = uint64(expiresAt);
         }
         h.on = true;
         h.since = uint64(block.timestamp);
@@ -653,6 +675,7 @@ contract GuardedOracle is AccessControl {
                 // when it actually ended -- unless a freeze placed under it
                 // still runs to the original end.
                 if (isPause && !h.pinned) h.guardianWindowEnd = uint64(block.timestamp);
+                if (isPause) _guardianPauseEnd = uint64(block.timestamp);
             } else {
                 // An admin halt leaves no guardian record.
                 h.since = 0;
