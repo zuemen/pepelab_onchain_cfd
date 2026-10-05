@@ -637,14 +637,16 @@ procedure: [ADR-010](ADR-010-x402-v2-migration.md).
   returns 502 `phase: settle` (never a 402, which would invite a second payment),
   attaches the settlement tx hash when the facilitator gave one, writes one
   structured log line (payer, nonce, amount, route, tx hash; no signature), and
-  pushes the same record to `x402:settlement:unknown`. Nothing processes that list
-  automatically: an operator reconciles it against on-chain USDC transfers and adds
-  the revenue split by hand for payments that did land. Before adding a split,
-  check the main settlement queue for the same `tx:` (or `auth:`) key: a buyer may
-  retry the same authorization after a pending result and succeed, in which case the
-  payment is already queued and must not be split twice. The list has no dedup or
-  length cap yet; one authorization resent during a settle outage adds one entry per
-  attempt. If the list write fails the response is still 502 and the failure is logged.
+  pushes the same record to `x402:settlement:unknown` (deduplicated per payer+nonce,
+  capped by `X402_UNKNOWN_MAX`; rows that arrive while it is full are persisted to the
+  manual list, never dropped). The settlement worker reconciles it each round and
+  credits a row only on an exact on-chain match: the asset's `AuthorizationUsed`
+  event for that payer+nonce and, in the same receipt, the USDC transfer from the
+  payer to the current payTo for at least the authorized amount, with neither the
+  `tx:` nor the `auth:` key already credited. Unused authorizations past
+  `validBefore` (by chain time) are closed. Everything else goes to
+  `x402:settlement:unknown:manual` with a reason code for an operator. If the list
+  write fails the response is still 502 and the failure is logged.
 - **Facilitator `/supported` outages.** v2 initialization fails closed (502
   `phase: supported` on paid routes) and is not retried for 30 seconds. In `both`
   mode an unpaid request waits at most 2.5 seconds for `/supported` before falling

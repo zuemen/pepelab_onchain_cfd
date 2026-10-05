@@ -20,6 +20,8 @@
 //     - 「先加後刪」：搬移時一律先寫入目的地、再從來源刪除——中途崩潰最多造成重複，
 //       重複由冪等鍵吸收；絕不會造成遺失。
 
+import { createHash } from "node:crypto";
+
 import { decodeBase64Json } from "./paymentIdentifier.ts";
 
 function credentials(): { url: string; token: string } | null {
@@ -37,10 +39,31 @@ export const UNCONFIRMED_KEY = "x402:settlement:unconfirmed";
 export const DEAD_KEY = "x402:settlement:dead";
 /**
  * x402 v2 結算結果未知的付款（facilitator 逾時、斷線、5xx、回應壞掉、settlement_pending）：
- * 授權已交給 facilitator，但不知道有沒有上鏈，也沒有入主佇列。**worker 不讀**，供人工對帳
- * （以 payer + nonce 或 transaction 查鏈上 USDC 轉帳；確定收到款再手動補一筆分潤）。
+ * 授權已交給 facilitator，但不知道有沒有上鏈，也沒有入主佇列。結算 worker 每輪以
+ * unknownReconcile.ts 對帳：只有鏈上逐項核對完全吻合才補分潤，其餘移到 UNKNOWN_MANUAL_KEY。
  */
 export const UNKNOWN_SETTLEMENT_KEY = "x402:settlement:unknown";
+/**
+ * Dedup marker per authorization: `<prefix><payer>:<nonce>` (lowercase). An EIP-3009 nonce can
+ * be consumed at most once per payer, so this pair identifies one payment. Without it every
+ * resend of the same authorization during a facilitator outage added another row.
+ * Kept as long as the idempotency state, so a later resend is still recognised.
+ */
+export const UNKNOWN_SEEN_PREFIX = "x402:settlement:unknown:seen:";
+/**
+ * Count of rows that arrived while the list was full. Should stay 0. Those rows are not dropped:
+ * they are persisted to UNKNOWN_MANUAL_KEY (reason "overflow"). The settlement worker raises a
+ * GitHub Actions ::error:: every round while this is > 0; reset it (DEL) after handling them.
+ */
+export const UNKNOWN_OVERFLOW_KEY = "x402:settlement:unknown:overflow";
+/**
+ * Rows the reconciler will not decide on its own, each wrapped as `{ raw, reason, ..., movedAt }`
+ * with a short reason code (unknownReconcile.ts). Anything that is not an exact on-chain match
+ * ends up here instead of being credited; so do overflow rows. A human decides each one.
+ */
+export const UNKNOWN_MANUAL_KEY = "x402:settlement:unknown:manual";
+/** Default cap on UNKNOWN_SETTLEMENT_KEY; override with X402_UNKNOWN_MAX. */
+export const UNKNOWN_MAX_DEFAULT = 1000;
 /**
  * 舊格式項目（沒有冪等鍵）以內容雜湊作鍵時，同一個雜湊第二次出現：可能是同一筆的重複，
  * 也可能是「同 trader、同金額、同一秒、同端點」的另一筆真實付款——無法分辨。
@@ -128,11 +151,237 @@ export async function enqueueSettlement(entry: LedgerEntry): Promise<void> {
 }
 
 /**
+ * One marker per EIP-3009 authorization that has been credited, whichever path credited it:
+ * `<prefix><chain>:<token>:<payer>:<nonce>` (lowercase) → the idempotency key it was credited
+ * under. The success path keys revenue by the tx hash the facilitator reported, and the
+ * reconciler by the tx that emitted AuthorizationUsed; if those ever differ, the two `tx:` keys
+ * differ too, but the authorization is the same. Both paths enqueue through an atomic
+ * "SET marker NX, then RPUSH" (the reconciler's script also removes its row), so one
+ * authorization can enter the settlement queue at most once. Kept as long as settlement state.
+ */
+export const AUTHZ_MARKER_PREFIX = "x402:settlement:authz:";
+
+export function authorizationMarkerKey(a: { network?: unknown; asset?: unknown; payer?: unknown; nonce?: unknown }): string | null {
+  const ok =
+    typeof a.network === "string" && /^eip155:[0-9]+$/.test(a.network) &&
+    typeof a.asset === "string" && /^0x[0-9a-fA-F]{40}$/.test(a.asset) &&
+    typeof a.payer === "string" && /^0x[0-9a-fA-F]{40}$/.test(a.payer) &&
+    typeof a.nonce === "string" && /^0x[0-9a-fA-F]{64}$/.test(a.nonce);
+  if (!ok) return null;
+  return `${AUTHZ_MARKER_PREFIX}${[a.network, a.asset, a.payer, a.nonce].map((v) => String(v).toLowerCase()).join(":")}`;
+}
+
+/** KEYS: marker, queue   ARGV: marker value, entry, ttl. 1 = queued, 0 = authorization already credited. */
+const ENQUEUE_ONCE_SCRIPT = `-- pepelab:enqueue_once
+if redis.call('SET', KEYS[1], ARGV[1], 'NX', 'EX', tonumber(ARGV[3])) then
+  redis.call('RPUSH', KEYS[2], ARGV[2])
+  return 1
+end
+return 0`;
+
+/**
+ * Success-path enqueue for a payment whose authorization is known: queued only if no revenue
+ * row was ever queued for the same authorization (see AUTHZ_MARKER_PREFIX).
+ */
+export async function enqueueSettlementOnce(entry: LedgerEntry, marker: string): Promise<"queued" | "already_credited"> {
+  const r = await command<number>([
+    "EVAL", ENQUEUE_ONCE_SCRIPT, 2, marker, QUEUE_KEY, entry.idempotencyKey ?? "?", JSON.stringify(entry), SETTLE_STATE_TTL_SEC,
+  ]);
+  return Number(r) === 1 ? "queued" : "already_credited";
+}
+
+export function unknownMaxFromEnv(env: NodeJS.ProcessEnv = process.env): number {
+  const n = Number(env.X402_UNKNOWN_MAX);
+  return Number.isInteger(n) && n > 0 ? n : UNKNOWN_MAX_DEFAULT;
+}
+
+/** `<payer>:<nonce>` lowercase, or null when the row cannot identify its authorization. */
+export function unknownDedupeKey(record: { payer?: unknown; nonce?: unknown }): string | null {
+  const payer = typeof record.payer === "string" && /^0x[0-9a-fA-F]{40}$/.test(record.payer) ? record.payer : null;
+  const nonce = typeof record.nonce === "string" && /^0x[0-9a-fA-F]{64}$/.test(record.nonce) ? record.nonce : null;
+  return payer && nonce ? `${payer.toLowerCase()}:${nonce.toLowerCase()}` : null;
+}
+
+export type RecordUnknownResult = "recorded" | "duplicate" | "overflow";
+
+/**
+ * Cap check and push in one step (a separate LLEN + RPUSH lets concurrent writers overshoot).
+ * When the list is full the row is NOT dropped: it goes to the manual list with reason
+ * "overflow" and the overflow counter is bumped; the worker raises ::error:: while it is > 0.
+ *   KEYS: unknown list, manual list, overflow counter   ARGV: row, max, manual row
+ */
+const UNKNOWN_PUSH_SCRIPT = `-- pepelab:unknown_push
+if redis.call('LLEN', KEYS[1]) >= tonumber(ARGV[2]) then
+  redis.call('RPUSH', KEYS[2], ARGV[3])
+  redis.call('INCR', KEYS[3])
+  return 0
+end
+redis.call('RPUSH', KEYS[1], ARGV[1])
+return 1`;
+
+/**
+ * Move one exact row out of the unknown list into `KEYS[2]`, atomically: the destination
+ * write happens only if this call removed the row. A retry after a lost reply therefore never
+ * produces a second copy (no duplicate manual rows, no second revenue row).
+ *   KEYS: unknown list, destination   ARGV: row, value to push
+ */
+const UNKNOWN_MOVE_SCRIPT = `-- pepelab:unknown_move
+if redis.call('LREM', KEYS[1], 1, ARGV[1]) == 1 then
+  redis.call('RPUSH', KEYS[2], ARGV[2])
+  return 1
+end
+return 0`;
+
+/**
  * 把一筆「結算結果未知」的 v2 付款推進對帳佇列（UNKNOWN_SETTLEMENT_KEY）。ledger 未設定或
  * 寫入失敗會丟錯，由呼叫端 log——不可以因此改變回給買方的狀態碼。
+ *
+ * Deduplicated per authorization and capped. A full list does not lose the record: it is
+ * persisted to UNKNOWN_MANUAL_KEY (reason "overflow") and counted in UNKNOWN_OVERFLOW_KEY, and
+ * the result is "overflow". The dedup marker is dropped only when nothing was persisted
+ * (Redis error), so the next resend can still be recorded.
  */
-export async function recordUnknownSettlement(record: object): Promise<void> {
-  await command(["RPUSH", UNKNOWN_SETTLEMENT_KEY, JSON.stringify(record)]);
+export async function recordUnknownSettlement(
+  record: object,
+  max: number = unknownMaxFromEnv(),
+): Promise<RecordUnknownResult> {
+  const dedupe = unknownDedupeKey(record as { payer?: unknown; nonce?: unknown });
+  const seenKey = dedupe ? UNKNOWN_SEEN_PREFIX + dedupe : null;
+  if (seenKey) {
+    const claimed = await command<string | null>(["SET", seenKey, "1", "NX", "EX", SETTLE_STATE_TTL_SEC]);
+    if (claimed !== "OK") return "duplicate";
+  }
+  try {
+    const raw = JSON.stringify(record);
+    const manualRow = JSON.stringify({ raw, reason: "overflow", movedAt: Math.floor(Date.now() / 1000) });
+    const r = await command<number>([
+      "EVAL", UNKNOWN_PUSH_SCRIPT, 3, UNKNOWN_SETTLEMENT_KEY, UNKNOWN_MANUAL_KEY, UNKNOWN_OVERFLOW_KEY,
+      raw, max, manualRow,
+    ]);
+    return Number(r) === 1 ? "recorded" : "overflow";
+  } catch (err) {
+    if (seenKey) await command(["DEL", seenKey]).catch(() => undefined);
+    throw err;
+  }
+}
+
+export async function unknownLength(): Promise<number> {
+  return (await command<number | null>(["LLEN", UNKNOWN_SETTLEMENT_KEY])) ?? 0;
+}
+
+/**
+ * Rotate: take the head row and put it at the tail in one atomic LMOVE, returning it. The row
+ * stays in the list; walking N rows this way visits N different rows and leaves every row it
+ * did not resolve behind the ones it has not looked at yet, so a stuck row never blocks others.
+ */
+export async function rotateUnknown(): Promise<string | null> {
+  return command<string | null>(["LMOVE", UNKNOWN_SETTLEMENT_KEY, UNKNOWN_SETTLEMENT_KEY, "LEFT", "RIGHT"]);
+}
+
+/** Remove one exact row (closed: expired unused, or already credited elsewhere). */
+export async function removeUnknownSettlement(raw: string): Promise<void> {
+  await command(["LREM", UNKNOWN_SETTLEMENT_KEY, 1, raw]);
+}
+
+/** Hand a row to a human, atomically (see UNKNOWN_MOVE_SCRIPT). `reason` is a short code. */
+export async function moveUnknownToManual(raw: string, reason: string, extra: object = {}): Promise<boolean> {
+  const value = JSON.stringify({ raw, reason, ...extra, movedAt: Math.floor(Date.now() / 1000) });
+  const r = await command<number>(["EVAL", UNKNOWN_MOVE_SCRIPT, 2, UNKNOWN_SETTLEMENT_KEY, UNKNOWN_MANUAL_KEY, raw, value]);
+  return Number(r) === 1;
+}
+
+/**
+ * KEYS: unknown list, queue, authorization marker   ARGV: row, entry, marker value, ttl.
+ * 2 = the authorization was already credited (nothing changed), 1 = credited, 0 = row gone.
+ */
+const UNKNOWN_CREDIT_SCRIPT = `-- pepelab:unknown_credit
+if redis.call('EXISTS', KEYS[3]) == 1 then
+  return 2
+end
+if redis.call('LREM', KEYS[1], 1, ARGV[1]) == 1 then
+  redis.call('SET', KEYS[3], ARGV[3], 'EX', tonumber(ARGV[4]))
+  redis.call('RPUSH', KEYS[2], ARGV[2])
+  return 1
+end
+return 0`;
+
+/**
+ * Credit a reconciled row, atomically: unless the authorization marker already exists, remove
+ * the row, set the marker and enqueue `entry` into the main queue.
+ */
+export async function creditUnknownSettlement(
+  raw: string,
+  entry: LedgerEntry,
+  marker: string,
+): Promise<"credited" | "already_credited" | "gone"> {
+  const r = Number(await command<number>([
+    "EVAL", UNKNOWN_CREDIT_SCRIPT, 3, UNKNOWN_SETTLEMENT_KEY, QUEUE_KEY, marker,
+    raw, JSON.stringify(entry), entry.idempotencyKey ?? "?", SETTLE_STATE_TTL_SEC,
+  ]));
+  return r === 1 ? "credited" : r === 2 ? "already_credited" : "gone";
+}
+
+/** Per-row consecutive error counter, keyed by a hash of the exact row. */
+export const UNKNOWN_ERRORS_PREFIX = "x402:settlement:unknown:errors:";
+export const unknownRowErrorsKey = (raw: string): string =>
+  UNKNOWN_ERRORS_PREFIX + createHash("sha256").update(raw).digest("hex").slice(0, 32);
+
+export async function bumpUnknownRowErrors(raw: string): Promise<number> {
+  const k = unknownRowErrorsKey(raw);
+  const n = Number(await command<number>(["INCR", k]));
+  await command(["EXPIRE", k, 7 * 24 * 60 * 60]);
+  return n;
+}
+
+export async function clearUnknownRowErrors(raw: string): Promise<void> {
+  await command(["DEL", unknownRowErrorsKey(raw)]);
+}
+
+/** Totals the worker alerts on. */
+export async function unknownHealth(): Promise<{ remaining: number; manualTotal: number; overflowTotal: number }> {
+  const [remaining, manualTotal, overflow] = await Promise.all([
+    command<number | null>(["LLEN", UNKNOWN_SETTLEMENT_KEY]),
+    command<number | null>(["LLEN", UNKNOWN_MANUAL_KEY]),
+    command<string | null>(["GET", UNKNOWN_OVERFLOW_KEY]),
+  ]);
+  return { remaining: remaining ?? 0, manualTotal: manualTotal ?? 0, overflowTotal: Number(overflow ?? 0) || 0 };
+}
+
+/** True when any of `keys` has a settlement state (`settle:<key>`). */
+export async function hasSettleState(keys: string[]): Promise<boolean> {
+  for (const k of keys) {
+    if ((await command<string | null>(["GET", SETTLE_STATE_PREFIX + k])) !== null) return true;
+  }
+  return false;
+}
+
+/**
+ * Every idempotency key sitting in a settlement queue or processing list, read once. The
+ * reconciler takes this snapshot once per round instead of re-reading every list per row.
+ * Understands all three row shapes: a LedgerEntry, a retry/dead wrapper `{ entry, ... }`, and
+ * an unparseable dead row `{ raw, ... }` whose raw may still parse.
+ */
+export async function idempotencyKeysInQueues(): Promise<Set<string>> {
+  const out = new Set<string>();
+  const lists = [QUEUE_KEY, RETRY_KEY, UNCONFIRMED_KEY, DEAD_KEY, PROCESSING_KEY, ...Object.values(PROCESSING_KEYS)];
+  const take = (o: unknown) => {
+    const k = (o as { idempotencyKey?: unknown } | null)?.idempotencyKey;
+    if (typeof k === "string") out.add(k);
+  };
+  for (const l of lists) {
+    const rows = (await command<string[] | null>(["LRANGE", l, 0, -1])) ?? [];
+    for (const raw of rows) {
+      try {
+        const o = JSON.parse(raw) as { entry?: unknown; raw?: unknown } | null;
+        take(o);
+        if (o && typeof o.entry === "object") take(o.entry);
+        if (o && typeof o.raw === "string") take(JSON.parse(o.raw));
+      } catch {
+        /* unparseable rows are handled by the worker, not here */
+      }
+    }
+  }
+  return out;
 }
 
 /**

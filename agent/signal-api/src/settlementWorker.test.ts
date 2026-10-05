@@ -639,5 +639,38 @@ function reset() {
   console.log("本機無 GITHUB_ACTIONS → 拒跑；--dry-run 只送 GET/LLEN/LRANGE、不佔位不取鎖；讀旗標失敗 → exit 1 ✓");
 }
 
+// ── unknown-settlement reconciliation wiring: annotations, isolation ─────────
+{
+  reset();
+  const seen: string[] = [];
+  const origErr = console.error;
+  const origWarn = console.warn;
+  console.error = (...a: unknown[]) => void seen.push(String(a[0]));
+  console.warn = (...a: unknown[]) => void seen.push(String(a[0]));
+  try {
+    const summary = {
+      examined: 1, credited: 0, alreadyCredited: 0, expired: 0, pending: 0, tooYoung: 0, manual: 0, errors: 1,
+      manualReasons: {}, remaining: 1, manualTotal: 0, overflowTotal: 3,
+    };
+    await enqueueSettlement(entry("tx:reconcile-wiring"));
+    const s = await runWorker({ ...deps, reconcileUnknown: async () => summary });
+    assert.equal(s.reconcile?.overflowTotal, 3);
+    assert.ok(seen.some((l) => l.startsWith("::error::") && /overflowed 3/.test(l)), "overflow > 0 → ::error::");
+    assert.ok(seen.some((l) => l.startsWith("::warning::") && /row error/.test(l)), "row errors → ::warning::");
+    assert.equal(s.settled, 1, "settlement still runs");
+
+    seen.length = 0;
+    await enqueueSettlement(entry("tx:reconcile-wiring-2"));
+    const s2 = await runWorker({ ...deps, reconcileUnknown: async () => { throw new Error("rpc gone"); } });
+    assert.equal(s2.reconcileFailed, "rpc gone");
+    assert.ok(seen.some((l) => l.startsWith("::error::") && /rpc gone/.test(l)), "reconcile failure → ::error::");
+    assert.equal(s2.settled, 1, "a reconcile failure never blocks settlement");
+  } finally {
+    console.error = origErr;
+    console.warn = origWarn;
+  }
+  console.log("reconcile wiring: overflow → ::error::, errors → ::warning::, failure isolated ✓");
+}
+
 await fake.close();
 console.log("settlementWorker.test.ts ✓ all assertions passed");

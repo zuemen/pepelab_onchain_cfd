@@ -1,5 +1,5 @@
 // 測試用的假 Upstash REST：記憶體內的 list + string，支援 worker 用到的指令子集
-// （RPUSH / LMOVE / LREM / LLEN / LPOP / GET / SET [NX] [EX] / DEL）。
+// （RPUSH / LMOVE / LREM / LLEN / LPOP / GET / SET [NX] [EX] / DEL / INCR / EXPIRE / EVAL 的幾支固定腳本）。
 // 只給離線測試用，不會被打包進 Vercel bundle（vercel-entry 不 import 它）。
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
@@ -98,8 +98,45 @@ export async function startFakeUpstash(): Promise<FakeUpstash> {
         return ok(l.slice(start, stop < 0 ? l.length + stop + 1 : stop + 1));
       }
       case "EVAL": {
-        // 只實作 ledger.ts 用到的那一支：GET KEYS[1] == ARGV[1] 才 DEL。
         const script = String(args[1]);
+        const numKeys = Number(args[2]);
+        const KEYS = args.slice(3, 3 + numKeys).map(String);
+        const ARGV = args.slice(3 + numKeys).map(String);
+        // ledger.ts 的 x402:settlement:unknown 腳本（以開頭的標記辨認；語意與 Lua 逐行相同）。
+        if (script.startsWith("-- pepelab:unknown_push")) {
+          if (list(KEYS[0]).length >= Number(ARGV[1])) {
+            list(KEYS[1]).push(ARGV[2]);
+            strings.set(KEYS[2], String(Number(strings.get(KEYS[2]) ?? "0") + 1));
+            return ok(0);
+          }
+          list(KEYS[0]).push(ARGV[0]);
+          return ok(1);
+        }
+        if (script.startsWith("-- pepelab:enqueue_once")) {
+          if (strings.has(KEYS[0])) return ok(0);
+          strings.set(KEYS[0], ARGV[0]);
+          list(KEYS[1]).push(ARGV[1]);
+          return ok(1);
+        }
+        if (script.startsWith("-- pepelab:unknown_credit")) {
+          if (strings.has(KEYS[2])) return ok(2);
+          const l = list(KEYS[0]);
+          const i = l.indexOf(ARGV[0]);
+          if (i < 0) return ok(0);
+          l.splice(i, 1);
+          strings.set(KEYS[2], ARGV[2]);
+          list(KEYS[1]).push(ARGV[1]);
+          return ok(1);
+        }
+        if (script.startsWith("-- pepelab:unknown_move")) {
+          const l = list(KEYS[0]);
+          const i = l.indexOf(ARGV[0]);
+          if (i < 0) return ok(0);
+          l.splice(i, 1);
+          list(KEYS[1]).push(ARGV[1]);
+          return ok(1);
+        }
+        // 其餘只實作鎖釋放那一支：GET KEYS[1] == ARGV[1] 才 DEL。
         const key = String(args[3]);
         const argv1 = String(args[4]);
         if (!/redis\.call\('GET', KEYS\[1\]\) == ARGV\[1\].*redis\.call\('DEL', KEYS\[1\]\)/.test(script)) {
@@ -116,6 +153,8 @@ export async function startFakeUpstash(): Promise<FakeUpstash> {
         strings.set(k, String(v));
         return ok(v);
       }
+      case "EXPIRE":
+        return ok(strings.has(k) ? 1 : 0);
       case "DEL":
         return ok(strings.delete(k) ? 1 : 0);
       default:

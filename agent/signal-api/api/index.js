@@ -60004,6 +60004,10 @@ function credentials() {
 }
 var QUEUE_KEY = "x402:settlement:queue";
 var UNKNOWN_SETTLEMENT_KEY = "x402:settlement:unknown";
+var UNKNOWN_SEEN_PREFIX = "x402:settlement:unknown:seen:";
+var UNKNOWN_OVERFLOW_KEY = "x402:settlement:unknown:overflow";
+var UNKNOWN_MANUAL_KEY = "x402:settlement:unknown:manual";
+var UNKNOWN_MAX_DEFAULT = 1e3;
 var SETTLE_STATE_TTL_SEC = 90 * 24 * 60 * 60;
 function isLedgerEnabled() {
   return credentials() !== null;
@@ -60030,8 +60034,74 @@ async function command(cmd) {
 async function enqueueSettlement(entry) {
   await command(["RPUSH", QUEUE_KEY, JSON.stringify(entry)]);
 }
-async function recordUnknownSettlement(record) {
-  await command(["RPUSH", UNKNOWN_SETTLEMENT_KEY, JSON.stringify(record)]);
+var AUTHZ_MARKER_PREFIX = "x402:settlement:authz:";
+function authorizationMarkerKey(a) {
+  const ok = typeof a.network === "string" && /^eip155:[0-9]+$/.test(a.network) && typeof a.asset === "string" && /^0x[0-9a-fA-F]{40}$/.test(a.asset) && typeof a.payer === "string" && /^0x[0-9a-fA-F]{40}$/.test(a.payer) && typeof a.nonce === "string" && /^0x[0-9a-fA-F]{64}$/.test(a.nonce);
+  if (!ok) return null;
+  return `${AUTHZ_MARKER_PREFIX}${[a.network, a.asset, a.payer, a.nonce].map((v) => String(v).toLowerCase()).join(":")}`;
+}
+var ENQUEUE_ONCE_SCRIPT = `-- pepelab:enqueue_once
+if redis.call('SET', KEYS[1], ARGV[1], 'NX', 'EX', tonumber(ARGV[3])) then
+  redis.call('RPUSH', KEYS[2], ARGV[2])
+  return 1
+end
+return 0`;
+async function enqueueSettlementOnce(entry, marker) {
+  const r = await command([
+    "EVAL",
+    ENQUEUE_ONCE_SCRIPT,
+    2,
+    marker,
+    QUEUE_KEY,
+    entry.idempotencyKey ?? "?",
+    JSON.stringify(entry),
+    SETTLE_STATE_TTL_SEC
+  ]);
+  return Number(r) === 1 ? "queued" : "already_credited";
+}
+function unknownMaxFromEnv(env = process.env) {
+  const n2 = Number(env.X402_UNKNOWN_MAX);
+  return Number.isInteger(n2) && n2 > 0 ? n2 : UNKNOWN_MAX_DEFAULT;
+}
+function unknownDedupeKey(record) {
+  const payer = typeof record.payer === "string" && /^0x[0-9a-fA-F]{40}$/.test(record.payer) ? record.payer : null;
+  const nonce = typeof record.nonce === "string" && /^0x[0-9a-fA-F]{64}$/.test(record.nonce) ? record.nonce : null;
+  return payer && nonce ? `${payer.toLowerCase()}:${nonce.toLowerCase()}` : null;
+}
+var UNKNOWN_PUSH_SCRIPT = `-- pepelab:unknown_push
+if redis.call('LLEN', KEYS[1]) >= tonumber(ARGV[2]) then
+  redis.call('RPUSH', KEYS[2], ARGV[3])
+  redis.call('INCR', KEYS[3])
+  return 0
+end
+redis.call('RPUSH', KEYS[1], ARGV[1])
+return 1`;
+async function recordUnknownSettlement(record, max = unknownMaxFromEnv()) {
+  const dedupe = unknownDedupeKey(record);
+  const seenKey = dedupe ? UNKNOWN_SEEN_PREFIX + dedupe : null;
+  if (seenKey) {
+    const claimed = await command(["SET", seenKey, "1", "NX", "EX", SETTLE_STATE_TTL_SEC]);
+    if (claimed !== "OK") return "duplicate";
+  }
+  try {
+    const raw2 = JSON.stringify(record);
+    const manualRow = JSON.stringify({ raw: raw2, reason: "overflow", movedAt: Math.floor(Date.now() / 1e3) });
+    const r = await command([
+      "EVAL",
+      UNKNOWN_PUSH_SCRIPT,
+      3,
+      UNKNOWN_SETTLEMENT_KEY,
+      UNKNOWN_MANUAL_KEY,
+      UNKNOWN_OVERFLOW_KEY,
+      raw2,
+      max,
+      manualRow
+    ]);
+    return Number(r) === 1 ? "recorded" : "overflow";
+  } catch (err) {
+    if (seenKey) await command(["DEL", seenKey]).catch(() => void 0);
+    throw err;
+  }
 }
 function deriveIdempotencyKey(paymentResponseHeader, paymentHeader) {
   const decode3 = (h) => {
@@ -64255,7 +64325,8 @@ function createX402V2(opts) {
           amount: str(auth?.value) ?? str(paymentRequirements.amount),
           validBefore: str(auth?.validBefore),
           transaction,
-          reason: (str(detail.reason) ?? message).slice(0, 200)
+          reason: (str(detail.reason) ?? message).slice(0, 200),
+          ...opts.unknownRecordContext ? opts.unknownRecordContext(c) : {}
         };
         console.error(`[x402v2] settlement_unknown ${JSON.stringify(record)}`);
         if (opts.onSettlementUnknown) {
@@ -65560,7 +65631,21 @@ async function applyLedgerRecording(entry, res, paymentHeader, protocol = "v1") 
         );
       }
       const pid = v2Payload ? readPaymentIdentifier(v2Payload) : null;
-      await enqueueSettlement({ ...entry, idempotencyKey, ...pid?.valid && pid.id ? { paymentId: pid.id } : {} });
+      const full = { ...entry, idempotencyKey, ...pid?.valid && pid.id ? { paymentId: pid.id } : {} };
+      const v2 = v2Payload;
+      const marker = v2 ? authorizationMarkerKey({
+        network: v2.accepted?.network,
+        asset: v2.accepted?.asset,
+        payer: v2.payload?.authorization?.from,
+        nonce: v2.payload?.authorization?.nonce
+      }) : null;
+      if (marker) {
+        if (await enqueueSettlementOnce(full, marker) === "already_credited") {
+          console.warn(`[ledger] authorization already credited (${marker}); not queued again: ${JSON.stringify(full)}`);
+        }
+      } else {
+        await enqueueSettlement(full);
+      }
       queued = true;
     } catch (err) {
       settleError = "ledger_enqueue_failed\uFF1A\u5DF2\u6536\u6B3E\u4F46\u5206\u6F64\u7D00\u9304\u672A\u80FD\u6392\u5165\u4F47\u5217\uFF08\u5DF2\u8A18\u9304\u65BC\u4F3A\u670D\u5668 log\uFF09";
@@ -65668,7 +65753,16 @@ function createApp(opts = {}) {
           description: r.config.description
         })),
         onFacilitatorFailure: (_c, f2) => facilitatorFailureResponse(f2),
-        onSettlementUnknown: (record) => recordUnknownSettlement(record),
+        // What the handler left for the ledger: if the reconciler later finds the authorization
+        // consumed on chain, this is who gets credited and for how much.
+        unknownRecordContext: (c) => ({
+          ledgerEntry: c.get("ledgerEntry") ?? null
+        }),
+        onSettlementUnknown: async (record) => {
+          if (await recordUnknownSettlement(record) === "overflow") {
+            console.error("[x402v2] settlement_unknown list full: record persisted to x402:settlement:unknown:manual (reason overflow)");
+          }
+        },
         ...opts.x402V2Timing
       });
     } catch (err) {

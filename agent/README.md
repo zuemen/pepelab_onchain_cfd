@@ -156,6 +156,25 @@ worker 每一筆 `routeExternalRevenue` 都是「先簽、先把 hash / nonce / 
    確認後：`curl -s -H "Authorization: Bearer $UPSTASH_REDIS_REST_TOKEN"
    "$UPSTASH_REDIS_REST_URL/del/x402:settlement:halt"`。先用 `--dry-run` 看一次佇列與各鍵的狀態再清。
 
+### x402 結算結果未知的人工處理（`x402:settlement:unknown:manual`）
+
+worker 每輪自動對帳 `x402:settlement:unknown`，**只有鏈上逐項吻合才補分潤**（規則見
+[ADR-010](../docs/ADR-010-x402-v2-migration.md)）；其餘移到 `x402:settlement:unknown:manual`，每列是
+`{ raw, reason, transaction?, lastError?, movedAt }`。job 會以 `::warning::`（新的 manual 列、列錯誤）或
+`::error::`（`x402:settlement:unknown:overflow` > 0）提示。處理原則：**寧可不補，不可重複補。**
+
+1. 讀 `raw` 的 `payer`、`nonce`、`amount`、`payTo`、`ledgerEntry` 與 `reason`。
+2. 到 explorer 查該 payer＋nonce 的 `AuthorizationUsed` 事件所在交易，確認**同一筆交易**裡有 USDC
+   `Transfer(payer → 目前的 payTo)` 且金額 ≥ `amount`。不成立（例如 nonce 被取消、轉給別人、金額不足、
+   payTo 不是目前的 signer）→ 沒有收到款，不補分潤，直接從 manual 移除該列。
+3. 成立 → 先確認 `settle:tx:<hash>`、`settle:auth:<payer>:<nonce>` 都不存在，且主佇列／retry／
+   unconfirmed／dead／processing 都沒有這兩個鍵，且 `x402:settlement:authz:<chain>:<token>:<payer>:<nonce>`（全小寫）不存在；都沒有才先 `SET` 該標記（值＝入帳鍵）再 `RPUSH x402:settlement:queue`
+   一筆以 `tx:<hash>` 為 `idempotencyKey` 的分潤項目（缺 `ledgerEntry` 的列要依 route 與金額人工判斷受益者）。
+4. `reason` 是 `repeated_errors` 的列多半是 RPC 問題：確認 RPC 恢復後可把 `raw` 原樣 `RPUSH` 回
+   `x402:settlement:unknown` 讓 worker 重判。
+5. `reason` 是 `overflow` 的列是清單滿時寫入的完整紀錄：同樣可原樣放回 unknown 讓 worker 判斷；全部處理完後
+   `DEL x402:settlement:unknown:overflow`，`::error::` 才會停止。
+
 ## 「付費 → 自主下單」一鍵 demo（北極星）
 
 ```bash
@@ -259,7 +278,7 @@ npx tsx examples/buy-signal.ts
 伺服器以環境變數 `X402_PROTOCOL` 決定收哪個版本：`v1`（預設，行為不變）、`both`（過渡期，同一個端點兩種都收）、`v2`。
 設計、查證到的規格事實與切換步驟見 [`docs/ADR-010-x402-v2-migration.md`](../docs/ADR-010-x402-v2-migration.md)。
 v2 的結算結果未知（facilitator 逾時、5xx、`settlement_pending`）回 502 `phase=settle`，同時寫一行
-`[x402v2] settlement_unknown` log 並推進 Redis 的 `x402:settlement:unknown`（人工對帳用，worker 不讀）。
+`[x402v2] settlement_unknown` log 並推進 Redis 的 `x402:settlement:unknown`（結算 worker 每輪自動對帳：只有鏈上逐項吻合才補分潤，其餘移到 `x402:settlement:unknown:manual`；規則見 ADR-010，人工處理見上方「x402 結算結果未知的人工處理」）。
 
 離線把兩個版本各跑通一次（本機假 facilitator，**不連網、不送交易、不付款**；金鑰當場隨機產生）：
 

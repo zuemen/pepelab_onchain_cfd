@@ -233,6 +233,11 @@ export interface UnknownSettlementRecord {
   transaction: string | null;
   /** facilitator 的 errorReason 或錯誤訊息（截斷）。 */
   reason: string;
+  /**
+   * What to credit if the payment turns out to have landed (app.ts, via unknownRecordContext).
+   * Absent on rows written before reconciliation existed — those go to a human.
+   */
+  ledgerEntry?: unknown;
 }
 
 const ADDR_RE = /^0x[0-9a-fA-F]{40}$/;
@@ -309,6 +314,14 @@ export interface X402V2Options {
   onFacilitatorFailure: (c: Context, failure: FacilitatorFailure) => Response;
   /** 結算結果未知時呼叫（寫對帳佇列）。丟錯只會被 log，回應仍是 502 phase=settle。 */
   onSettlementUnknown?: (record: UnknownSettlementRecord) => Promise<void>;
+  /**
+   * Adds app-side context to an unknown-settlement record — app.ts supplies `ledgerEntry`, which
+   * the reconciler needs to credit a payment that turns out to have landed. Merged in BEFORE the
+   * record is logged, so the log line stays a complete copy of the queued row: if the queue write
+   * is refused (full) or fails, the log is the only copy left, and it must carry the ledger entry.
+   * A hook rather than reading the context here keeps this module ignorant of the app's variables.
+   */
+  unknownRecordContext?: (c: Context) => Pick<UnknownSettlementRecord, "ledgerEntry">;
   /** /supported 失敗後的退避（ms），預設 DEFAULT_INIT_BACKOFF_MS。 */
   initBackoffMs?: number;
   /** both 模式未付款 402 等 /supported 的上限（ms），預設 DEFAULT_UNPAID_INIT_TIMEOUT_MS。 */
@@ -607,6 +620,7 @@ export function createX402V2(opts: X402V2Options): X402V2Paywall {
           validBefore: str(auth?.validBefore),
           transaction,
           reason: (str(detail.reason) ?? message).slice(0, 200),
+          ...(opts.unknownRecordContext ? opts.unknownRecordContext(c) : {}),
         };
         console.error(`[x402v2] settlement_unknown ${JSON.stringify(record)}`);
         if (opts.onSettlementUnknown) {
