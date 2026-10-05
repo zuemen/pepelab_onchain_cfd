@@ -15,7 +15,8 @@
     "keeper": "node scripts/keeper.mjs",
     "e2e": "bash scripts/e2e.sh",
     "fork-test": "bash scripts/fork-test.sh",
-    "test": "node --test scripts/lib.test.mjs"
+    "test": "node --test scripts/lib.test.mjs scripts/risk-params.test.mjs",
+    "risk-params": "node scripts/apply-risk-params.mjs"
   },
   "dependencies": {
     "viem": "2.57.2"

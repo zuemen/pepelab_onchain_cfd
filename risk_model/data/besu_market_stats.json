@@ -1,0 +1,246 @@
+{
+ "note": "risk_model/besu_institution.py 由公開日資料計算的摘要統計量；原始價格不進版控。",
+ "fetched_utc": "2026-10-05",
+ "sources": {
+  "BTC": "Binance 公開 klines BTCUSDT 1d（data-api.binance.vision）",
+  "ETH": "Binance 公開 klines ETHUSDT 1d（data-api.binance.vision）",
+  "AAPL": "Yahoo Finance chart API AAPL 1d（query1.finance.yahoo.com）",
+  "TSLA": "Yahoo Finance chart API TSLA 1d（query1.finance.yahoo.com）"
+ },
+ "correlation": {
+  "assets": [
+   "BTC",
+   "ETH",
+   "AAPL",
+   "TSLA"
+  ],
+  "period": [
+   "2021-10-05",
+   "2026-10-02"
+  ],
+  "n_returns": 1253,
+  "n_robust": 1195,
+  "method": "股票交易日對齊；加密取同一 UTC 日期的日 K 收盤；robust＝剔除任一資產 |MAD z| ≥ 4 的日子",
+  "pearson": [
+   [
+    1.0,
+    0.8474,
+    0.2685,
+    0.3515
+   ],
+   [
+    0.8474,
+    1.0,
+    0.3047,
+    0.3709
+   ],
+   [
+    0.2685,
+    0.3047,
+    1.0,
+    0.462
+   ],
+   [
+    0.3515,
+    0.3709,
+    0.462,
+    1.0
+   ]
+  ],
+  "robust": [
+   [
+    1.0,
+    0.8096,
+    0.2002,
+    0.2995
+   ],
+   [
+    0.8096,
+    1.0,
+    0.2396,
+    0.3118
+   ],
+   [
+    0.2002,
+    0.2396,
+    1.0,
+    0.4232
+   ],
+   [
+    0.2995,
+    0.3118,
+    0.4232,
+    1.0
+   ]
+  ]
+ },
+ "stress": [
+  {
+   "id": "S1",
+   "name": "2020-03-12 新冠崩跌（加密「黑色星期四」）",
+   "base": "2020-03-11",
+   "crypto_window": [
+    "2020-03-12",
+    "2020-03-13"
+   ],
+   "equity_window": [
+    "2020-03-12",
+    "2020-03-12"
+   ],
+   "hours": 36.0,
+   "kind": "macro",
+   "shocks": {
+    "BTC": {
+     "close_to_close": -0.29692029259488917,
+     "trough": -0.5233322242555316,
+     "first_open_gap": 0.0
+    },
+    "ETH": {
+     "close_to_close": -0.31113509069420897,
+     "trough": -0.558090540054468,
+     "first_open_gap": 0.0
+    },
+    "AAPL": {
+     "close_to_close": -0.09875466605505201,
+     "trough": -0.09958970847474158,
+     "first_open_gap": -0.07076204753531468
+    },
+    "TSLA": {
+     "close_to_close": -0.11617242301113506,
+     "trough": -0.13871939240559317,
+     "first_open_gap": -0.08410197318235979
+    }
+   }
+  },
+  {
+   "id": "S2",
+   "name": "2022-05 Terra／LUNA 崩盤",
+   "base": "2022-05-04",
+   "crypto_window": [
+    "2022-05-05",
+    "2022-05-12"
+   ],
+   "equity_window": [
+    "2022-05-05",
+    "2022-05-12"
+   ],
+   "hours": 192.0,
+   "kind": "macro",
+   "shocks": {
+    "BTC": {
+     "close_to_close": -0.26858780549256744,
+     "trough": -0.327286470143613,
+     "first_open_gap": 0.0
+    },
+    "ETH": {
+     "close_to_close": -0.3334036128189781,
+     "trough": -0.38788835083519235,
+     "first_open_gap": 0.0
+    },
+    "AAPL": {
+     "close_to_close": -0.14130831291490753,
+     "trough": -0.16395615299486122,
+     "first_open_gap": -0.013070703006271778
+    },
+    "TSLA": {
+     "close_to_close": -0.23579182080106287,
+     "trough": -0.2861791722196054,
+     "first_open_gap": -0.014276486713167391
+    }
+   }
+  },
+  {
+   "id": "S3",
+   "name": "2022-11 FTX 倒閉",
+   "base": "2022-11-07",
+   "crypto_window": [
+    "2022-11-08",
+    "2022-11-09"
+   ],
+   "equity_window": [
+    "2022-11-08",
+    "2022-11-09"
+   ],
+   "hours": 48.0,
+   "kind": "macro",
+   "shocks": {
+    "BTC": {
+     "close_to_close": -0.22671509528617428,
+     "trough": -0.2429750091422861,
+     "first_open_gap": 0.0
+    },
+    "ETH": {
+     "close_to_close": -0.29677316497672335,
+     "trough": -0.3153944263758689,
+     "first_open_gap": 0.0
+    },
+    "AAPL": {
+     "close_to_close": -0.02915349197480166,
+     "trough": -0.031169031731405727,
+     "first_open_gap": 0.010725637149462175
+    },
+    "TSLA": {
+     "close_to_close": -0.09889387716705889,
+     "trough": -0.10127870168672792,
+     "first_open_gap": -0.015526677137018274
+    }
+   }
+  },
+  {
+   "id": "S4",
+   "name": "AAPL 2019-01-03 營收指引下修（隔夜跳空）",
+   "asset": "AAPL",
+   "date": "2019-01-03",
+   "kind": "gap",
+   "shocks": {
+    "AAPL": {
+     "close_to_close": -0.09960737025028876,
+     "trough": -0.1008105265548056,
+     "first_open_gap": -0.08827255954304791
+    }
+   }
+  },
+  {
+   "id": "S5",
+   "name": "AAPL 2024-05-03 財報（隔夜跳空）",
+   "asset": "AAPL",
+   "date": "2024-05-03",
+   "kind": "gap",
+   "shocks": {
+    "AAPL": {
+     "close_to_close": 0.05981625253732603,
+     "trough": 0.055655117325035475,
+     "first_open_gap": 0.07871464609186107
+    }
+   }
+  },
+  {
+   "id": "S6",
+   "name": "TSLA 2024-07-24 財報（隔夜跳空）",
+   "asset": "TSLA",
+   "date": "2024-07-24",
+   "kind": "gap",
+   "shocks": {
+    "TSLA": {
+     "close_to_close": -0.12334604589403697,
+     "trough": -0.12854126772182162,
+     "first_open_gap": -0.08507186581085002
+    }
+   }
+  },
+  {
+   "id": "S7",
+   "name": "TSLA 2024-10-24 財報（隔夜跳空）",
+   "asset": "TSLA",
+   "date": "2024-10-24",
+   "kind": "gap",
+   "shocks": {
+    "TSLA": {
+     "close_to_close": 0.21919035070290427,
+     "trough": 0.135736020727671,
+     "first_open_gap": 0.14523753646504312
+    }
+   }
+  }
+ ]
+}
