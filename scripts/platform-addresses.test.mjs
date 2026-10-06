@@ -6,6 +6,7 @@ import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { spawnSync } from "node:child_process";
 
 import {
   ANVIL_DEFAULT_ACCOUNTS,
@@ -59,6 +60,13 @@ test("排除清單：只排除租戶檔、測試、第三方 lib、lockfile、�
     "contracts/broadcast/DeployTenant.s.sol/84532/run-latest.json",
     "docs/TENANT_DEPLOYMENT.md",
     "docs/tenantsX.md",
+    "contracts/broadcast/tenantsX/bank-a/run-latest.json",
+    // 沒有 id 層、id 不是 slug、id 是平台的 default：照樣算平台的（check-tenant-deploy 另外報錯）。
+    "docs/tenants/a.md",
+    "contracts/broadcast/tenants/run-latest.json",
+    "docs/tenants/default/WALLETS.md",
+    "contracts/broadcast/tenants/default/DeployTenant.s.sol/84532/run-latest.json",
+    "docs/tenants/Bank_A/x.md",
     "scripts/deploy-129.sh",
     "docs/ROLE_SEPARATION.md",
     "ops/monitoring/monitors.json",
@@ -184,4 +192,25 @@ test("平台的角色 EOA 與合約都在全集：Verify130、ROLE_SEPARATION、
     assert.ok(universe.has(a), a);
   }
   assert.ok(![...universe.keys()].some((a) => !/^0x[0-9a-f]{40}$/.test(a)));
+});
+
+test("contracts/.gitignore：租戶廣播的 31337 與 dry-run、演練目錄不收，真的廣播照收", () => {
+  const ignored = (rel) =>
+    spawnSync("git", ["-C", root, "check-ignore", "-q", "--no-index", rel], { encoding: "utf8" }).status === 0;
+  for (const rel of [
+    "contracts/broadcast/tenants/bank-a/DeployTenant.s.sol/31337/run-latest.json",
+    "contracts/broadcast/tenants/DeployTenant.s.sol/31337/run-latest.json", // 漏了 id 層
+    "contracts/broadcast/tenants/a/b/DeployTenant.s.sol/31337/run-latest.json", // 多一層
+    "contracts/broadcast/tenants/bank-a/DeployTenant.s.sol/84532/dry-run/run-latest.json",
+    "contracts/broadcast/DeployTenant.s.sol/31337/run-latest.json",
+    "contracts/cache/rehearsal/bank-a/DeployTenant.s.sol/84532/run-latest.json",
+  ]) {
+    assert.ok(ignored(rel), `${rel} 應該被忽略`);
+  }
+  for (const rel of [
+    "contracts/broadcast/tenants/bank-a/DeployTenant.s.sol/84532/run-latest.json",
+    "contracts/broadcast/DeployTenant.s.sol/84532/run-latest.json",
+  ]) {
+    assert.ok(!ignored(rel), `${rel} 應該進版控`);
+  }
 });

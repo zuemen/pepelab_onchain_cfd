@@ -46,10 +46,12 @@ export const RETIRED_FILE = "frontend/src/contracts/retiredPlatformAddresses.jso
  */
 export const UNIVERSE_EXCLUDES = [
   {
-    re: /^(deploy\/tenants|docs\/tenants|contracts\/broadcast\/tenants)\//,
+    // docs/ 與 broadcast/ 只排除「某個租戶 id 底下」的檔案：id 必須是 slug、不可是平台的 default；
+    // 目錄直下的檔案與不合格的 id 照樣算平台的，另由 check-tenant-deploy.mjs 的 checkTenantDirs 報錯。
+    re: /^(deploy\/tenants\/|(?:docs|contracts\/broadcast)\/tenants\/(?!default\/)[a-z0-9]+(?:-[a-z0-9]+)*\/)/,
     why:
-      "租戶自己的設定、紀錄、廣播紀錄與文件（deploy/tenants、docs/tenants、contracts/broadcast/tenants；" +
-      "租戶之間另由 checkCrossTenant 比對）。租戶廣播一律以 FOUNDRY_BROADCAST=broadcast/tenants/<id> 寫到這裡，" +
+      "租戶自己的設定、紀錄、廣播紀錄與文件（deploy/tenants/、docs/tenants/<id>/、contracts/broadcast/tenants/<id>/）；" +
+      "這些位址另由 check-tenant-deploy.mjs 併入該租戶做跨租戶比對。租戶廣播一律以 FOUNDRY_BROADCAST=broadcast/tenants/<id> 寫到這裡，" +
       "否則部署者與整組合約會被當成平台位址",
   },
   {

@@ -183,9 +183,9 @@ TENANT=<id> forge script script/DeployTenant.s.sol:DeployTenant \
 - 這種演練寫出的紀錄 `mode` 也是 `broadcast`、`chainId` 也是 84532，從檔案本身看不出它是假的。
   分辨的方法是對**真正的鏈**跑 `VerifyTenant`：本機演練的位址在鏈上沒有 code，會以
   `a recorded contract has no code on this chain` 失敗。**永遠不要跳過 §4 的 VerifyTenant。**
-- 演練一樣加 `FOUNDRY_BROADCAST=broadcast/tenants/<id>`（§4）。forge 會在 `contracts/broadcast/tenants/<id>/DeployTenant.s.sol/<chainId>/`
-  留下 `run-*.json`：chainId 31337 的被 `contracts/.gitignore` 忽略；fork 演練寫成 84532 的**要刪掉，不要 commit**。
-  沒加這個變數時寫到預設的 `contracts/broadcast/DeployTenant.s.sol/`，同樣要刪掉。
+- 演練一律加 `FOUNDRY_BROADCAST=cache/rehearsal/<id>`：`contracts/cache/` 不進版控，演練紀錄（anvil fork 寫成 84532、
+  看起來像真的）不會混進 `contracts/broadcast/`。沒加這個變數時 forge 寫到進版控的 `contracts/broadcast/DeployTenant.s.sol/`，
+  演練完要刪掉，不要 commit。**只有 §4 的真廣播**才用 `FOUNDRY_BROADCAST=broadcast/tenants/<id>`。
 
 ## 4. 廣播（擁有者本人執行）
 
@@ -208,6 +208,11 @@ TENANT=<id> FOUNDRY_BROADCAST=broadcast/tenants/<id> forge script script/DeployT
   `deploy/tenants/`、`docs/tenants/`、`contracts/broadcast/tenants/` 這幾個租戶目錄；寫到預設的
   `contracts/broadcast/DeployTenant.s.sol/` 再 commit，整個租戶就會變成「平台位址」，`check-tenant-deploy.mjs` 與
   `check-addresses.mjs` 從此紅燈。同理，租戶的完整位址只寫在 `docs/tenants/<id>/`，其他文件寫縮寫。
+- 這兩個租戶目錄的規則（`check-tenant-deploy.mjs` 的 `checkTenantDirs`）：檔案一律放在 `<id>/` 底下（目錄直下不可放檔案），
+  `<id>` 是 slug 且不可是 `default`；`contracts/broadcast/tenants/<id>/` 必須有 `deploy/tenants/<id>.json`，`docs/tenants/<id>/`
+  在部署設定之前就可以存在、但只能放 `.md`。裡面的位址（扣掉平台全集與白名單）併入該租戶做跨租戶比對；廣播紀錄 CREATE 出來的
+  每一顆合約，必須出現在 `<id>.deployed.json` 或 `docs/tenants/<id>/` 的文件裡（部署腳本以外的合約，例如 `VCKycRegistry`、
+  `SessionCredentialAnchor`，寫在文件裡）。
 
 - 一定要加 `--slow`：後面的交易依賴前面剛部署的合約，公共 RPC 一次收到整批容易丟交易。
 - **保險金庫種子**：第 3 步建出租戶的 InsuranceVault 後，立刻從部署者存入 1 顆完整結算代幣，份額轉給 `roles.treasury`，

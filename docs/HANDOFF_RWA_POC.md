@@ -61,7 +61,7 @@
 4. **部署新的一整套到 Base Sepolia**（master 版，含 guardian、休市 asset mode、GuardedOracle、InsuranceVault virtual shares）：
    - 先決定用哪支腳本：`contracts/script/DeployTenant.s.sol`（會接 ESGRegistryV2，碳定價啟用；新資產預設 Unrated＝1x，要用部署者當 attestor 寫入碳分級，並在文件照實說明「見證者是自己」）或 `Deploy.s.sol`（esgRegistry＝0，碳定價停用）。**建議 DeployTenant**，因為碳強度定價是題目主軸。
    - 部署 `VCKycRegistry`（`DeployVCKycRegistry.s.sol`，`VC_KYC_CHAIN_ID=84532`）、`SessionCredentialAnchor`；在新交易所 `setKycRegistry`、`setRwaAsset`（股票、債券、ESG ETF、**黃金也要標**）；設 marketOperator 與 guardian。
-   - 每一步先 `--simulate`／不廣播跑一次，再 `--account pepelab-rwa-deployer --broadcast --slow`；完成後用 `scripts/post-deploy-smoke.mjs` 與 `scripts/check-deployment-status.mjs` 讀回驗收。
+   - 每一步先 `--simulate`／不廣播跑一次（演練加 `FOUNDRY_BROADCAST=cache/rehearsal/rwa-poc`），再 `FOUNDRY_BROADCAST=broadcast/tenants/rwa-poc` 加 `--account pepelab-rwa-deployer --password-file ~/.foundry/pepelab-rwa-deployer.password --broadcast --slow`（`DeployTenant`、`DeployVCKycRegistry`、`DeploySessionCredentialAnchor` 都一樣；廣播紀錄寫到租戶目錄，否則部署者與合約會被當成平台位址）；完成後用 `scripts/post-deploy-smoke.mjs` 與 `scripts/check-deployment-status.mjs` 讀回驗收。
    - **嚴禁**用舊電腦 `contracts/.env` 的 `PRIVATE_KEY`：那把是外洩地址 `0xE80A…Eb93`。
 5. **價格與 keeper**：新部署要有人推價。錄影期間可在本機跑 keeper（`agent/` 的 keeper 程式，以新部署者或另一把新 keeper 金鑰），並跑休市切換（ReduceOnly）。若要 GitHub Actions 自動推價，需要使用者把新 keeper 私鑰放進 GitHub environment——那是使用者的操作。
 6. **前端接新部署**：不要弄壞現有展示站。做法建議：以租戶設定或環境變數切換一組「RWA PoC」位址（參考 `deploy/tenants/` 與前端既有的租戶／位址機制），新增文件說明怎麼切。

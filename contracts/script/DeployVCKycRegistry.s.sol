@@ -31,6 +31,9 @@ interface IOwnedExchange {
 ///           forge script script/DeployVCKycRegistry.s.sol:DeployVCKycRegistry \
 ///             --rpc-url <rpc> --account <keystore 名稱> --sender <地址> --broadcast
 ///         Base Sepolia（keystore pepelab-rwa-deployer；先 dry-run，不加 --broadcast）：
+///           租戶（例如 rwa-poc）的合約：廣播紀錄寫到租戶目錄，否則位址會被當成平台的
+///           （docs/TENANT_DEPLOYMENT.md §4）：
+///           FOUNDRY_BROADCAST=broadcast/tenants/rwa-poc \
 ///           VC_KYC_ISSUER=0x… VC_KYC_CHAIN_ID=84532 \
 ///           forge script script/DeployVCKycRegistry.s.sol:DeployVCKycRegistry \
 ///             --rpc-url https://sepolia.base.org --account pepelab-rwa-deployer \
