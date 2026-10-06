@@ -10486,13 +10486,13 @@ function weierstrass2(curveDef) {
     if (format2 !== void 0 && format2 !== "compact" && format2 !== "der")
       throw new Error("format must be compact or der");
     const isHex2 = typeof sg === "string" || isBytes2(sg);
-    const isObj = !isHex2 && !format2 && typeof sg === "object" && sg !== null && typeof sg.r === "bigint" && typeof sg.s === "bigint";
-    if (!isHex2 && !isObj)
+    const isObj2 = !isHex2 && !format2 && typeof sg === "object" && sg !== null && typeof sg.r === "bigint" && typeof sg.s === "bigint";
+    if (!isHex2 && !isObj2)
       throw new Error("invalid signature, expected Uint8Array, hex string or Signature instance");
     let _sig = void 0;
     let P;
     try {
-      if (isObj)
+      if (isObj2)
         _sig = new Signature2(sg.r, sg.s);
       if (isHex2) {
         try {
@@ -49929,13 +49929,13 @@ function weierstrass3(curveDef) {
     if (format2 !== void 0 && format2 !== "compact" && format2 !== "der")
       throw new Error("format must be compact or der");
     const isHex2 = typeof sg === "string" || isBytes3(sg);
-    const isObj = !isHex2 && !format2 && typeof sg === "object" && sg !== null && typeof sg.r === "bigint" && typeof sg.s === "bigint";
-    if (!isHex2 && !isObj)
+    const isObj2 = !isHex2 && !format2 && typeof sg === "object" && sg !== null && typeof sg.r === "bigint" && typeof sg.s === "bigint";
+    if (!isHex2 && !isObj2)
       throw new Error("invalid signature, expected Uint8Array, hex string or Signature instance");
     let _sig = void 0;
     let P;
     try {
-      if (isObj)
+      if (isObj2)
         _sig = new Signature2(sg.r, sg.s);
       if (isHex2) {
         try {
@@ -65134,6 +65134,240 @@ async function getBenchmarks(rawDate) {
   };
 }
 
+// src/referencePrices.ts
+var yahoo = (ticker, role = "keeper-primary") => ({ provider: "yahoo", ticker, role });
+var nasdaq = (ticker, nasdaqClass) => ({
+  provider: "nasdaq",
+  ticker,
+  role: "independent",
+  nasdaqClass
+});
+var REFERENCE_ASSETS = {
+  sBTC: {
+    symbol: "sBTC",
+    assetClass: "crypto",
+    sources: [
+      { provider: "coingecko", ticker: "bitcoin", role: "keeper-primary" },
+      yahoo("BTC-USD", "keeper-secondary"),
+      { provider: "coinbase", ticker: "BTC-USD", role: "independent" }
+    ]
+  },
+  sETH: {
+    symbol: "sETH",
+    assetClass: "crypto",
+    sources: [
+      { provider: "coingecko", ticker: "ethereum", role: "keeper-primary" },
+      yahoo("ETH-USD", "keeper-secondary"),
+      { provider: "coinbase", ticker: "ETH-USD", role: "independent" }
+    ]
+  },
+  sAAPL: { symbol: "sAAPL", assetClass: "equity", sources: [yahoo("AAPL"), nasdaq("AAPL", "stocks")] },
+  sTSLA: { symbol: "sTSLA", assetClass: "equity", sources: [yahoo("TSLA"), nasdaq("TSLA", "stocks")] },
+  sNVDA: { symbol: "sNVDA", assetClass: "equity", sources: [yahoo("NVDA"), nasdaq("NVDA", "stocks")] },
+  sMSFT: { symbol: "sMSFT", assetClass: "equity", sources: [yahoo("MSFT"), nasdaq("MSFT", "stocks")] },
+  sGOOGL: { symbol: "sGOOGL", assetClass: "equity", sources: [yahoo("GOOGL"), nasdaq("GOOGL", "stocks")] },
+  sBOND: { symbol: "sBOND", assetClass: "etf", sources: [yahoo("BGRN"), nasdaq("BGRN", "etf")] },
+  sICLN: { symbol: "sICLN", assetClass: "etf", sources: [yahoo("ICLN"), nasdaq("ICLN", "etf")] },
+  sESGU: { symbol: "sESGU", assetClass: "etf", sources: [yahoo("ESGU"), nasdaq("ESGU", "etf")] },
+  sGOLD: {
+    symbol: "sGOLD",
+    assetClass: "future",
+    sources: [yahoo("GC=F"), { provider: "goldapi", ticker: "XAU", role: "independent" }],
+    note: "keeper \u8B80 COMEX \u8FD1\u6708\u671F\u8CA8\uFF08GC=F\uFF09\uFF1B\u7B2C\u4E8C\u4F86\u6E90\u662F XAU \u73FE\u8CA8\uFF0C\u5169\u8005\u6709\u57FA\u5DEE\uFF0C\u53EA\u4F5C\u5408\u7406\u6027\u6AA2\u67E5\u3002"
+  }
+};
+var REFERENCE_SYMBOLS = Object.keys(REFERENCE_ASSETS);
+var positive = (v) => {
+  const n2 = typeof v === "string" ? Number(v.replace(/[$,\s]/g, "")) : typeof v === "number" ? v : NaN;
+  return Number.isFinite(n2) && n2 > 0 ? n2 : null;
+};
+var isObj = (v) => typeof v === "object" && v !== null;
+function extractCoinGeckoQuote(json, id2) {
+  const entry = isObj(json) ? json[id2] : void 0;
+  if (!isObj(entry)) return { price: null, quoteTime: null, error: `no entry for ${id2}` };
+  const price = positive(entry.usd);
+  const t = entry.last_updated_at;
+  const quoteTime = typeof t === "number" && Number.isFinite(t) && t > 0 ? Math.floor(t) : null;
+  return price === null ? { price, quoteTime, error: "invalid price" } : { price, quoteTime };
+}
+function extractYahooQuote(json) {
+  const result = isObj(json) && isObj(json.chart) ? json.chart.result : void 0;
+  const meta = Array.isArray(result) && isObj(result[0]) ? result[0].meta : void 0;
+  if (!isObj(meta)) return { price: null, quoteTime: null, error: "no meta" };
+  const currency = typeof meta.currency === "string" ? meta.currency.toUpperCase() : void 0;
+  if (currency !== "USD") return { price: null, quoteTime: null, error: `currency ${currency ?? "missing"} is not USD` };
+  const t = meta.regularMarketTime;
+  const quoteTime = typeof t === "number" && Number.isFinite(t) && t > 0 ? Math.floor(t) : null;
+  const price = positive(meta.regularMarketPrice);
+  return price === null ? { price, quoteTime, error: "invalid price" } : { price, quoteTime };
+}
+function extractCoinbaseQuote(json) {
+  const data4 = isObj(json) ? json.data : void 0;
+  if (!isObj(data4)) return { price: null, quoteTime: null, error: "no data" };
+  if (typeof data4.currency === "string" && data4.currency.toUpperCase() !== "USD") {
+    return { price: null, quoteTime: null, error: `currency ${data4.currency} is not USD` };
+  }
+  const price = positive(data4.amount);
+  return price === null ? { price, quoteTime: null, error: "invalid price" } : { price, quoteTime: null };
+}
+function extractNasdaqQuote(json) {
+  const data4 = isObj(json) ? json.data : void 0;
+  const primary = isObj(data4) ? data4.primaryData : void 0;
+  if (!isObj(primary)) return { price: null, quoteTime: null, error: "no primaryData" };
+  const price = positive(primary.lastSalePrice);
+  const text = typeof primary.lastTradeTimestamp === "string" ? primary.lastTradeTimestamp.trim() : void 0;
+  const base2 = { price, quoteTime: null, ...text ? { quoteTimeText: text } : {} };
+  return price === null ? { ...base2, error: "invalid price" } : base2;
+}
+function extractGoldApiQuote(json) {
+  if (!isObj(json)) return { price: null, quoteTime: null, error: "non-object response" };
+  if (typeof json.currency === "string" && json.currency.toUpperCase() !== "USD") {
+    return { price: null, quoteTime: null, error: `currency ${json.currency} is not USD` };
+  }
+  const price = positive(json.price);
+  const ms = typeof json.updatedAt === "string" ? Date.parse(json.updatedAt) : NaN;
+  const quoteTime = Number.isFinite(ms) ? Math.floor(ms / 1e3) : null;
+  return price === null ? { price, quoteTime, error: "invalid price" } : { price, quoteTime };
+}
+function spreadBps(prices) {
+  const xs = prices.filter((p) => Number.isFinite(p) && p > 0).sort((a, b2) => a - b2);
+  if (xs.length < 2) return null;
+  const mid = xs.length % 2 ? xs[(xs.length - 1) / 2] : (xs[xs.length / 2 - 1] + xs[xs.length / 2]) / 2;
+  const worst = Math.max(...xs.map((x) => Math.abs(x - mid)));
+  return Math.round(worst / mid * 1e4);
+}
+var UPSTREAM_TIMEOUT_MS = 5e3;
+var REF_UA = "Mozilla/5.0 (compatible; pepelab-signal-api)";
+async function fetchJsonDefault(url, timeoutMs) {
+  const res = await fetch(url, {
+    headers: { "User-Agent": REF_UA, Accept: "application/json" },
+    signal: AbortSignal.timeout(timeoutMs)
+  });
+  if (!res.ok) throw new Error(`${new URL(url).host} returned ${res.status}`);
+  return res.json();
+}
+function urlFor(src) {
+  switch (src.provider) {
+    case "coingecko":
+      return `https://api.coingecko.com/api/v3/simple/price?ids=${encodeURIComponent(src.ticker)}&vs_currencies=usd&include_last_updated_at=true`;
+    case "yahoo":
+      return `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(src.ticker)}?interval=1d&range=1d`;
+    case "coinbase":
+      return `https://api.coinbase.com/v2/prices/${encodeURIComponent(src.ticker)}/spot`;
+    case "nasdaq":
+      return `https://api.nasdaq.com/api/quote/${encodeURIComponent(src.ticker)}/info?assetclass=${src.nasdaqClass ?? "stocks"}`;
+    case "goldapi":
+      return `https://api.gold-api.com/price/${encodeURIComponent(src.ticker)}`;
+  }
+}
+function extract3(src, json) {
+  switch (src.provider) {
+    case "coingecko":
+      return extractCoinGeckoQuote(json, src.ticker);
+    case "yahoo":
+      return extractYahooQuote(json);
+    case "coinbase":
+      return extractCoinbaseQuote(json);
+    case "nasdaq":
+      return extractNasdaqQuote(json);
+    case "goldapi":
+      return extractGoldApiQuote(json);
+  }
+}
+function shortError(err) {
+  const name = err?.name;
+  if (name === "TimeoutError" || name === "AbortError") return "timeout";
+  const msg = err?.message ?? String(err);
+  const m = /returned (\d{3})/.exec(msg);
+  return m ? `http ${m[1]}` : "fetch failed";
+}
+async function buildReferenceReport(fetchJson, opts = {}) {
+  const now = opts.now ?? (() => Math.floor(Date.now() / 1e3));
+  const timeoutMs = opts.timeoutMs ?? UPSTREAM_TIMEOUT_MS;
+  const symbols = opts.symbols ?? REFERENCE_SYMBOLS;
+  const pending = /* @__PURE__ */ new Map();
+  const fetchOnce = (url) => {
+    let p = pending.get(url);
+    if (!p) {
+      p = fetchJson(url, timeoutMs).then(
+        (json) => ({ json }),
+        (err) => ({ error: shortError(err) })
+      );
+      pending.set(url, p);
+    }
+    return p;
+  };
+  const assets = {};
+  await Promise.all(
+    symbols.map(async (symbol) => {
+      const def = REFERENCE_ASSETS[symbol];
+      if (!def) return;
+      const sources = await Promise.all(
+        def.sources.map(async (src) => {
+          const r = await fetchOnce(urlFor(src));
+          const fetchedAt = now();
+          const base2 = { provider: src.provider, ticker: src.ticker, role: src.role, fetchedAt };
+          if (r.error !== void 0) return { ...base2, price: null, quoteTime: null, error: r.error };
+          const e = extract3(src, r.json);
+          return { ...base2, ...e };
+        })
+      );
+      const okPrices = sources.map((s) => s.price).filter((p) => p !== null);
+      assets[symbol] = {
+        symbol,
+        assetClass: def.assetClass,
+        sources,
+        singleSource: def.sources.length < 2,
+        okCount: okPrices.length,
+        spreadBps: spreadBps(okPrices),
+        ...def.note ? { note: def.note } : {}
+      };
+    })
+  );
+  const ok = Object.values(assets).every((a) => a.okCount > 0);
+  return {
+    ok,
+    generatedAt: now(),
+    assets,
+    disclaimer: "\u93C8\u4E0B\u53C3\u8003\u50F9\u50C5\u4F9B\u6BD4\u5C0D\uFF1B\u93C8\u4E0A oracle \u7531 keeper \u5BEB\u5165 MockOracle\u3002\u5404\u4E0A\u6E38\u7684\u5546\u696D\u6388\u6B0A\u672A\u67E5\u8B49\u3002"
+  };
+}
+function createReferencePriceService(fetchJson = fetchJsonDefault, opts = {}) {
+  const ttl = opts.ttlMs ?? 6e4;
+  const degradedTtl = opts.degradedTtlMs ?? 15e3;
+  const nowMs = opts.nowMs ?? Date.now;
+  let cached2 = null;
+  let inflight = null;
+  const view = (c, hit) => {
+    const ageMs = Math.max(0, nowMs() - c.at);
+    return {
+      report: c.report,
+      cacheHit: hit,
+      ageSec: Math.floor(ageMs / 1e3),
+      ttlSec: Math.round(c.ttl / 1e3),
+      remainingSec: Math.max(0, Math.floor((c.ttl - ageMs) / 1e3))
+    };
+  };
+  return {
+    async get() {
+      if (cached2 && nowMs() - cached2.at < cached2.ttl) return view(cached2, true);
+      if (!inflight) {
+        inflight = buildReferenceReport(fetchJson, {
+          now: () => Math.floor(nowMs() / 1e3),
+          timeoutMs: opts.timeoutMs
+        }).then((report) => {
+          const degraded = Object.values(report.assets).some((a) => a.sources.some((s) => s.price === null));
+          cached2 = { at: nowMs(), ttl: degraded ? degradedTtl : ttl, report };
+          return cached2;
+        }).finally(() => {
+          inflight = null;
+        });
+      }
+      return view(await inflight, false);
+    }
+  };
+}
+
 // src/exposure.ts
 var RETRYABLE_RE = /header not found|unknown block|block .*not found|missing trie node|\b429\b|too many requests|rate limit/i;
 function isRetryableReadError(err) {
@@ -65842,6 +66076,10 @@ function createApp(opts = {}) {
           price: "free",
           desc: "\u5C0D\u7167\u6307\u6578\uFF1AS&P 500\uFF0F\u9EC3\u91D1\uFF0F\u6BD4\u7279\u5E63\uFF0C\u540C\u4E00\u4F86\u6E90\uFF08Yahoo Finance\uFF09\u3002?date=YYYY-MM-DD \u52A0\u78BC\u56DE\u8A72\u65E5\u6216\u4E4B\u524D\u6700\u8FD1\u4E00\u500B\u4EA4\u6613\u65E5\u7684\u6536\u76E4\u3002\u4E0D\u505A\u6A21\u64EC\u4FDD\u5E95\uFF0C\u4E0A\u6E38\u62FF\u4E0D\u5230\u5C31\u5728\u8A72\u6307\u6578\u7684 error \u6B04\u4F4D\u6A19\u660E\u3002"
         },
+        "GET /reference-prices": {
+          price: "free",
+          desc: "\u93C8\u4E0B\u53C3\u8003\u50F9\u591A\u6E90\u898B\u8B49\uFF08\u552F\u8B80\uFF09\uFF1A\u6BCF\u6A94\u8CC7\u7522\u5217\u51FA keeper \u4E3B\u4F86\u6E90\u8207\u7368\u7ACB\u7B2C\u4E8C\u4F86\u6E90\u7684\u50F9\u683C\u3001\u4E0A\u6E38\u5831\u50F9\u6642\u9593\u3001\u53D6\u503C\u6642\u9593\u8207\u4F86\u6E90\u9593\u50F9\u5DEE bps\u3002\u52A0\u5BC6\uFF1ACoinGecko\uFF0BYahoo\uFF0BCoinbase\uFF1B\u7F8E\u80A1\uFF0FETF\uFF1AYahoo\uFF0BNasdaq\uFF1B\u9EC3\u91D1\uFF1AYahoo GC=F\uFF08\u671F\u8CA8\uFF09\uFF0Bgold-api.com XAU\uFF08\u73FE\u8CA8\uFF0C\u6709\u57FA\u5DEE\uFF09\u300260 \u79D2\u5FEB\u53D6\uFF0C\u5931\u6557\u7684\u4F86\u6E90\u5E36 error\u3001\u4E0D\u88DC\u5047\u503C\u3002"
+        },
         "GET /risk/exposure": {
           price: "free",
           desc: "\u66DD\u96AA\u5831\u8868\uFF08\u552F\u8B80\uFF09\uFF1A\u5404\u8CC7\u7522\u591A\u7A7A OI\u3001\u4FDD\u96AA\u91D1\u5EAB totalAssets\u3001V2 vault reserveStatus\u3001MockOracle\uFF0FGuardedOracle \u50F9\u683C\u8207\u5E74\u9F61\uFF08\u662F\u5426\u4E00\u81F4\uFF09\u3001adlEnabled / maxPriceAge / FUNDING_INTERVAL\u3001\u5404\u8CC7\u7522 lastFundingUpdateAt\u3002\u9644 asOfBlock\uFF0C60 \u79D2\u5FEB\u53D6\uFF1B\u8B80\u4E0D\u5230\u7684\u6B04\u4F4D\u70BA null \u4E26\u9644\u539F\u56E0\u4EE3\u78BC\u3002"
@@ -65903,6 +66141,19 @@ function createApp(opts = {}) {
         return c.json({ ok: false, error: err.message }, 400);
       }
       return c.json({ ok: false, error: internalError("benchmarks", err) }, 502);
+    }
+  });
+  const referencePrices = opts.referencePriceService ?? createReferencePriceService();
+  app2.get("/reference-prices", async (c) => {
+    try {
+      const { report, cacheHit, ageSec, ttlSec, remainingSec } = await referencePrices.get();
+      return c.json(
+        { ...report, cache: { hit: cacheHit, ageSec, ttlSec, remainingSec } },
+        200,
+        { "Cache-Control": `public, max-age=${remainingSec}` }
+      );
+    } catch (err) {
+      return c.json({ ok: false, error: internalError("reference-prices", err) }, 503);
     }
   });
   const exposure = createExposureService(opts.exposureReader ?? providerReader(provider2), exposureTargets());

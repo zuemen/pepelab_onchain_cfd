@@ -69,6 +69,7 @@ import {
   BadIntervalError,
 } from "./candles.ts";
 import { getBenchmarks, BadDateError } from "./benchmarks.ts";
+import { createReferencePriceService } from "./referencePrices.ts";
 import { LruCache } from "./lru.ts";
 import {
   createExposureService,
@@ -457,6 +458,8 @@ export interface CreateAppOptions {
   isRegisteredTrader?: (trader: string) => Promise<boolean>;
   /** 覆寫 /risk/exposure 的鏈上讀取來源（測試用；預設是 app 的 provider）。 */
   exposureReader?: ExposureReader;
+  /** 覆寫 /reference-prices 的資料服務（測試用；預設打真實上游）。 */
+  referencePriceService?: { get: ReturnType<typeof createReferencePriceService>["get"] };
   /** 覆寫 x402 協定版本（測試用；正式環境一律走 X402_PROTOCOL env，預設 v1）。 */
   x402Protocol?: X402Protocol;
   /** 覆寫 v2 的 facilitator client（測試用；預設是 X402_FACILITATOR_URL 的 HTTP client）。 */
@@ -717,6 +720,13 @@ export function createApp(opts: CreateAppOptions = {}): Hono<{ Variables: AppVar
             "?date=YYYY-MM-DD 加碼回該日或之前最近一個交易日的收盤。不做模擬保底，" +
             "上游拿不到就在該指數的 error 欄位標明。",
         },
+        "GET /reference-prices": {
+          price: "free",
+          desc:
+            "鏈下參考價多源見證（唯讀）：每檔資產列出 keeper 主來源與獨立第二來源的價格、上游報價時間、" +
+            "取值時間與來源間價差 bps。加密：CoinGecko＋Yahoo＋Coinbase；美股／ETF：Yahoo＋Nasdaq；" +
+            "黃金：Yahoo GC=F（期貨）＋gold-api.com XAU（現貨，有基差）。60 秒快取，失敗的來源帶 error、不補假值。",
+        },
         "GET /risk/exposure": {
           price: "free",
           desc:
@@ -809,6 +819,25 @@ export function createApp(opts: CreateAppOptions = {}): Hono<{ Variables: AppVar
         return c.json({ ok: false, error: (err as Error).message }, 400);
       }
       return c.json({ ok: false, error: internalError("benchmarks", err) }, 502);
+    }
+  });
+
+  // ── 免費：鏈下參考價多源見證（RWA 透明度看板 /oracle 用，唯讀）──────────────
+  //
+  // 位置理由同 /candles：必須留在 paymentMiddleware 之前，這是免費公開資料，不接 x402。
+  // 每個上游 5 秒逾時、整份 60 秒快取（有來源失敗時 15 秒），single-flight；
+  // 一個來源失敗只讓那一格帶 error，不回假數字（見 referencePrices.ts）。
+  const referencePrices = opts.referencePriceService ?? createReferencePriceService();
+  app.get("/reference-prices", async (c) => {
+    try {
+      const { report, cacheHit, ageSec, ttlSec, remainingSec } = await referencePrices.get();
+      return c.json(
+        { ...report, cache: { hit: cacheHit, ageSec, ttlSec, remainingSec } },
+        200,
+        { "Cache-Control": `public, max-age=${remainingSec}` },
+      );
+    } catch (err) {
+      return c.json({ ok: false, error: internalError("reference-prices", err) }, 503);
     }
   });
 
