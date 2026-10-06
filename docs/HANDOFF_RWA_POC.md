@@ -42,14 +42,14 @@
 
 | 階段 | 做什麼 | 驗收標準（全部成立才算完成） | 預估 | 需要使用者 | 狀態 |
 |---|---|---|---|---|---|
-| **S0 環境** | clone、`git submodule update --init --recursive`、裝相依（frontend `yarn install`、agent `npm ci`）、讀交接與相關文件 | `forge build` 成功；`yarn --cwd frontend test` 與 `npm test`（agent）各跑一次全過；`gh auth status` 是 zuemen | 0.5–1 h | 裝工具、`gh auth login`（見第 3 節） | 未開始 |
-| **S1 #270** | 合 master 解衝突 → 另一個 agent 對抗式審查（合約權限、VP 重放與綁定、花費累計原子性與退回、x402 v1／v2、fail-closed、揭露）→ 修正 → 複審 | CI 全綠、審查無未解的高中風險、已合併 | 2–4 h | 無 | 未開始 |
-| **S2 部署金鑰** | 已在舊電腦建立加密 keystore `pepelab-rwa-deployer`（`0xF52D1a91B93bFF40C7D36Cb7f898833c16a049eE`）並跨鏈入金 0.8 ETH。新電腦只要確認使用者已把 keystore 與密碼檔放好（第 3.0 節） | `cast wallet address --account pepelab-rwa-deployer --password-file ~/.foundry/pepelab-rwa-deployer.password` 等於 `0xF52D…49eE`；餘額 ≥ 0.5 ETH | 0.1 h | **複製 keystore 與密碼檔**（第 3.0 節） | 舊電腦已入金，待新電腦確認 |
+| **S0 環境** | clone、`git submodule update --init --recursive`、裝相依（frontend `yarn install`、agent `npm ci`）、讀交接與相關文件 | `forge build` 成功；`yarn --cwd frontend test` 與 `npm test`（agent）各跑一次全過；`gh auth status` 是 zuemen | 0.5–1 h | 裝工具、`gh auth login`（見第 3 節） | ✅ 完成（2026-10-06：forge 1302 測試、frontend 1222、agent 全過；gh 登入待使用者） |
+| **S1 #270** | 合 master 解衝突 → 另一個 agent 對抗式審查（合約權限、VP 重放與綁定、花費累計原子性與退回、x402 v1／v2、fail-closed、揭露）→ 修正 → 複審 | CI 全綠、審查無未解的高中風險、已合併 | 2–4 h | 無 | 進行中：已合 master、兩份對抗式審查 0 高 3 中，修正中 |
+| **S2 部署金鑰** | 已在舊電腦建立加密 keystore `pepelab-rwa-deployer`（`0xF52D…49eE`）並跨鏈入金 0.8 ETH。新電腦只要確認使用者已把 keystore 與密碼檔放好（第 3.0 節） | `cast wallet address --account pepelab-rwa-deployer --password-file ~/.foundry/pepelab-rwa-deployer.password` 等於 `0xF52D…49eE`；餘額 ≥ 0.5 ETH | 0.1 h | **複製 keystore 與密碼檔**（第 3.0 節） | ✅ 已確認（keystore 地址 0xF52D…49eE、0.8 ETH） |
 | **S3 部署整套** | 用 `DeployTenant.s.sol` 部署 master 版整套到 Base Sepolia；部署 `VCKycRegistry`、`SessionCredentialAnchor`；接 `setKycRegistry`、`setRwaAsset`（含黃金）、marketOperator、guardian；寫入碳分級見證；先模擬再廣播 | 部署紀錄 JSON 進 repo；`post-deploy-smoke.mjs` 對新部署無 FAIL（外洩地址檢查必須全 PASS）；合約在 BaseScan 驗證原始碼（有 API key 時） | 3–5 h | 可選：BaseScan API key | 未開始 |
 | **S4 推價與休市** | 本機跑 keeper 以新金鑰推價；跑休市切換（ReduceOnly）；寫一鍵啟動腳本 | 11 檔價格都在 5 分鐘內更新；休市時新開倉被拒、平倉可行（實際交易 hash） | 1–2 h | 無 | 未開始 |
 | **S5 前端接新部署** | 以租戶設定或環境變數切換「RWA PoC」位址，**不弄壞現有展示站**；本機 `yarn dev` 可用；有權限時開 Vercel preview | 本機頁面讀到新部署的資料；`/rwa`、`/oracle`、`/solvency`、`/sessions`、KYC 憑證面板都能用；現有展示站的測試仍全過 | 3–4 h | 可選：Vercel 權限（見第 3 節） | 未開始 |
 | **S6 x402 KYA** | 本機跑 signal-api：`PAY_TO`＝新收款地址、`X402_KYA_MODE` 開啟；代理人錢包用測試 USDC 實付 | 一筆真的 x402 付款成功（有 tx hash）；不帶 VP 被拒；超過憑證花費上限被拒 | 1–2 h | **代理人錢包的測試 USDC**（見第 3 節） | 未開始 |
-| **S7 PoC 劇本與實跑** | 寫 `docs/POC_SCRIPT.md`（每步：操作、預期畫面、要說的話、交易 hash、BaseScan 連結、預錄備援）；照劇本在 Base Sepolia 從頭跑一遍 | 劇本每一步都有實際 tx hash；整條故事線一次跑通；只用真實截圖 | 3–4 h | 無 | 未開始 |
+| **S7 PoC 劇本與實跑** | 寫 `docs/tenants/rwa-poc/POC_SCRIPT.md`（每步：操作、預期畫面、要說的話、交易 hash、BaseScan 連結、預錄備援）；照劇本在 Base Sepolia 從頭跑一遍 | 劇本每一步都有實際 tx hash；整條故事線一次跑通；只用真實截圖 | 3–4 h | 無 | 未開始 |
 | **S8 文件收尾** | 更新 `RWA_ALIGNMENT.md` 方案狀態、`RELEASE_STATUS.md`（新部署）、README 部署段落、本交接文件狀態 | 文件與鏈上一致；CI 綠；推上 GitHub | 1–2 h | 無 | 未開始 |
 | **合計** | | | **約 15–24 h** | | |
 
@@ -61,14 +61,18 @@
 4. **部署新的一整套到 Base Sepolia**（master 版，含 guardian、休市 asset mode、GuardedOracle、InsuranceVault virtual shares）：
    - 先決定用哪支腳本：`contracts/script/DeployTenant.s.sol`（會接 ESGRegistryV2，碳定價啟用；新資產預設 Unrated＝1x，要用部署者當 attestor 寫入碳分級，並在文件照實說明「見證者是自己」）或 `Deploy.s.sol`（esgRegistry＝0，碳定價停用）。**建議 DeployTenant**，因為碳強度定價是題目主軸。
    - 部署 `VCKycRegistry`（`DeployVCKycRegistry.s.sol`，`VC_KYC_CHAIN_ID=84532`）、`SessionCredentialAnchor`；在新交易所 `setKycRegistry`、`setRwaAsset`（股票、債券、ESG ETF、**黃金也要標**）；設 marketOperator 與 guardian。
-   - 每一步先 `--simulate`／不廣播跑一次，再 `--account pepelab-rwa-deployer --broadcast --slow`；完成後用 `scripts/post-deploy-smoke.mjs` 與 `scripts/check-deployment-status.mjs` 讀回驗收。
+   - 每一步先 `--simulate`／不廣播跑一次（演練加 `FOUNDRY_BROADCAST=cache/rehearsal/rwa-poc`），再 `FOUNDRY_BROADCAST=broadcast/tenants/rwa-poc` 加 `--account pepelab-rwa-deployer --password-file ~/.foundry/pepelab-rwa-deployer.password --broadcast --slow`（`DeployTenant`、`DeployVCKycRegistry`、`DeploySessionCredentialAnchor` 都一樣；廣播紀錄寫到租戶目錄，否則部署者與合約會被當成平台位址）；完成後用 `scripts/post-deploy-smoke.mjs` 與 `scripts/check-deployment-status.mjs` 讀回驗收。
    - **嚴禁**用舊電腦 `contracts/.env` 的 `PRIVATE_KEY`：那把是外洩地址 `0xE80A…Eb93`。
 5. **價格與 keeper**：新部署要有人推價。錄影期間可在本機跑 keeper（`agent/` 的 keeper 程式，以新部署者或另一把新 keeper 金鑰），並跑休市切換（ReduceOnly）。若要 GitHub Actions 自動推價，需要使用者把新 keeper 私鑰放進 GitHub environment——那是使用者的操作。
 6. **前端接新部署**：不要弄壞現有展示站。做法建議：以租戶設定或環境變數切換一組「RWA PoC」位址（參考 `deploy/tenants/` 與前端既有的租戶／位址機制），新增文件說明怎麼切。
 7. **x402 收費**：PoC 錄影時在本機跑 signal-api（`X402_KYA_MODE` 開啟、`PAY_TO`＝新的收款地址），Vercel 線上的環境變數由使用者改。
-8. **PoC 錄影劇本** `docs/POC_SCRIPT.md`：一條完整的故事線——
+8. **PoC 錄影劇本** `docs/tenants/rwa-poc/POC_SCRIPT.md`：一條完整的故事線——
    發證者簽發「合格投資人」VC → 投資人提交、鏈上驗證 → 開 sAAPL 部位（未持證先示範被拒）→ 投資人簽發委託 VC v3 給 AI 代理人並錨定 → 代理人出示 VP 付 x402 取得訊號 → 代理人在 session 上限內下單、超額被拒 → 休市時 ReduceOnly 拒絕新開倉 → 撤銷憑證後代理人與投資人都被拒、既有部位可平倉 → `/rwa`、`/oracle`、`/solvency` 三頁展示揭露與償付能力。每一步附交易 hash 與 BaseScan 連結、要說的話、預錄備援。
-9. **文件收尾**：更新 `docs/RWA_ALIGNMENT.md` 各方案狀態、`docs/RELEASE_STATUS.md`（新部署）、README 的部署段落。
+9. **文件收尾**：更新 `docs/RWA_ALIGNMENT.md` 各方案狀態、README 的部署段落；新部署的位址與狀態寫在 `docs/tenants/rwa-poc/`（不寫進 `docs/RELEASE_STATUS.md`，理由見下）。
+
+### PoC 的位址只寫在 `docs/tenants/rwa-poc/`
+
+`scripts/lib/platform-addresses.mjs` 把 repo 裡**每一個被追蹤的文字檔**出現過的位址都算成「平台位址」，而租戶的角色、部署者與合約不得是平台位址（`check-tenant-deploy.mjs`、`check-addresses.mjs`）。所以 PoC 部署者、各角色錢包與新合約的**完整位址**只能寫在租戶自己的目錄：`deploy/tenants/`、`docs/tenants/rwa-poc/`（錢包表 `WALLETS.md`、劇本 `POC_SCRIPT.md`、部署狀態）、`contracts/broadcast/tenants/rwa-poc/`（廣播時加 `FOUNDRY_BROADCAST=broadcast/tenants/rwa-poc`）。其他文件只寫縮寫（例如 `0xF52D…49eE`）。tx hash 不受影響。
 
 ### Demo 風險（`docs/USABILITY_AUDIT_2026-10-06.md`）
 
@@ -93,17 +97,19 @@
 
 ```bash
 cast wallet address --account pepelab-rwa-deployer --password-file ~/.foundry/pepelab-rwa-deployer.password
-# 應輸出 0xF52D1a91B93bFF40C7D36Cb7f898833c16a049eE
-cast balance 0xF52D1a91B93bFF40C7D36Cb7f898833c16a049eE --rpc-url https://sepolia.base.org --ether
+# 應輸出 0xF52D…49eE（完整位址見 docs/tenants/rwa-poc/WALLETS.md）
+cast balance "$(cast wallet address --account pepelab-rwa-deployer --password-file ~/.foundry/pepelab-rwa-deployer.password)" --rpc-url https://sepolia.base.org --ether
 ```
 
-部署時一律用 `--account pepelab-rwa-deployer --password-file ~/.foundry/pepelab-rwa-deployer.password`，不要把私鑰放進指令列或任何檔案。新的 keeper、代理人、收款、發證者錢包，由新電腦用 `cast wallet new` 建成加密 keystore（密碼檔同樣放 `~/.foundry/`），再由部署者轉 ETH 給它們；建立後把**地址**（不是私鑰）寫進下方錢包表。
+部署時一律用 `--account pepelab-rwa-deployer --password-file ~/.foundry/pepelab-rwa-deployer.password`，不要把私鑰放進指令列或任何檔案。新的 keeper、代理人、收款、發證者錢包，由新電腦用 `cast wallet new` 建成加密 keystore（密碼檔同樣放 `~/.foundry/`），再由部署者轉 ETH 給它們；建立後把**地址**（不是私鑰）寫進 `docs/tenants/rwa-poc/WALLETS.md`。
 
 ### 錢包一覽（只列公開地址）
 
+PoC 錢包（部署者與 2026-10-06 新建的 admin／risk／guardian／keeper／issuer／attestor／investor／agent／payto）的**完整位址**在 [`docs/tenants/rwa-poc/WALLETS.md`](tenants/rwa-poc/WALLETS.md)；這裡只寫縮寫（理由見第 2 節「PoC 的位址只寫在 `docs/tenants/rwa-poc/`」）。下表的舊平台錢包本來就是平台位址，照舊寫完整位址。
+
 | 地址 | 角色 | 私鑰在哪 | 2026-10-06 20:10 餘額 | 能不能用 |
 |---|---|---|---|---|
-| `0xF52D1a91B93bFF40C7D36Cb7f898833c16a049eE` | **PoC 新部署者**（新合約的 owner） | 加密 keystore，使用者以隨身碟搬移 | Base Sepolia 0.8 ETH（從 Sepolia 跨鏈，L1 tx `0x8f5d12fa09f24e605b9a96269ef4ca9acc441abe169dccca5cf3404e685ca0e7`，已入帳） | **用這把部署 PoC** |
+| `0xF52D…49eE` | **PoC 新部署者**（部署整套；DeployTenant 結束時把所有權交給 PoC admin，自己不留任何權限） | 加密 keystore，使用者以隨身碟搬移 | Base Sepolia 0.8 ETH（從 Sepolia 跨鏈，L1 tx `0x8f5d12fa09f24e605b9a96269ef4ca9acc441abe169dccca5cf3404e685ca0e7`，已入帳） | **用這把部署 PoC** |
 | `0x27C21324D101e867E0634bf2ebe3F9Dcf3ACA585` | 現役舊合約 owner | 不在任何一台電腦上（使用者自己的錢包） | Base Sepolia 0.090 | PoC 不需要 |
 | `0x540aecd37e7a7885824e7b7e996ebddfb842ef17` | 現役 keeper（推價） | 只在 GitHub secret `KEEPER_PRIVATE_KEY` | Base Sepolia 0.147、Sepolia 0.424 | 由 GitHub Actions 使用，PoC 不動它 |
 | `0xE80A81360608C1342e66743F70a00f75d792Eb93` | **已外洩**的舊部署者 | 舊電腦 `contracts/.env` | Base Sepolia 0.0099、Sepolia 約 1.4（已轉出 0.8） | **只能用來凍結舊部署或轉出測試幣**；新合約絕不可用它 |

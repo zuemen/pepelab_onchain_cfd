@@ -24,13 +24,20 @@
 // 兩者必須同時成立：有紀錄 ⇔ 設定的 status 是 deployed。
 //
 // 結束碼：0 通過；1 有問題；2 檢查本身中止（檔案讀不到等）。
-import { readFileSync, readdirSync, existsSync } from "node:fs";
+import { readFileSync, readdirSync, existsSync, statSync } from "node:fs";
 import { join, resolve, dirname, basename } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { loadChains } from "./check-addresses.mjs";
 import { parseJsonStrict } from "./lib/strict-json.mjs";
-import { describeSources, platformAddressUniverse, publicKeyAccountProblem } from "./lib/platform-addresses.mjs";
+import {
+  addressesInText,
+  describeSources,
+  platformAddressUniverse,
+  publicKeyAccountProblem,
+  repoFiles,
+  wellKnownEntry,
+} from "./lib/platform-addresses.mjs";
 
 const ADDR_EXACT = /^0x[0-9a-fA-F]{40}$/;
 const ZERO = "0x0000000000000000000000000000000000000000";
@@ -644,6 +651,122 @@ export function checkCrossTenant(results) {
   return problems;
 }
 
+// ── 租戶目錄：docs/tenants/<id>/、contracts/broadcast/tenants/<id>/ ──────────────
+//
+// 這兩個目錄被排除在平台位址全集之外（scripts/lib/platform-addresses.mjs），所以要另外確保：
+//   1. 只有「某個租戶 id 底下」的檔案：目錄直下不可有檔案；id 必須是 slug、不可是平台的 default。
+//   2. contracts/broadcast/tenants/<id>/ 是真的廣播紀錄，必須有 deploy/tenants/<id>.json。
+//      docs/tenants/<id>/ 可以先於部署設定存在（例如部署前的錢包表），但只能放 .md。
+//   3. 這些檔案裡的位址（扣掉平台全集與眾所周知的白名單）併入該租戶，參與跨租戶比對——
+//      把位址藏進某個租戶的文件，不會讓它從所有租戶的檢查裡消失。
+//   4. 廣播紀錄裡 CREATE 出來的每一顆合約，必須出現在該租戶的部署紀錄或 docs/tenants/<id>/ 的文件裡
+//      （VCKycRegistry、SessionCredentialAnchor 這類部署腳本以外的合約寫在文件裡即可）。
+
+export const TENANT_FILE_DIRS = ["docs/tenants/", "contracts/broadcast/tenants/"];
+
+/** deploy/tenants/ 只能放直下的 *.json；其他檔案不被排除在全集之外，而且報錯。 */
+export function checkDeployTenantsDir(files) {
+  return files
+    .filter((rel) => rel.startsWith("deploy/tenants/") && !/^deploy\/tenants\/[^/]+\.json$/.test(rel))
+    .map((rel) => `${rel}: deploy/tenants/ 只能放直下的 <id>.json／<id>.deployed.json／_template.json——子目錄與其他檔案不算租戶檔（仍算平台位址）`);
+}
+
+/** repo 裡（被追蹤＋未被忽略）兩個租戶目錄底下的檔案：[{ rel, text }]。 */
+export function tenantDirEntries(root, files = repoFiles(root)) {
+  const out = [];
+  for (const rel of files) {
+    if (!TENANT_FILE_DIRS.some((d) => rel.startsWith(d))) continue;
+    try {
+      if (!statSync(join(root, rel)).isFile()) continue;
+      out.push({ rel, text: readFileSync(join(root, rel), "utf8") });
+    } catch {
+      continue;
+    }
+  }
+  return out;
+}
+
+/** forge 廣播紀錄（run-*.json）裡 CREATE／CREATE2 建立的合約位址。 */
+export function createdContracts(text) {
+  let run;
+  try {
+    run = JSON.parse(text);
+  } catch {
+    return null;
+  }
+  const out = [];
+  for (const tx of Array.isArray(run?.transactions) ? run.transactions : []) {
+    if (/^CREATE2?$/.test(String(tx?.transactionType ?? "")) && typeof tx.contractAddress === "string") {
+      out.push(tx.contractAddress);
+    }
+    for (const c of Array.isArray(tx?.additionalContracts) ? tx.additionalContracts : []) {
+      if (typeof c?.address === "string") out.push(c.address);
+    }
+  }
+  return out;
+}
+
+/**
+ * entries：tenantDirEntries 的結果；configIds：deploy/tenants/ 裡有設定檔的 id；
+ * universe：平台位址全集；records：{ id: 部署紀錄 }（建立的合約要在其中或在文件裡）。
+ * 回傳 { problems, addrsById: Map<id, Map<lowercase addr, path>> }。
+ */
+export function checkTenantDirs({ entries, configIds, universe, records = {} }) {
+  const problems = [];
+  const addrsById = new Map();
+  const docAddrs = new Map(); // id -> Set（docs/tenants/<id>/ 文件裡的位址）
+  const created = []; // { id, rel, address }
+  for (const { rel, text } of entries) {
+    const dir = TENANT_FILE_DIRS.find((d) => rel.startsWith(d));
+    const parts = rel.slice(dir.length).split("/");
+    if (parts.length < 2) {
+      problems.push(`${rel}: ${dir} 直下不可放檔案——租戶的檔案一律放在 ${dir}<id>/ 底下（這個檔案仍算平台位址）`);
+      continue;
+    }
+    const id = parts[0];
+    if (!SLUG.test(id) || id === "default") {
+      problems.push(`${rel}: 「${id}」不是合格的租戶 id（小寫英數與連字號，且不可是平台的 default）——這個檔案仍算平台位址`);
+      continue;
+    }
+    const isBroadcast = dir === "contracts/broadcast/tenants/";
+    if (!configIds.has(id)) {
+      if (isBroadcast) {
+        problems.push(`${rel}: 有廣播紀錄，但 deploy/tenants/${id}.json 不存在——租戶的廣播必須對應一份部署設定`);
+      } else if (!rel.endsWith(".md")) {
+        problems.push(`${rel}: deploy/tenants/${id}.json 還不存在時，docs/tenants/${id}/ 只能放 .md 文件`);
+      }
+    }
+    if (!addrsById.has(id)) addrsById.set(id, new Map());
+    const mine = addrsById.get(id);
+    for (const { address, line } of addressesInText(text)) {
+      const low = address.toLowerCase();
+      if (!isBroadcast) {
+        if (!docAddrs.has(id)) docAddrs.set(id, new Set());
+        docAddrs.get(id).add(low);
+      }
+      if (universe.has(low) || wellKnownEntry(low)) continue;
+      if (!mine.has(low)) mine.set(low, `${rel}:${line}`);
+    }
+    if (isBroadcast && rel.endsWith(".json") && !rel.includes("/dry-run/")) {
+      const list = createdContracts(text);
+      if (list === null) problems.push(`${rel}: 不是合法的 forge 廣播紀錄 JSON`);
+      else for (const address of list) created.push({ id, rel, address });
+    }
+  }
+  for (const { id, rel, address } of created) {
+    const low = address.toLowerCase();
+    const recAddrs = new Set(
+      records[id] ? addressesInText(JSON.stringify(records[id])).map((a) => a.address.toLowerCase()) : [],
+    );
+    if (recAddrs.has(low) || docAddrs.get(id)?.has(low)) continue;
+    problems.push(
+      `${rel}: 建立的合約 ${address} 不在 deploy/tenants/${id}.deployed.json，也沒寫在 docs/tenants/${id}/ 的文件裡——` +
+        `每一顆租戶合約都要有紀錄`,
+    );
+  }
+  return { problems, addrsById };
+}
+
 // ── 既有部署腳本的環境變數對照（只有位址，沒有秘密）──────────────────────
 
 export function envPlan(cfg) {
@@ -798,7 +921,29 @@ export function run({ root, files, log = console.log, coverage = false, context 
     const recFile = join(dirname(r.file), `${basename(r.file, ".json")}${RECORD_SUFFIX}`);
     if (!existsSync(recFile)) problems.push(`${r.file}: status=deployed 但找不到部署紀錄 ${basename(recFile)}`);
   }
-  problems.push(...checkCrossTenant(results));
+  // 租戶目錄（只在檢查整個目錄時）：位址併入該租戶再做跨租戶比對。
+  const crossInput = [...results];
+  if (coverage) {
+    const cfgDir = join(root, "deploy/tenants");
+    const ids = new Set(
+      existsSync(cfgDir)
+        ? readdirSync(cfgDir).filter((f) => f.endsWith(".json") && !isRecordFile(f)).map((f) => basename(f, ".json"))
+        : [],
+    );
+    for (const r of results) if (r.cfg && typeof r.cfg.tenantId === "string") ids.add(r.cfg.tenantId);
+    const records = {};
+    for (const r of results) if (r.rec && r.cfg?.tenantId) records[r.cfg.tenantId] = r.rec;
+    const allFiles = ctx.repoFiles ?? repoFiles(root);
+    problems.push(...checkDeployTenantsDir(allFiles));
+    const entries = ctx.tenantDirEntries ?? tenantDirEntries(root, allFiles);
+    const dirs = checkTenantDirs({ entries, configIds: ids, universe: ctx.universe, records });
+    problems.push(...dirs.problems);
+    for (const [id, addrs] of dirs.addrsById) {
+      const own = results.find((r) => r.cfg?.tenantId === id && !isRecordFile(r.file));
+      crossInput.push({ file: own ? own.file : join(cfgDir, `${id}.json`), addrs });
+    }
+  }
+  problems.push(...checkCrossTenant(crossInput));
 
   // 前端部署登記 ↔ 部署設定／紀錄：前端連的必須就是這個租戶部署出來的那一組。
   const deployedIds = new Set();

@@ -3,7 +3,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -16,6 +16,8 @@ import {
   VAULT_PARAM_KEYS,
   RECORD_CONTRACT_KEYS,
   checkCrossTenant,
+  checkDeployTenantsDir,
+  checkTenantDirs,
   checkDeployedRecord,
   checkTenantDeploy,
   envPlan,
@@ -25,6 +27,7 @@ import {
   loadContext,
   run,
 } from "./check-tenant-deploy.mjs";
+import * as ctxLib from "./lib/platform-addresses.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, "..");
@@ -892,4 +895,101 @@ test("部署紀錄：deployBlock 必填、必須是非負整數（VerifyTenant �
     else r.deployBlock = v;
     assert.match(checkRec(r), /deployBlock=.* 必須是非負整數/, String(v));
   }
+});
+
+// ── 租戶目錄：docs/tenants/<id>/、contracts/broadcast/tenants/<id>/ ─────────────
+
+const C = (n) => `0x${n.toString(16).padStart(40, "c")}`;
+const runJson = (...created) =>
+  JSON.stringify({
+    transactions: created.map((a) => ({ transactionType: "CREATE", contractAddress: a, additionalContracts: [] })),
+  });
+const dirs = (entries, configIds = ["demo-bank"], records = {}) =>
+  checkTenantDirs({ entries, configIds: new Set(configIds), universe: ctx.universe, records }).problems.join("\n");
+
+test("租戶目錄：目錄直下的檔案、default、不是 slug 的 id 都報錯", () => {
+  assert.match(dirs([{ rel: "docs/tenants/a.md", text: "" }]), /直下不可放檔案/);
+  assert.match(dirs([{ rel: "contracts/broadcast/tenants/run-latest.json", text: "{}" }]), /直下不可放檔案/);
+  // 把平台位址藏進 docs/tenants/default/：不排除（仍在全集），而且報錯。
+  assert.match(dirs([{ rel: "docs/tenants/default/WALLETS.md", text: live.MockUSDC }]), /不是合格的租戶 id/);
+  assert.match(dirs([{ rel: "docs/tenants/Bank_A/x.md", text: "" }]), /不是合格的租戶 id/);
+  assert.equal(dirs([{ rel: "docs/tenants/demo-bank/WALLETS.md", text: C(1) }]), "");
+});
+
+test("deploy/tenants/：子目錄與非 JSON 檔報錯，位址仍在全集", () => {
+  assert.deepEqual(checkDeployTenantsDir(["deploy/tenants/demo-bank.json", "deploy/tenants/_template.json"]), []);
+  const p = checkDeployTenantsDir(["deploy/tenants/archive/old.json", "deploy/tenants/NOTES.md"]).join("\n");
+  assert.match(p, /archive\/old\.json: deploy\/tenants\/ 只能放直下/);
+  assert.match(p, /NOTES\.md: deploy\/tenants\/ 只能放直下/);
+  // 透過 run()：整個目錄檢查時報錯。
+  const dir = mkdtempSync(join(tmpdir(), "tenant-deploy-dir-"));
+  const file = join(dir, "demo-bank.json");
+  writeFileSync(file, JSON.stringify(filled()));
+  const context = {
+    ...ctx,
+    frontendDeployments: { "demo-bank": platformReg },
+    tenantDirEntries: [],
+    repoFiles: ["deploy/tenants/NOTES.md"],
+  };
+  assert.match(run({ root, files: [file], log: () => {}, coverage: true, context }).join("\n"), /NOTES\.md: deploy\/tenants\//);
+  // 位址仍在全集：以臨時 repo 驗證排除只看路徑形狀。
+  const { platformAddressUniverse } = ctxLib;
+  const tmp = mkdtempSync(join(tmpdir(), "tenant-universe-"));
+  mkdirSync(join(tmp, "deploy/tenants/archive"), { recursive: true });
+  writeFileSync(join(tmp, "deploy/tenants/archive/old.json"), JSON.stringify({ a: C(7) }));
+  writeFileSync(join(tmp, "deploy/tenants/NOTES.md"), C(8));
+  writeFileSync(join(tmp, "deploy/tenants/x.json"), JSON.stringify({ a: C(9) }));
+  mkdirSync(join(tmp, "frontend/src/contracts"), { recursive: true });
+  writeFileSync(join(tmp, ctxLib.RETIRED_FILE), readFileSync(join(root, ctxLib.RETIRED_FILE)));
+  const u = platformAddressUniverse(tmp, {
+    files: ["deploy/tenants/archive/old.json", "deploy/tenants/NOTES.md", "deploy/tenants/x.json"],
+  });
+  assert.ok(u.has(C(7)) && u.has(C(8)) && !u.has(C(9)));
+});
+
+test("租戶目錄：廣播紀錄必須有部署設定；沒有設定時 docs 只能放 .md", () => {
+  assert.match(
+    dirs([{ rel: "contracts/broadcast/tenants/ghost/DeployTenant.s.sol/84532/run-latest.json", text: runJson() }]),
+    /deploy\/tenants\/ghost\.json 不存在/,
+  );
+  assert.equal(dirs([{ rel: "docs/tenants/ghost/WALLETS.md", text: C(2) }]), "");
+  assert.match(dirs([{ rel: "docs/tenants/ghost/wallets.json", text: "{}" }]), /只能放 \.md/);
+});
+
+test("租戶目錄：廣播建立的合約必須在部署紀錄或租戶文件裡", () => {
+  const rel = "contracts/broadcast/tenants/demo-bank/DeploySessionCredentialAnchor.s.sol/84532/run-latest.json";
+  assert.match(dirs([{ rel, text: runJson(C(3)) }]), /建立的合約 0x.* 不在 deploy\/tenants\/demo-bank\.deployed\.json/);
+  // 寫在文件裡（例如部署腳本以外的 Anchor）就可以。
+  assert.equal(dirs([{ rel, text: runJson(C(3)) }, { rel: "docs/tenants/demo-bank/DEPLOYMENT.md", text: `Anchor ${C(3)}` }]), "");
+  // 在部署紀錄裡也可以。
+  assert.equal(dirs([{ rel, text: runJson(C(3)) }], ["demo-bank"], { "demo-bank": { contracts: { X: C(3) } } }), "");
+  // 別的租戶的文件不算。
+  assert.match(
+    dirs([{ rel, text: runJson(C(3)) }, { rel: "docs/tenants/other/DEPLOYMENT.md", text: C(3) }]),
+    /不在 deploy\/tenants\/demo-bank\.deployed\.json/,
+  );
+  // dry-run 不檢查；壞掉的 JSON 報錯。
+  assert.equal(dirs([{ rel: rel.replace("84532/", "84532/dry-run/"), text: runJson(C(4)) }]), "");
+  assert.match(dirs([{ rel, text: "{" }]), /不是合法的 forge 廣播紀錄/);
+});
+
+test("租戶目錄：文件與廣播裡的位址併入該租戶做跨租戶比對", () => {
+  const cfg = filled();
+  const run1 = (entries) => {
+    const dir = mkdtempSync(join(tmpdir(), "tenant-dirs-"));
+    const file = join(dir, "demo-bank.json");
+    writeFileSync(file, JSON.stringify(cfg));
+    const context = { ...ctx, frontendDeployments: { "demo-bank": platformReg }, tenantDirEntries: entries };
+    return run({ root, files: [file], log: () => {}, coverage: true, context }).join("\n");
+  };
+  assert.equal(run1([{ rel: "docs/tenants/demo-bank/WALLETS.md", text: cfg.roles.keeper }]), "");
+  // 另一個租戶的文件寫了 demo-bank 的 keeper：兩個租戶共用金鑰。
+  assert.match(run1([{ rel: "docs/tenants/other/WALLETS.md", text: cfg.roles.keeper }]), /租戶之間不得共用/);
+  // 廣播紀錄裡的合約一樣算（other 沒有設定，另外報錯）。
+  assert.match(
+    run1([{ rel: "contracts/broadcast/tenants/other/X.s.sol/84532/run-latest.json", text: runJson(cfg.roles.admin) }]),
+    /租戶之間不得共用/,
+  );
+  // 平台位址與白名單不算進租戶。
+  assert.equal(run1([{ rel: "docs/tenants/other/NOTES.md", text: live.MockUSDC }]), "");
 });
