@@ -65246,10 +65246,17 @@ async function fetchJsonDefault(url, timeoutMs) {
   if (!res.ok) throw new Error(`${new URL(url).host} returned ${res.status}`);
   return res.json();
 }
+var COINGECKO_IDS = [
+  ...new Set(
+    Object.values(REFERENCE_ASSETS).flatMap(
+      (a) => a.sources.filter((s) => s.provider === "coingecko").map((s) => s.ticker)
+    )
+  )
+].sort();
 function urlFor(src) {
   switch (src.provider) {
     case "coingecko":
-      return `https://api.coingecko.com/api/v3/simple/price?ids=${encodeURIComponent(src.ticker)}&vs_currencies=usd&include_last_updated_at=true`;
+      return `https://api.coingecko.com/api/v3/simple/price?ids=${COINGECKO_IDS.map(encodeURIComponent).join(",")}&vs_currencies=usd&include_last_updated_at=true`;
     case "yahoo":
       return `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(src.ticker)}?interval=1d&range=1d`;
     case "coinbase":
@@ -65281,22 +65288,9 @@ function shortError(err) {
   const m = /returned (\d{3})/.exec(msg);
   return m ? `http ${m[1]}` : "fetch failed";
 }
-async function buildReferenceReport(fetchJson, opts = {}) {
+async function buildReferenceReport(upstream, opts = {}) {
   const now = opts.now ?? (() => Math.floor(Date.now() / 1e3));
-  const timeoutMs = opts.timeoutMs ?? UPSTREAM_TIMEOUT_MS;
   const symbols = opts.symbols ?? REFERENCE_SYMBOLS;
-  const pending = /* @__PURE__ */ new Map();
-  const fetchOnce = (url) => {
-    let p = pending.get(url);
-    if (!p) {
-      p = fetchJson(url, timeoutMs).then(
-        (json) => ({ json }),
-        (err) => ({ error: shortError(err) })
-      );
-      pending.set(url, p);
-    }
-    return p;
-  };
   const assets = {};
   await Promise.all(
     symbols.map(async (symbol) => {
@@ -65304,12 +65298,11 @@ async function buildReferenceReport(fetchJson, opts = {}) {
       if (!def) return;
       const sources = await Promise.all(
         def.sources.map(async (src) => {
-          const r = await fetchOnce(urlFor(src));
+          const r = await upstream(urlFor(src));
           const fetchedAt = now();
           const base2 = { provider: src.provider, ticker: src.ticker, role: src.role, fetchedAt };
           if (r.error !== void 0) return { ...base2, price: null, quoteTime: null, error: r.error };
-          const e = extract3(src, r.json);
-          return { ...base2, ...e };
+          return { ...base2, ...extract3(src, r.json) };
         })
       );
       const okPrices = sources.map((s) => s.price).filter((p) => p !== null);
@@ -65329,41 +65322,73 @@ async function buildReferenceReport(fetchJson, opts = {}) {
     ok,
     generatedAt: now(),
     assets,
-    disclaimer: "\u93C8\u4E0B\u53C3\u8003\u50F9\u50C5\u4F9B\u6BD4\u5C0D\uFF1B\u93C8\u4E0A oracle \u7531 keeper \u5BEB\u5165 MockOracle\u3002\u5404\u4E0A\u6E38\u7684\u5546\u696D\u6388\u6B0A\u672A\u67E5\u8B49\u3002"
+    disclaimer: "\u93C8\u4E0B\u53C3\u8003\u50F9\u50C5\u5373\u6642\u8F49\u767C\u3001\u4F9B\u6BD4\u5C0D\uFF1B\u4E0D\u4FDD\u5B58\u6B77\u53F2\u3001\u4E0D\u63D0\u4F9B\u4E0B\u8F09\u3002\u93C8\u4E0A oracle \u7531 keeper \u5BEB\u5165 MockOracle\u3002\u5404\u4E0A\u6E38\u7684\u5546\u696D\u6388\u6B0A\u672A\u67E5\u8B49\uFF0C\u6B63\u5F0F\u4F7F\u7528\u524D\u9700\u53D6\u5F97\u6388\u6B0A\u3002"
   };
 }
-function createReferencePriceService(fetchJson = fetchJsonDefault, opts = {}) {
-  const ttl = opts.ttlMs ?? 6e4;
-  const degradedTtl = opts.degradedTtlMs ?? 15e3;
+function createUpstreamCache(fetchJson, opts = {}) {
+  const okTtl = opts.okTtlMs ?? 6e4;
+  const errTtl = opts.errorTtlMs ?? 15e3;
   const nowMs = opts.nowMs ?? Date.now;
-  let cached2 = null;
-  let inflight = null;
-  const view = (c, hit) => {
-    const ageMs = Math.max(0, nowMs() - c.at);
-    return {
-      report: c.report,
-      cacheHit: hit,
-      ageSec: Math.floor(ageMs / 1e3),
-      ttlSec: Math.round(c.ttl / 1e3),
-      remainingSec: Math.max(0, Math.floor((c.ttl - ageMs) / 1e3))
-    };
+  const timeoutMs = opts.timeoutMs ?? UPSTREAM_TIMEOUT_MS;
+  const cache3 = /* @__PURE__ */ new Map();
+  const inflight = /* @__PURE__ */ new Map();
+  let hits = 0;
+  let misses = 0;
+  const fetch2 = (url) => {
+    const c = cache3.get(url);
+    if (c && nowMs() - c.at < c.ttl) {
+      hits += 1;
+      return Promise.resolve(c.result);
+    }
+    let p = inflight.get(url);
+    if (!p) {
+      misses += 1;
+      p = fetchJson(url, timeoutMs).then(
+        (json) => ({ json }),
+        (err) => ({ error: shortError(err) })
+      ).then((result) => {
+        cache3.set(url, { at: nowMs(), ttl: result.error === void 0 ? okTtl : errTtl, result });
+        return result;
+      }).finally(() => inflight.delete(url));
+      inflight.set(url, p);
+    }
+    return p;
   };
+  const stats = (url) => {
+    const c = cache3.get(url);
+    if (!c) return null;
+    const ageMs = Math.max(0, nowMs() - c.at);
+    return { ageMs, remainingMs: Math.max(0, c.ttl - ageMs) };
+  };
+  return { fetch: fetch2, stats, hits: () => hits, misses: () => misses };
+}
+function upstreamUrls(symbols = REFERENCE_SYMBOLS) {
+  return [...new Set(symbols.flatMap((s) => REFERENCE_ASSETS[s]?.sources.map(urlFor) ?? []))];
+}
+function referencePricesCacheControl(remainingSec) {
+  const s = Math.max(0, Math.min(60, remainingSec));
+  return `public, max-age=${s}, s-maxage=${s}, stale-while-revalidate=120`;
+}
+function createReferencePriceService(fetchJson = fetchJsonDefault, opts = {}) {
+  const nowMs = opts.nowMs ?? Date.now;
+  const upstream = createUpstreamCache(fetchJson, opts);
+  const urls = upstreamUrls();
   return {
+    upstream,
     async get() {
-      if (cached2 && nowMs() - cached2.at < cached2.ttl) return view(cached2, true);
-      if (!inflight) {
-        inflight = buildReferenceReport(fetchJson, {
-          now: () => Math.floor(nowMs() / 1e3),
-          timeoutMs: opts.timeoutMs
-        }).then((report) => {
-          const degraded = Object.values(report.assets).some((a) => a.sources.some((s) => s.price === null));
-          cached2 = { at: nowMs(), ttl: degraded ? degradedTtl : ttl, report };
-          return cached2;
-        }).finally(() => {
-          inflight = null;
-        });
-      }
-      return view(await inflight, false);
+      const missesBefore = upstream.misses();
+      const report = await buildReferenceReport(upstream.fetch, { now: () => Math.floor(nowMs() / 1e3) });
+      const st = urls.map((u) => upstream.stats(u)).filter((x) => x !== null);
+      const ageMs = st.length ? Math.max(...st.map((x) => x.ageMs)) : 0;
+      const remainingMs = st.length ? Math.min(...st.map((x) => x.remainingMs)) : 0;
+      return {
+        report,
+        cacheHit: upstream.misses() === missesBefore,
+        ageSec: Math.floor(ageMs / 1e3),
+        ttlSec: Math.round((opts.okTtlMs ?? 6e4) / 1e3),
+        /** 最先過期的那個來源還能快取多久（秒）。 */
+        remainingSec: Math.floor(remainingMs / 1e3)
+      };
     }
   };
 }
@@ -66008,7 +66033,18 @@ function createApp(opts = {}) {
   }
   const codeReader = opts.payoutCodeReader ?? provider2;
   const checkPayTo = () => assessPayoutAddress(codeReader, payTo, { requireEoa: true });
-  app2.use("*", cors({ origin: "*", allowMethods: ["GET", "POST", "OPTIONS"] }));
+  const openCors = cors({ origin: "*", allowMethods: ["GET", "POST", "OPTIONS"] });
+  const frontendOnlyCors = cors({ origin: CORS_ALLOWED_ORIGINS, allowMethods: ["GET", "OPTIONS"] });
+  app2.use("*", (c, next) => c.req.path === "/reference-prices" ? frontendOnlyCors(c, next) : openCors(c, next));
+  const rejectForeignOrigin = async (c, next) => {
+    if (c.req.method === "OPTIONS") return next();
+    const origin = c.req.header("origin")?.replace(/\/$/, "");
+    if (origin && !CORS_ALLOWED_ORIGINS.includes(origin)) {
+      return c.json({ ok: false, error: `origin \u672A\u5728\u767D\u540D\u55AE\u5167\uFF1A${origin}` }, 403);
+    }
+    return next();
+  };
+  app2.use("/reference-prices", rejectForeignOrigin);
   app2.use("/demo/*", async (c, next) => {
     if (c.req.method === "OPTIONS") return next();
     const origin = c.req.header("origin")?.replace(/\/$/, "");
@@ -66150,7 +66186,7 @@ function createApp(opts = {}) {
       return c.json(
         { ...report, cache: { hit: cacheHit, ageSec, ttlSec, remainingSec } },
         200,
-        { "Cache-Control": `public, max-age=${remainingSec}` }
+        { "Cache-Control": referencePricesCacheControl(remainingSec) }
       );
     } catch (err) {
       return c.json({ ok: false, error: internalError("reference-prices", err) }, 503);

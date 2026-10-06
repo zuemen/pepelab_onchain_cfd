@@ -617,18 +617,11 @@ export function createApp(opts: CreateAppOptions = {}): Hono<{ Variables: AppVar
   // GET 資料端點對所有來源開放（瀏覽器 demo + 外部 agent 都要用）。
   // 例外：/reference-prices 轉發的是第三方行情（授權未查證，見 docs/RWA_TRANSPARENCY.md §2），
   // 只讓前端網域（CORS_ALLOWED_ORIGINS，與 /demo/* 同一份白名單）在瀏覽器裡讀。
-  app.use(
-    "*",
-    cors({
-      origin: (origin, c) =>
-        c.req.path === "/reference-prices"
-          ? CORS_ALLOWED_ORIGINS.includes(origin.replace(/\/$/, ""))
-            ? origin
-            : null
-          : "*",
-      allowMethods: ["GET", "POST", "OPTIONS"],
-    }),
-  );
+  // 兩個 cors 實例分開：其他路由的回應 header 與以前逐位元相同（x402 golden 測試釘住，
+  // 不能多出 Vary: Origin），只有 /reference-prices 走白名單。
+  const openCors = cors({ origin: "*", allowMethods: ["GET", "POST", "OPTIONS"] });
+  const frontendOnlyCors = cors({ origin: CORS_ALLOWED_ORIGINS, allowMethods: ["GET", "OPTIONS"] });
+  app.use("*", (c, next) => (c.req.path === "/reference-prices" ? frontendOnlyCors(c, next) : openCors(c, next)));
 
   // /demo/*（會動用伺服器錢包）額外限制來源。
   // 註：CORS header 只約束瀏覽器讀取回應，擋不住任何非瀏覽器客戶端 —— 所以這裡是

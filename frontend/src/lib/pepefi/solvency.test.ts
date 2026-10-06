@@ -1,4 +1,5 @@
 import type { SolvencyDeps, RawReserveLog } from './solvency'
+import { CHUNK_SIZE } from './chainLogs'
 
 import { it, expect, describe } from 'vitest'
 
@@ -172,6 +173,7 @@ describe('loadReserveHistory', () => {
     expect(Math.max(...ranges.map(([a, b]) => b - a + 1))).toBeLessThanOrEqual(HISTORY_CHUNK)
     expect(HISTORY_CHUNK).toBeLessThanOrEqual(500)
     expect(h.fromBlock).toBe(8_001)
+    expect(HISTORY_CHUNK).toBe(CHUNK_SIZE)
     expect(h.points.map((p) => p.block)).toEqual([8_100, 9_500])
   })
 
@@ -180,7 +182,7 @@ describe('loadReserveHistory', () => {
       latestBlock: async () => 1_000,
       windowBlocks: 900,
       retries: 0,
-      getLogs: () => Promise.reject(new Error('413')),
+      getLogs: () => Promise.reject(new Error('429 too many requests')),
     })
     expect(all.status).toBe('failed')
     expect(all.points).toEqual([])

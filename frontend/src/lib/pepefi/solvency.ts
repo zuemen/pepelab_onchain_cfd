@@ -5,12 +5,12 @@
 // AssetVaultV2 的 reserveStatus。任何一項讀不到都是「讀取失敗」，不是 0。
 //
 // 準備率歷史讀 AssetVaultV2 的 ReserveObserved 事件。2026-10-06 實測公開節點
-// sepolia.base.org 的 eth_getLogs 上限已降為 500 塊（chainLogs.ts 的 800 塊會被拒），
-// 所以這裡每段只查 HISTORY_CHUNK 塊，並限制總段數。
+// sepolia.base.org 的 eth_getLogs 上限是 500 塊；分段（chainLogs.CHUNK_SIZE）、重試與
+// 「範圍太大自動對半」都交給 chainLogs 的 getLogsChunkedDetailed，並限制總段數。
 
 import type { Reading, FnSupport } from './contractProbe'
 
-import { chunkRanges } from './chainLogs'
+import { MAX_CHUNKS, UI_RETRIES, CHUNK_SIZE, getLogsChunkedDetailed } from './chainLogs'
 import { withTimeout } from './safeRead'
 import { mapLimit, withRetry, RPC_CONCURRENCY } from './rpcBatch'
 import { ok, FAILED, supportMap, UNSUPPORTED } from './contractProbe'
@@ -266,11 +266,11 @@ export function buildWaterfall(s: SolvencySnapshot): WaterfallLayer[] {
 
 // ── 準備率歷史 ───────────────────────────────────────────────────────────────
 
-/** 公開節點 2026-10-06 的 eth_getLogs 上限是 500 塊；留一點餘裕。 */
-export const HISTORY_CHUNK = 450
-/** Base Sepolia 約 2 秒一塊：24 小時 ≈ 43,200 塊 ≈ 96 段。 */
+/** 每段塊數＝chainLogs 的預設段長（公開節點上限 500 塊，留餘裕）。 */
+export const HISTORY_CHUNK = CHUNK_SIZE
+/** Base Sepolia 約 2 秒一塊：24 小時 ≈ 43,200 塊 ≈ 108 段（≤ MAX_CHUNKS）。 */
 export const HISTORY_WINDOW_BLOCKS = 43_200
-export const HISTORY_MAX_CHUNKS = 100
+export const HISTORY_MAX_CHUNKS = MAX_CHUNKS
 
 export interface ReservePoint {
   block: number
@@ -335,23 +335,18 @@ export async function loadReserveHistory(deps: HistoryDeps): Promise<ReserveHist
   const chunk = Math.max(1, Math.min(deps.chunk ?? HISTORY_CHUNK, 500))
   const window = Math.min(deps.windowBlocks ?? HISTORY_WINDOW_BLOCKS, chunk * HISTORY_MAX_CHUNKS)
   const fromBlock = Math.max(0, latest - window + 1)
-  const ranges = chunkRanges(fromBlock, latest, chunk)
-  let failed = 0
-  // 併發 2：96 段對公開節點已經不少，實測併發 3 會零星收到 429（有重試，但沒必要逼它）。
-  const results = await mapLimit(ranges, deps.concurrency ?? 2, async ([from, to]) => {
-    try {
-      return await withRetry(() => deps.getLogs(from, to), (deps.retries ?? 2) + 1, 300, ms)
-    } catch {
-      failed += 1
-      return [] as RawReserveLog[]
-    }
-  })
-  const points = results
-    .flat()
-    .map(toReservePoint)
-    .sort((a, b) => a.block - b.block)
-  const status = failed === 0 ? 'ok' : failed === ranges.length ? 'failed' : 'partial'
-  return { status, points, failedChunks: failed, totalChunks: ranges.length, fromBlock, toBlock: latest }
+  // 分段、重試、逾時與「範圍太大自動對半重試」一律交給 chainLogs（與其他頁同一套）。
+  // 併發 2：上百段對公開節點已經不少，實測併發 3 會零星收到 429。
+  const r = await getLogsChunkedDetailed(
+    { getLogs: (f: { fromBlock: number; toBlock: number }) => deps.getLogs(f.fromBlock, f.toBlock) },
+    {},
+    fromBlock,
+    latest,
+    { chunkSize: chunk, concurrency: deps.concurrency ?? 2, retries: deps.retries ?? UI_RETRIES, timeoutMs: ms }
+  )
+  const points = (r.logs as RawReserveLog[]).map(toReservePoint).sort((a, b) => a.block - b.block)
+  const status = r.failedChunks === 0 ? 'ok' : r.failedChunks >= r.totalChunks ? 'failed' : 'partial'
+  return { status, points, failedChunks: r.failedChunks, totalChunks: r.totalChunks, fromBlock, toBlock: latest }
 }
 
 // ── 格式 ─────────────────────────────────────────────────────────────────────
