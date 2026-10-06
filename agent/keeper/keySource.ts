@@ -23,7 +23,7 @@ export type KeeperKeySpec =
 /** Foundry 的 keystore 名稱（~/.foundry/keystores/<name>）。 */
 const KEYSTORE_NAME = /^[A-Za-z0-9._-]+$/;
 /** 誤把私鑰（或其他 32 位元組 hex）填進路徑欄位。 */
-const LOOKS_LIKE_KEY = /^(0x)?[0-9a-fA-F]{64}$/;
+const LOOKS_LIKE_KEY = /^(0[xX])?[0-9a-fA-F]{64}$/;
 /** 看起來像路徑的值（絕對路徑或 ~/）才能出現在訊息裡；其他可能是誤填的秘密。 */
 const printablePath = (v: string) => v.startsWith("/") || v.startsWith("~/");
 

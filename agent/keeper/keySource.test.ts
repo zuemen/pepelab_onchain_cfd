@@ -44,11 +44,11 @@ const PK = "0x" + "11".repeat(32);
   assert.ok("error" in badName && /不是合法/.test(badName.error));
   // 誤填：私鑰塞進路徑欄位 → 拒絕，訊息不帶值。
   const RAW = "ab".repeat(32);
-  for (const v of [PK, RAW]) {
+  for (const v of [PK, RAW, "0X" + RAW]) {
     const r1 = keeperKeySpec({ KEEPER_KEYSTORE: v, KEEPER_KEYSTORE_PASSWORD_FILE: "/pw" }, HOME);
-    assert.ok("error" in r1 && /看起來是私鑰/.test(r1.error) && !r1.error.includes(v.replace(/^0x/, "")));
+    assert.ok("error" in r1 && /看起來是私鑰/.test(r1.error) && !r1.error.includes(v.replace(/^0x/i, "")));
     const r2 = keeperKeySpec({ KEEPER_KEYSTORE: "k", KEEPER_KEYSTORE_PASSWORD_FILE: v }, HOME);
-    assert.ok("error" in r2 && /看起來是私鑰/.test(r2.error) && !r2.error.includes(v.replace(/^0x/, "")));
+    assert.ok("error" in r2 && /看起來是私鑰/.test(r2.error) && !r2.error.includes(v.replace(/^0x/i, "")));
   }
   // 相對路徑（可能是誤填的秘密）不出現在標籤裡；~foo 不支援。
   const rel = keeperKeySpec({ KEEPER_KEYSTORE: "secretish/value", KEEPER_KEYSTORE_PASSWORD_FILE: "hunter2-pw" }, HOME);
