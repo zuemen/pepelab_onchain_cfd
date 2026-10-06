@@ -31,6 +31,14 @@ import "./CarbonAttestations.sol";
 ///           ESG_REGISTRY      required — the tenant's ESGRegistryV2 (deployment record contracts.ESGRegistryV2)
 ///           ATTEST_CHAIN_ID   required — must equal the connected chain (no accidental public-chain run)
 ///           ATTEST_ASSETS     optional — comma-separated symbols; default all eleven
+///           TENANT_RECORD     optional — a deployment record (`cache/tenants/<id>.deployed.json`
+///                             or `../deploy/tenants/<id>.deployed.json`; foundry.toml's
+///                             fs_permissions allow reading only those two directories)
+///           TENANT            optional — shorthand for `../deploy/tenants/<TENANT>.deployed.json`
+///                             (TENANT_RECORD wins when both are set)
+///         With a record, its `contracts.ESGRegistryV2` and `chainId` must match
+///         ESG_REGISTRY and this chain, or nothing is sent: a mistyped address
+///         cannot attest into another tenant's (or the platform's) registry.
 contract AttestTenantCarbon is Script {
     /// Mirrors agent/shared/src/payoutSafety.ts COMPROMISED_ADDRESSES.
     address internal constant LEAKED_DEPLOYER = 0xE80A81360608C1342e66743F70a00f75d792Eb93;
@@ -40,20 +48,55 @@ contract AttestTenantCarbon is Script {
     error NoRegistry(address registry);
     error NotAnAttestor(address who);
     error UnknownAsset(string symbol);
+    error RecordMismatch(address recorded, address registry);
+    error RecordChainMismatch(uint256 recorded, uint256 chainId);
+    error BadTenantId(string id);
 
     function run() external {
         address registry = vm.envAddress("ESG_REGISTRY");
         uint256 confirmed = vm.envOr("ATTEST_CHAIN_ID", uint256(0));
         string[] memory only = vm.envOr("ATTEST_ASSETS", ",", new string[](0));
-        attestAs(msg.sender, registry, confirmed, only);
+        attestAs(msg.sender, registry, confirmed, only, _recordJson());
     }
 
-    /// @dev Split from `run` so a test can name the broadcaster.
-    function attestAs(address attestor, address registry, uint256 confirmedChainId, string[] memory only)
+    /// @dev "" when neither TENANT_RECORD nor TENANT is set.
+    function _recordJson() internal view returns (string memory) {
+        string memory path = vm.envOr("TENANT_RECORD", string(""));
+        if (bytes(path).length == 0) {
+            string memory id = vm.envOr("TENANT", string(""));
+            if (bytes(id).length == 0) return "";
+            _requireSlug(id);
+            path = string.concat("../deploy/tenants/", id, ".deployed.json");
+        }
+        return vm.readFile(path);
+    }
+
+    /// @dev Lower-case letters, digits and single hyphens: TENANT is a file name.
+    function _requireSlug(string memory id) internal pure {
+        bytes memory b = bytes(id);
+        if (b.length == 0 || b.length > 64) revert BadTenantId(id);
+        for (uint256 i = 0; i < b.length; i++) {
+            bytes1 ch = b[i];
+            bool alnum = (ch >= 0x30 && ch <= 0x39) || (ch >= 0x61 && ch <= 0x7a);
+            bool hyphen = ch == 0x2d && i != 0 && i != b.length - 1 && b[i - 1] != 0x2d;
+            if (!alnum && !hyphen) revert BadTenantId(id);
+        }
+    }
+
+    /// @dev Split from `run` so a test can name the broadcaster. `recordJson`
+    ///      "" skips the record cross-check.
+    function attestAs(address attestor, address registry, uint256 confirmedChainId, string[] memory only, string memory recordJson)
         public returns (uint256 written)
     {
         if (attestor == LEAKED_DEPLOYER) revert CompromisedAddress(attestor);
         if (confirmedChainId != block.chainid) revert ChainNotConfirmed(block.chainid, confirmedChainId);
+        if (bytes(recordJson).length > 0) {
+            uint256 recordedChain = vm.parseJsonUint(recordJson, ".chainId");
+            if (recordedChain != block.chainid) revert RecordChainMismatch(recordedChain, block.chainid);
+            address recorded = vm.parseJsonAddress(recordJson, ".contracts.ESGRegistryV2");
+            if (recorded != registry) revert RecordMismatch(recorded, registry);
+            console.log("ok   ESG_REGISTRY == the deployment record's contracts.ESGRegistryV2");
+        }
         if (registry.code.length == 0) revert NoRegistry(registry);
         ESGRegistryV2 esg = ESGRegistryV2(registry);
         if (!esg.hasRole(esg.ATTESTOR_ROLE(), attestor)) revert NotAnAttestor(attestor);

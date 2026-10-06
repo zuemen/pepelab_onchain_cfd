@@ -132,6 +132,9 @@
    `assets.additionalRwa`（v4，必填，沒有追加就寫 `[]`）是租戶額外要 KYC 的資產：每一檔都必須在
    `registered` 裡、不能重複、不能是內建 RWA（清單只能加）。例如把 `sGOLD` 也納入合格投資人限制。
    部署當下就寫上 exchange 的 RWA 旗標，OI 上限也用 `oiCapRwaUsdc`；`VerifyTenant` 每天讀回，與設定不符就失敗。
+   ⚠️ **前端尚未接上 `kycRegistry: "vc"` 的租戶與 `assets.additionalRwa`**：交易終端的「去做 KYC」仍開舊的白名單
+   流程、RWA 標示仍用內建分類。這兩項由 RWA PoC 計劃表的 S5（前端接新部署）處理，在那之前 VC 租戶只能用
+   投資人憑證面板與鏈上工具操作。
 7. `fees` 在收費模式定案前固定是 `{"status": "pending-decision", "baseFeeBps": null, "tenantMarkupBps": null}`；
    這個狀態的租戶不能標成 `deployed`。
 8. 檢查：
@@ -337,7 +340,10 @@ TENANT=<id> TENANT_RECORD=cache/tenants/<id>.deployed.json TENANT_PRIVILEGE_SCAN
      （`VCKycRegistry.setIssuer(issuer, keccak256("QUALIFIED_INVESTOR"), true)`）。在那之前所有 RWA 市場對所有人關閉。
    - 指派碳分級見證人（`ESGRegistryV2` 的 `ATTESTOR_ROLE`）。在那之前每檔資產都是 Unrated——槓桿 1 倍、費率最高那一級（fail-closed）。
      見證人寫入分級用 `contracts/script/AttestTenantCarbon.s.sol`（只做 attest；清單與平台的 `Deploy102CarbonRegistry`
-     共用 `CarbonAttestations`；`ESG_REGISTRY`、`ATTEST_CHAIN_ID` 必填，先不加 `--broadcast` 模擬）。見證人若是租戶自己的金鑰，
+     共用 `CarbonAttestations`；`ESG_REGISTRY`、`ATTEST_CHAIN_ID` 必填，先不加 `--broadcast` 模擬）。建議同時給
+     `TENANT=<id>`（讀 `deploy/tenants/<id>.deployed.json`）或 `TENANT_RECORD=cache/tenants/<id>.deployed.json`：
+     有給時紀錄的 `contracts.ESGRegistryV2` 與 `chainId` 必須等於 `ESG_REGISTRY` 與目前的鏈，否則什麼都不送
+     （`foundry.toml` 的 `fs_permissions` 只允許讀 `deploy/tenants/` 與 `cache/tenants/`）。見證人若是租戶自己的金鑰，
      對外要照實說明分級是營運方自己的聲明，不是獨立機構。
    - 部署後的唯讀粗檢：`node scripts/post-deploy-smoke.mjs --tenant <id> --skip-http`（接線、外洩地址、價格新鮮度；
      租戶的 signal-api 上線後改用 `--signal-api <網址>`）。

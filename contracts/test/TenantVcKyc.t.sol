@@ -177,6 +177,17 @@ contract TenantVcKycTest is TenantFixture {
         reg.setIssuer(d.insuranceSeeder, QI, true);
         _verifyFails(s, record, bytes("verify tenant failed: unexpected trusted credential issuer on KYCRegistry"));
 
+        // KYC_BASIC is a trust grant too, not only QUALIFIED_INVESTOR.
+        vm.revertToState(snap);
+        vm.prank(s.admin);
+        reg.setIssuer(deployer, keccak256("KYC_BASIC"), true);
+        _verifyFails(s, record, bytes("verify tenant failed: deployer is not a trusted credential issuer"));
+
+        vm.revertToState(snap);
+        vm.prank(s.admin);
+        reg.setIssuer(d.copyTracker, keccak256("KYC_BASIC"), true);
+        _verifyFails(s, record, bytes("verify tenant failed: unexpected trusted credential issuer on KYCRegistry"));
+
         // Trusted, then removed: no longer a holder.
         vm.revertToState(snap);
         vm.startPrank(s.admin);
@@ -267,5 +278,26 @@ contract TenantVcKycTest is TenantFixture {
         script.runWithConfig(vm.replace(j, ",\"kycRegistry\":\"vc\"", ""), s.id);
         vm.expectRevert(bytes("tenant config: .assets.additionalRwa is missing (no field has a default)"));
         script.runWithConfig(vm.replace(j, ",\"additionalRwa\":[\"sGOLD\"]", ""), s.id);
+    }
+
+    /// @dev Only a JSON array of JSON strings. `parseJsonStringArray` alone
+    ///      would turn 1 / true into "1" / "true", and `""` once slipped
+    ///      through as an empty list.
+    function test_refuses_additionalRwaThatIsNotAnArrayOfStrings() public {
+        Spec memory s = _vcSpec();
+        string memory j = _json(s);
+        DeployTenant script = new DeployTenant();
+        script.setBroadcasterOverride(deployer);
+        script.setAllowEoaAdmin(true);
+        string[8] memory bad = ["{}", "\"\"", "\"sGOLD\"", "null", "[1]", "[true]", "[\"sGOLD\",1]", "[[\"sGOLD\"]]"];
+        for (uint256 i; i < bad.length; i++) {
+            vm.expectRevert(bytes("tenant config: .assets.additionalRwa must be a JSON array of strings"));
+            script.runWithConfig(vm.replace(j, "\"additionalRwa\":[\"sGOLD\"]", string.concat("\"additionalRwa\":", bad[i])), s.id);
+        }
+        // An empty array is the common case and is accepted (as is the
+        // verifier's parse of it).
+        s.additionalRwa = "";
+        TenantVerifyHarness v = new TenantVerifyHarness();
+        assertFalse(v.isRwaFor(_json(s), s.id, "sGOLD"));
     }
 }

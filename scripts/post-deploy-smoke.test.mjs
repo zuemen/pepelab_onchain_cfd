@@ -221,11 +221,12 @@ const TENANT_REGISTRY = {
   tokens: { sGOLD: T(13) },
 };
 const TENANT_ROLES = { admin: T(20), risk: T(21), guardian: T(22), keeper: T(23), marketOperator: T(23), treasury: T(20) };
-const tenantConfig = (kyc = "vc", roles = TENANT_ROLES) => ({ roles, params: { kycRegistry: kyc } });
+const tenantConfig = (kyc = "vc", roles = TENANT_ROLES) => ({ schemaVersion: 4, roles, params: { kycRegistry: kyc } });
+const TENANT_RECORD = { deployer: T(30) };
 
 /** 一個接線正確的專屬租戶；overrides 注入錯誤。 */
-function tenantWorld({ calls = {}, kyc = "vc", roles = TENANT_ROLES, record = null } = {}) {
-  const tenantFiles = { registry: TENANT_REGISTRY, config: tenantConfig(kyc, roles), record };
+function tenantWorld({ calls = {}, kyc = "vc", roles = TENANT_ROLES, record = TENANT_RECORD, config, registry = TENANT_REGISTRY } = {}) {
+  const tenantFiles = { registry, config: config ?? tenantConfig(kyc, roles), record };
   const t = tenantSources(REPO, "rwa-poc", loadSources(REPO), tenantFiles);
   const c = TENANT_REGISTRY.contracts;
   const state = new Map();
@@ -315,4 +316,29 @@ test("--tenant：沒有 --signal-api 又沒 --skip-http → FAIL（不退回平�
     /不是 dedicated/,
   );
   await assert.rejects(() => runSmoke({ root: REPO, rpcUrl: RPC, fetchImpl: async () => assert.fail(), tenant: "../x" }), /--tenant 必須是租戶 id/);
+});
+
+test("--tenant：部署紀錄缺少或壞掉、設定不是 v4、kycRegistry 不認得、登記缺必填合約 → FAIL", async () => {
+  const fileFail = (results, name, re) => assert.ok(fails(results).some((r) => r.group === "租戶檔案" && r.name === name && re.test(r.detail)), `${name} ${re}`);
+  fileFail(await runTenant(tenantWorld({ record: null })), "部署紀錄", /沒有部署紀錄/);
+  fileFail(await runTenant(tenantWorld({ record: { contracts: {} } })), "部署紀錄", /沒有 deployer/);
+  fileFail(await runTenant(tenantWorld({ record: [] })), "部署紀錄", /沒有 deployer/);
+  fileFail(await runTenant(tenantWorld({ config: { ...tenantConfig(), schemaVersion: 3 } })), "部署設定", /只讀 v4/);
+  fileFail(await runTenant(tenantWorld({ kyc: "kyc" })), "部署設定", /kycRegistry/);
+  fileFail(await runTenant(tenantWorld({ config: { schemaVersion: 4, roles: TENANT_ROLES } })), "部署設定", /kycRegistry/);
+  const { KYCRegistry: _k, ...noKyc } = TENANT_REGISTRY.contracts;
+  fileFail(await runTenant(tenantWorld({ registry: { ...TENANT_REGISTRY, contracts: noKyc } })), "前端登記", /contracts\.KYCRegistry/);
+  const { Oracle: _o, ...noOracle } = TENANT_REGISTRY.contracts;
+  fileFail(await runTenant(tenantWorld({ registry: { ...TENANT_REGISTRY, contracts: noOracle } })), "前端登記", /contracts\.Oracle/);
+  // 沒有金庫的租戶不需要 AssetVaultV2
+  const { AssetVaultV2: _v, ...noVault } = TENANT_REGISTRY.contracts;
+  const nv = await runTenant(tenantWorld({ registry: { ...TENANT_REGISTRY, contracts: noVault, tokens: undefined } }));
+  assert.equal(nv.some((r) => r.group === "租戶檔案"), false);
+});
+
+test("--tenant：讀不到 repo 裡的部署紀錄 → FAIL（不是當成沒事）", async () => {
+  const w = tenantWorld();
+  const { record: _r, ...noRecord } = w.tenantFiles;
+  const results = await runSmoke({ root: REPO, rpcUrl: RPC, fetchImpl: w.fetchImpl, sleep: async () => {}, nowSec: NOW, skipHttp: true, tenant: "no-such-tenant", tenantFiles: noRecord });
+  assert.ok(fails(results).some((r) => r.group === "租戶檔案" && r.name === "部署紀錄" && /讀不到/.test(r.detail)));
 });

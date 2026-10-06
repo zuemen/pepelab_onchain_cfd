@@ -50,7 +50,7 @@ contract AttestTenantCarbonTest is TenantFixture {
         esg.grantRole(esg.ATTESTOR_ROLE(), attestor);
         vm.stopPrank();
         vm.recordLogs();
-        uint256 n = attestScript.attestAs(attestor, d.esgRegistry, 84532, new string[](0));
+        uint256 n = attestScript.attestAs(attestor, d.esgRegistry, 84532, new string[](0), "");
         assertEq(n, 11);
 
         CarbonAttestations.A[11] memory list = CarbonAttestations.assets();
@@ -71,14 +71,41 @@ contract AttestTenantCarbonTest is TenantFixture {
         vm.stopPrank();
         string[] memory only = new string[](2);
         (only[0], only[1]) = ("sGOLD", "sAAPL");
-        assertEq(attestScript.attestAs(attestor, d.esgRegistry, 84532, only), 2);
+        assertEq(attestScript.attestAs(attestor, d.esgRegistry, 84532, only, ""), 2);
         assertTrue(esg.hasAttested(keccak256("sGOLD"), attestor));
         assertFalse(esg.hasAttested(keccak256("sBTC"), attestor));
 
         only = new string[](1);
         only[0] = "sDOGE";
         vm.expectRevert(abi.encodeWithSelector(AttestTenantCarbon.UnknownAsset.selector, "sDOGE"));
-        attestScript.attestAs(attestor, d.esgRegistry, 84532, only);
+        attestScript.attestAs(attestor, d.esgRegistry, 84532, only, "");
+    }
+
+    /// @dev With the deployment record (TENANT_RECORD / TENANT), ESG_REGISTRY
+    ///      must be the record's own registry on this chain.
+    function test_recordCrossCheck_refusesAnotherRegistryOrChain() public {
+        (Spec memory s, string memory record, TenantBase.TenantDeployed memory d) = _tenant();
+        ESGRegistryV2 esg = ESGRegistryV2(d.esgRegistry);
+        vm.startPrank(s.admin);
+        esg.grantRole(esg.ATTESTOR_ROLE(), attestor);
+        vm.stopPrank();
+        string[] memory one = new string[](1);
+        one[0] = "sGOLD";
+        uint256 snap = vm.snapshotState();
+
+        assertEq(attestScript.attestAs(attestor, d.esgRegistry, 84532, one, record), 1, "matching record");
+
+        // A registry that is not the recorded one: nothing is written.
+        vm.revertToState(snap);
+        ESGRegistryV2 other = new ESGRegistryV2(s.admin);
+        vm.expectRevert(abi.encodeWithSelector(AttestTenantCarbon.RecordMismatch.selector, d.esgRegistry, address(other)));
+        attestScript.attestAs(attestor, address(other), 84532, one, record);
+        assertFalse(esg.hasAttested(keccak256("sGOLD"), attestor));
+
+        // A record from another chain.
+        string memory foreign = vm.replace(record, "\"chainId\":84532", "\"chainId\":8453");
+        vm.expectRevert(abi.encodeWithSelector(AttestTenantCarbon.RecordChainMismatch.selector, 8453, 84532));
+        attestScript.attestAs(attestor, d.esgRegistry, 84532, one, foreign);
     }
 
     function test_refuses_wrongChainNonAttestorLeakedKeyOrNoRegistry() public {
@@ -87,22 +114,22 @@ contract AttestTenantCarbonTest is TenantFixture {
         string[] memory all = new string[](0);
 
         vm.expectRevert(abi.encodeWithSelector(AttestTenantCarbon.NotAnAttestor.selector, attestor));
-        attestScript.attestAs(attestor, d.esgRegistry, 84532, all);
+        attestScript.attestAs(attestor, d.esgRegistry, 84532, all, "");
 
         vm.startPrank(s.admin);
         esg.grantRole(esg.ATTESTOR_ROLE(), attestor);
         vm.stopPrank();
         vm.expectRevert(abi.encodeWithSelector(AttestTenantCarbon.ChainNotConfirmed.selector, 84532, 0));
-        attestScript.attestAs(attestor, d.esgRegistry, 0, all);
+        attestScript.attestAs(attestor, d.esgRegistry, 0, all, "");
         vm.expectRevert(abi.encodeWithSelector(AttestTenantCarbon.ChainNotConfirmed.selector, 84532, 8453));
-        attestScript.attestAs(attestor, d.esgRegistry, 8453, all);
+        attestScript.attestAs(attestor, d.esgRegistry, 8453, all, "");
 
         address leaked = 0xE80A81360608C1342e66743F70a00f75d792Eb93;
         vm.expectRevert(abi.encodeWithSelector(AttestTenantCarbon.CompromisedAddress.selector, leaked));
-        attestScript.attestAs(leaked, d.esgRegistry, 84532, all);
+        attestScript.attestAs(leaked, d.esgRegistry, 84532, all, "");
 
         address eoa = makeAddr("not-a-registry");
         vm.expectRevert(abi.encodeWithSelector(AttestTenantCarbon.NoRegistry.selector, eoa));
-        attestScript.attestAs(attestor, eoa, 84532, all);
+        attestScript.attestAs(attestor, eoa, 84532, all, "");
     }
 }
