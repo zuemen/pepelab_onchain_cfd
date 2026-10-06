@@ -1,6 +1,6 @@
 {
   "$comment": "租戶部署設定範本。複製成 deploy/tenants/<tenant-id>.json 後填寫；說明見 docs/TENANT_DEPLOYMENT.md。這個檔案只放佔位值與環境變數名稱，任何私鑰、助記詞、RPC 網址都不得寫進來（node scripts/check-tenant-deploy.mjs 會擋）。",
-  "schemaVersion": 3,
+  "schemaVersion": 4,
   "tenantId": "<TENANT_ID>",
   "status": "template",
   "frontendTenant": "<TENANT_ID>",
@@ -39,10 +39,12 @@
     "vaultFeeShareBps": 0,
     "deployVault": true,
     "vaultRedeemFeeBps": 30,
-    "vaultMinReserveRatioBps": 11000
+    "vaultMinReserveRatioBps": 11000,
+    "kycRegistry": "allowlist"
   },
   "assets": {
-    "registered": ["sAAPL", "sMSFT", "sGOLD", "sBOND"]
+    "registered": ["sAAPL", "sMSFT", "sGOLD", "sBOND"],
+    "additionalRwa": []
   },
   "fees": {
     "status": "pending-decision",

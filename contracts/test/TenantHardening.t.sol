@@ -208,8 +208,8 @@ contract TenantHardeningTest is TenantFixture {
         Spec memory s = _valid();
         string memory j = _json(s);
 
-        _refusedJson(vm.replace(j, "\"schemaVersion\":3", "\"schemaVersion\":2"), s.id,
-            bytes("tenant config: schemaVersion must be 3"));
+        _refusedJson(vm.replace(j, "\"schemaVersion\":4", "\"schemaVersion\":3"), s.id,
+            bytes("tenant config: schemaVersion must be 4"));
         // Missing: no field has a default.
         _refusedJson(vm.replace(j, ",\"oracleWindowDeviationBps\":2500", ""), s.id,
             bytes("tenant config: .params.oracleWindowDeviationBps is missing (no field has a default)"));
