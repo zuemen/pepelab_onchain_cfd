@@ -45,7 +45,16 @@ export const RETIRED_FILE = "frontend/src/contracts/retiredPlatformAddresses.jso
  * 另外：帶 `KEEPER_TENANT:` 的租戶 workflow 不算平台的（isTenantScopedWorkflow）。
  */
 export const UNIVERSE_EXCLUDES = [
-  { re: /^deploy\/tenants\//, why: "租戶自己的部署設定、範本與部署紀錄（租戶之間另由 checkCrossTenant 比對）" },
+  {
+    // deploy/tenants/ 只排除直下的 *.json（設定、範本、部署紀錄）；docs/ 與 broadcast/ 只排除「某個租戶 id 底下」的檔案：
+    // id 必須是 slug、不可是平台的 default。子目錄、非 JSON、目錄直下的檔案與不合格的 id 照樣算平台的，
+    // 另由 check-tenant-deploy.mjs 的 checkTenantDirs 報錯。
+    re: /^(deploy\/tenants\/[^/]+\.json$|(?:docs|contracts\/broadcast)\/tenants\/(?!default\/)[a-z0-9]+(?:-[a-z0-9]+)*\/)/,
+    why:
+      "租戶自己的設定、紀錄、廣播紀錄與文件（deploy/tenants/*.json、docs/tenants/<id>/、contracts/broadcast/tenants/<id>/）；" +
+      "這些位址另由 check-tenant-deploy.mjs 併入該租戶做跨租戶比對。租戶廣播一律以 FOUNDRY_BROADCAST=broadcast/tenants/<id> 寫到這裡，" +
+      "否則部署者與整組合約會被當成平台位址",
+  },
   {
     re: /^frontend\/src\/contracts\/deployments\/(?!default\.json$)/,
     why: "租戶自己的前端部署登記（default.json 是平台的，仍納入）",
@@ -125,6 +134,11 @@ export const WELL_KNOWN_NON_PLATFORM = [
     address: "0x000000000022D473030F116dDEE9F6B43aC78BA3",
     name: "Uniswap Permit2",
     why: "各鏈同一位址的公共合約（CREATE2），不屬於平台",
+  },
+  {
+    address: "0x4e59b44847b379578588920cA78FbF26c0B4956C",
+    name: "CREATE2 Deterministic Deployer（Arachnid）",
+    why: "各鏈同一位址的公共 CREATE2 工廠；forge script 以 CREATE2 部署時廣播紀錄的 to 就是它，不屬於平台也不屬於任何租戶",
   },
   ...ANVIL_DEFAULT_ACCOUNTS.map((address, i) => ({
     address,
