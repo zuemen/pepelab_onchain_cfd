@@ -69,6 +69,16 @@ import {
   BadIntervalError,
 } from "./candles.ts";
 import { getBenchmarks, BadDateError } from "./benchmarks.ts";
+import {
+  KYA_ADVERTISE_HEADERS,
+  createKyaGate,
+  memoryKyaSpendStore,
+  providerKyaChainReader,
+  resolveKyaConfig,
+  upstashKyaSpendStore,
+  type KyaGate,
+  type KyaHold,
+} from "./kya.ts";
 import { LruCache } from "./lru.ts";
 import {
   createExposureService,
@@ -467,6 +477,26 @@ export interface CreateAppOptions {
   x402V2Timing?: Pick<X402V2Options, "now" | "timer" | "initBackoffMs" | "unpaidInitTimeoutMs" | "initTimeoutMs">;
   /** 覆寫 /signals/:trader 的資料來源（測試用；預設讀鏈上 getTraderPerformance）。 */
   signalReader?: (trader: string) => Promise<unknown>;
+  /**
+   * x402 KYA 閘門（docs/SSI_AGENT_DELEGATION.md）。省略＝依 X402_KYA_MODE 環境變數（預設 off）；
+   * 傳 null＝強制關閉；傳 KyaGate＝測試／PoC 注入（鏈上讀取、花費帳、撤銷檢查都可替換）。
+   */
+  kya?: KyaGate | null;
+}
+
+/** 依環境變數建立 KYA 閘門；X402_KYA_MODE 未設或 off → null（行為與加入 KYA 前相同）。 */
+function kyaFromEnv(defaultProvider: ethers.ContractRunner): KyaGate | null {
+  const config = resolveKyaConfig();
+  if (config.mode === "off") return null;
+  const rpc = process.env.KYA_RPC_URL?.trim();
+  const chainProvider = rpc ? new ethers.JsonRpcProvider(rpc, undefined, { batchMaxCount: 1 }) : defaultProvider;
+  // 預設與記帳同一個 Upstash（多實例共用）；X402_KYA_SPEND_STORE=memory 只給單機開發。
+  const spend = process.env.X402_KYA_SPEND_STORE?.trim().toLowerCase() === "memory" ? memoryKyaSpendStore() : upstashKyaSpendStore();
+  console.error(
+    `[kya] X402_KYA_MODE=on：付費端點要求 X-Agent-Presentation（v3 委託憑證）；錨定 ${config.anchor}；` +
+      `session manager ${config.sessionManager ?? "（未設定→付費端點 503）"}；花費帳 ${spend.describe}`,
+  );
+  return createKyaGate({ config, chain: providerKyaChainReader(chainProvider), spend });
 }
 
 /** /risk/exposure 讀的合約：全部來自 addresses.ts（前端同源），不寫死。 */
@@ -606,6 +636,7 @@ export function createApp(opts: CreateAppOptions = {}): Hono<{ Variables: AppVar
     }
   }
   const codeReader: CodeReader = opts.payoutCodeReader ?? provider;
+  const kya: KyaGate | null = opts.kya !== undefined ? opts.kya : kyaFromEnv(provider);
   // payTo 必須是 EOA（= FEE_SETTLEMENT_PRIVATE_KEY 的地址）：外洩清單、EIP-7702 委派、
   // 合約（含未設 PAY_TO 時回退的 FeeRouter）一律 unsafe。結果快取 10 分鐘、fail-closed。
   const checkPayTo = (): Promise<PayoutAssessment> =>
@@ -817,6 +848,23 @@ export function createApp(opts: CreateAppOptions = {}): Hono<{ Variables: AppVar
   // 位置理由同 /candles：必須留在 paymentMiddleware 之前。節流走上面的免費端點
   // per-IP 限流；報表本身 60 秒快取（single-flight），讀取失敗的欄位為 null 並在
   // `unavailable` 附原因代碼，不回錯誤原文、不整個 500（見 exposure.ts）。
+  // ── KYA：某張委託憑證目前的 x402 花費（免費、唯讀；前端進度條用）─────────────
+  // 位置理由同 /candles：必須留在 paymentMiddleware 之前。credentialHash 是 EIP-712 digest，
+  // 不知道憑證內容就猜不到；回應只有金額，沒有身分資料。
+  app.get("/kya/spend/:hash", async (c) => {
+    if (!kya) return c.json({ ok: false, error: "kya_disabled", message: "本服務未啟用 x402 KYA（X402_KYA_MODE=off）。" }, 404);
+    const hash = c.req.param("hash").toLowerCase();
+    if (!/^0x[0-9a-f]{64}$/.test(hash)) return c.json({ ok: false, error: "bad_hash" }, 400);
+    const period = Number(c.req.query("period") ?? "86400");
+    if (!Number.isSafeInteger(period) || period <= 0) return c.json({ ok: false, error: "bad_period" }, 400);
+    try {
+      const s = await kya.spendOf(hash, period);
+      return c.json({ ok: true, credentialHash: hash, periodSeconds: period, totalAtomic: s.total.toString(), periodAtomic: s.period.toString() });
+    } catch (err) {
+      return c.json({ ok: false, error: internalError("kya_spend", err) }, 503);
+    }
+  });
+
   const exposure = createExposureService(opts.exposureReader ?? providerReader(provider), exposureTargets());
   app.get("/risk/exposure", async (c) => {
     try {
@@ -1210,6 +1258,43 @@ export function createApp(opts: CreateAppOptions = {}): Hono<{ Variables: AppVar
       if (blocked) return blocked;
     }
 
+    // ── x402 KYA（docs/SSI_AGENT_DELEGATION.md；X402_KYA_MODE=on 才啟用）─────────
+    // 在付款交給 facilitator 之前：驗 presentation／委託憑證／撤銷／鏈上 session／錨定，並以
+    // credentialHash 原子預留花費。只看「付費牆實際會處理的那一張」付款 header（與下面的分流一致）；
+    // 兩種都帶（both 模式）由下面回 400，這裡不預留。未付款的請求不檢查，只在 402 上宣告。
+    let kyaHold: KyaHold | null = null;
+    let kyaProto: "v1" | "v2" = "v1";
+    if (paidRoute && kya) {
+      const v2Hdr = c.req.header("PAYMENT-SIGNATURE");
+      const v1Hdr = c.req.header("X-PAYMENT");
+      const useV2 = x402v2 !== null && (x402Protocol === "v2" || (Boolean(v2Hdr) && !v1Hdr));
+      const pay = useV2 ? v2Hdr : x402Protocol === "v2" ? undefined : v1Hdr;
+      const ambiguous = x402Protocol === "both" && x402v2 !== null && Boolean(v2Hdr) && Boolean(v1Hdr);
+      if (pay && !ambiguous) {
+        const d = await kya.authorize(c, pay);
+        if (!d.ok) return c.json(d.body, d.status);
+        kyaHold = d.hold;
+        kyaProto = useV2 ? "v2" : "v1";
+      }
+    }
+    const out = await dispatchPaywall(c, next, paidRoute);
+    if (!kya || !paidRoute) return out;
+    const res = out ?? c.res;
+    const extra = kyaHold ? await kya.finalize(kyaHold, res, kyaProto) : res.status === 402 ? KYA_ADVERTISE_HEADERS : {};
+    if (Object.keys(extra).length === 0) return out;
+    const withKya = new Response(res.body, res);
+    for (const [k, v] of Object.entries(extra)) withKya.headers.set(k, v);
+    if (out) return withKya;
+    c.res = undefined as unknown as Response;
+    c.res = withKya;
+  });
+
+  /** 協定分流＋付費牆（原本 app.use 內的後半段，抽出來讓 KYA 能在前後包一層；內容不變）。 */
+  const dispatchPaywall = async (
+    c: Context<{ Variables: AppVariables }>,
+    next: Next,
+    paidRoute: boolean,
+  ): Promise<Response | void> => {
     // ── 協定分流（docs/ADR-010）──────────────────────────────────────────────
     //   v1（預設）：一律 v1，PAYMENT-SIGNATURE 被忽略 —— 與遷移前完全相同。
     //   v2        ：一律 v2，X-PAYMENT 被忽略（視同未付款，回 v2 的 402）。
@@ -1246,7 +1331,7 @@ export function createApp(opts: CreateAppOptions = {}): Hono<{ Variables: AppVar
         c.res = res;
       }
     }
-  });
+  };
 
   // ── 付費後才會執行到這裡 ─────────────────────────────────────────────────
   //

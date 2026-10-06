@@ -21,6 +21,10 @@ interface ImportMetaEnv {
   readonly VITE_FEATURE_PEPE_REWARDS?: string;
   readonly VITE_FEATURE_COPY_TRADING?: string;
   readonly VITE_ENABLE_MOCK_WALLET?: string;
+  /** SessionCredentialAnchor 位址（覆寫 src/contracts/sessionCredentialAnchor.ts 的表；本機 anvil 用）。 */
+  readonly VITE_SESSION_ANCHOR_ADDRESS?: string;
+  /** 撤銷 v3 委託憑證時，把簽好的 ADR-016 狀態清單 POST 到這裡；沒設就下載交給營運方。 */
+  readonly VITE_VC_STATUS_PUBLISH_URL?: string;
 }
 
 /**

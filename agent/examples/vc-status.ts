@@ -8,7 +8,7 @@
 //       也可用 `npm run vc-status:init`。**只在持久儲存上跑一次，不要放進容器啟動腳本**：沒掛 volume 時每次
 //       啟動都 init，會在暫存檔案系統建出有標記的空目錄，所有簽發者都被當成「沒有清單」（撤銷形同關閉）。
 //   npx tsx examples/vc-status.ts jti --vc <vc.json>
-//       印出憑證 id（v2＝nonce；v1＝EIP-712 digest）
+//       印出憑證 id（v2、v3＝nonce；v1＝EIP-712 digest）。v3＝委託憑證 AgentDelegationCredential
 //   npx tsx examples/vc-status.ts typed-data --issuer 0x… [--from <目前清單.json>] [--sequence N]
 //       [--revoke <jti>[,<jti>…]] [--revoke-before <unix 秒>|now] [--valid-days 30] [--manager 0x…]
 //       印出 eth_signTypedData_v4 的 JSON（交給簽發者的錢包簽，例如 `cast wallet sign --data --from-file`）
@@ -33,6 +33,9 @@ import fs from "node:fs";
 import path from "node:path";
 import {
   verifyAuthorizationVC,
+  verifyDelegationCredential,
+  delegationAsVerifyResult,
+  isDelegationCredential,
   credentialJti,
   verifyStatusList,
   canonicalRevokedIds,
@@ -82,11 +85,18 @@ function ensureMarker(dir: string): void {
 const cmd = process.argv[2];
 
 if (cmd === "jti") {
-  const vc = readJson(need("vc")) as AuthorizationVC;
-  const r = verifyAuthorizationVC(vc);
-  const jti = credentialJti(r);
-  if (!jti) fail(`無法取得 jti（${r.reasonCode ?? ""} ${r.reason ?? ""}）`);
-  console.log(JSON.stringify({ jti, version: r.version, issuer: r.issuer, issuedAt: r.issuedAt, valid: r.valid, reasonCode: r.reasonCode }, null, 2));
+  const vc = readJson(need("vc"));
+  if (isDelegationCredential(vc)) {
+    const r3 = verifyDelegationCredential(vc);
+    const jti = credentialJti(delegationAsVerifyResult(r3));
+    if (!jti) fail(`無法取得 jti（${r3.reasonCode ?? ""} ${r3.reason ?? ""}）`);
+    console.log(JSON.stringify({ jti, version: 3, issuer: r3.issuer, issuedAt: r3.fields?.validFrom, credentialHash: r3.credentialHash, valid: r3.valid, reasonCode: r3.reasonCode }, null, 2));
+  } else {
+    const r = verifyAuthorizationVC(vc as AuthorizationVC);
+    const jti = credentialJti(r);
+    if (!jti) fail(`無法取得 jti（${r.reasonCode ?? ""} ${r.reason ?? ""}）`);
+    console.log(JSON.stringify({ jti, version: r.version, issuer: r.issuer, issuedAt: r.issuedAt, valid: r.valid, reasonCode: r.reasonCode }, null, 2));
+  }
 } else if (cmd === "typed-data") {
   const issuer = ethers.getAddress(need("issuer"));
   const now = Math.floor(Date.now() / 1000);

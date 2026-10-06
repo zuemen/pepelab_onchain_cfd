@@ -36,6 +36,8 @@ import { prettyError } from 'src/lib/pepefi/errorMessages'
 import { agentDid, shortDid } from 'src/lib/pepefi/did'
 import { useToast } from 'src/components/pepefi/ToastProvider'
 import { SwitchChainButton } from 'src/components/pepefi/SwitchChainButton'
+import { DelegationCredentialPanel, revokeDelegationCredential } from 'src/components/pepefi/DelegationCredentialPanel'
+import { delegationStorageKey, type StoredDelegation } from 'src/lib/pepefi/delegationCredential'
 import { ASSET_IDS, CHAIN_NAMES } from 'src/contracts/addresses'
 import { ASSETS_LIST } from 'src/lib/pepefi/assetMeta'
 import { BASE_SEPOLIA_RPC_URL } from 'src/lib/pepefi/chains'
@@ -167,6 +169,27 @@ export default function SessionsPage() {
     () => (wallet.address ? `pepelab_vc_${wallet.chainId ?? 0}_${wallet.address.toLowerCase()}` : null),
     [wallet.address, wallet.chainId],
   )
+
+  // v3 delegation credentials (docs/SSI_AGENT_DELEGATION.md): persisted per chain + manager + wallet,
+  // and which session's v3 dialog is open (also opened right after a session is created).
+  const [delegations, setDelegations] = useState<Record<number, StoredDelegation>>({})
+  const [delegationFor, setDelegationFor] = useState<number | null>(null)
+  const delegationKey = delegationStorageKey(wallet.chainId, getSessionManagerAddress(wallet.chainId), wallet.address)
+  useEffect(() => {
+    if (!delegationKey) { setDelegations({}); return }
+    try {
+      const raw = localStorage.getItem(delegationKey)
+      setDelegations(raw ? (JSON.parse(raw) as Record<number, StoredDelegation>) : {})
+    } catch {
+      setDelegations({})
+    }
+  }, [delegationKey])
+  const storeDelegation = (id: number, next: StoredDelegation) =>
+    setDelegations(p => {
+      const map = { ...p, [id]: next }
+      if (delegationKey) { try { localStorage.setItem(delegationKey, JSON.stringify(map)) } catch { /* quota — keep in memory */ } }
+      return map
+    })
 
   // Restore persisted VCs whenever the wallet / chain changes (survives reload).
   useEffect(() => {
@@ -325,10 +348,17 @@ export default function SessionsPage() {
         BigInt(expiry),
         tenantAssets,
       ))
-      await tx.wait()
+      const receipt = (await tx.wait()) as { logs?: { topics: string[]; data: string }[] } | null
       notify(t.sessions.create.done, true, tx.hash)
       setAgent('')
       await fetchSessions()
+      // Next step of the SSI flow: issue + anchor the v3 delegation credential for the new session.
+      for (const log of receipt?.logs ?? []) {
+        try {
+          const ev = manager.interface.parseLog(log)
+          if (ev?.name === 'SessionCreated') { setDelegationFor(Number(ev.args[0])); break }
+        } catch { /* not ours */ }
+      }
     } catch (e) {
       notify(prettyError(e), false)
     } finally {
@@ -346,6 +376,20 @@ export default function SessionsPage() {
       await tx.wait()
       notify(t.sessions.list.revoked, true, tx.hash)
       await fetchSessions()
+      // Revoking the session also revokes its v3 credential in the ADR-016 status list
+      // (the chain already makes isAnchored false; the list covers verifiers that cache).
+      const d = delegations[id]
+      if (d && !d.revoked && wallet.signer && wallet.address && window.confirm(t.sessions.delegation.revokeWithSession)) {
+        const r = await revokeDelegationCredential({
+          signer: wallet.signer, user: wallet.address,
+          sessionManager: getSessionManagerAddress(wallet.chainId), credential: d.credential,
+        })
+        storeDelegation(id, { ...d, revoked: true })
+        notify(
+          interpolate(r.published ? t.sessions.delegation.revokedPublished : t.sessions.delegation.revokedDownloaded, { seq: String(r.list.sequence) }),
+          true,
+        )
+      }
     } catch (e) {
       notify(prettyError(e), false)
     } finally {
@@ -644,6 +688,13 @@ export default function SessionsPage() {
                           </TableCell>
                           <TableCell align="right" sx={{ ...STICKY_ACTION_CELL, bgcolor: 'background.paper' }}>
                             <Button
+                              size="small" variant="outlined"
+                              onClick={() => setDelegationFor(s.id)}
+                              sx={{ textTransform: 'none', mr: 1, whiteSpace: 'nowrap' }}
+                            >
+                              {t.sessions.delegation.open}
+                            </Button>
+                            <Button
                               size="small" variant="outlined" color="error"
                               onClick={() => void revokeSession(s.id)}
                               disabled={s.revoked || !!busy[key]}
@@ -660,6 +711,31 @@ export default function SessionsPage() {
               </TableContainer>
             )}
           </Card>
+
+          {/* v3 delegation credential — issue, anchor, status, x402 spend, revoke */}
+          <Dialog open={delegationFor !== null} onClose={() => setDelegationFor(null)} maxWidth="md" fullWidth scroll="paper">
+            <DialogTitle>{t.sessions.delegation.title}</DialogTitle>
+            <DialogContent dividers>
+              {(() => {
+                const s = sessions.find(x => x.id === delegationFor)
+                if (!s || !wallet.address || wallet.chainId === null) return null
+                return (
+                  <DelegationCredentialPanel
+                    session={s}
+                    chainId={wallet.chainId}
+                    signer={wallet.signer}
+                    userAddress={wallet.address}
+                    sessionManager={getSessionManagerAddress(wallet.chainId)}
+                    stored={delegations[s.id]}
+                    onStored={next => storeDelegation(s.id, next)}
+                  />
+                )
+              })()}
+            </DialogContent>
+            <DialogActions>
+              <Button onClick={() => setDelegationFor(null)}>{t.sessions.delegation.close}</Button>
+            </DialogActions>
+          </Dialog>
 
           {/* Export / Connect your Agent — modal dialog (centered, always reachable) */}
           <Dialog
