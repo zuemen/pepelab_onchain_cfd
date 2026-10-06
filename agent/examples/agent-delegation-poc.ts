@@ -187,7 +187,7 @@ const account = privateKeyToAccount(agentW.privateKey as `0x${string}`);
 const wallet = createWalletClient({ account, chain: baseSepolia, transport: http(rpcStub.url) }).extend(publicActions);
 const plainPay = wrapFetchWithPayment(fetch, wallet as never, resolveX402MaxValue()) as unknown as typeof fetch;
 const kyaPay = wrapFetchWithPayment(
-  kyaFetch({ credential, holderAddress: agentW.address, signTypedData: (d, t, m) => agentW.signTypedData(d, t, m) }),
+  kyaFetch({ credential, holderAddress: agentW.address, signTypedData: (d, t, m) => agentW.signTypedData(d, t, m), allowedOrigins: [API] }),
   wallet as never,
   resolveX402MaxValue(),
 ) as unknown as typeof fetch;

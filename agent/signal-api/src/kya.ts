@@ -41,7 +41,8 @@ import {
   type VerifyResult,
 } from "@pepelab/shared";
 
-export type KyaMode = "off" | "on";
+/** invalid＝X402_KYA_MODE 有值但無法辨識：fail-closed，付費端點一律 503（不當成 off）。 */
+export type KyaMode = "off" | "on" | "invalid";
 export type KyaAnchorPolicy = "required" | "optional" | "off";
 
 export interface KyaConfig {
@@ -60,7 +61,7 @@ const isAddr = (v: string | undefined): v is string =>
 
 /**
  * 環境變數：
- *   X402_KYA_MODE            off（預設）｜on
+ *   X402_KYA_MODE            off（預設）｜on —— 其他任何值＝設定錯誤，付費端點 503（fail-closed，不會悄悄關閉）
  *   X402_KYA_ANCHOR          required（預設）｜optional｜off —— 是否要求鏈上錨定
  *   SESSION_MANAGER_ADDRESS  憑證必須綁定的 AgentSessionManager（與 agent 端同一個設定）
  *   SESSION_ANCHOR_ADDRESS   SessionCredentialAnchor 位址
@@ -70,8 +71,9 @@ const isAddr = (v: string | undefined): v is string =>
  */
 export function resolveKyaConfig(env: NodeJS.ProcessEnv = process.env): KyaConfig {
   const rawMode = env.X402_KYA_MODE?.trim().toLowerCase() || "off";
-  const mode: KyaMode = rawMode === "on" || rawMode === "required" ? "on" : "off";
-  if (rawMode !== "off" && mode === "off") console.error(`::error::[kya] X402_KYA_MODE=${rawMode} 無法辨識，視為 off`);
+  // 安全閘門：只有未設或明確寫 off 才關閉。打錯字（true／1／enabled…）不能變成「以為開了、其實沒開」。
+  const mode: KyaMode = rawMode === "off" ? "off" : rawMode === "on" || rawMode === "required" ? "on" : "invalid";
+  if (mode === "invalid") console.error(`::error::[kya] X402_KYA_MODE=${rawMode} 無法辨識（只接受 on／off）→ 付費端點一律 503`);
   const rawAnchor = env.X402_KYA_ANCHOR?.trim().toLowerCase() || "required";
   const anchor: KyaAnchorPolicy = rawAnchor === "optional" || rawAnchor === "off" ? rawAnchor : "required";
   const skew = Number(env.X402_KYA_MAX_SKEW_SEC ?? "120");
@@ -88,13 +90,23 @@ export function resolveKyaConfig(env: NodeJS.ProcessEnv = process.env): KyaConfi
 // ── 鏈上讀取 ─────────────────────────────────────────────────────────────────
 
 export interface KyaChainReader {
+  /** 讀取端實際連的鏈：憑證的 chainId 必須是這條（DID 鏈＝session 所在的鏈）。 */
+  chainId(): Promise<number>;
   session(sessionManager: string, sessionId: number): Promise<OnchainSession>;
+  /** 錨定合約綁定的 AgentSessionManager：必須等於 SESSION_MANAGER_ADDRESS，否則錨定權限來自別的 manager。 */
+  anchorSessionManager(anchor: string): Promise<string>;
   isAnchored(anchor: string, sessionId: number, credentialHash: string): Promise<boolean>;
 }
 
 export function providerKyaChainReader(provider: ethers.ContractRunner): KyaChainReader {
   return {
+    chainId: async () => {
+      const p = provider as Partial<Pick<ethers.Provider, "getNetwork">>;
+      if (typeof p.getNetwork !== "function") throw new Error("KYA 的鏈上讀取來源沒有 getNetwork()");
+      return Number((await p.getNetwork()).chainId);
+    },
     session: (mgr, id) => readOnchainSession(provider, mgr, id),
+    anchorSessionManager: async (anchor) => String(await new ethers.Contract(anchor, SESSION_ANCHOR_ABI, provider).sessionManager()),
     isAnchored: async (anchor, id, h) =>
       Boolean(await new ethers.Contract(anchor, SESSION_ANCHOR_ABI, provider).isAnchored(id, h)),
   };
@@ -124,6 +136,10 @@ export interface KyaSpendStore {
 }
 
 export const KYA_SPEND_PREFIX = "x402:kya:spend:";
+/** 花費帳 key 的 TTL 上限（秒）；憑證的期間長度與剩餘效期也不得超過（否則累計會比憑證早消失）。 */
+export const KYA_MAX_TTL_SEC = 400 * 86_400;
+/** 憑證上限的最大值（atomic USDC）：Lua number 能精確表示的整數範圍內。 */
+export const KYA_MAX_ATOMIC = 2n ** 53n - 1n;
 export const KYA_VP_PREFIX = "x402:kya:vp:";
 const periodIndex = (nowSec: number, periodSeconds: number) => Math.floor(nowSec / Math.max(1, periodSeconds));
 export const kyaTotalKey = (h: string) => `${KYA_SPEND_PREFIX}${h.toLowerCase()}:total`;
@@ -131,18 +147,26 @@ export const kyaPeriodKey = (h: string, periodSeconds: number, nowSec: number) =
   `${KYA_SPEND_PREFIX}${h.toLowerCase()}:p${periodSeconds}:${periodIndex(nowSec, periodSeconds)}`;
 
 // 檢查與遞增在同一支 Lua 裡（Upstash 單執行緒執行 EVAL）：並行請求不會一起越過上限。
-// 金額是 atomic USDC（6 位小數），Lua number 精確到 2^53 —— 遠大於任何合理上限。
+// 金額是 atomic USDC（6 位小數），Lua number 精確到 2^53；閘門拒收上限超過 KYA_MAX_ATOMIC 的憑證。
+// 腳本出錯時不會回滾已執行的寫入，所以**所有參數先驗完才寫**；數字以 %.0f 輸出（tostring 在 1e14 以上會變成科學記號）。
 export const KYA_RESERVE_SCRIPT = `-- pepelab:kya_reserve
+local a = tonumber(ARGV[1])
+local mt = tonumber(ARGV[2])
+local mp = tonumber(ARGV[3])
+local pt = tonumber(ARGV[4])
+local tt = tonumber(ARGV[5])
+if not (a and mt and mp and pt and tt) or a < 0 or pt < 1 or tt < 1 or pt > ${KYA_MAX_TTL_SEC} or tt > ${KYA_MAX_TTL_SEC} then
+  return redis.error_reply('kya_reserve: bad arguments')
+end
 local t = tonumber(redis.call('GET', KEYS[1]) or '0')
 local p = tonumber(redis.call('GET', KEYS[2]) or '0')
-local a = tonumber(ARGV[1])
-if t + a > tonumber(ARGV[2]) then return {0, tostring(t), tostring(p), 'total'} end
-if p + a > tonumber(ARGV[3]) then return {0, tostring(t), tostring(p), 'period'} end
+if t + a > mt then return {0, string.format('%.0f', t), string.format('%.0f', p), 'total'} end
+if p + a > mp then return {0, string.format('%.0f', t), string.format('%.0f', p), 'period'} end
 redis.call('INCRBY', KEYS[1], a)
-redis.call('EXPIRE', KEYS[1], tonumber(ARGV[5]))
+redis.call('EXPIRE', KEYS[1], tt)
 redis.call('INCRBY', KEYS[2], a)
-redis.call('EXPIRE', KEYS[2], tonumber(ARGV[4]))
-return {1, tostring(t + a), tostring(p + a), 'ok'}`;
+redis.call('EXPIRE', KEYS[2], pt)
+return {1, string.format('%.0f', t + a), string.format('%.0f', p + a), 'ok'}`;
 
 export const KYA_RELEASE_SCRIPT = `-- pepelab:kya_release
 local a = tonumber(ARGV[1])
@@ -180,10 +204,11 @@ export function upstashKyaSpendStore(): KyaSpendStore {
   return {
     describe: "upstash",
     async reserve(h, amount, l, nowSec) {
-      const periodTtl = Math.max(60, l.periodSeconds * 2);
+      // 閘門已拒收超出範圍的憑證；這裡再夾一次，讓腳本的參數檢查永遠不會在寫入途中失敗。
+      const periodTtl = Math.min(KYA_MAX_TTL_SEC, Math.max(60, l.periodSeconds * 2));
       const r = await upstash<[number, string, string, string]>([
         "EVAL", KYA_RESERVE_SCRIPT, 2, kyaTotalKey(h), kyaPeriodKey(h, l.periodSeconds, nowSec),
-        amount.toString(), l.maxTotal.toString(), l.maxPerPeriod.toString(), periodTtl, Math.max(60, l.totalTtlSec),
+        amount.toString(), l.maxTotal.toString(), l.maxPerPeriod.toString(), periodTtl, Math.min(KYA_MAX_TTL_SEC, Math.max(60, l.totalTtlSec)),
       ]);
       const total = BigInt(r[1]);
       const period = BigInt(r[2]);
@@ -274,6 +299,11 @@ export interface KyaGate {
   authorize(c: Context, paymentHeader: string): Promise<KyaDecision>;
   /** 付費牆跑完後呼叫：結算成功＝保留；結算失敗＝退回；結果不明＝保留。回傳要加在回應上的 header。 */
   finalize(hold: KyaHold, res: Response, protocol: "v1" | "v2"): Promise<Record<string, string>>;
+  /**
+   * 付費牆丟例外（沒有回應）時呼叫。settleAttempted＝授權可能已經送去結算 → 結果不明，保留預留；
+   * 否則（結算前就失敗）退回。
+   */
+  abandon(hold: KyaHold, settleAttempted: boolean): Promise<void>;
   /** 免費查詢：某張憑證目前的 x402 花費（前端進度條）。 */
   spendOf(credentialHash: string, periodSeconds: number): Promise<{ total: bigint; period: bigint }>;
 }
@@ -291,9 +321,24 @@ export function createKyaGate(o: KyaGateOptions): KyaGate {
     body: { ok: false, error, message, kya: true, ...extra, note: NOTE_UNPAID },
   });
 
+  const release = async (hold: KyaHold) => {
+    try {
+      await o.spend.release(hold.credentialHash, hold.amount, hold.limits, hold.reservedAtSec);
+    } catch (e) {
+      // 退不回去＝多算，不是少算：使用者的上限只會更保守。記 log 讓營運方對帳。
+      console.error(`::error::[kya] 退回預留失敗（${hold.credentialHash}，${hold.amount}）：`, e);
+    }
+  };
+  // 部署設定（鏈、錨定合約綁定的 manager）不會在執行中改變：確認過一次就記住；讀取失敗不記，下次重讀。
+  let chainIdOk: number | null = null;
+  let anchorManagerOk = false;
+
   return {
     config: cfg,
     async authorize(c, paymentHeader) {
+      if (cfg.mode === "invalid") {
+        return deny(503, "kya_misconfigured", "X402_KYA_MODE 的值無法辨識（只接受 on／off），付費端點暫停服務。");
+      }
       if (!cfg.sessionManager) {
         return deny(503, "kya_misconfigured", "X402_KYA_MODE=on 但未設定 SESSION_MANAGER_ADDRESS，無法驗證委託憑證。");
       }
@@ -321,6 +366,34 @@ export function createKyaGate(o: KyaGateOptions): KyaGate {
       const f = r3.fields!;
       const hash = r3.credentialHash!;
 
+      // 憑證的鏈必須是讀取端實際連的那條（session 與錨定都從這條鏈讀；錨定只存 hash，不分鏈）。
+      if (chainIdOk === null) {
+        try {
+          chainIdOk = await o.chain.chainId();
+        } catch (e) {
+          console.error("[kya] 讀取 chainId 失敗：", e);
+          return deny(503, "kya_chain_unavailable", "無法確認鏈上讀取來源的 chainId，不發出付款。");
+        }
+      }
+      if (r3.chainId !== chainIdOk) {
+        return deny(403, "kya_credential_invalid", `委託憑證簽給 chainId ${r3.chainId}，本服務讀取的是 chainId ${chainIdOk}。`, {
+          reasonCode: "VC_WRONG_CHAIN",
+          credentialHash: hash,
+        });
+      }
+
+      // 花費帳只能正確表示這個範圍內的額度與期間（Lua 精度、key TTL）；超出就拒收，而不是少算。
+      if (
+        f.x402.periodSeconds * 2 > KYA_MAX_TTL_SEC ||
+        f.validUntil - nowSec + 86_400 > KYA_MAX_TTL_SEC ||
+        BigInt(f.x402.maxTotal) > KYA_MAX_ATOMIC
+      ) {
+        return deny(403, "kya_credential_invalid", "委託憑證的 x402 額度、期間或效期超出本服務支援的範圍，請重新簽發較短效期的憑證。", {
+          reasonCode: "KYA_ALLOWANCE_OUT_OF_RANGE",
+          credentialHash: hash,
+        });
+      }
+
       const endpoint = matchX402Endpoint(f.x402.endpoints, c.req.method, c.req.path);
       if (!endpoint) {
         return deny(403, "kya_endpoint_not_allowed", `委託憑證沒有授權代理人付費呼叫 ${c.req.method} ${c.req.path}（允許：${f.x402.endpoints.join("、")}）。`, {
@@ -336,9 +409,11 @@ export function createKyaGate(o: KyaGateOptions): KyaGate {
         st = { ok: false, status: "unknown", reasonCode: "STATUS_UNAVAILABLE", message: (e as Error).message };
       }
       if (!st.ok) {
+        // 完整訊息可能含設定（狀態清單網址、檔案路徑）：只寫 log，對外只回原因代碼。
+        console.error(`[kya] 撤銷檢查未通過（${hash}，${st.reasonCode}）：${st.message}`);
         return st.status === "revoked"
-          ? deny(403, "kya_credential_revoked", `委託憑證已被簽發者撤銷：${st.message}`, { credentialHash: hash, statusReason: st.reasonCode })
-          : deny(503, "kya_status_unverified", `無法確認委託憑證的撤銷狀態（fail-closed）：${st.message}`, { credentialHash: hash, statusReason: st.reasonCode });
+          ? deny(403, "kya_credential_revoked", "委託憑證已被簽發者撤銷。", { credentialHash: hash, statusReason: st.reasonCode })
+          : deny(503, "kya_status_unverified", "無法確認委託憑證的撤銷狀態（fail-closed），不發出付款。", { credentialHash: hash, statusReason: st.reasonCode });
       }
 
       // 鏈上 session 逐欄比對。
@@ -354,6 +429,21 @@ export function createKyaGate(o: KyaGateOptions): KyaGate {
 
       // 錨定。
       if (cfg.anchor !== "off" && cfg.anchorAddress) {
+        // 錨定權限來自錨定合約自己綁定的 manager：綁的不是本服務的那顆，錨定就沒有意義（fail-closed）。
+        if (!anchorManagerOk) {
+          let bound: string;
+          try {
+            bound = await o.chain.anchorSessionManager(cfg.anchorAddress);
+          } catch (e) {
+            console.error("[kya] 讀取錨定合約的 sessionManager 失敗：", e);
+            return deny(503, "kya_chain_unavailable", "無法讀取 SessionCredentialAnchor，不發出付款。");
+          }
+          if (!ethers.isAddress(bound) || ethers.getAddress(bound) !== cfg.sessionManager) {
+            console.error(`::error::[kya] SESSION_ANCHOR_ADDRESS 綁定的 manager ${bound} ≠ SESSION_MANAGER_ADDRESS ${cfg.sessionManager}`);
+            return deny(503, "kya_misconfigured", "SessionCredentialAnchor 綁定的 session manager 與本服務設定不符，付費端點暫停服務。");
+          }
+          anchorManagerOk = true;
+        }
         let anchored: boolean;
         try {
           anchored = await o.chain.isAnchored(cfg.anchorAddress, f.sessionId, hash);
@@ -427,17 +517,17 @@ export function createKyaGate(o: KyaGateOptions): KyaGate {
     async finalize(hold, res, protocol): Promise<Record<string, string>> {
       const settled = await settlementOutcome(res, protocol);
       if (settled === "failed") {
-        try {
-          await o.spend.release(hold.credentialHash, hold.amount, hold.limits, hold.reservedAtSec);
-        } catch (e) {
-          // 退不回去＝多算，不是少算：使用者的上限只會更保守。記 log 讓營運方對帳。
-          console.error(`::error::[kya] 退回預留失敗（${hold.credentialHash}，${hold.amount}）：`, e);
-        }
+        await release(hold);
         return {};
       }
       return {
         [AGENT_KYA_SPEND_HEADER]: `total=${hold.spentTotal};period=${hold.spentPeriod};maxTotal=${hold.limits.maxTotal};maxPerPeriod=${hold.limits.maxPerPeriod};hash=${hold.credentialHash}`,
       };
+    },
+
+    async abandon(hold, settleAttempted) {
+      if (!settleAttempted) return release(hold);
+      console.error(`::error::[kya] 付費牆在結算途中丟出例外，結果不明 → 保留預留（${hold.credentialHash}，${hold.amount}）`);
     },
 
     spendOf(credentialHash, periodSeconds) {
@@ -449,8 +539,11 @@ export function createKyaGate(o: KyaGateOptions): KyaGate {
 /**
  * 付費牆跑完後，這筆錢的結果：
  *   settled — 回應帶結算成功的證明（v1 X-PAYMENT-RESPONSE；v2 PAYMENT-RESPONSE success:true）；
- *   unknown — v2 的 settlement_pending／結算結果不明（保留預留，寧可多算）；
- *   failed  — 其餘（402、handler 錯誤、facilitator 拒絕）：買方沒有被扣款，退回預留。
+ *   unknown — v2 的 settlement_pending／settle 階段的 429・502（保留預留，寧可多算）；
+ *   failed  — 其餘（402、handler 錯誤、facilitator 拒絕、結算前的 facilitator 失敗）：買方沒有被扣款，退回預留。
+ *
+ * v1 的限制（docs/SSI_AGENT_DELEGATION.md）：x402-hono 0.5.3 把 settle 階段的錯誤一律改成 402，
+ * 與「facilitator 拒絕」分不開 → 判成 failed（退回）。結算其實上鏈時會少算一筆；要精確請用 v2。
  */
 export async function settlementOutcome(res: Response, protocol: "v1" | "v2"): Promise<"settled" | "unknown" | "failed"> {
   const h = res.headers.get(protocol === "v2" ? "PAYMENT-RESPONSE" : "X-PAYMENT-RESPONSE");
@@ -463,12 +556,18 @@ export async function settlementOutcome(res: Response, protocol: "v1" | "v2"): P
       return "unknown";
     }
   }
-  if (res.status === 502 || res.status === 504) {
-    // v2：facilitatorFailureResponse 帶 phase；verify／supported 階段失敗＝沒有扣款。
-    // v1 的 502 沒有 phase，分不出來 → 保守當成「結果不明」（保留預留）。
-    const body = (await res.clone().json().catch(() => null)) as { phase?: unknown } | null;
-    if (protocol === "v2" && (body?.phase === "verify" || body?.phase === "supported")) return "failed";
-    return "unknown";
+  if (res.status === 429 || res.status === 502 || res.status === 504) {
+    const body = (await res.clone().json().catch(() => null)) as { phase?: unknown; error?: unknown } | null;
+    if (protocol === "v2") {
+      // facilitatorFailureResponse 帶 phase：verify／supported 階段失敗＝沒有扣款；settle 階段＝結果不明。
+      if (body?.phase === "verify" || body?.phase === "supported") return "failed";
+      if (body?.phase === "settle") return "unknown";
+      return res.status === 429 ? "failed" : "unknown";
+    }
+    // v1：facilitator_* 只來自 runV1 的 catch（verify 丟例外）或 verify 的限流 402 改寫——都在 settle 之前
+    // （x402-hono 0.5.3 的 settle 錯誤在套件內就變成 402），錢沒有動 → 退回。
+    if (body?.error === "facilitator_unavailable" || body?.error === "facilitator_rate_limited") return "failed";
+    return res.status === 429 ? "failed" : "unknown";
   }
   return "failed";
 }

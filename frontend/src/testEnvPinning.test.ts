@@ -44,7 +44,9 @@ describe('vitest 固定的環境變數', SCAN, () => {
         'VITE_SIGNAL_API_URL',
         'VITE_ASSETS_DIR',
         'VITE_SESSION_ANCHOR_ADDRESS',
+        'VITE_SESSION_ANCHOR_CHAIN_ID',
         'VITE_VC_STATUS_PUBLISH_URL',
+        'VITE_VC_STATUS_URL',
       ].sort()
     );
   });

@@ -130,6 +130,12 @@ export async function startFakeUpstash(): Promise<FakeUpstash> {
         }
         // kya.ts 的 x402 KYA 花費預留／退回（語意與 Lua 逐行相同）。
         if (script.startsWith("-- pepelab:kya_reserve")) {
+          // 參數先驗完才寫（與 Lua 相同；上限讀腳本裡內嵌的數字）。
+          const maxTtl = Number(/pt > (\d+)/.exec(script)?.[1]);
+          const [a0, mt, mp, pt, tt] = ARGV.slice(0, 5).map(Number);
+          if ([a0, mt, mp, pt, tt].some((x) => !Number.isFinite(x)) || a0 < 0 || pt < 1 || tt < 1 || pt > maxTtl || tt > maxTtl) {
+            return void res.writeHead(400).end(JSON.stringify({ error: "ERR kya_reserve: bad arguments" }));
+          }
           const t = Number(strings.get(KEYS[0]) ?? "0");
           const p = Number(strings.get(KEYS[1]) ?? "0");
           const a = Number(ARGV[0]);

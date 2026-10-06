@@ -310,15 +310,18 @@ const signer = (w: ethers.Wallet | ethers.HDNodeWallet) => (d: any, t: any, v: a
     seen.push(new Headers(init?.headers));
     return new Response("{}", { status: 200 });
   }) as typeof fetch;
-  const f = kyaFetch({ credential: vc, holderAddress: agent.address, signTypedData: signer(agent) }, base);
+  const f = kyaFetch({ credential: vc, holderAddress: agent.address, signTypedData: signer(agent), allowedOrigins: ["http://127.0.0.1/"] }, base);
   await f("http://127.0.0.1/signals/0x1");
   await f("http://127.0.0.1/signals/0x1", { headers: { "X-PAYMENT": payHeader(agent.address) } });
+  await f("https://other.example/signals/0x1", { headers: { "X-PAYMENT": payHeader(agent.address) } });
   assert.equal(seen[0]!.get(AGENT_PRESENTATION_HEADER), null, "未付款的請求不附");
   const vpHeader = seen[1]!.get(AGENT_PRESENTATION_HEADER);
   assert.ok(vpHeader, "付款請求附上 presentation");
   const vp = decodeHeaderJson<any>(vpHeader!);
   assert.equal(vp.proof.domain, "GET /signals/0x1");
-  ok("kyaFetch：未付款的請求不附；帶 X-PAYMENT 的重送自動附上綁定該付款的 presentation");
+  assert.equal(seen[2]!.get(AGENT_PRESENTATION_HEADER), null, "不在 allowedOrigins 的服務：付款照送，但不附憑證");
+  assert.throws(() => kyaFetch({ credential: vc, holderAddress: agent.address, signTypedData: signer(agent), allowedOrigins: [] }, base), /allowedOrigins/);
+  ok("kyaFetch：未付款的請求不附；帶 X-PAYMENT 的重送自動附上綁定該付款的 presentation；只送給 allowedOrigins");
 }
 
 fs.rmSync(TMP, { recursive: true, force: true });

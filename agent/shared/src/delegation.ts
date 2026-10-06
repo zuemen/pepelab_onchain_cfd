@@ -541,15 +541,31 @@ export async function presentForX402(p: PresentForX402Params): Promise<{ header:
   return { header: encodeHeaderJson(presentation), presentation };
 }
 
+/** Normalise an origin allowlist entry (`https://api.example` or a full URL) to `scheme://host[:port]`. */
+function originOf(u: string): string | null {
+  try {
+    return new URL(u).origin.toLowerCase();
+  } catch {
+    return null;
+  }
+}
+
 /**
  * fetch wrapper that attaches `X-Agent-Presentation` to every request carrying an x402
  * payment header (X-PAYMENT or PAYMENT-SIGNATURE). Put it UNDER the x402 payment wrapper
  * (as the base fetch of wrapFetchWithPayment / @x402/fetch), like meteredFetch.
+ *
+ * The presentation carries the whole credential (user address, session terms, allowances), so it
+ * is only sent to `allowedOrigins` (the KYA services this agent was told to pay). A paid request
+ * to any other origin goes out without it — that service either does not ask for KYA or will
+ * answer `kya_presentation_required`, and the agent's operator decides whether to trust it.
  */
 export function kyaFetch(
-  opts: { credential: DelegationCredential; holderAddress: string; signTypedData: TypedDataSigner },
+  opts: { credential: DelegationCredential; holderAddress: string; signTypedData: TypedDataSigner; allowedOrigins: string[] },
   base: typeof globalThis.fetch = globalThis.fetch,
 ): typeof globalThis.fetch {
+  const allowed = new Set(opts.allowedOrigins.map(originOf).filter((o): o is string => o !== null));
+  if (allowed.size === 0) throw new Error("kyaFetch：allowedOrigins 至少要有一個合法的 origin（憑證只送給明確信任的 KYA 服務）");
   return (async (input: string | URL | Request, init?: RequestInit) => {
     // Structural Request check (not instanceof) — same reason as meteredFetch: @hono/node-server
     // swaps globalThis.Request, and @x402/fetch sends a native request.clone().
@@ -559,6 +575,8 @@ export function kyaFetch(
     const pay = headers.get("PAYMENT-SIGNATURE") ?? headers.get("X-PAYMENT");
     if (!pay || headers.has(AGENT_PRESENTATION_HEADER)) return base(input, init);
     const url = r ? r.url : String(input);
+    const origin = originOf(url);
+    if (!origin || !allowed.has(origin)) return base(input, init);
     const method = init?.method ?? r?.method ?? "GET";
     const { header } = await presentForX402({
       credential: opts.credential,

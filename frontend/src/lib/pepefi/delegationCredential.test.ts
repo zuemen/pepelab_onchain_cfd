@@ -1,4 +1,4 @@
-import { Wallet, id as keccakId, verifyTypedData, TypedDataEncoder } from 'ethers'
+import { Wallet, getAddress, id as keccakId, verifyTypedData, TypedDataEncoder } from 'ethers'
 import { it, expect, describe } from 'vitest'
 
 import {
@@ -10,7 +10,13 @@ import {
   assembleDelegationCredential,
   delegationFieldsFromCredential,
 } from 'src/contracts/agentAuth'
-import { getSessionAnchorAddress, isSessionAnchorDeployed } from 'src/contracts/sessionCredentialAnchor'
+import { assembleStatusList } from 'src/contracts/agentAuthStatus'
+import {
+  sessionAnchorProblem,
+  getSessionAnchorAddress,
+  isSessionAnchorDeployed,
+  sessionAnchorOverrideChainId,
+} from 'src/contracts/sessionCredentialAnchor'
 
 import {
   spendPercent,
@@ -21,8 +27,11 @@ import {
   delegationTypedData,
   statusListTypedData,
   buildFieldsForSession,
+  revocationBase,
+  statusListProblem,
   revocationListFields,
   delegationStorageKey,
+  fetchPublishedStatusList,
 } from './delegationCredential'
 
 const MGR = '0x5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e'
@@ -122,12 +131,79 @@ describe('v3 delegation credential (SessionsPage issuance)', () => {
     expect(decodeHeaderJson(h)).toEqual(obj)
   })
 
-  it('resolves the anchor address from env override, else the per-chain table', () => {
+  it('resolves the anchor address from env override (one chain only), else the per-chain table', () => {
     const a = '0x1111111111111111111111111111111111111111'
-    expect(getSessionAnchorAddress(84532, a)).toBe(a)
+    expect(getSessionAnchorAddress(31337, a)).toBe(a)
+    expect(getSessionAnchorAddress(84532, a), 'override never leaks to another chain').toBe('0x0000000000000000000000000000000000000000')
+    expect(getSessionAnchorAddress(84532, a, 84532)).toBe(a)
+    expect(sessionAnchorOverrideChainId('')).toBe(31337)
+    expect(sessionAnchorOverrideChainId('84532')).toBe(84532)
+    expect(sessionAnchorOverrideChainId('x')).toBe(31337)
     expect(isSessionAnchorDeployed(84532, '')).toBe(false)
     expect(getSessionAnchorAddress(null, '')).toBe('0x0000000000000000000000000000000000000000')
     expect(delegationStorageKey(84532, MGR, '0xABC')).toBe(`pepelab:delegation-v3:84532:${MGR}:0xabc`)
     expect(delegationStorageKey(null, MGR, '0xABC')).toBeNull()
+  })
+
+  it('checks the anchor before a tx: code present and bound to the expected manager', async () => {
+    const mk = (code: string, mgr: string) => ({
+      getAddress: async () => '0x2222222222222222222222222222222222222222',
+      sessionManager: (async () => mgr) as never,
+      runner: { provider: { getCode: async () => code } },
+    })
+    expect(await sessionAnchorProblem(mk('0x6080', MGR), MGR)).toBeNull()
+    expect(await sessionAnchorProblem(mk('0x', MGR), MGR)).toBe('anchor_no_code')
+    expect(await sessionAnchorProblem(mk('0x6080', '0x' + '77'.repeat(20)), MGR)).toBe('anchor_wrong_manager')
+    expect(await sessionAnchorProblem({ ...mk('0x6080', MGR), runner: null }, MGR)).toBe('anchor_unreadable')
+  })
+
+  describe('revocation builds on the published list', () => {
+    const user = Wallet.createRandom()
+    const jti1 = '0x' + '01'.repeat(32)
+    const jti2 = '0x' + '02'.repeat(32)
+    const sign = async (previous: Parameters<typeof revocationListFields>[0]['previous'], jti: string) => {
+      const fields = revocationListFields({ issuer: user.address, jti, previous, nowSec: NOW })
+      const td = statusListTypedData(fields, MGR)
+      const signature = await user.signTypedData(td.domain, td.types, td.value)
+      return assembleStatusList({ ...fields, issuerAddress: user.address, signature, verifyingContract: MGR })
+    }
+    const BASE = 'https://status.example/vc'
+    const fileOf = `${BASE}/${user.address.toLowerCase()}.json`
+    const serve = (files: Record<string, unknown>) =>
+      (async (u: string) => (u in files ? new Response(JSON.stringify(files[u])) : new Response('', { status: 404 }))) as typeof fetch
+
+    it('verifies the published list (signature, contract, canonical ids)', async () => {
+      const l1 = await sign(null, jti1)
+      expect(statusListProblem(l1, user.address, MGR)).toBeNull()
+      expect(statusListProblem({ ...l1, sequence: 9 }, user.address, MGR)).toBe('bad_signature')
+      expect(statusListProblem(l1, getAddress('0x' + '33'.repeat(20)), MGR)).toBe('bad_signature')
+      expect(statusListProblem(l1, user.address, '0x' + '44'.repeat(20))).toBe('wrong_contract')
+      expect(statusListProblem({ ...l1, revoked: [jti2, jti1] }, user.address, MGR)).toBe('malformed')
+    })
+
+    it('fetches <base>/<issuer>.json; 404 counts as "none" only with the directory marker', async () => {
+      const l1 = await sign(null, jti1)
+      expect(await fetchPublishedStatusList(BASE, user.address, MGR, serve({ [fileOf]: l1 }))).toEqual({ kind: 'list', list: l1 })
+      expect(await fetchPublishedStatusList(BASE + '/', user.address, MGR, serve({ [`${BASE}/index.json`]: { type: 'AgentCredentialStatusDirectory' } }))).toEqual({ kind: 'none' })
+      expect((await fetchPublishedStatusList(BASE, user.address, MGR, serve({}))).kind).toBe('unavailable')
+      expect((await fetchPublishedStatusList('', user.address, MGR, serve({})))).toEqual({ kind: 'unavailable', reason: 'status_source_unset' })
+      expect((await fetchPublishedStatusList(BASE, user.address, MGR, serve({ [fileOf]: { ...l1, sequence: 5 } })))).toEqual({
+        kind: 'unavailable',
+        reason: 'status_list_bad_signature',
+      })
+    })
+
+    it('picks the base: published, or a newer local superset; refuses when the published state is unknown', async () => {
+      const pub = await sign(null, jti1) // sequence 1 (e.g. signed with the CLI)
+      const staleLocal = await sign(null, jti2) // sequence 1, not a superset
+      expect(revocationBase({ kind: 'list', list: pub }, staleLocal)).toEqual({ ok: true, previous: pub })
+      const newerLocal = await sign(pub, jti2) // sequence 2, carries jti1
+      expect(revocationBase({ kind: 'list', list: pub }, newerLocal)).toEqual({ ok: true, previous: newerLocal })
+      expect(revocationBase({ kind: 'none' }, null)).toEqual({ ok: true, previous: null })
+      expect(revocationBase({ kind: 'unavailable', reason: 'status_fetch_failed' }, newerLocal)).toEqual({ ok: false, reason: 'status_fetch_failed' })
+      const next = revocationListFields({ issuer: user.address, jti: jti2, previous: pub, nowSec: NOW })
+      expect(next.sequence).toBe(2)
+      expect(next.revoked).toEqual([jti1, jti2])
+    })
   })
 })

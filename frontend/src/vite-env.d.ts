@@ -21,8 +21,12 @@ interface ImportMetaEnv {
   readonly VITE_FEATURE_PEPE_REWARDS?: string;
   readonly VITE_FEATURE_COPY_TRADING?: string;
   readonly VITE_ENABLE_MOCK_WALLET?: string;
-  /** SessionCredentialAnchor 位址（覆寫 src/contracts/sessionCredentialAnchor.ts 的表；本機 anvil 用）。 */
+  /** SessionCredentialAnchor 位址（覆寫 src/contracts/sessionCredentialAnchor.ts 的表；只套用在 VITE_SESSION_ANCHOR_CHAIN_ID 那條鏈）。 */
   readonly VITE_SESSION_ANCHOR_ADDRESS?: string;
+  /** VITE_SESSION_ANCHOR_ADDRESS 套用的 chainId（預設 31337＝本機 anvil）。 */
+  readonly VITE_SESSION_ANCHOR_CHAIN_ID?: string;
+  /** 驗證端讀取的狀態清單目錄（`<base>/<issuer>.json`，同 agent 的 VC_STATUS_URL）；撤銷前讀目前的清單、撤銷後確認已發佈。 */
+  readonly VITE_VC_STATUS_URL?: string;
   /** 撤銷 v3 委託憑證時，把簽好的 ADR-016 狀態清單 POST 到這裡；沒設就下載交給營運方。 */
   readonly VITE_VC_STATUS_PUBLISH_URL?: string;
 }

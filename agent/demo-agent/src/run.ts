@@ -244,6 +244,8 @@ async function paidRun() {
       ? kyaFetch({
           credential: AUTH_VC,
           holderAddress: account.address,
+          // 憑證只出示給本 agent 要付費的 signal-api（不送給其他 x402 服務）。
+          allowedOrigins: [API],
           signTypedData: (domain, types, message) =>
             (account.signTypedData as unknown as (td: Record<string, unknown>) => Promise<string>)({
               domain,

@@ -167,10 +167,16 @@ export async function presentForX402(p: {
   });
 }
 
-/** 包在 x402 付款 client 底下的 fetch：帶付款 header 的請求自動附上 presentation。 */
+/**
+ * 包在 x402 付款 client 底下的 fetch：帶付款 header、而且 origin 在 `allowedOrigins` 內的請求自動附上 presentation
+ * （presentation 帶整張憑證——使用者地址、session 條款與額度——只送給明確信任的 KYA 服務）。
+ */
 export function kyaFetch(
-  p: { credential: DelegationCredential; holder: Address; signTypedData: ViemTypedDataSigner },
+  p: { credential: DelegationCredential; holder: Address; signTypedData: ViemTypedDataSigner; allowedOrigins: string[] },
   base: typeof globalThis.fetch = globalThis.fetch,
 ): typeof globalThis.fetch {
-  return sharedKyaFetch({ credential: p.credential, holderAddress: p.holder, signTypedData: adapt(p.signTypedData) }, base);
+  return sharedKyaFetch(
+    { credential: p.credential, holderAddress: p.holder, signTypedData: adapt(p.signTypedData), allowedOrigins: p.allowedOrigins },
+    base,
+  );
 }

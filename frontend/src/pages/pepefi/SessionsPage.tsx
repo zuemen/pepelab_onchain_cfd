@@ -36,7 +36,7 @@ import { prettyError } from 'src/lib/pepefi/errorMessages'
 import { agentDid, shortDid } from 'src/lib/pepefi/did'
 import { useToast } from 'src/components/pepefi/ToastProvider'
 import { SwitchChainButton } from 'src/components/pepefi/SwitchChainButton'
-import { DelegationCredentialPanel, revokeDelegationCredential } from 'src/components/pepefi/DelegationCredentialPanel'
+import { afterRevocation, DelegationCredentialPanel, revokeDelegationCredential } from 'src/components/pepefi/DelegationCredentialPanel'
 import { delegationStorageKey, type StoredDelegation } from 'src/lib/pepefi/delegationCredential'
 import { ASSET_IDS, CHAIN_NAMES } from 'src/contracts/addresses'
 import { ASSETS_LIST } from 'src/lib/pepefi/assetMeta'
@@ -384,7 +384,7 @@ export default function SessionsPage() {
           signer: wallet.signer, user: wallet.address,
           sessionManager: getSessionManagerAddress(wallet.chainId), credential: d.credential,
         })
-        storeDelegation(id, { ...d, revoked: true })
+        storeDelegation(id, afterRevocation(d, r))
         notify(
           interpolate(r.published ? t.sessions.delegation.revokedPublished : t.sessions.delegation.revokedDownloaded, { seq: String(r.list.sequence) }),
           true,

@@ -34,7 +34,7 @@ process.env.UPSTASH_REDIS_REST_TOKEN = "test-token";
 for (const k of ["X402_PROTOCOL", "PAY_TO", "X402_KYA_MODE", "SIGNAL_API_PUBLIC_URL", "DELEGATION_VC_CHAIN_IDS"]) delete process.env[k];
 
 const { createApp } = await import("./app.ts");
-const { createKyaGate, upstashKyaSpendStore, kyaTotalKey } = await import("./kya.ts");
+const { createKyaGate, upstashKyaSpendStore, memoryKyaSpendStore, kyaTotalKey, resolveKyaConfig, KYA_RESERVE_SCRIPT, KYA_MAX_TTL_SEC } = await import("./kya.ts");
 const shared = await import("@pepelab/shared");
 const { issueDelegationCredential, kyaFetch, presentForX402, AGENT_PRESENTATION_HEADER, AGENT_KYA_HEADER, AGENT_KYA_SPEND_HEADER } = shared;
 
@@ -81,8 +81,8 @@ const { credential, credentialHash } = await issueDelegationCredential({
 });
 chainState.anchored.add(credentialHash);
 
-const kya = createKyaGate({
-  config: { mode: "on", anchor: "required", sessionManager: MGR, anchorAddress: ANCHOR, acceptedChainIds: [84532], maxSkewSec: 120 },
+const gateBase = {
+  config: { mode: "on" as const, anchor: "required" as const, sessionManager: MGR, anchorAddress: ANCHOR, acceptedChainIds: [84532], maxSkewSec: 120 },
   chain: {
     session: async (mgr, id) => {
       chainState.sessionReads++;
@@ -90,6 +90,8 @@ const kya = createKyaGate({
       assert.equal(id, 3);
       return chainState.session;
     },
+    chainId: async () => 84532,
+    anchorSessionManager: async () => MGR,
     isAnchored: async (a, id, h) => a === ANCHOR && id === 3 && chainState.anchored.has(h),
   },
   spend: upstashKyaSpendStore(),
@@ -97,7 +99,8 @@ const kya = createKyaGate({
     revokedJti.has(String(res.nonce).toLowerCase())
       ? { ok: false, status: "revoked", reasonCode: "VC_REVOKED", message: "jti 在簽發者的狀態清單中" }
       : { ok: true, status: "active", reasonCode: "STATUS_NO_LIST", message: "沒有撤銷" },
-});
+} satisfies Parameters<typeof createKyaGate>[0];
+const kya = createKyaGate(gateBase);
 
 const seams = {
   payTo: PAYTO,
@@ -315,7 +318,7 @@ const vpBig = async (pay: string, path = `/signals/${TRADER}`) =>
   const { wrapFetchWithPayment } = await import("x402-fetch");
   const base = (async (input: any, init?: RequestInit) => appOn.request(typeof input === "string" ? input : input.url, init)) as typeof fetch;
   const payFetch = wrapFetchWithPayment(
-    kyaFetch({ credential: big.credential, holderAddress: agentEthers.address, signTypedData: (d, t, v) => agentEthers.signTypedData(d, t, v) }, base),
+    kyaFetch({ credential: big.credential, holderAddress: agentEthers.address, signTypedData: (d, t, v) => agentEthers.signTypedData(d, t, v), allowedOrigins: [URL_SIGNALS] }, base),
     wallet as never,
     20000n,
   ) as unknown as typeof fetch;
@@ -333,6 +336,138 @@ const vpBig = async (pay: string, path = `/signals/${TRADER}`) =>
   assert.ok(BigInt(j.totalAtomic) >= 20000n);
   assert.equal((await appOff.request(`http://localhost/kya/spend/${big.credentialHash}`)).status, 404);
   ok("GET /kya/spend/:hash 免費查詢憑證的 x402 花費（KYA 關閉時 404）");
+}
+
+// 14) facilitator 在結算之前失敗（verify 503／429）：v1、v2 都退回預留，連打不會燒掉額度
+{
+  const h = big.credentialHash;
+  const before = BigInt(upstash.strings.get(kyaTotalKey(h)) ?? "0");
+  const s0 = settles();
+  for (const mode of ["verify_http503", "verify_http429"] as const) {
+    facilitator.mode = mode;
+    for (let i = 0; i < 3; i++) {
+      const pay = await v1Payment(appOn);
+      const res = await appOn.request(URL_SIGNALS, {
+        headers: { "X-PAYMENT": pay, [AGENT_PRESENTATION_HEADER]: await vpBig(pay), "x-forwarded-for": "10.0.0.14" },
+      });
+      assert.ok(res.status === 502 || res.status === 429, `v1 ${mode} → ${res.status}`);
+    }
+    const pay2 = await v2Payment(appOn);
+    const r2 = await appOn.request(URL_SIGNALS, {
+      headers: { "PAYMENT-SIGNATURE": pay2, [AGENT_PRESENTATION_HEADER]: await vpBig(pay2), "x-forwarded-for": "10.0.0.14" },
+    });
+    assert.ok(r2.status === 502 || r2.status === 429, `v2 ${mode} → ${r2.status}`);
+  }
+  facilitator.mode = "ok";
+  assert.equal(settles(), s0, "沒有任何一筆送去結算");
+  assert.equal(BigInt(upstash.strings.get(kyaTotalKey(h)) ?? "0"), before, "結算前失敗：預留全數退回");
+  const pay = await v1Payment(appOn);
+  const res = await appOn.request(URL_SIGNALS, { headers: { "X-PAYMENT": pay, [AGENT_PRESENTATION_HEADER]: await vpBig(pay) } });
+  assert.equal(res.status, 200, "facilitator 恢復後照常付款");
+  ok("facilitator 在結算前失敗（verify 503／429，v1 與 v2）→ 預留退回；連續失敗不會耗盡憑證額度");
+}
+
+// 15) X402_KYA_MODE 無法辨識 → fail-closed：付費端點 503（連未付款的 402 都不發）
+{
+  for (const v of ["true", "1", "yes", "enabled"]) assert.equal(resolveKyaConfig({ X402_KYA_MODE: v }).mode, "invalid", v);
+  assert.equal(resolveKyaConfig({}).mode, "off");
+  assert.equal(resolveKyaConfig({ X402_KYA_MODE: " OFF " }).mode, "off");
+  assert.equal(resolveKyaConfig({ X402_KYA_MODE: "on" }).mode, "on");
+  const bad = createKyaGate({ ...gateBase, config: { ...gateBase.config, mode: "invalid" } });
+  const app = createApp({ ...seams, x402Protocol: "both", kya: bad });
+  const r = await app.request(URL_SIGNALS);
+  assert.equal(r.status, 503);
+  assert.equal(((await r.json()) as { error: string }).error, "kya_misconfigured");
+  assert.equal((await app.request("http://localhost/healthz")).status, 200, "免費端點照常");
+  ok("X402_KYA_MODE=true／1／yes／enabled → 視為設定錯誤，付費端點 503 kya_misconfigured（不會悄悄關閉）");
+}
+
+// 16) 錨定合約綁的 manager ≠ SESSION_MANAGER_ADDRESS → 503；17) 憑證的鏈 ≠ 讀取端的鏈 → 403
+{
+  const wrongAnchor = createKyaGate({
+    ...gateBase,
+    spend: memoryKyaSpendStore(),
+    chain: { ...gateBase.chain, anchorSessionManager: async () => ethers.getAddress("0x" + "77".repeat(20)) },
+  });
+  let app = createApp({ ...seams, x402Protocol: "both", kya: wrongAnchor });
+  let pay = await v1Payment(app);
+  let res = await app.request(URL_SIGNALS, { headers: { "X-PAYMENT": pay, [AGENT_PRESENTATION_HEADER]: await vpBig(pay), "x-forwarded-for": "10.0.0.16" } });
+  assert.equal(res.status, 503);
+  assert.equal(((await res.json()) as { error: string }).error, "kya_misconfigured");
+
+  const wrongChain = createKyaGate({
+    ...gateBase,
+    config: { ...gateBase.config, acceptedChainIds: [31337, 84532] },
+    spend: memoryKyaSpendStore(),
+    chain: { ...gateBase.chain, chainId: async () => 31337 },
+  });
+  app = createApp({ ...seams, x402Protocol: "both", kya: wrongChain });
+  pay = await v1Payment(app);
+  res = await app.request(URL_SIGNALS, { headers: { "X-PAYMENT": pay, [AGENT_PRESENTATION_HEADER]: await vpBig(pay), "x-forwarded-for": "10.0.0.17" } });
+  assert.equal(res.status, 403);
+  const body = (await res.json()) as { error: string; reasonCode: string };
+  assert.deepEqual([body.error, body.reasonCode], ["kya_credential_invalid", "VC_WRONG_CHAIN"]);
+  ok("錨定合約綁定的 manager 與設定不符 → 503 kya_misconfigured；憑證的鏈 ≠ 讀取端實際連的鏈 → 403 VC_WRONG_CHAIN");
+}
+
+// 18) 撤銷檢查的內部訊息不對外；KYA 驗證失敗每 IP 限流
+{
+  const leaky = createKyaGate({
+    ...gateBase,
+    spend: memoryKyaSpendStore(),
+    statusCheck: async () => ({ ok: false, status: "unknown", reasonCode: "STATUS_UNAVAILABLE", message: "VC_STATUS_URL 必須是 http(s) URL：/secret/path" }),
+  });
+  let app = createApp({ ...seams, x402Protocol: "both", kya: leaky });
+  const pay = await v1Payment(app);
+  const res = await app.request(URL_SIGNALS, { headers: { "X-PAYMENT": pay, [AGENT_PRESENTATION_HEADER]: await vpBig(pay), "x-forwarded-for": "10.0.0.18" } });
+  assert.equal(res.status, 503);
+  const text = await res.text();
+  assert.ok(!text.includes("/secret/path"), "回應不含內部訊息");
+  assert.match(text, /STATUS_UNAVAILABLE/);
+
+  app = createApp({ ...seams, x402Protocol: "both", kya });
+  const statuses: number[] = [];
+  for (let i = 0; i < 22; i++) {
+    const p = await v1Payment(app);
+    const r = await app.request(URL_SIGNALS, { headers: { "X-PAYMENT": p, "x-forwarded-for": "10.0.0.99" } });
+    statuses.push(r.status);
+  }
+  assert.ok(statuses.slice(0, 20).every((s) => s === 403), statuses.join(","));
+  assert.equal(statuses[21], 429, "超過每 IP 失敗上限 → 429，不再做驗證");
+  const other = await app.request(URL_SIGNALS, { headers: { "X-PAYMENT": await v1Payment(app), "x-forwarded-for": "10.0.0.100" } });
+  assert.equal(other.status, 403, "其他 IP 不受影響");
+  ok("撤銷檢查失敗只回原因代碼（內部訊息只寫 log）；同一 IP 的 KYA 驗證失敗超過上限 → 429");
+}
+
+// 19) 花費帳：超出範圍的憑證拒收；Lua 參數不合法時不寫入
+{
+  const longCred = await issueDelegationCredential({
+    issuer: user,
+    agentAddress: agentEthers.address,
+    sessionManager: MGR,
+    sessionId: 3,
+    session: sessionTerms,
+    x402: { maxPerPeriod: "1000", periodSeconds: KYA_MAX_TTL_SEC, maxTotal: "1000", endpoints: ["GET /signals/*"] },
+    chainId: 84532,
+    validFrom: NOW - 1,
+  });
+  chainState.anchored.add(longCred.credentialHash);
+  const pay = await v1Payment(appOn);
+  const vp = (await presentForX402({ credential: longCred.credential, holderAddress: agentEthers.address, signTypedData: (d, t, v) => agentEthers.signTypedData(d, t, v), method: "GET", path: `/signals/${TRADER}`, paymentHeader: pay })).header;
+  const res = await appOn.request(URL_SIGNALS, { headers: { "X-PAYMENT": pay, [AGENT_PRESENTATION_HEADER]: vp, "x-forwarded-for": "10.0.0.19" } });
+  assert.equal(res.status, 403);
+  assert.equal(((await res.json()) as { reasonCode: string }).reasonCode, "KYA_ALLOWANCE_OUT_OF_RANGE");
+  chainState.anchored = new Set([big.credentialHash]);
+
+  const k = "0x" + "ee".repeat(32);
+  const r = await fetch(upstash.url, {
+    method: "POST",
+    headers: { Authorization: "Bearer test-token", "Content-Type": "application/json" },
+    body: JSON.stringify(["EVAL", KYA_RESERVE_SCRIPT, 2, kyaTotalKey(k), `${kyaTotalKey(k)}:p`, "5", "100", "100", KYA_MAX_TTL_SEC + 1, 60]),
+  });
+  assert.equal(r.ok, false);
+  assert.equal(upstash.strings.get(kyaTotalKey(k)), undefined, "參數不合法：什麼都沒寫");
+  ok("期間／效期／上限超出花費帳能正確表示的範圍 → 403 拒收；reserve 腳本參數不合法時不寫入任何 key");
 }
 
 await facilitator.close();

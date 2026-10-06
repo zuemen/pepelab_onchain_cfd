@@ -62,7 +62,7 @@ const payHeader = (from: string) =>
 // 3) kyaFetch（viem 簽）
 {
   let seen: string | null = null;
-  const f = kyaFetch({ credential, holder: agent.address, signTypedData: (td) => agent.signTypedData(td as never) }, (async (_i: unknown, init?: RequestInit) => {
+  const f = kyaFetch({ credential, holder: agent.address, signTypedData: (td) => agent.signTypedData(td as never), allowedOrigins: ["http://127.0.0.1"] }, (async (_i: unknown, init?: RequestInit) => {
     seen = new Headers(init?.headers).get("X-Agent-Presentation");
     return new Response("{}");
   }) as typeof fetch);

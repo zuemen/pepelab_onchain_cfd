@@ -721,6 +721,12 @@ export interface VcStatusChecker {
 
 type CacheEntry = { fetchedAt: number } & ({ kind: "list"; list: VerifiedStatusList } | { kind: "none" });
 
+/**
+ * 快取以 (issuer, verifying contract) 為鍵，issuer 由請求方決定（任何人都能自簽一張憑證），
+ * 所以要有上限：超過時丟掉最久沒用到的一筆（Map 依插入順序；命中時重新插入＝LRU）。
+ */
+export const STATUS_CACHE_MAX_ENTRIES = 1_000;
+
 export function createVcStatusChecker(o: VcStatusCheckerOptions): VcStatusChecker {
   const now = o.now ?? (() => Date.now());
   const maxAgeMs =
@@ -728,6 +734,19 @@ export function createVcStatusChecker(o: VcStatusCheckerOptions): VcStatusChecke
     1000;
   const readPolicy: ReadPolicy = o.readPolicy ?? "allow";
   const cache = new Map<string, CacheEntry>();
+  const cacheGet = (key: string): CacheEntry | undefined => {
+    const e = cache.get(key);
+    if (e !== undefined) {
+      cache.delete(key);
+      cache.set(key, e);
+    }
+    return e;
+  };
+  const cacheSet = (key: string, e: CacheEntry): void => {
+    cache.delete(key);
+    cache.set(key, e);
+    while (cache.size > STATUS_CACHE_MAX_ENTRIES) cache.delete(cache.keys().next().value as string);
+  };
   const inflight = new Map<string, Promise<CacheEntry | CredentialStatusResult>>();
 
   const unknown = (
@@ -809,7 +828,7 @@ export function createVcStatusChecker(o: VcStatusCheckerOptions): VcStatusChecke
       let entry: CacheEntry | undefined;
       let fromCache = false;
       for (let attempt = 0; attempt < 2; attempt++) {
-        entry = cache.get(key);
+        entry = cacheGet(key);
         fromCache = true;
         if (!entry || maxAgeMs === 0 || nowMs - entry.fetchedAt > maxAgeMs || nowMs < entry.fetchedAt) {
           fromCache = false;
@@ -830,7 +849,7 @@ export function createVcStatusChecker(o: VcStatusCheckerOptions): VcStatusChecke
             return unknown(action, got.reasonCode, got.message, { jti, ...(got.setupRequired ? { setupRequired: true } : {}) });
           }
           entry = got;
-          cache.set(key, entry);
+          cacheSet(key, entry);
         }
         if (entry.kind !== "none") break;
 

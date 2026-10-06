@@ -6,7 +6,7 @@
 // Schema = src/contracts/agentDelegation.ts (shared byte-for-byte with the agent verifier).
 // Pure helpers + ethers hashing; no wallet access, no React. Display strings live in the
 // locale catalogs, so messages thrown here are developer-facing English codes.
-import { TypedDataEncoder, parseUnits } from 'ethers'
+import { TypedDataEncoder, getAddress, parseUnits, verifyTypedData } from 'ethers'
 
 import {
   canonicalAssets,
@@ -23,6 +23,7 @@ import {
   STATUS_LIST_TYPES,
   statusListDomain,
   canonicalRevokedIds,
+  isCanonicalRevokedIds,
   buildStatusListTypedValue,
   DEFAULT_STATUS_LIST_VALIDITY_SEC,
   type StatusListFields,
@@ -142,6 +143,84 @@ export function statusListTypedData(fields: StatusListFields, sessionManager: st
   return { domain: statusListDomain(sessionManager), types: STATUS_LIST_TYPES, value: buildStatusListTypedValue(fields) }
 }
 
+/**
+ * Check a status list the way the agent verifier does (agent/shared/src/vcStatus.ts): signed by
+ * `issuer` over this deployment's domain, canonical ids. Returns an English error code or null.
+ * Expiry is not checked: an expired list is still the right base to carry revocations over from.
+ */
+export function statusListProblem(list: unknown, issuer: string, sessionManager: string): string | null {
+  const l = list as Partial<CredentialStatusList> | null
+  if (!l || typeof l !== 'object' || !l.proof?.proofValue) return 'malformed'
+  if (!Number.isSafeInteger(l.sequence) || (l.sequence as number) < 1) return 'malformed'
+  if (!isCanonicalRevokedIds(l.revoked)) return 'malformed'
+  if (String(l.proof.eip712Domain?.verifyingContract ?? '').toLowerCase() !== sessionManager.toLowerCase()) return 'wrong_contract'
+  const fields: StatusListFields = {
+    issuer: getAddress(issuer),
+    sequence: l.sequence as number,
+    issuedAt: Number(l.issuedAt),
+    validUntil: Number(l.validUntil),
+    revokedBefore: Number(l.revokedBefore),
+    revoked: l.revoked,
+  }
+  const td = statusListTypedData(fields, sessionManager)
+  try {
+    if (getAddress(verifyTypedData(td.domain, td.types, td.value, l.proof.proofValue)) !== getAddress(issuer)) return 'bad_signature'
+  } catch {
+    return 'bad_signature'
+  }
+  return null
+}
+
+/** The issuer's currently published list: `<base>/<issuer lowercase>.json` (same layout the agent reads). */
+export type PublishedStatusList =
+  | { kind: 'list'; list: CredentialStatusList }
+  | { kind: 'none' }
+  | { kind: 'unavailable'; reason: string }
+
+export async function fetchPublishedStatusList(
+  baseUrl: string | undefined,
+  issuer: string,
+  sessionManager: string,
+  fetchImpl: typeof fetch = fetch,
+): Promise<PublishedStatusList> {
+  const base = baseUrl?.trim().replace(/\/+$/, '')
+  if (!base || !/^https?:\/\//i.test(base)) return { kind: 'unavailable', reason: 'status_source_unset' }
+  try {
+    const r = await fetchImpl(`${base}/${getAddress(issuer).toLowerCase()}.json`, { redirect: 'error', cache: 'no-store' })
+    if (r.status === 404) {
+      // "No list" only counts when the directory marker confirms this really is the status directory.
+      const idx = await fetchImpl(`${base}/index.json`, { redirect: 'error', cache: 'no-store' })
+      const j = idx.ok ? ((await idx.json()) as { type?: unknown }) : null
+      return j?.type === 'AgentCredentialStatusDirectory' ? { kind: 'none' } : { kind: 'unavailable', reason: 'status_directory_unconfirmed' }
+    }
+    if (!r.ok) return { kind: 'unavailable', reason: `status_http_${r.status}` }
+    const list = (await r.json()) as CredentialStatusList
+    const problem = statusListProblem(list, issuer, sessionManager)
+    return problem ? { kind: 'unavailable', reason: `status_list_${problem}` } : { kind: 'list', list }
+  } catch {
+    return { kind: 'unavailable', reason: 'status_fetch_failed' }
+  }
+}
+
+/**
+ * The list a new revocation must build on. Lists are cumulative with a strictly increasing
+ * sequence, so signing on top of a stale base makes verifiers reject the new list (replay /
+ * equivocation) — the revocation would silently not take effect. Base = the published list, or
+ * a local list that is newer AND already contains every published revocation (signed earlier,
+ * not yet installed). Unknown published state (`unavailable`) → no base; the caller must refuse.
+ */
+export function revocationBase(
+  published: PublishedStatusList,
+  local: CredentialStatusList | null,
+): { ok: true; previous: CredentialStatusList | null } | { ok: false; reason: string } {
+  if (published.kind === 'unavailable') return { ok: false, reason: published.reason }
+  const pub = published.kind === 'list' ? published.list : null
+  if (local && (!pub || (local.sequence > pub.sequence && pub.revoked.every((id) => local.revoked.includes(id))))) {
+    return { ok: true, previous: local }
+  }
+  return { ok: true, previous: pub }
+}
+
 /** The spend the signal-api tracks for a credential (`GET /kya/spend/:hash`). */
 export interface KyaSpend {
   totalAtomic: bigint
@@ -181,7 +260,10 @@ export interface StoredDelegation {
   credential: DelegationCredential
   credentialHash: string
   anchoredTx?: string
+  /** True only once the revocation is confirmed published (verifiers can see it). */
   revoked?: boolean
+  /** A revocation list was signed but not confirmed published yet — the credential is still live. */
+  revocationPending?: { sequence: number }
 }
 
 /** Local persistence key for the last status list this user signed (ADR-016 lists are cumulative). */

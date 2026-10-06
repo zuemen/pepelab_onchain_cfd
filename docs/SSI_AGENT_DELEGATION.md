@@ -2,7 +2,8 @@
 
 把「AI 代理人的 session key」從「握有一把受限金鑰」升級成**可驗證的委託授權**：使用者以錢包簽發一張
 W3C VC 2.0 委託憑證，憑證逐欄對應鏈上 session，並附 x402 付費上限；使用者把憑證雜湊錨定在鏈上；
-代理人呼叫付費 API 時出示 Verifiable Presentation，賣方在收錢之前確認「是誰、授權了誰、授權到哪裡」。
+代理人呼叫付費 API 時出示 Verifiable Presentation，賣方在收錢之前確認「哪一把錢包、授權了這個代理人、授權到哪裡」。
+它證明的是**委託關係與上限**，不是委託人的真實身分（見 §8：自我委託）。
 
 相關文件：v1/v2 授權 VC 的設計見 [AGENT_IDENTITY_VC_SSI.md](AGENT_IDENTITY_VC_SSI.md)；撤銷（狀態清單）見
 [ADR-016](ADR-016-vc-credential-status.md)；x402 v1/v2 見 [ADR-010](ADR-010-x402-v2-migration.md)；
@@ -124,14 +125,15 @@ Schema 單一來源：`frontend/src/contracts/agentDelegation.ts`（純函式、
 
 | 環境變數 | 預設 | 說明 |
 |---|---|---|
-| `X402_KYA_MODE` | `off` | `on` 才啟用；off 時行為與加入前完全相同 |
+| `X402_KYA_MODE` | `off` | `on` 才啟用；未設或 `off` 時行為與加入前完全相同。**其他任何值**（`true`、`1`、打錯字）視為設定錯誤：付費端點一律 503 `kya_misconfigured`，不會悄悄關閉 |
 | `X402_KYA_ANCHOR` | `required` | `required`／`optional`／`off` |
 | `SESSION_MANAGER_ADDRESS` | — | 憑證必須綁定的 session manager；未設 → 付費端點 503 |
-| `SESSION_ANCHOR_ADDRESS` | — | 錨定合約；`required` 時未設 → 503 |
+| `SESSION_ANCHOR_ADDRESS` | — | 錨定合約；`required` 時未設 → 503。第一次使用時讀它的 `sessionManager()`，不等於 `SESSION_MANAGER_ADDRESS` → 503 |
 | `KYA_RPC_URL` | signal-api 的 provider | 讀 session／錨定的 RPC |
 | `DELEGATION_VC_CHAIN_IDS` | `AGENT_CHAIN_ID,84532` | 接受的 DID 鏈 |
 | `X402_KYA_MAX_SKEW_SEC` | 120 | presentation 時間容忍（上限 600） |
 | `X402_KYA_SPEND_STORE` | Upstash | `memory` 只給單機開發 |
+| `KYA_FAIL_MAX`／`KYA_FAIL_WINDOW_MS` | 20／60000 | 每個 IP 在視窗內的 KYA 驗證失敗上限；超過 → 429 `kya_rate_limited`（不再做驗證） |
 
 **Presentation**（header `X-Agent-Presentation`，base64url JSON）：W3C `VerifiablePresentation`，`holder`＝代理人
 DID，內含一張 v3 憑證；`proof` 用 `EthereumEip712Signature2021`、`proofPurpose: authentication`，
@@ -144,20 +146,26 @@ DID，內含一張 v3 憑證；`proof` 用 `EthereumEip712Signature2021`、`proo
 2. 缺 presentation → 403 `kya_presentation_required`。
 3. presentation：holder 簽章、±120 秒、綁定本請求（方法＋正規化路徑）與本付款（nonce＋payer）→ 403 `kya_presentation_invalid`。
 4. **身分一致**：presentation 簽者 ＝ 憑證主體（代理人 DID）＝ x402 付款人（`authorization.from`）。
-5. 憑證簽章／期限／綁定的 session manager → 403 `kya_credential_invalid`；端點不在 `x402.endpoints` → 403 `kya_endpoint_not_allowed`。
-6. 撤銷（ADR-016 狀態清單，fail-closed）：被撤銷 → 403 `kya_credential_revoked`；拿不到狀態 → 503 `kya_status_unverified`。
+5. 憑證簽章／期限／綁定的 session manager → 403 `kya_credential_invalid`；憑證的 chainId 必須等於讀取端 RPC 實際連的鏈
+   （`VC_WRONG_CHAIN`）；期間、剩餘效期或總額超出花費帳能正確表示的範圍 → 403（`KYA_ALLOWANCE_OUT_OF_RANGE`，請簽較短效期）；
+   端點不在 `x402.endpoints` → 403 `kya_endpoint_not_allowed`。
+6. 撤銷（ADR-016 狀態清單，fail-closed）：被撤銷 → 403 `kya_credential_revoked`；拿不到狀態 → 503 `kya_status_unverified`
+   （回應只帶原因代碼，完整訊息只寫伺服器 log）。
 7. 鏈上 session 逐欄比對 → 403 `kya_session_mismatch`（含 `SESSION_REVOKED`）；RPC 失敗 → 503。
-8. 錨定 → 403 `kya_not_anchored`。
+8. 錨定 → 403 `kya_not_anchored`（錨定合約綁的 manager 與設定不符 → 503 `kya_misconfigured`）。
 9. 防重放：同一 `(payer, payment nonce)` 只接受一次 presentation → 409 `kya_presentation_replayed`。
 10. **花費**：以 credentialHash 為鍵，Upstash `EVAL` 一支腳本原子地檢查並遞增「本期」與「總額」
     （與 #253 記帳同一個 Upstash、同樣的腳本風格）；超過 → 403 `kya_spend_limit_exceeded`，回應說明已花／本筆／上限。
 11. 付費牆跑完：結算成功 → 保留並回 `X-Agent-KYA-Spend: total=…;period=…;maxTotal=…;maxPerPeriod=…;hash=…`；
-    結算失敗（402、handler 錯誤、facilitator 拒絕）→ 退回預留；結算結果不明（v2 settle 階段 502、`settlement_pending`、v1 的 502）→ 保留（寧可多算）。
+    結算失敗（402、handler 錯誤、facilitator 拒絕、**結算之前**的 facilitator 失敗——v1 的 `facilitator_unavailable`／
+    `facilitator_rate_limited`、v2 的 verify／supported 階段）→ 退回預留；結算結果不明（v2 settle 階段的 429／502、
+    `settlement_pending`）→ 保留（寧可多算）。付費牆丟出例外時：授權還沒送去 settle → 退回，送過了 → 保留。
 
 免費查詢：`GET /kya/spend/:credentialHash?period=<秒>`（前端進度條用；KYA 關閉時 404）。
 
 **付款端**：`kyaFetch`（`@pepelab/shared`／SDK）放在 x402 付款 client 底下當 base fetch，帶付款 header 的重送
-自動附上 presentation。簽章守門（`signingGuard.ts`）新增白名單 (d)：只放行逐欄合規、holder 與 payer 都是自己、
+自動附上 presentation——**只送給 `allowedOrigins`（必填）列出的服務**：presentation 帶整張憑證（使用者地址、session
+條款與額度），付款給其他 x402 服務時照常付款、不附憑證。簽章守門（`signingGuard.ts`）新增白名單 (d)：只放行逐欄合規、holder 與 payer 都是自己、
 時間在 ±60 秒內的 `AgentX402Presentation`；它沒有金額語意，不佔 x402 累計額度。
 
 ## 5. 代理人、SDK、前端
@@ -168,9 +176,13 @@ DID，內含一張 v3 憑證；`proof` 用 `EthereumEip712Signature2021`、`proo
   `issueDelegationCredential`、`presentForX402`、`kyaFetch`、`verifyDelegationCredential`。
 - 前端 `/sessions`：建立 session 後自動開啟「委託憑證 v3」視窗——設定 x402 上限 → 錢包簽發 → 錨定（一筆交易）；
   顯示代理人／簽發者 DID、session 額度、credentialHash、狀態（有效／已撤銷／過期／session 已撤銷、錨定或已被取代）、
-  x402 花費進度（讀 `/kya/spend`）、憑證 JSON 與下載。撤銷 session 時詢問是否一併撤銷 v3 憑證：錢包簽 ADR-016
-  狀態清單（累積、sequence 遞增），設了 `VITE_VC_STATUS_PUBLISH_URL` 就 POST，否則下載交給營運方
-  `npm run vc-status install`。錨定合約位址：`frontend/src/contracts/sessionCredentialAnchor.ts` 或 `VITE_SESSION_ANCHOR_ADDRESS`。
+  x402 花費進度（讀 `/kya/spend`）、憑證 JSON 與下載、解除錨定。撤銷（或撤銷 session 時一併撤銷）：先從
+  `VITE_VC_STATUS_URL/<issuer>.json` 讀**目前已發佈**的清單並驗簽，接在它之後簽新的 ADR-016 清單（累積、sequence 遞增）；
+  讀不到就不簽，請使用者匯入目前的清單（只靠瀏覽器記憶簽出的清單可能比已發佈的舊，驗證端會拒收，撤銷不會生效）。
+  設了 `VITE_VC_STATUS_PUBLISH_URL` 就 POST，否則下載交給營運方 `npm run vc-status install`；**只有讀回確認新清單已發佈**
+  才顯示「已撤銷」，之前顯示「撤銷待發佈（尚未生效）」並提供「確認已發佈」。要立即擋下付費 API 用「解除錨定」（一筆交易）。
+  錨定合約位址：`frontend/src/contracts/sessionCredentialAnchor.ts`；`VITE_SESSION_ANCHOR_ADDRESS` 只覆寫
+  `VITE_SESSION_ANCHOR_CHAIN_ID`（預設 31337）那條鏈。送 `anchor`／`unanchor` 之前檢查位址有 code、綁的 manager 與憑證相同。
 
 ## 6. 與 v2 的相容
 
@@ -201,7 +213,17 @@ DID，內含一張 v3 憑證；`proof` 用 `EthereumEip712Signature2021`、`proo
 - 每期間上限用固定視窗（`floor(now/period)`），跨視窗邊界最多可花到 2 倍單期上限。
 - 撤銷生效延遲：狀態清單受 `VC_STATUS_CACHE_MAX_AGE_SEC`（≤ 900 秒）影響；要立即生效用鏈上 `revokeSession`（KYA 與寫入路徑都即時讀鏈）。
 - 狀態清單 domain 綁 84532（沿用 ADR-016）：在 anvil 上 MetaMask 會拒簽清單（鏈不符），本機 PoC 用腳本錢包簽。
-- `X402_KYA_SPEND_STORE=memory` 只在單一 process 有效；Vercel 多實例必須用 Upstash。
+- `X402_KYA_SPEND_STORE=memory` 只在單一 process 有效；Vercel 多實例必須用 Upstash。撤銷的 sticky 狀態與「清單被扣住」
+  的偵測同樣是每個實例各自記（預設檔案儲存）；多實例部署要讓所有實例共用同一份 VC 狀態儲存，否則某個實例可能還沒看過
+  較新的清單。
+- **KYA 不證明委託人是誰**：任何錢包都能建 session、把自己設成代理人、自簽並錨定一張憑證（委託人＝代理人）。KYA 保證的
+  是「付款的代理人受某把錢包簽下的上限約束、而且那把錢包是鏈上 session 的使用者」；要求委託人是經過 KYC 的人，需要另外
+  串接合格投資人 VC（`docs/SSI_RWA_ACCESS.md`），目前沒有。
+- presentation 綁定方法＋路徑＋付款（nonce、payer），沒有綁定賣方（`payTo`／origin）。轉送到別的賣方時付款收款人不同，
+  facilitator 會拒絕、KYA 退回預留，沒有資金風險；付款端用 `kyaFetch` 的 `allowedOrigins` 限制憑證送給誰。
+- x402 v1（x402-hono 0.5.3）把 settle 階段的錯誤一律改成 402，與「facilitator 拒絕」分不開，KYA 只能當成未扣款而退回；
+  若那筆結算其實上鏈，花費帳會少算一筆。需要精確累計時用 `X402_PROTOCOL=v2`（settle 階段失敗有 `phase`，結果不明會保留）。
+- 花費帳只接受期間 ≤ 200 天、剩餘效期 ≤ 約 399 天、總額 ≤ 2^53−1 atomic USDC 的憑證（key TTL 與 Lua 數字精度）。
 - 錨定合約尚未部署到 Base Sepolia（擁有者動作）；部署前前端只能簽發、不能錨定。
 - `x402_agent.ts` 與 `examples/vc-gate.ts` 仍只載入 v2；要讓它們走 KYA，改用 `kyaFetch` 包付款 fetch 即可。
 

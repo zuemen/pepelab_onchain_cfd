@@ -243,24 +243,42 @@ function clientIp(c: { req: { header: (k: string) => string | undefined } }): st
 // serverless 上這是 per-instance 的 best-effort，與 /demo 的硬上限同一等級的防線。
 const FREE_RATE_WINDOW_MS = Number(process.env.FREE_RATE_WINDOW_MS ?? "60000");
 const FREE_RATE_MAX = Number(process.env.FREE_RATE_MAX ?? "60"); // 每 IP 每視窗
-const freeHits = new Map<string, { count: number; resetAt: number }>();
-
-function freeRateLimited(ip: string): { limited: boolean; retryAfterSec: number } {
-  const now = Date.now();
-  const e = freeHits.get(ip);
-  if (!e || now >= e.resetAt) {
-    freeHits.set(ip, { count: 1, resetAt: now + FREE_RATE_WINDOW_MS });
-    if (freeHits.size > 5_000) {
-      for (const [k, v] of freeHits) if (now >= v.resetAt) freeHits.delete(k);
-    }
-    return { limited: false, retryAfterSec: 0 };
-  }
-  e.count += 1;
-  if (e.count > FREE_RATE_MAX) {
-    return { limited: true, retryAfterSec: Math.ceil((e.resetAt - now) / 1000) };
-  }
-  return { limited: false, retryAfterSec: 0 };
+/** 固定視窗的每 IP 計數器（per-instance best-effort）。`hit` 計一次並回報是否超過；`peek` 只看不計。 */
+function windowLimiter(max: number, windowMs: number) {
+  const hits = new Map<string, { count: number; resetAt: number }>();
+  const retryAfter = (e: { resetAt: number }, now: number) => Math.ceil((e.resetAt - now) / 1000);
+  return {
+    hit(ip: string): { limited: boolean; retryAfterSec: number } {
+      const now = Date.now();
+      const e = hits.get(ip);
+      if (!e || now >= e.resetAt) {
+        hits.set(ip, { count: 1, resetAt: now + windowMs });
+        if (hits.size > 5_000) {
+          for (const [k, v] of hits) if (now >= v.resetAt) hits.delete(k);
+        }
+        return { limited: false, retryAfterSec: 0 };
+      }
+      e.count += 1;
+      if (e.count > max) return { limited: true, retryAfterSec: retryAfter(e, now) };
+      return { limited: false, retryAfterSec: 0 };
+    },
+    peek(ip: string): { limited: boolean; retryAfterSec: number } {
+      const now = Date.now();
+      const e = hits.get(ip);
+      if (!e || now >= e.resetAt || e.count < max) return { limited: false, retryAfterSec: 0 };
+      return { limited: true, retryAfterSec: retryAfter(e, now) };
+    },
+  };
 }
+
+const freeLimiter = windowLimiter(FREE_RATE_MAX, FREE_RATE_WINDOW_MS);
+const freeRateLimited = (ip: string) => freeLimiter.hit(ip);
+
+// KYA 驗證失敗的每 IP 上限：自簽一張憑證不用付錢，卻會讓驗證端去讀撤銷清單與鏈上 session。
+// 付費端點不走上面的免費限流（由付費牆自然節流），所以「沒付成、被 KYA 拒絕」的請求另外計數。
+const KYA_FAIL_WINDOW_MS = Number(process.env.KYA_FAIL_WINDOW_MS ?? "60000");
+const KYA_FAIL_MAX = Number(process.env.KYA_FAIL_MAX ?? "20"); // 每 IP 每視窗
+const kyaFailLimiter = windowLimiter(KYA_FAIL_MAX, KYA_FAIL_WINDOW_MS);
 
 // CORS：GET 的公開資料維持全開（agent/瀏覽器都要用），但**寫入型**的
 // POST /demo/buy-signal 只允許白名單 origin（預設只有本機與正式前端）。
@@ -603,6 +621,8 @@ export function createApp(opts: CreateAppOptions = {}): Hono<{ Variables: AppVar
   // v2／both 的付費牆建不起來（例如 X402_NETWORK 沒有對應的 CAIP-2）：不讓整個 app 起不來，
   // 只讓付費端點回 503（免費端點照常），啟動時印一行錯誤。
   let x402v2SetupError: string | null = null;
+  // v2 付費牆即將把授權送去 settle 的請求（KYA：付費牆丟例外時判斷錢可能動了沒有）。
+  const settleStarted = new WeakSet<Request>();
   if (x402Protocol !== "v1") {
     try {
       x402v2 = createX402V2({
@@ -622,6 +642,9 @@ export function createApp(opts: CreateAppOptions = {}): Hono<{ Variables: AppVar
         unknownRecordContext: (c) => ({
           ledgerEntry: (c as Context<{ Variables: AppVariables }>).get("ledgerEntry") ?? null,
         }),
+        onSettleStart: (c) => {
+          settleStarted.add(c.req.raw);
+        },
         onSettlementUnknown: async (record) => {
           // Full list: the row is persisted to the manual list (not dropped) and the worker
           // raises ::error:: on the overflow counter. Still worth a loud line here.
@@ -890,11 +913,6 @@ export function createApp(opts: CreateAppOptions = {}): Hono<{ Variables: AppVar
     }
   });
 
-  // ── 免費：曝險報表（客戶風控用，唯讀）─────────────────────────────────────
-  //
-  // 位置理由同 /candles：必須留在 paymentMiddleware 之前。節流走上面的免費端點
-  // per-IP 限流；報表本身 60 秒快取（single-flight），讀取失敗的欄位為 null 並在
-  // `unavailable` 附原因代碼，不回錯誤原文、不整個 500（見 exposure.ts）。
   // ── KYA：某張委託憑證目前的 x402 花費（免費、唯讀；前端進度條用）─────────────
   // 位置理由同 /candles：必須留在 paymentMiddleware 之前。credentialHash 是 EIP-712 digest，
   // 不知道憑證內容就猜不到；回應只有金額，沒有身分資料。
@@ -912,6 +930,11 @@ export function createApp(opts: CreateAppOptions = {}): Hono<{ Variables: AppVar
     }
   });
 
+  // ── 免費：曝險報表（客戶風控用，唯讀）─────────────────────────────────────
+  //
+  // 位置理由同 /candles：必須留在 paymentMiddleware 之前。節流走上面的免費端點
+  // per-IP 限流；報表本身 60 秒快取（single-flight），讀取失敗的欄位為 null 並在
+  // `unavailable` 附原因代碼，不回錯誤原文、不整個 500（見 exposure.ts）。
   const exposure = createExposureService(opts.exposureReader ?? providerReader(provider), exposureTargets());
   app.get("/risk/exposure", async (c) => {
     try {
@@ -1301,6 +1324,17 @@ export function createApp(opts: CreateAppOptions = {}): Hono<{ Variables: AppVar
           503,
         );
       }
+      if (kya?.config.mode === "invalid") {
+        return c.json(
+          {
+            ok: false,
+            error: "kya_misconfigured",
+            message: "X402_KYA_MODE 設定錯誤（見伺服器啟動 log），付費端點暫停服務。",
+            note: "未扣款：沒有發出付款要求。",
+          },
+          503,
+        );
+      }
       const blocked = await payToGuard(c, async () => {});
       if (blocked) return blocked;
     }
@@ -1318,13 +1352,43 @@ export function createApp(opts: CreateAppOptions = {}): Hono<{ Variables: AppVar
       const pay = useV2 ? v2Hdr : x402Protocol === "v2" ? undefined : v1Hdr;
       const ambiguous = x402Protocol === "both" && x402v2 !== null && Boolean(v2Hdr) && Boolean(v1Hdr);
       if (pay && !ambiguous) {
+        const ip = clientIp(c);
+        const throttled = kyaFailLimiter.peek(ip);
+        if (throttled.limited) {
+          return c.json(
+            {
+              ok: false,
+              error: "kya_rate_limited",
+              message: `委託憑證驗證失敗次數過多，請 ${throttled.retryAfterSec}s 後再試。`,
+              note: "未扣款：付款授權沒有送給 facilitator。",
+            },
+            429,
+            { "Retry-After": String(throttled.retryAfterSec) },
+          );
+        }
         const d = await kya.authorize(c, pay);
-        if (!d.ok) return c.json(d.body, d.status);
+        if (!d.ok) {
+          // 503（我們這邊的基礎設施）不算在請求方頭上。
+          if (d.status !== 503) kyaFailLimiter.hit(ip);
+          return c.json(d.body, d.status);
+        }
         kyaHold = d.hold;
         kyaProto = useV2 ? "v2" : "v1";
       }
     }
-    const out = await dispatchPaywall(c, next, paidRoute);
+    let out: Response | void;
+    try {
+      out = await dispatchPaywall(c, next, paidRoute);
+    } catch (err) {
+      // 付費牆丟例外（沒有回應）：授權若還沒送去 settle（v1 的 x402-hono 在套件內接住 settle 錯誤；
+      // v2 以 onSettleStart 標記），錢沒有動 → 退回預留；送過了 → 結果不明，保留。
+      if (kya && kyaHold) {
+        const settleAttempted =
+          kyaProto === "v2" ? settleStarted.has(c.req.raw) : Boolean(c.res?.headers.get("X-PAYMENT-RESPONSE"));
+        await kya.abandon(kyaHold, settleAttempted);
+      }
+      throw err;
+    }
     if (!kya || !paidRoute) return out;
     const res = out ?? c.res;
     const extra = kyaHold ? await kya.finalize(kyaHold, res, kyaProto) : res.status === 402 ? KYA_ADVERTISE_HEADERS : {};

@@ -40482,11 +40482,25 @@ function revokedMessage(res, view, seq) {
 }
 var DEFAULT_STATUS_CACHE_MAX_AGE_SEC = 60;
 var MAX_STATUS_CACHE_MAX_AGE_SEC = 900;
+var STATUS_CACHE_MAX_ENTRIES = 1e3;
 function createVcStatusChecker(o) {
   const now = o.now ?? (() => Date.now());
   const maxAgeMs = Math.min(Math.max(0, Number.isFinite(o.cacheMaxAgeSec) ? Number(o.cacheMaxAgeSec) : DEFAULT_STATUS_CACHE_MAX_AGE_SEC), MAX_STATUS_CACHE_MAX_AGE_SEC) * 1e3;
   const readPolicy = o.readPolicy ?? "allow";
   const cache3 = /* @__PURE__ */ new Map();
+  const cacheGet = (key) => {
+    const e = cache3.get(key);
+    if (e !== void 0) {
+      cache3.delete(key);
+      cache3.set(key, e);
+    }
+    return e;
+  };
+  const cacheSet = (key, e) => {
+    cache3.delete(key);
+    cache3.set(key, e);
+    while (cache3.size > STATUS_CACHE_MAX_ENTRIES) cache3.delete(cache3.keys().next().value);
+  };
   const inflight = /* @__PURE__ */ new Map();
   const unknown = (action, reasonCode, message, extra = {}) => {
     if (action === "read" && readPolicy === "allow") {
@@ -40556,7 +40570,7 @@ function createVcStatusChecker(o) {
       let entry;
       let fromCache = false;
       for (let attempt = 0; attempt < 2; attempt++) {
-        entry = cache3.get(key);
+        entry = cacheGet(key);
         fromCache = true;
         if (!entry || maxAgeMs === 0 || nowMs - entry.fetchedAt > maxAgeMs || nowMs < entry.fetchedAt) {
           fromCache = false;
@@ -40576,7 +40590,7 @@ function createVcStatusChecker(o) {
             return unknown(action, got.reasonCode, got.message, { jti, ...got.setupRequired ? { setupRequired: true } : {} });
           }
           entry = got;
-          cache3.set(key, entry);
+          cacheSet(key, entry);
         }
         if (entry.kind !== "none") break;
         let after;
@@ -65517,6 +65531,7 @@ function createX402V2(opts) {
         });
       };
       let settle3;
+      opts.onSettleStart?.(c);
       try {
         settle3 = await httpServer.processSettlement(paymentPayload, paymentRequirements, declaredExtensions, {
           request: context,
@@ -66309,8 +66324,8 @@ async function getBenchmarks(rawDate) {
 var isAddr = (v) => !!v && ethers_exports.isAddress(v) && v.toLowerCase() !== "0x0000000000000000000000000000000000000000";
 function resolveKyaConfig(env = process.env) {
   const rawMode = env.X402_KYA_MODE?.trim().toLowerCase() || "off";
-  const mode = rawMode === "on" || rawMode === "required" ? "on" : "off";
-  if (rawMode !== "off" && mode === "off") console.error(`::error::[kya] X402_KYA_MODE=${rawMode} \u7121\u6CD5\u8FA8\u8B58\uFF0C\u8996\u70BA off`);
+  const mode = rawMode === "off" ? "off" : rawMode === "on" || rawMode === "required" ? "on" : "invalid";
+  if (mode === "invalid") console.error(`::error::[kya] X402_KYA_MODE=${rawMode} \u7121\u6CD5\u8FA8\u8B58\uFF08\u53EA\u63A5\u53D7 on\uFF0Foff\uFF09\u2192 \u4ED8\u8CBB\u7AEF\u9EDE\u4E00\u5F8B 503`);
   const rawAnchor = env.X402_KYA_ANCHOR?.trim().toLowerCase() || "required";
   const anchor = rawAnchor === "optional" || rawAnchor === "off" ? rawAnchor : "required";
   const skew = Number(env.X402_KYA_MAX_SKEW_SEC ?? "120");
@@ -66325,26 +66340,41 @@ function resolveKyaConfig(env = process.env) {
 }
 function providerKyaChainReader(provider3) {
   return {
+    chainId: async () => {
+      const p = provider3;
+      if (typeof p.getNetwork !== "function") throw new Error("KYA \u7684\u93C8\u4E0A\u8B80\u53D6\u4F86\u6E90\u6C92\u6709 getNetwork()");
+      return Number((await p.getNetwork()).chainId);
+    },
     session: (mgr, id2) => readOnchainSession(provider3, mgr, id2),
+    anchorSessionManager: async (anchor) => String(await new ethers_exports.Contract(anchor, SESSION_ANCHOR_ABI, provider3).sessionManager()),
     isAnchored: async (anchor, id2, h) => Boolean(await new ethers_exports.Contract(anchor, SESSION_ANCHOR_ABI, provider3).isAnchored(id2, h))
   };
 }
 var KYA_SPEND_PREFIX = "x402:kya:spend:";
+var KYA_MAX_TTL_SEC = 400 * 86400;
+var KYA_MAX_ATOMIC = 2n ** 53n - 1n;
 var KYA_VP_PREFIX = "x402:kya:vp:";
 var periodIndex = (nowSec, periodSeconds) => Math.floor(nowSec / Math.max(1, periodSeconds));
 var kyaTotalKey = (h) => `${KYA_SPEND_PREFIX}${h.toLowerCase()}:total`;
 var kyaPeriodKey = (h, periodSeconds, nowSec) => `${KYA_SPEND_PREFIX}${h.toLowerCase()}:p${periodSeconds}:${periodIndex(nowSec, periodSeconds)}`;
 var KYA_RESERVE_SCRIPT = `-- pepelab:kya_reserve
+local a = tonumber(ARGV[1])
+local mt = tonumber(ARGV[2])
+local mp = tonumber(ARGV[3])
+local pt = tonumber(ARGV[4])
+local tt = tonumber(ARGV[5])
+if not (a and mt and mp and pt and tt) or a < 0 or pt < 1 or tt < 1 or pt > ${KYA_MAX_TTL_SEC} or tt > ${KYA_MAX_TTL_SEC} then
+  return redis.error_reply('kya_reserve: bad arguments')
+end
 local t = tonumber(redis.call('GET', KEYS[1]) or '0')
 local p = tonumber(redis.call('GET', KEYS[2]) or '0')
-local a = tonumber(ARGV[1])
-if t + a > tonumber(ARGV[2]) then return {0, tostring(t), tostring(p), 'total'} end
-if p + a > tonumber(ARGV[3]) then return {0, tostring(t), tostring(p), 'period'} end
+if t + a > mt then return {0, string.format('%.0f', t), string.format('%.0f', p), 'total'} end
+if p + a > mp then return {0, string.format('%.0f', t), string.format('%.0f', p), 'period'} end
 redis.call('INCRBY', KEYS[1], a)
-redis.call('EXPIRE', KEYS[1], tonumber(ARGV[5]))
+redis.call('EXPIRE', KEYS[1], tt)
 redis.call('INCRBY', KEYS[2], a)
-redis.call('EXPIRE', KEYS[2], tonumber(ARGV[4]))
-return {1, tostring(t + a), tostring(p + a), 'ok'}`;
+redis.call('EXPIRE', KEYS[2], pt)
+return {1, string.format('%.0f', t + a), string.format('%.0f', p + a), 'ok'}`;
 var KYA_RELEASE_SCRIPT = `-- pepelab:kya_release
 local a = tonumber(ARGV[1])
 for i = 1, 2 do
@@ -66377,7 +66407,7 @@ function upstashKyaSpendStore() {
   return {
     describe: "upstash",
     async reserve(h, amount, l, nowSec) {
-      const periodTtl = Math.max(60, l.periodSeconds * 2);
+      const periodTtl = Math.min(KYA_MAX_TTL_SEC, Math.max(60, l.periodSeconds * 2));
       const r = await upstash([
         "EVAL",
         KYA_RESERVE_SCRIPT,
@@ -66388,7 +66418,7 @@ function upstashKyaSpendStore() {
         l.maxTotal.toString(),
         l.maxPerPeriod.toString(),
         periodTtl,
-        Math.max(60, l.totalTtlSec)
+        Math.min(KYA_MAX_TTL_SEC, Math.max(60, l.totalTtlSec))
       ]);
       const total = BigInt(r[1]);
       const period = BigInt(r[2]);
@@ -66453,9 +66483,21 @@ function createKyaGate(o) {
     status,
     body: { ok: false, error, message, kya: true, ...extra, note: NOTE_UNPAID }
   });
+  const release = async (hold) => {
+    try {
+      await o.spend.release(hold.credentialHash, hold.amount, hold.limits, hold.reservedAtSec);
+    } catch (e) {
+      console.error(`::error::[kya] \u9000\u56DE\u9810\u7559\u5931\u6557\uFF08${hold.credentialHash}\uFF0C${hold.amount}\uFF09\uFF1A`, e);
+    }
+  };
+  let chainIdOk = null;
+  let anchorManagerOk = false;
   return {
     config: cfg,
     async authorize(c, paymentHeader) {
+      if (cfg.mode === "invalid") {
+        return deny(503, "kya_misconfigured", "X402_KYA_MODE \u7684\u503C\u7121\u6CD5\u8FA8\u8B58\uFF08\u53EA\u63A5\u53D7 on\uFF0Foff\uFF09\uFF0C\u4ED8\u8CBB\u7AEF\u9EDE\u66AB\u505C\u670D\u52D9\u3002");
+      }
       if (!cfg.sessionManager) {
         return deny(503, "kya_misconfigured", "X402_KYA_MODE=on \u4F46\u672A\u8A2D\u5B9A SESSION_MANAGER_ADDRESS\uFF0C\u7121\u6CD5\u9A57\u8B49\u59D4\u8A17\u6191\u8B49\u3002");
       }
@@ -66480,6 +66522,26 @@ function createKyaGate(o) {
       if (!r3.valid) return deny(403, "kya_credential_invalid", r3.reason ?? "\u59D4\u8A17\u6191\u8B49\u9A57\u8B49\u5931\u6557", { reasonCode: r3.reasonCode });
       const f2 = r3.fields;
       const hash4 = r3.credentialHash;
+      if (chainIdOk === null) {
+        try {
+          chainIdOk = await o.chain.chainId();
+        } catch (e) {
+          console.error("[kya] \u8B80\u53D6 chainId \u5931\u6557\uFF1A", e);
+          return deny(503, "kya_chain_unavailable", "\u7121\u6CD5\u78BA\u8A8D\u93C8\u4E0A\u8B80\u53D6\u4F86\u6E90\u7684 chainId\uFF0C\u4E0D\u767C\u51FA\u4ED8\u6B3E\u3002");
+        }
+      }
+      if (r3.chainId !== chainIdOk) {
+        return deny(403, "kya_credential_invalid", `\u59D4\u8A17\u6191\u8B49\u7C3D\u7D66 chainId ${r3.chainId}\uFF0C\u672C\u670D\u52D9\u8B80\u53D6\u7684\u662F chainId ${chainIdOk}\u3002`, {
+          reasonCode: "VC_WRONG_CHAIN",
+          credentialHash: hash4
+        });
+      }
+      if (f2.x402.periodSeconds * 2 > KYA_MAX_TTL_SEC || f2.validUntil - nowSec + 86400 > KYA_MAX_TTL_SEC || BigInt(f2.x402.maxTotal) > KYA_MAX_ATOMIC) {
+        return deny(403, "kya_credential_invalid", "\u59D4\u8A17\u6191\u8B49\u7684 x402 \u984D\u5EA6\u3001\u671F\u9593\u6216\u6548\u671F\u8D85\u51FA\u672C\u670D\u52D9\u652F\u63F4\u7684\u7BC4\u570D\uFF0C\u8ACB\u91CD\u65B0\u7C3D\u767C\u8F03\u77ED\u6548\u671F\u7684\u6191\u8B49\u3002", {
+          reasonCode: "KYA_ALLOWANCE_OUT_OF_RANGE",
+          credentialHash: hash4
+        });
+      }
       const endpoint = matchX402Endpoint(f2.x402.endpoints, c.req.method, c.req.path);
       if (!endpoint) {
         return deny(403, "kya_endpoint_not_allowed", `\u59D4\u8A17\u6191\u8B49\u6C92\u6709\u6388\u6B0A\u4EE3\u7406\u4EBA\u4ED8\u8CBB\u547C\u53EB ${c.req.method} ${c.req.path}\uFF08\u5141\u8A31\uFF1A${f2.x402.endpoints.join("\u3001")}\uFF09\u3002`, {
@@ -66493,7 +66555,8 @@ function createKyaGate(o) {
         st = { ok: false, status: "unknown", reasonCode: "STATUS_UNAVAILABLE", message: e.message };
       }
       if (!st.ok) {
-        return st.status === "revoked" ? deny(403, "kya_credential_revoked", `\u59D4\u8A17\u6191\u8B49\u5DF2\u88AB\u7C3D\u767C\u8005\u64A4\u92B7\uFF1A${st.message}`, { credentialHash: hash4, statusReason: st.reasonCode }) : deny(503, "kya_status_unverified", `\u7121\u6CD5\u78BA\u8A8D\u59D4\u8A17\u6191\u8B49\u7684\u64A4\u92B7\u72C0\u614B\uFF08fail-closed\uFF09\uFF1A${st.message}`, { credentialHash: hash4, statusReason: st.reasonCode });
+        console.error(`[kya] \u64A4\u92B7\u6AA2\u67E5\u672A\u901A\u904E\uFF08${hash4}\uFF0C${st.reasonCode}\uFF09\uFF1A${st.message}`);
+        return st.status === "revoked" ? deny(403, "kya_credential_revoked", "\u59D4\u8A17\u6191\u8B49\u5DF2\u88AB\u7C3D\u767C\u8005\u64A4\u92B7\u3002", { credentialHash: hash4, statusReason: st.reasonCode }) : deny(503, "kya_status_unverified", "\u7121\u6CD5\u78BA\u8A8D\u59D4\u8A17\u6191\u8B49\u7684\u64A4\u92B7\u72C0\u614B\uFF08fail-closed\uFF09\uFF0C\u4E0D\u767C\u51FA\u4ED8\u6B3E\u3002", { credentialHash: hash4, statusReason: st.reasonCode });
       }
       let onchain;
       try {
@@ -66505,6 +66568,20 @@ function createKyaGate(o) {
       const mm = compareDelegationWithSession(f2, onchain, nowSec);
       if (mm) return deny(403, "kya_session_mismatch", mm.message, { reasonCode: mm.code, credentialHash: hash4 });
       if (cfg.anchor !== "off" && cfg.anchorAddress) {
+        if (!anchorManagerOk) {
+          let bound;
+          try {
+            bound = await o.chain.anchorSessionManager(cfg.anchorAddress);
+          } catch (e) {
+            console.error("[kya] \u8B80\u53D6\u9328\u5B9A\u5408\u7D04\u7684 sessionManager \u5931\u6557\uFF1A", e);
+            return deny(503, "kya_chain_unavailable", "\u7121\u6CD5\u8B80\u53D6 SessionCredentialAnchor\uFF0C\u4E0D\u767C\u51FA\u4ED8\u6B3E\u3002");
+          }
+          if (!ethers_exports.isAddress(bound) || ethers_exports.getAddress(bound) !== cfg.sessionManager) {
+            console.error(`::error::[kya] SESSION_ANCHOR_ADDRESS \u7D81\u5B9A\u7684 manager ${bound} \u2260 SESSION_MANAGER_ADDRESS ${cfg.sessionManager}`);
+            return deny(503, "kya_misconfigured", "SessionCredentialAnchor \u7D81\u5B9A\u7684 session manager \u8207\u672C\u670D\u52D9\u8A2D\u5B9A\u4E0D\u7B26\uFF0C\u4ED8\u8CBB\u7AEF\u9EDE\u66AB\u505C\u670D\u52D9\u3002");
+          }
+          anchorManagerOk = true;
+        }
         let anchored;
         try {
           anchored = await o.chain.isAnchored(cfg.anchorAddress, f2.sessionId, hash4);
@@ -66573,16 +66650,16 @@ function createKyaGate(o) {
     async finalize(hold, res, protocol) {
       const settled = await settlementOutcome(res, protocol);
       if (settled === "failed") {
-        try {
-          await o.spend.release(hold.credentialHash, hold.amount, hold.limits, hold.reservedAtSec);
-        } catch (e) {
-          console.error(`::error::[kya] \u9000\u56DE\u9810\u7559\u5931\u6557\uFF08${hold.credentialHash}\uFF0C${hold.amount}\uFF09\uFF1A`, e);
-        }
+        await release(hold);
         return {};
       }
       return {
         [AGENT_KYA_SPEND_HEADER]: `total=${hold.spentTotal};period=${hold.spentPeriod};maxTotal=${hold.limits.maxTotal};maxPerPeriod=${hold.limits.maxPerPeriod};hash=${hold.credentialHash}`
       };
+    },
+    async abandon(hold, settleAttempted) {
+      if (!settleAttempted) return release(hold);
+      console.error(`::error::[kya] \u4ED8\u8CBB\u7246\u5728\u7D50\u7B97\u9014\u4E2D\u4E1F\u51FA\u4F8B\u5916\uFF0C\u7D50\u679C\u4E0D\u660E \u2192 \u4FDD\u7559\u9810\u7559\uFF08${hold.credentialHash}\uFF0C${hold.amount}\uFF09`);
     },
     spendOf(credentialHash, periodSeconds) {
       return o.spend.read(credentialHash, periodSeconds, Math.floor(now() / 1e3));
@@ -66600,10 +66677,15 @@ async function settlementOutcome(res, protocol) {
       return "unknown";
     }
   }
-  if (res.status === 502 || res.status === 504) {
+  if (res.status === 429 || res.status === 502 || res.status === 504) {
     const body = await res.clone().json().catch(() => null);
-    if (protocol === "v2" && (body?.phase === "verify" || body?.phase === "supported")) return "failed";
-    return "unknown";
+    if (protocol === "v2") {
+      if (body?.phase === "verify" || body?.phase === "supported") return "failed";
+      if (body?.phase === "settle") return "unknown";
+      return res.status === 429 ? "failed" : "unknown";
+    }
+    if (body?.error === "facilitator_unavailable" || body?.error === "facilitator_rate_limited") return "failed";
+    return res.status === 429 ? "failed" : "unknown";
   }
   return "failed";
 }
@@ -67283,23 +67365,37 @@ function clientIp(c) {
 }
 var FREE_RATE_WINDOW_MS = Number(process.env.FREE_RATE_WINDOW_MS ?? "60000");
 var FREE_RATE_MAX = Number(process.env.FREE_RATE_MAX ?? "60");
-var freeHits = /* @__PURE__ */ new Map();
-function freeRateLimited(ip) {
-  const now = Date.now();
-  const e = freeHits.get(ip);
-  if (!e || now >= e.resetAt) {
-    freeHits.set(ip, { count: 1, resetAt: now + FREE_RATE_WINDOW_MS });
-    if (freeHits.size > 5e3) {
-      for (const [k, v] of freeHits) if (now >= v.resetAt) freeHits.delete(k);
+function windowLimiter(max, windowMs) {
+  const hits = /* @__PURE__ */ new Map();
+  const retryAfter = (e, now) => Math.ceil((e.resetAt - now) / 1e3);
+  return {
+    hit(ip) {
+      const now = Date.now();
+      const e = hits.get(ip);
+      if (!e || now >= e.resetAt) {
+        hits.set(ip, { count: 1, resetAt: now + windowMs });
+        if (hits.size > 5e3) {
+          for (const [k, v] of hits) if (now >= v.resetAt) hits.delete(k);
+        }
+        return { limited: false, retryAfterSec: 0 };
+      }
+      e.count += 1;
+      if (e.count > max) return { limited: true, retryAfterSec: retryAfter(e, now) };
+      return { limited: false, retryAfterSec: 0 };
+    },
+    peek(ip) {
+      const now = Date.now();
+      const e = hits.get(ip);
+      if (!e || now >= e.resetAt || e.count < max) return { limited: false, retryAfterSec: 0 };
+      return { limited: true, retryAfterSec: retryAfter(e, now) };
     }
-    return { limited: false, retryAfterSec: 0 };
-  }
-  e.count += 1;
-  if (e.count > FREE_RATE_MAX) {
-    return { limited: true, retryAfterSec: Math.ceil((e.resetAt - now) / 1e3) };
-  }
-  return { limited: false, retryAfterSec: 0 };
+  };
 }
+var freeLimiter = windowLimiter(FREE_RATE_MAX, FREE_RATE_WINDOW_MS);
+var freeRateLimited = (ip) => freeLimiter.hit(ip);
+var KYA_FAIL_WINDOW_MS = Number(process.env.KYA_FAIL_WINDOW_MS ?? "60000");
+var KYA_FAIL_MAX = Number(process.env.KYA_FAIL_MAX ?? "20");
+var kyaFailLimiter = windowLimiter(KYA_FAIL_MAX, KYA_FAIL_WINDOW_MS);
 var CORS_ALLOWED_ORIGINS = (process.env.CORS_ALLOWED_ORIGINS ?? "http://localhost:5173,http://localhost:4173,https://pepelab-onchain-cfd-djot.vercel.app").split(",").map((s) => s.trim().replace(/\/$/, "")).filter(Boolean);
 var FACILITATOR_RETRY_AFTER_SEC = 5;
 function classifyFacilitatorFailure(message) {
@@ -67486,6 +67582,7 @@ function createApp(opts = {}) {
   const x402Protocol = opts.x402Protocol ?? X402_PROTOCOL;
   let x402v2 = null;
   let x402v2SetupError = null;
+  const settleStarted = /* @__PURE__ */ new WeakSet();
   if (x402Protocol !== "v1") {
     try {
       x402v2 = createX402V2({
@@ -67505,6 +67602,9 @@ function createApp(opts = {}) {
         unknownRecordContext: (c) => ({
           ledgerEntry: c.get("ledgerEntry") ?? null
         }),
+        onSettleStart: (c) => {
+          settleStarted.add(c.req.raw);
+        },
         onSettlementUnknown: async (record) => {
           if (await recordUnknownSettlement(record) === "overflow") {
             console.error("[x402v2] settlement_unknown list full: record persisted to x402:settlement:unknown:manual (reason overflow)");
@@ -67981,6 +68081,17 @@ function createApp(opts = {}) {
           503
         );
       }
+      if (kya?.config.mode === "invalid") {
+        return c.json(
+          {
+            ok: false,
+            error: "kya_misconfigured",
+            message: "X402_KYA_MODE \u8A2D\u5B9A\u932F\u8AA4\uFF08\u898B\u4F3A\u670D\u5668\u555F\u52D5 log\uFF09\uFF0C\u4ED8\u8CBB\u7AEF\u9EDE\u66AB\u505C\u670D\u52D9\u3002",
+            note: "\u672A\u6263\u6B3E\uFF1A\u6C92\u6709\u767C\u51FA\u4ED8\u6B3E\u8981\u6C42\u3002"
+          },
+          503
+        );
+      }
       const blocked = await payToGuard(c, async () => {
       });
       if (blocked) return blocked;
@@ -67994,13 +68105,39 @@ function createApp(opts = {}) {
       const pay = useV2 ? v2Hdr : x402Protocol === "v2" ? void 0 : v1Hdr;
       const ambiguous = x402Protocol === "both" && x402v2 !== null && Boolean(v2Hdr) && Boolean(v1Hdr);
       if (pay && !ambiguous) {
+        const ip = clientIp(c);
+        const throttled = kyaFailLimiter.peek(ip);
+        if (throttled.limited) {
+          return c.json(
+            {
+              ok: false,
+              error: "kya_rate_limited",
+              message: `\u59D4\u8A17\u6191\u8B49\u9A57\u8B49\u5931\u6557\u6B21\u6578\u904E\u591A\uFF0C\u8ACB ${throttled.retryAfterSec}s \u5F8C\u518D\u8A66\u3002`,
+              note: "\u672A\u6263\u6B3E\uFF1A\u4ED8\u6B3E\u6388\u6B0A\u6C92\u6709\u9001\u7D66 facilitator\u3002"
+            },
+            429,
+            { "Retry-After": String(throttled.retryAfterSec) }
+          );
+        }
         const d = await kya.authorize(c, pay);
-        if (!d.ok) return c.json(d.body, d.status);
+        if (!d.ok) {
+          if (d.status !== 503) kyaFailLimiter.hit(ip);
+          return c.json(d.body, d.status);
+        }
         kyaHold = d.hold;
         kyaProto = useV2 ? "v2" : "v1";
       }
     }
-    const out = await dispatchPaywall(c, next, paidRoute);
+    let out;
+    try {
+      out = await dispatchPaywall(c, next, paidRoute);
+    } catch (err) {
+      if (kya && kyaHold) {
+        const settleAttempted = kyaProto === "v2" ? settleStarted.has(c.req.raw) : Boolean(c.res?.headers.get("X-PAYMENT-RESPONSE"));
+        await kya.abandon(kyaHold, settleAttempted);
+      }
+      throw err;
+    }
     if (!kya || !paidRoute) return out;
     const res = out ?? c.res;
     const extra = kyaHold ? await kya.finalize(kyaHold, res, kyaProto) : res.status === 402 ? KYA_ADVERTISE_HEADERS : {};
