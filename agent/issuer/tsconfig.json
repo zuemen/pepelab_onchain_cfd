@@ -1,0 +1,6 @@
+{
+  // 合格投資人 VC 發證服務（docs/SSI_RWA_ACCESS.md）。獨立的 tsconfig：agent/tsconfig.json 在
+  // signal-api bundle 的來源指紋裡（check-vercel-bundle.mjs），改它會要求重打 Vercel bundle。
+  "extends": "../tsconfig.base.json",
+  "include": ["./**/*.ts"]
+}
