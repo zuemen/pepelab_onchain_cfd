@@ -150,6 +150,13 @@ export function tenantSources(root, id, platform, files = {}) {
     if (!problems.length) problems.push(["部署紀錄", "沒有部署紀錄"]);
   } else if (typeof record !== "object" || Array.isArray(record) || !/^0x[0-9a-fA-F]{40}$/.test(String(record.deployer))) {
     problems.push(["部署紀錄", "格式不對：沒有 deployer 位址"]);
+  } else {
+    // 放錯紀錄（別的租戶、dry-run、別條鏈）時外洩檢查會拿錯的 deployer 比對而漏報，所以逐欄位對上。
+    if (record.tenantId !== id) problems.push(["部署紀錄", `tenantId 是 ${JSON.stringify(record.tenantId)}，不是 ${id}`]);
+    if (record.mode !== "broadcast") problems.push(["部署紀錄", `mode 是 ${JSON.stringify(record.mode)}，只收 broadcast`]);
+    if (String(record.chainId) !== String(config.network?.chainId)) {
+      problems.push(["部署紀錄", `chainId ${JSON.stringify(record.chainId)} 與設定的 ${JSON.stringify(config.network?.chainId)} 不同`]);
+    }
   }
   if (config.schemaVersion !== TENANT_SCHEMA_VERSION) {
     problems.push(["部署設定", `schemaVersion 是 ${JSON.stringify(config.schemaVersion)}，這支只讀 v${TENANT_SCHEMA_VERSION}`]);
