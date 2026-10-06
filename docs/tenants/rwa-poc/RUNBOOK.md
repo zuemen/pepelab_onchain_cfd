@@ -6,7 +6,8 @@
 ## 前提
 
 - 已部署：`frontend/src/contracts/deployments/rwa-poc.json` 是 `kind: "dedicated"`，`deploy/tenants/rwa-poc.json` 是 `status: "deployed"`。
-  兩支腳本的位址都只從這兩份已審查的檔案讀（與租戶 workflow 相同的 `ops/tenant-keeper/load-env.mjs`）。部署前執行會直接停下並說明原因。
+  兩支腳本的位址與註冊資產都只從這兩份已審查的檔案讀（經 `ops/tenant-keeper/load-env.mjs`，與租戶 workflow 相同），
+  不吃殼層裡的 `EXCHANGE`、`RELAY_SOURCE` 之類變數。部署前執行會直接停下並說明原因。
 - keeper keystore 在 `~/.foundry/keystores/pepelab-rwa-keeper`，密碼檔 `~/.foundry/pepelab-rwa-keeper.password`（只有自己可讀）。
 - keeper 錢包有 Base Sepolia ETH（每輪約 1e-4 ETH 以下；0.1 ETH 夠跑很多天）。
 - Foundry（`cast`）在 PATH 上，`agent/` 已 `npm ci`。
@@ -28,8 +29,13 @@ bash scripts/poc/rwa-poc-keeper.sh --no-market-operator  # 不自動切休市
 5. 以 keystore 模式（`KEEPER_KEYSTORE`＋`KEEPER_KEYSTORE_PASSWORD_FILE`）每輪送交易。私鑰只在 `keeper/run.ts`
    行程的記憶體裡解開（`agent/keeper/keySource.ts`），不經過環境變數、指令列或檔案。
 
+`keeper/run.ts` 以 `env -i` 啟動，環境只有白名單：`PATH`、`HOME`、鏈與 RPC、登記檔給的位址與資產、
+`KEEPER_HEARTBEAT=240`、`KEEPER_MARKET_OPERATOR`、`DRY_RUN`（只在乾跑那輪）與 keystore 兩個變數。
+殼層裡殘留的 `KEEPER_PRIVATE_KEY`、`RELAY_SOURCE`、`KEEPER_EXCHANGE_ADDRESS`、門檻參數（`KEEPER_DEVIATION` 等）都進不去。
+
 `KEEPER_HEARTBEAT` 預設 240 秒：價格沒變也會在 4 分鐘內重寫一次，所以 11 檔都會在 5 分鐘內更新。
-可調的環境變數：`KEEPER_RPC_URL`（預設 `https://sepolia.base.org`）、`POC_KEEPER_INTERVAL`（預設 60，最少 15）。
+可調的環境變數只有：`KEEPER_RPC_URL`（預設 `https://sepolia.base.org`）、`POC_TENANT`（預設 `rwa-poc`）、
+`POC_KEEPER_ACCOUNT`（預設 `pepelab-rwa-keeper`）、`POC_KEEPER_INTERVAL`（預設 60，最少 15）。
 
 ## 休市切換
 
@@ -48,7 +54,7 @@ bash scripts/poc/rwa-poc-market-mode.sh sAAPL 1   # ReduceOnly
 bash scripts/poc/rwa-poc-market-mode.sh sAAPL 0   # Active
 ```
 
-只接受 0（Active）與 1（ReduceOnly）。marketOperator 不能切 Halted；guardian 鎖住的資產只有 owner（admin）能放寬，
+exchange 與註冊資產同樣經 `load-env.mjs` 讀；資產必須是 `rwa-poc` 註冊的。只接受 0（Active）與 1（ReduceOnly）。marketOperator 不能切 Halted；guardian 鎖住的資產只有 owner（admin）能放寬，
 這時用 `POC_MODE_ACCOUNT=pepelab-rwa-admin`。腳本會印出交易 hash 與 BaseScan 連結，並讀回確認。
 
 ## 注意事項

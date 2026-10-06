@@ -3,7 +3,8 @@
 #
 #   PerpetualExchange.setAssetMode(bytes32,uint8)。marketOperator（＝keeper）只能在 Active 與 ReduceOnly
 #   之間切（Halted 只有 owner／guardian），所以這支只接受 0／1。先 `cast call --from` 模擬，過了才送。
-#   exchange 位址從 dedicated 登記讀，不寫死。docs/tenants/rwa-poc/RUNBOOK.md
+#   exchange 與註冊資產只從 ops/tenant-keeper/load-env.mjs 讀（與 keeper 同一個來源），不寫死、不吃殼層變數。
+#   docs/tenants/rwa-poc/RUNBOOK.md
 #
 # 用法（repo 根目錄）：
 #   bash scripts/poc/rwa-poc-market-mode.sh sAAPL 1     # 休市：只能平倉、不能開新倉
@@ -20,20 +21,26 @@ SYM="${1:-}"
 MODE="${2:-}"
 [[ "$SYM" =~ ^s[A-Z]{2,6}$ ]] || { echo "用法：$0 <資產代號，例如 sAAPL> <0=Active|1=ReduceOnly>" >&2; exit 2; }
 [[ "$MODE" == "0" || "$MODE" == "1" ]] || { echo "✖ 模式只能是 0（Active）或 1（ReduceOnly）" >&2; exit 2; }
+[[ "$TENANT" =~ ^[a-z][a-z0-9-]{1,30}$ ]] || { echo "✖ POC_TENANT 不是租戶 id" >&2; exit 2; }
 [[ "$ACCOUNT" =~ ^[A-Za-z0-9._-]+$ ]] || { echo "✖ POC_MODE_ACCOUNT 格式不對" >&2; exit 2; }
+[[ "$RPC" =~ ^https?:// ]] || { echo "✖ KEEPER_RPC_URL 必須是 http(s) 網址" >&2; exit 2; }
+for c in cast node; do command -v "$c" >/dev/null || { echo "✖ 找不到 $c（Foundry 在 ~/.foundry/bin）" >&2; exit 1; }; done
 PASSWORD_FILE="$HOME/.foundry/$ACCOUNT.password"
 [[ -f "$PASSWORD_FILE" ]] || { echo "✖ 找不到密碼檔：$PASSWORD_FILE" >&2; exit 1; }
 
-EX="$(node -e '
-  const [root, id, sym] = process.argv.slice(1);
-  const reg = require(`${root}/frontend/src/contracts/deployments/${id}.json`);
-  const cfg = require(`${root}/deploy/tenants/${id}.json`);
-  if (reg.kind !== "dedicated") { console.error(`✖ ${id} 的登記不是 dedicated（還沒部署？）`); process.exit(1); }
-  if (!(cfg.assets?.registered ?? []).includes(sym)) { console.error(`✖ ${sym} 不是 ${id} 註冊的資產`); process.exit(1); }
-  const ex = reg.contracts?.PerpetualExchange;
-  if (!/^0x[0-9a-fA-F]{40}$/.test(ex ?? "")) { console.error("✖ 登記裡沒有 PerpetualExchange"); process.exit(1); }
-  console.log(ex);
-' "$REPO_ROOT" "$TENANT" "$SYM")"
+if ! ENV_LINES="$(node "$REPO_ROOT/ops/tenant-keeper/load-env.mjs" "$TENANT")"; then
+  echo "✖ 讀不到 $TENANT 的位址（還沒部署？登記要是 dedicated、設定要是 status=deployed）" >&2
+  exit 1
+fi
+EX="" SYMBOLS=""
+while IFS='=' read -r k v; do
+  case "$k" in
+    EXCHANGE) EX="$v" ;;
+    FUNDING_SYMBOLS) SYMBOLS="$v" ;;
+  esac
+done <<< "$ENV_LINES"
+[[ "$EX" =~ ^0x[0-9a-fA-F]{40}$ ]] || { echo "✖ load-env 沒有給 EXCHANGE" >&2; exit 1; }
+[[ " $SYMBOLS " == *" $SYM "* ]] || { echo "✖ $SYM 不是 $TENANT 註冊的資產（$SYMBOLS）" >&2; exit 1; }
 
 CHAIN_ID="$(cast chain-id --rpc-url "$RPC")"
 [[ "$CHAIN_ID" == "84532" ]] || { echo "✖ RPC 指向 chainId $CHAIN_ID，不是 Base Sepolia（84532）" >&2; exit 1; }

@@ -219,7 +219,7 @@ async function main(): Promise<void> {
       console.error(`::error::${(e as Error).message}`);
       process.exit(1);
     }
-    if (KEY_SPEC.kind === "keystore") console.log(`keeper 金鑰：keystore ${KEY_SPEC.path}`);
+    if (KEY_SPEC.kind === "keystore") console.log(`keeper 金鑰：keystore ${KEY_SPEC.pathLabel}`);
   }
   // 所有合約共用這一個 signer，nonce 在本機遞增（見 nonceSigner.ts 的事故說明）。
   const signer = wallet ? new LocalNonceSigner(wallet) : null;
