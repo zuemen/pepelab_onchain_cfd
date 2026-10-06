@@ -719,6 +719,8 @@ export default function PortfolioPage() {
         userAddress={wallet.address ?? null}
         credentialsHref={kycAction === 'credentials' ? paths.pepefi.credentials : null}
         vcChecking={kycAction === 'checking'}
+        vcUnknown={kycAction === 'unknown'}
+        onVcRetry={vcKyc.retry}
       />
 
       <QuickActions mode={mode} />

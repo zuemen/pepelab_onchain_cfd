@@ -651,7 +651,11 @@ export default function CopyPage() {
 
         {kycBlocked && !kycPending && (
           <Alert severity="warning" action={
-            kycAction === 'checking' ? (
+            kycAction === 'unknown' ? (
+              <Button color="inherit" size="small" onClick={vcKyc.retry} sx={{ fontWeight: 'bold' }}>
+                {t.investorVc.unknownRetry}
+              </Button>
+            ) : kycAction === 'checking' ? (
               <Button color="inherit" size="small" disabled sx={{ fontWeight: 'bold' }}>
                 {t.investorVc.checkingShort}
               </Button>

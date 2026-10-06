@@ -33,6 +33,9 @@ type Props = {
   credentialsHref?: string | null;
   /** 專屬部署的 KYC 登錄種類還沒確認：不給舊的 submitKYC 表單，只顯示確認中。 */
   vcChecking?: boolean;
+  /** 專屬部署的 KYC 登錄種類讀不到（RPC 失敗或逾時）：顯示無法確認＋重試，不給舊表單。 */
+  vcUnknown?: boolean;
+  onVcRetry?: () => void;
 };
 
 const STATUS_ICON: Record<KYCStatus, string> = {
@@ -51,7 +54,7 @@ const STATUS_COLOR: Record<KYCStatus, string> = {
   unknown:       'warning.main',
 };
 
-export default function KYCStatusCard({ kycRegistry, userAddress, credentialsHref = null, vcChecking = false }: Props) {
+export default function KYCStatusCard({ kycRegistry, userAddress, credentialsHref = null, vcChecking = false, vcUnknown = false, onVcRetry }: Props) {
   const [showModal, setShowModal] = useState(false);
   const { status, isPending, refetch } = useKYC(kycRegistry, userAddress);
 
@@ -103,7 +106,20 @@ export default function KYCStatusCard({ kycRegistry, userAddress, credentialsHre
           </Typography>
         )}
 
-        {status === 'unverified' && !credentialsHref && !vcChecking && (
+        {status === 'unverified' && !credentialsHref && vcUnknown && (
+          <Button
+            size="small"
+            variant="outlined"
+            color="inherit"
+            onClick={() => onVcRetry?.()}
+            data-testid="kyc-vc-retry"
+            sx={{ fontWeight: 'bold', whiteSpace: 'nowrap' }}
+          >
+            {t.investorVc.unknownRetry}
+          </Button>
+        )}
+
+        {status === 'unverified' && !credentialsHref && !vcChecking && !vcUnknown && (
           <Button
             size="small"
             variant="outlined"
@@ -129,7 +145,7 @@ export default function KYCStatusCard({ kycRegistry, userAddress, credentialsHre
       </Box>
 
       <KYCModal
-        isOpen={showModal && !credentialsHref && !vcChecking}
+        isOpen={showModal && !credentialsHref && !vcChecking && !vcUnknown}
         onClose={() => setShowModal(false)}
         onSuccess={() => { void refetch(); }}
         kycRegistry={kycRegistry}

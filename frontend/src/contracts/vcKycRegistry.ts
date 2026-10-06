@@ -29,10 +29,6 @@ export function resolveVcKycRegistry(chainId: number | null, envValue: string | 
   return usable(fromTable) ? fromTable : null
 }
 
-export function getVcKycRegistryAddress(chainId: number | null): string | null {
-  return resolveVcKycRegistry(chainId, import.meta.env.VITE_VC_KYC_REGISTRY as string | undefined)
-}
-
 /**
  * 解析 VC 登錄的來源。`known`＝已確定是 VC 登錄（平台部署的 env／表，或專屬部署 env 等於登記），直接用；
  * `probe`＝專屬租戶登記的 KYCRegistry，要探測 requiredType() 才知道是不是 VC 登錄；`none`＝沒有 VC 准入。

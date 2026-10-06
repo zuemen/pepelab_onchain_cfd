@@ -5,7 +5,7 @@ import { getVcKycSource, vcKycSource } from 'src/contracts/vcKycRegistry'
 import { resolveDeployment, parseTenantDeployment } from 'src/contracts/tenantDeployment'
 
 import { kycGateApplies } from './useOnchainRwa'
-import { kycActionMode, vcStateFromProbe, isVcKycRegistry } from './useVcKycRegistry'
+import { kycActionMode, vcStateFromProbe, isVcKycRegistry, probeRequiredType } from './useVcKycRegistry'
 
 // ----------------------------------------------------------------------
 
@@ -130,11 +130,38 @@ describe('開倉 KYC 閘門：靜態表 ∪ 鏈上 rwaAsset', () => {
 describe('「去取得 KYC 資格」的呈現', () => {
   it('VC 登錄 → 憑證頁；種類未確認 → 只顯示確認中；allowlist／平台 → 舊表單', () => {
     expect(kycActionMode({ status: 'vc', address: A(3) }, A(3))).toBe('credentials')
-    for (const status of ['checking', 'unknown', 'disconnected'] as const) {
+    for (const status of ['checking', 'disconnected'] as const) {
       expect(kycActionMode({ status, address: null }, A(3))).toBe('checking')
     }
+    // 讀不到：另成一態，UI 給「無法確認，請重試」，仍不給舊表單。
+    expect(kycActionMode({ status: 'unknown', address: null }, A(3))).toBe('unknown')
     expect(kycActionMode({ status: 'none', address: null }, A(3))).toBe('legacy')
     // VC 登錄另有其物、交易所接的不是它：照舊表單（交易所讀的是那一顆）。
     expect(kycActionMode({ status: 'vc', address: A(5) }, A(3))).toBe('legacy')
+  })
+})
+
+describe('requiredType() 探測：逾時與錯誤分類', () => {
+  it('讀到值 → ok', async () => {
+    await expect(probeRequiredType(async () => QI, 1000)).resolves.toEqual({ ok: true, value: QI })
+  })
+
+  it('永不回應的 RPC → 逾時落到 unknown（missing=false），不是 allowlist', async () => {
+    const r = await probeRequiredType(() => new Promise<string>(() => {}), 20)
+    expect(r).toEqual({ ok: false, missing: false })
+    expect(vcStateFromProbe({ kind: 'probe', address: A(3) }, r).status).toBe('unknown')
+  })
+
+  it('函式不存在（CALL_EXCEPTION、沒有 revert data）→ missing', async () => {
+    const err = Object.assign(new Error('missing'), { code: 'CALL_EXCEPTION', data: '0x' })
+    await expect(probeRequiredType(() => Promise.reject(err), 5000)).resolves.toEqual({ ok: false, missing: true })
+  })
+
+  it('暫時錯誤（重試仍失敗）→ unknown；重試成功 → ok', async () => {
+    const net = Object.assign(new Error('net'), { code: 'NETWORK_ERROR' })
+    await expect(probeRequiredType(() => Promise.reject(net), 5000)).resolves.toEqual({ ok: false, missing: false })
+    let n = 0
+    const flaky = () => (n++ === 0 ? Promise.reject(net) : Promise.resolve(QI))
+    await expect(probeRequiredType(flaky, 5000)).resolves.toEqual({ ok: true, value: QI })
   })
 })

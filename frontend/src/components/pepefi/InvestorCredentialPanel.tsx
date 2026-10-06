@@ -100,7 +100,15 @@ export function InvestorCredentialPanel({ wallet, registryAddress }: Props) {
             {t.investorVc.checking}
           </Alert>
         ) : registryAddress === undefined && resolved.status === 'unknown' ? (
-          <Alert severity="warning" data-testid="vc-kyc-unknown">
+          <Alert
+            severity="warning"
+            data-testid="vc-kyc-unknown"
+            action={
+              <Button color="inherit" size="small" onClick={resolved.retry}>
+                {t.investorVc.unknownRetry}
+              </Button>
+            }
+          >
             {t.investorVc.probeFailed}
           </Alert>
         ) : (
