@@ -110,6 +110,11 @@ describe('verifyPastedCredential', () => {
       reasonCode: 'VC_WRONG_DOMAIN',
     })
     expect(verifyPastedCredential('{oops')).toMatchObject({ valid: false, reasonCode: 'VC_MALFORMED' })
+    const otherList = `https://status.example.com/investor/${mallory.address.toLowerCase()}.json`
+    const swapped = { ...vc, credentialStatus: { ...vc.credentialStatus, statusListCredential: otherList, id: `${otherList}#0` } }
+    expect(verifyPastedCredential(JSON.stringify(swapped))).toMatchObject({ valid: false, reasonCode: 'VC_MALFORMED' })
+    const wrongType = { ...vc, type: ['VerifiableCredential', 'KycBasicCredential'] }
+    expect(verifyPastedCredential(JSON.stringify(wrongType))).toMatchObject({ valid: false, reasonCode: 'VC_MALFORMED' })
     expect(verifyPastedCredential(JSON.stringify({ ...vc, id: 'urn:x' }))).toMatchObject({
       valid: false,
       reasonCode: 'VC_HASH_MISMATCH',

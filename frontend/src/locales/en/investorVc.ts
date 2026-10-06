@@ -13,8 +13,8 @@ export const investorVc: Catalog['investorVc'] = {
   disabled: 'Credential-based access is not enabled on this deployment. RWA market eligibility is still reviewed by the existing KYC process.',
   intro:
     'Opening RWA markets (e.g. sAAPL) requires a valid qualified-investor status. Upload the verifiable credential (VC) your issuing institution gave you, verify it, then register it on-chain. The chain only stores your address, the credential type, its expiry and a hash of the credential — no personal data.',
-  mineVerified: 'Your wallet is eligible for RWA markets; qualified-investor credential expires {date}',
-  mineNotVerified: 'Your wallet has no valid RWA market eligibility (not registered, expired or revoked).',
+  mineVerified: 'Your wallet is eligible for RWA markets (requires: {type}); credential expires {date}',
+  mineNotVerified: 'Your wallet has no valid RWA market eligibility (requires: {type}; not registered, expired or revoked).',
   upload: 'Upload VC file',
   verify: 'Verify locally',
   pasteLabel: 'Or paste the credential JSON',

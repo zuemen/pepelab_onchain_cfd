@@ -21,7 +21,9 @@ import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 ///         姓名、證件號碼、財力證明都留在發證者的 KYC 系統。
 ///
 ///         撤銷：發證者以 credentialHash 撤銷（`revoke`），或撤銷某時間點之前簽發的全部憑證
-///         （`revokeAllBefore`，對應 ADR-016 狀態清單的 `revokedBefore`）。撤銷只影響**開新倉**——
+///         （`revokeAllBefore`，對應 ADR-016 狀態清單的 `revokedBefore`；不適用於金鑰外洩）。
+///         金鑰外洩：owner `setIssuer(false)` 並換新金鑰；信任 epoch 讓加回同一地址也不會使舊憑證復活。
+///         撤銷只影響**開新倉**——
 ///         exchange 的閘門只在開倉檢查，平倉、清算、提領都不看 KYC，所以撤銷不會把人鎖在部位裡。
 ///
 ///         防重放：EIP-712 domain 綁 chainId 與本合約位址；每個 subject 有單調 nonce
@@ -60,6 +62,8 @@ contract VCKycRegistry is Ownable2Step, EIP712 {
         uint64  issuedAt;
         uint64  expiresAt;
         bytes32 credentialHash;
+        /// @dev 登記當下 trustEpoch[issuer][type]。發證者被移除後再加回會換 epoch，舊紀錄不會復活。
+        uint64  epoch;
     }
 
     // ── 狀態 ───────────────────────────────────────────────────────────────────
@@ -68,6 +72,10 @@ contract VCKycRegistry is Ownable2Step, EIP712 {
     mapping(address => mapping(bytes32 => bool)) public trustedIssuer;
     /// @notice issuer 目前受信任的類型數（>0 才能撤銷自己的憑證）。
     mapping(address => uint256) public issuerTypeCount;
+    /// @notice issuer → 類型 → 信任 epoch。每次由「不受信任」變成「受信任」就 +1（第一次加入是 1）。
+    ///         紀錄只在 epoch 相同時有效：移除後再加回同一地址，**之前登記的憑證全部不會復活**，
+    ///         投資人必須重新提交（發證者重新簽發）。
+    mapping(address => mapping(bytes32 => uint64)) public trustEpoch;
     /// @notice 本登錄接受的憑證類型（KYC_BASIC、QUALIFIED_INVESTOR 於建構時登記）。
     mapping(bytes32 => bool) public credentialTypeSupported;
     /// @notice `isVerified` 要求的類型。
@@ -86,7 +94,7 @@ contract VCKycRegistry is Ownable2Step, EIP712 {
 
     // ── 事件（全部可稽核）───────────────────────────────────────────────────────
 
-    event IssuerSet(address indexed issuer, bytes32 indexed credentialType, bool trusted);
+    event IssuerSet(address indexed issuer, bytes32 indexed credentialType, bool trusted, uint64 epoch);
     event CredentialTypeSet(bytes32 indexed credentialType, bool supported);
     event RequiredTypeSet(bytes32 indexed credentialType);
     event AttestationSubmitted(
@@ -118,6 +126,7 @@ contract VCKycRegistry is Ownable2Step, EIP712 {
     error NotAuthorizedToRevoke(address caller);
     error RevokedBeforeCannotMoveBack(uint64 current, uint64 requested);
     error RevokedBeforeInFuture(uint64 requested);
+    error WouldReplaceLongerCredential(uint64 currentExpiresAt, uint64 newExpiresAt);
 
     /// @param initialOwner   登錄的 owner（建議是 timelock／多簽）。
     /// @param _requiredType  `isVerified` 要求的類型；RWA 市場建議 QUALIFIED_INVESTOR。
@@ -137,16 +146,22 @@ contract VCKycRegistry is Ownable2Step, EIP712 {
     // ── owner 設定 ─────────────────────────────────────────────────────────────
 
     /// @notice 加入或移除某發證者對某類型的信任。移除後，該發證者簽過的該類型憑證在
-    ///         `isVerified` 立即失效（不用逐筆撤銷）。
+    ///         `isVerified` 立即失效（不用逐筆撤銷）；之後再加回同一地址會開新的 epoch，
+    ///         舊憑證**不會**復活。**發證者金鑰外洩的處置**：對它的每個類型 setIssuer(false)，
+    ///         並以新金鑰（新地址）加入；`revokeAllBefore` 擋不住外洩金鑰新簽的憑證（見該函式）。
     function setIssuer(address issuer, bytes32 credentialType, bool trusted) external onlyOwner {
         if (issuer == address(0)) revert ZeroAddress();
         if (trusted && !credentialTypeSupported[credentialType]) revert UnsupportedCredentialType(credentialType);
         if (trustedIssuer[issuer][credentialType] != trusted) {
             trustedIssuer[issuer][credentialType] = trusted;
-            if (trusted) issuerTypeCount[issuer] += 1;
-            else issuerTypeCount[issuer] -= 1;
+            if (trusted) {
+                issuerTypeCount[issuer] += 1;
+                trustEpoch[issuer][credentialType] += 1;
+            } else {
+                issuerTypeCount[issuer] -= 1;
+            }
         }
-        emit IssuerSet(issuer, credentialType, trusted);
+        emit IssuerSet(issuer, credentialType, trusted, trustEpoch[issuer][credentialType]);
     }
 
     /// @notice 登記或停用一種憑證類型。不能停用目前的 requiredType。
@@ -188,13 +203,24 @@ contract VCKycRegistry is Ownable2Step, EIP712 {
             revert CredentialIsRevoked(a.credentialHash);
         }
 
+        // 覆蓋規則：同一 subject 同一類型只保留一筆。目前那筆仍有效時，只有新憑證「到期較晚」，
+        // 或「到期相同且簽發較新」才取代它——較短的、或別的發證者的較短憑證不能把有效資格蓋掉。
+        // 目前那筆已失效（到期、撤銷、發證者被移除、類型停用）時一律可以取代。
+        if (_valid(a.subject, a.credentialType)) {
+            Record storage cur = _records[a.subject][a.credentialType];
+            bool longer = a.expiresAt > cur.expiresAt;
+            bool sameButNewer = a.expiresAt == cur.expiresAt && a.issuedAt > cur.issuedAt;
+            if (!longer && !sameButNewer) revert WouldReplaceLongerCredential(cur.expiresAt, a.expiresAt);
+        }
+
         nonces[a.subject] = expected + 1;
         credentialUsed[a.credentialHash] = true;
         _records[a.subject][a.credentialType] = Record({
             issuer: issuer,
             issuedAt: a.issuedAt,
             expiresAt: a.expiresAt,
-            credentialHash: a.credentialHash
+            credentialHash: a.credentialHash,
+            epoch: trustEpoch[issuer][a.credentialType]
         });
         emit AttestationSubmitted(
             a.subject, a.credentialType, issuer, a.credentialHash, a.statusListIndex, a.issuedAt, a.expiresAt, msg.sender
@@ -218,13 +244,18 @@ contract VCKycRegistry is Ownable2Step, EIP712 {
         emit CredentialRevoked(issuer, credentialHash, msg.sender);
     }
 
-    /// @notice 發證者撤銷自己在 `timestamp` 之前簽發的全部憑證（對應狀態清單的 revokedBefore）。只能往後推。
+    /// @notice 發證者撤銷自己在 `timestamp` 之前簽發的全部憑證（對應狀態清單的 revokedBefore）。只能往後推，
+    ///         上限 now + MAX_CLOCK_SKEW + 1。
+    ///         用途：**金鑰沒有外洩**、但要讓一批已簽出的憑證失效時——例如審查規則改版、所有人須重新審查。
+    ///         限制：`issuedAt` 由簽章者自己填，持有金鑰的人可以簽出 issuedAt 晚於水位的新憑證，所以
+    ///         這個水位**擋不住外洩的金鑰**。金鑰外洩一律用 setIssuer(false) 移除，並以新金鑰（新地址）加入。
     function revokeAllBefore(uint64 timestamp) external {
         if (!_isAnyIssuer(msg.sender)) revert NotAuthorizedToRevoke(msg.sender);
         _setRevokedBefore(msg.sender, timestamp);
     }
 
-    /// @notice owner 代某發證者設定「全部撤銷」水位（例如發證者金鑰外洩）。
+    /// @notice owner 代某發證者設定「全部撤銷」水位（例如發證者停業、規則改版而發證者無法自行操作）。
+    ///         金鑰外洩不要用這個，用 setIssuer(false)（理由見 revokeAllBefore）。
     function revokeAllBeforeAsOwner(address issuer, uint64 timestamp) external onlyOwner {
         if (issuer == address(0)) revert ZeroAddress();
         _setRevokedBefore(issuer, timestamp);
@@ -274,6 +305,7 @@ contract VCKycRegistry is Ownable2Step, EIP712 {
         if (issuer == address(0)) return false;
         if (block.timestamp >= r.expiresAt) return false;
         if (!trustedIssuer[issuer][credentialType]) return false;
+        if (r.epoch != trustEpoch[issuer][credentialType]) return false;
         if (revoked[issuer][r.credentialHash]) return false;
         if (r.issuedAt < revokedBefore[issuer]) return false;
         return true;

@@ -40,6 +40,8 @@ interface IOwnedExchange {
 ///         本機 anvil（PoC）：scripts/poc/rwa-ssi-demo.sh；Besu：besu/scripts/deploy-vc-kyc.sh。
 ///
 ///         環境變數：
+///           BROADCASTER            覆寫 broadcaster（預設 msg.sender，即 --sender／--account 的地址）；
+///                                  必須是實際簽交易的金鑰，同樣要通過外洩地址檢查
 ///           VC_KYC_ISSUER          受信任發證者（必填）
 ///           VC_KYC_ISSUER_TYPES    逗號分隔：QUALIFIED_INVESTOR,KYC_BASIC（預設兩者）
 ///           VC_KYC_REQUIRED_TYPE   QUALIFIED_INVESTOR（預設）或 KYC_BASIC

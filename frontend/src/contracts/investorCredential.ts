@@ -7,6 +7,16 @@
 // dependency-free: no ethers, no process.env. Hashing (keccak256 of the VC id)
 // is done by the callers, which already depend on ethers.
 //
+// Deliberate deviation from a full VC proof: the EIP-712 signature covers the
+// ATTESTATION (subject, type, credentialHash = keccak256(id), statusListIndex,
+// validFrom, validUntil, nonce, deadline), not the whole JSON document. Fields
+// outside it — `@context`, `type`, `credentialStatus.statusListCredential`,
+// `proof.created` — are NOT signed. Verifiers therefore re-derive the attestation
+// from the VC and also check the unsigned fields structurally (VC type must match
+// the credential type; the status list URL must be `<base>/<issuer>.json` and the
+// status id `<url>#<index>`). A swapped status URL can at worst make a status
+// check report "no list"; the on-chain registry stays authoritative.
+//
 // One signature, two uses:
 //   • The VC's `proof.proofValue` IS the issuer's EIP-712 signature over a
 //     `QualifiedInvestorAttestation` derived field-by-field from the VC.
@@ -187,8 +197,22 @@ export function isoToSec(iso: unknown): number | null {
   return ms / 1000
 }
 
+/** W3C `type` entry per credential type (KYC_BASIC is not a QualifiedInvestorCredential). */
+export const VC_TYPE_BY_CREDENTIAL: Record<CredentialTypeName, string> = {
+  KYC_BASIC: 'KycBasicCredential',
+  QUALIFIED_INVESTOR: 'QualifiedInvestorCredential',
+}
+
 export const statusListUrlFor = (baseUrl: string, issuer: string): string =>
   `${baseUrl.replace(/\/+$/, '')}/${issuer.toLowerCase()}.json`
+
+/** Inverse of statusListUrlFor: the base URL, or null when `url` is not `<base>/<issuer>.json`. */
+export function statusListBaseOf(url: string, issuer: string): string | null {
+  const suffix = `/${issuer.toLowerCase()}.json`
+  if (!url.endsWith(suffix)) return null
+  const base = url.slice(0, -suffix.length)
+  return base.length > 0 && !base.endsWith('/') ? base : null
+}
 
 export function buildAttestationValue(p: {
   subject: string
@@ -228,7 +252,7 @@ export function assembleInvestorCredential(p: {
   return {
     '@context': [...VC_CONTEXTS],
     id: p.id,
-    type: ['VerifiableCredential', 'QualifiedInvestorCredential'],
+    type: ['VerifiableCredential', VC_TYPE_BY_CREDENTIAL[p.credentialType]],
     issuer: issuerDid,
     validFrom: isoSec(p.value.issuedAt),
     validUntil: isoSec(p.value.expiresAt),
@@ -280,8 +304,8 @@ export function attestationFromCredential(doc: unknown): CredentialParse {
   const bad = (reason: string): CredentialParse => ({ ok: false, reason })
   const d = doc as Partial<InvestorCredential> | null
   if (!d || typeof d !== 'object') return bad('not a JSON object')
-  if (!Array.isArray(d.type) || !d.type.includes('QualifiedInvestorCredential')) {
-    return bad('type does not include QualifiedInvestorCredential')
+  if (!Array.isArray(d.type) || !d.type.includes('VerifiableCredential')) {
+    return bad('type does not include VerifiableCredential')
   }
   if (!Array.isArray(d['@context']) || d['@context'][0] !== VC_CONTEXTS[0]) {
     return bad('first @context must be the W3C VC 2.0 context')
@@ -293,6 +317,9 @@ export function attestationFromCredential(doc: unknown): CredentialParse {
   if (!subjectDid) return bad('credentialSubject.id is not did:pkh:eip155')
   const ctype = d.credentialSubject?.credentialType
   if (!isCredentialTypeName(ctype)) return bad('credentialSubject.credentialType is not supported')
+  if (!d.type.includes(VC_TYPE_BY_CREDENTIAL[ctype]) || d.type.some((x) => x !== 'VerifiableCredential' && x !== VC_TYPE_BY_CREDENTIAL[ctype])) {
+    return bad(`type must be [VerifiableCredential, ${VC_TYPE_BY_CREDENTIAL[ctype]}] for ${ctype}`)
+  }
   const issuedAt = isoToSec(d.validFrom)
   const expiresAt = isoToSec(d.validUntil)
   if (issuedAt === null || expiresAt === null) return bad('validFrom/validUntil must be ISO times on whole seconds')
@@ -324,6 +351,14 @@ export function attestationFromCredential(doc: unknown): CredentialParse {
   if (!st || st.type !== INVESTOR_STATUS_TYPE || !/^\d{1,78}$/.test(String(st.statusListIndex))) {
     return bad('malformed credentialStatus')
   }
+  // statusListCredential is unsigned: it must at least be `<base>/<issuer lowercase>.json` for THIS issuer,
+  // and the status id must point at this credential's index.
+  const listUrl = String(st.statusListCredential ?? '')
+  const base = statusListBaseOf(listUrl, issuerDid.address)
+  if (base === null || statusListUrlFor(base, issuerDid.address) !== listUrl) {
+    return bad('credentialStatus.statusListCredential is not <base>/<issuer>.json for this issuer')
+  }
+  if (st.id !== `${listUrl}#${st.statusListIndex}`) return bad('credentialStatus.id must be <statusListCredential>#<index>')
   const value: AttestationValue = {
     subject: subjectDid.address,
     credentialType: CREDENTIAL_TYPE_IDS[ctype],
@@ -649,7 +684,8 @@ export const VC_KYC_REGISTRY_ABI = [
   'function revokeAllBefore(uint64 timestamp)',
   'function isVerified(address user) view returns (bool)',
   'function hasValidCredential(address user, bytes32 credentialType) view returns (bool)',
-  'function credentialOf(address user, bytes32 credentialType) view returns ((address issuer,uint64 issuedAt,uint64 expiresAt,bytes32 credentialHash) record, bool valid)',
+  'function credentialOf(address user, bytes32 credentialType) view returns ((address issuer,uint64 issuedAt,uint64 expiresAt,bytes32 credentialHash,uint64 epoch) record, bool valid)',
+  'function trustEpoch(address issuer, bytes32 credentialType) view returns (uint64)',
   'function nonces(address subject) view returns (uint256)',
   'function requiredType() view returns (bytes32)',
   'function trustedIssuer(address issuer, bytes32 credentialType) view returns (bool)',
@@ -670,5 +706,6 @@ export const VC_KYC_REGISTRY_ABI = [
   'error CredentialIsRevoked(bytes32 credentialHash)',
   'error UnsupportedCredentialType(bytes32 credentialType)',
   'error NotAuthorizedToRevoke(address caller)',
+  'error WouldReplaceLongerCredential(uint64 currentExpiresAt, uint64 newExpiresAt)',
   'error ZeroAddress()',
 ] as const

@@ -6,6 +6,7 @@ import "../src/VCKycRegistry.sol";
 import "../src/PerpetualExchange.sol";
 import "../src/MockUSDC.sol";
 import "../src/MockOracle.sol";
+import "../src/AgentSessionManager.sol";
 
 /// @dev 共用：發證者金鑰、簽 Attestation。
 abstract contract VCKycFixture is Test {
@@ -96,6 +97,7 @@ contract VCKycRegistryTest is VCKycFixture {
         assertEq(r.issuer, issuer);
         assertEq(r.expiresAt, a.expiresAt);
         assertEq(r.credentialHash, a.credentialHash);
+        assertEq(r.epoch, 1);
     }
 
     function test_noCredential_notVerified() public view {
@@ -248,7 +250,7 @@ contract VCKycRegistryTest is VCKycFixture {
         _submit(issuerPk, a);
         assertTrue(registry.isVerified(investor));
         vm.expectEmit(true, true, false, true, address(registry));
-        emit VCKycRegistry.IssuerSet(issuer, QI, false);
+        emit VCKycRegistry.IssuerSet(issuer, QI, false, 1);
         registry.setIssuer(issuer, QI, false);
         assertFalse(registry.isVerified(investor));
         // 新的也送不進來
@@ -256,8 +258,89 @@ contract VCKycRegistryTest is VCKycFixture {
         bytes memory sig = _sign(issuerPk, b);
         vm.expectRevert(abi.encodeWithSelector(VCKycRegistry.UntrustedIssuer.selector, issuer, QI));
         registry.submitAttestation(b, sig);
-        // 重新信任 → 原憑證恢復（未過期、未撤銷）
+    }
+
+    /// @dev 審查 #1：移除後再加回同一地址，舊憑證不得復活（例如金鑰外洩期間被簽出的憑證）；新簽的有效。
+    function test_issuerReAdded_oldCredentialStaysDead_newOneWorks() public {
+        VCKycRegistry.Attestation memory a = _att(investor, QI, keccak256("urn:uuid:qi-1"));
+        _submit(issuerPk, a);
+        assertEq(registry.trustEpoch(issuer, QI), 1);
+        registry.setIssuer(issuer, QI, false);
+        vm.expectEmit(true, true, false, true, address(registry));
+        emit VCKycRegistry.IssuerSet(issuer, QI, true, 2);
         registry.setIssuer(issuer, QI, true);
+        assertEq(registry.trustEpoch(issuer, QI), 2);
+        assertFalse(registry.isVerified(investor), "old credential revived after re-trust");
+        (VCKycRegistry.Record memory r, bool valid) = registry.credentialOf(investor, QI);
+        assertEq(r.epoch, 1);
+        assertFalse(valid);
+        // 重新簽發（舊紀錄已失效，到期較短也能取代）
+        VCKycRegistry.Attestation memory b = _att(investor, QI, keccak256("urn:uuid:qi-2"));
+        b.expiresAt = a.expiresAt - 1 days;
+        _submit(issuerPk, b);
+        assertTrue(registry.isVerified(investor));
+        (r,) = registry.credentialOf(investor, QI);
+        assertEq(r.epoch, 2);
+        // 另一類型的 epoch 互不影響
+        assertEq(registry.trustEpoch(issuer, BASIC), 1);
+    }
+
+    // ── 覆蓋規則（審查 #3）──────────────────────────────────────────────────────
+
+    function test_overwrite_shorterCredential_rejectedWhileCurrentValid() public {
+        VCKycRegistry.Attestation memory a = _att(investor, QI, keccak256("urn:uuid:qi-long"));
+        _submit(issuerPk, a);
+        VCKycRegistry.Attestation memory b = _att(investor, QI, keccak256("urn:uuid:qi-short"));
+        b.expiresAt = a.expiresAt - 30 days;
+        bytes memory sig = _sign(issuerPk, b);
+        vm.expectRevert(abi.encodeWithSelector(VCKycRegistry.WouldReplaceLongerCredential.selector, a.expiresAt, b.expiresAt));
+        registry.submitAttestation(b, sig);
+        (VCKycRegistry.Record memory r,) = registry.credentialOf(investor, QI);
+        assertEq(r.credentialHash, a.credentialHash);
+        assertEq(registry.nonces(investor), 1, "rejected attempt must not consume the nonce");
+    }
+
+    function test_overwrite_otherIssuerShorter_rejected_longer_accepted() public {
+        registry.setIssuer(otherIssuer, QI, true);
+        VCKycRegistry.Attestation memory a = _att(investor, QI, keccak256("urn:uuid:qi-a"));
+        _submit(issuerPk, a);
+        VCKycRegistry.Attestation memory b = _att(investor, QI, keccak256("urn:uuid:qi-b"));
+        b.expiresAt = a.expiresAt - 1;
+        bytes memory sig = _sign(otherIssuerPk, b);
+        vm.expectRevert(abi.encodeWithSelector(VCKycRegistry.WouldReplaceLongerCredential.selector, a.expiresAt, b.expiresAt));
+        registry.submitAttestation(b, sig);
+        // 到期較晚 → 取代
+        b.expiresAt = a.expiresAt + 1;
+        _submit(otherIssuerPk, b);
+        (VCKycRegistry.Record memory r,) = registry.credentialOf(investor, QI);
+        assertEq(r.issuer, otherIssuer);
+        assertTrue(registry.isVerified(investor));
+    }
+
+    function test_overwrite_sameExpiry_newerIssuedAt_accepted_olderRejected() public {
+        VCKycRegistry.Attestation memory a = _att(investor, QI, keccak256("urn:uuid:qi-1"));
+        _submit(issuerPk, a);
+        vm.warp(T0 + 10);
+        VCKycRegistry.Attestation memory b = _att(investor, QI, keccak256("urn:uuid:qi-2"));
+        b.expiresAt = a.expiresAt;
+        b.issuedAt = a.issuedAt; // 同到期、同簽發 → 不是「較新」
+        bytes memory sig = _sign(issuerPk, b);
+        vm.expectRevert(abi.encodeWithSelector(VCKycRegistry.WouldReplaceLongerCredential.selector, a.expiresAt, b.expiresAt));
+        registry.submitAttestation(b, sig);
+        b.issuedAt = a.issuedAt + 10;
+        _submit(issuerPk, b);
+        (VCKycRegistry.Record memory r,) = registry.credentialOf(investor, QI);
+        assertEq(r.credentialHash, b.credentialHash);
+    }
+
+    function test_overwrite_afterRevocation_shorterAccepted() public {
+        VCKycRegistry.Attestation memory a = _att(investor, QI, keccak256("urn:uuid:qi-1"));
+        _submit(issuerPk, a);
+        vm.prank(issuer);
+        registry.revoke(a.credentialHash);
+        VCKycRegistry.Attestation memory b = _att(investor, QI, keccak256("urn:uuid:qi-2"));
+        b.expiresAt = uint64(block.timestamp + 1 days);
+        _submit(issuerPk, b);
         assertTrue(registry.isVerified(investor));
     }
 
@@ -328,6 +411,7 @@ contract VCKycRegistryTest is VCKycFixture {
         VCKycRegistry.Attestation memory a0 = _att(investor, QI, keccak256("urn:uuid:qi-old"));
         VCKycRegistry.Attestation memory a1 = _att(investor, QI, keccak256("urn:uuid:qi-new"));
         a1.nonce = 1;
+        a1.expiresAt += 1 days; // 較新的憑證到期較晚（覆蓋規則）
         bytes memory sig0 = _sign(issuerPk, a0);
         bytes memory sig1 = _sign(issuerPk, a1);
         vm.expectRevert(abi.encodeWithSelector(VCKycRegistry.BadNonce.selector, 0, 1));
@@ -542,5 +626,32 @@ contract VCKycRegistryExchangeTest is VCKycFixture {
         vm.prank(investor);
         vm.expectRevert(abi.encodeWithSelector(PerpetualExchange.NotKycVerified.selector, investor));
         exchange.openPosition(SAAPL, true, 100e18, 2);
+    }
+
+    /// @dev 審查 #4：agent 經 AgentSessionManager 代開倉（openPositionFor），閘門檢查的是 session 的使用者。
+    function test_agentSession_openPositionFor_gatedOnSessionUser() public {
+        AgentSessionManager manager = new AgentSessionManager(address(exchange));
+        exchange.setCopyTracker(makeAddr("tracker")); // openPositionFor 需要已設定 copyTracker
+        exchange.setAgentAuthorized(address(manager), true);
+        address agent = makeAddr("agent");
+        vm.prank(investor);
+        uint256 sid = manager.createSession(agent, 500e18, 1_000e18, 5, block.timestamp + 1 days);
+
+        // 使用者未持證 → agent 代開 RWA 被拒（錯誤指名的是使用者，不是 agent 或 manager）
+        vm.prank(agent);
+        vm.expectRevert(abi.encodeWithSelector(PerpetualExchange.NotKycVerified.selector, investor));
+        manager.openPositionForSession(sid, SAAPL, true, 100e18, 2, address(0));
+
+        // agent 本身有 QI 也沒用：閘門看 session 使用者
+        _submit(issuerPk, _att(agent, QI, keccak256("urn:uuid:agent-qi")));
+        vm.prank(agent);
+        vm.expectRevert(abi.encodeWithSelector(PerpetualExchange.NotKycVerified.selector, investor));
+        manager.openPositionForSession(sid, SAAPL, true, 100e18, 2, address(0));
+
+        // 使用者持證後 → 通過，部位屬於使用者
+        _submit(issuerPk, _att(investor, QI, keccak256("urn:uuid:qi-1")));
+        vm.prank(agent);
+        uint256 pid = manager.openPositionForSession(sid, SAAPL, true, 100e18, 2, address(0));
+        assertEq(exchange.getPosition(pid).owner, investor);
     }
 }

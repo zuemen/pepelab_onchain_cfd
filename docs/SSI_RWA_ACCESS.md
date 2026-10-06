@@ -17,7 +17,15 @@
 | 只有一種「通過」 | 類型：`KYC_BASIC`、`QUALIFIED_INVESTOR`（QI 隱含 BASIC）；registry 設定 `isVerified` 要求哪一種 |
 
 一張 VC、一個簽章、兩種用途：VC 的 `proof.proofValue` **就是**發證者對 `QualifiedInvestorAttestation` 的 EIP-712 簽章；
-同一組（attestation, signature）直接送進 `VCKycRegistry.submitAttestation`。改 VC 任何欄位，簽章就還原不出發證者。
+同一組（attestation, signature）直接送進 `VCKycRegistry.submitAttestation`。改 attestation 涵蓋的任何欄位，簽章就還原不出發證者。
+
+**與標準 VC proof 的偏離（刻意）**：簽章涵蓋的是 attestation（subject、類型、`credentialHash = keccak256(VC id)`、
+狀態清單索引、`validFrom`／`validUntil`、nonce、deadline），**不是整份 JSON**。`@context`、`type`、
+`credentialStatus.statusListCredential`、`proof.created` 不在簽章內。因此驗證端（前端與發證服務共用同一份程式）
+除了重建 attestation 驗簽，還要求：`type` 必須是 `[VerifiableCredential, <依類型>]`（`KYC_BASIC` → `KycBasicCredential`、
+`QUALIFIED_INVESTOR` → `QualifiedInvestorCredential`）；`statusListCredential` 必須等於 `statusListUrlFor(base, issuer)`
+（也就是 `<base>/<發證者地址小寫>.json`）；`credentialStatus.id` 必須是 `<statusListCredential>#<index>`。
+被換掉的狀態清單主機最多只能讓預檢回「沒有清單」，清單本身仍要發證者簽章；鏈上 registry 才是權威。
 
 ## 1. 架構
 
@@ -97,10 +105,11 @@ QualifiedInvestorAttestation(address subject, bytes32 credentialType, bytes32 cr
 
 | 變數 | 意義 |
 |---|---|
-| `trustedIssuer[issuer][type]` | 某發證者是否受信任簽發某類型（`setIssuer`，事件 `IssuerSet`） |
+| `trustedIssuer[issuer][type]` | 某發證者是否受信任簽發某類型（`setIssuer`，事件 `IssuerSet(issuer, type, trusted, epoch)`） |
+| `trustEpoch[issuer][type]` | 信任 epoch：每次由不受信任變成受信任就 +1（第一次加入是 1） |
 | `issuerTypeCount[issuer]` | 受信任的類型數；> 0 才能撤銷 |
 | `credentialTypeSupported[type]`、`requiredType` | 支援的類型；`isVerified` 要求的類型（`setRequiredType`，事件 `RequiredTypeSet`） |
-| `_records[subject][type]` | `(issuer, issuedAt, expiresAt, credentialHash)`，`credentialOf` 讀取 |
+| `_records[subject][type]` | `(issuer, issuedAt, expiresAt, credentialHash, epoch)`，`credentialOf` 讀取；epoch 是登記當下的信任 epoch |
 | `nonces[subject]` | 下一個可用 nonce |
 | `credentialUsed[hash]` | 每個憑證只能登記一次 |
 | `revoked[issuer][hash]`、`revokedBefore[issuer]` | 以發證者分命名空間的撤銷；發證者只能撤銷自己的 |
@@ -108,7 +117,15 @@ QualifiedInvestorAttestation(address subject, bytes32 credentialType, bytes32 cr
 ### 3.3 `isVerified(user)`
 
 `hasValidCredential(user, requiredType)`：紀錄存在、`block.timestamp < expiresAt`、發證者**此刻**仍受信任簽該類型、
-未被撤銷、`issuedAt ≥ revokedBefore[issuer]`、類型仍支援。要求 `KYC_BASIC` 時，有效的 `QUALIFIED_INVESTOR` 也算數。
+**紀錄的 epoch 等於目前的信任 epoch**、未被撤銷、`issuedAt ≥ revokedBefore[issuer]`、類型仍支援。
+要求 `KYC_BASIC` 時，有效的 `QUALIFIED_INVESTOR` 也算數。
+
+- **移除後再加回同一發證者**：加回會開新的 epoch，之前登記的憑證（包括金鑰外洩期間可能被簽出的）**全部不會復活**；
+  投資人要由發證者重新簽發、重新提交（`test_issuerReAdded_oldCredentialStaysDead_newOneWorks`）。
+- **覆蓋規則**：每個 subject 每種類型只保留一筆。目前那筆**仍有效**時，新憑證只有「到期較晚」或「到期相同且簽發較新」
+  才能取代，否則以 `WouldReplaceLongerCredential` 拒絕（nonce 不會被消耗）——避免同類型較短、或另一發證者的較短憑證
+  把有效資格蓋掉。目前那筆已失效（到期、撤銷、發證者被移除、類型停用）時一律可以取代。這裡選「單一紀錄＋只往長的換」，
+  不採「多發證者任一有效即通過」：後者要在 `isVerified`（每次開倉都呼叫）裡走訪多筆，gas 隨發證者數成長。
 **一顆 registry 只有一個 `requiredType`**：exchange 只有一個 `kyc` 欄位、`isVerified` 不帶資產，所以「RWA 市場要 QI、其他市場要 BASIC」
 這種逐市場差異做不到（見 §9）。
 
@@ -133,7 +150,7 @@ QualifiedInvestorAttestation(address subject, bytes32 credentialType, bytes32 cr
 | VC 有效期 | 預設 365 天、上限 1095 天 | `DEFAULT_INVESTOR_VC_VALIDITY_DAYS`、`issueInvestorCredentialWithSigner` |
 | 送出期限 | 預設簽發後 30 天，且不晚於到期 | `DEFAULT_ATTESTATION_SUBMIT_WINDOW_DAYS` |
 | 狀態清單有效期 | 預設 30 天、上限 90 天、最多 1000 筆（沿用 ADR-016） | `agentAuthStatus.ts` 常數 |
-| `revokeAllBefore` 上限 | `now + 301` 秒（同 ADR-016 `REVOKE_ALL_LEAD_SEC`） | `_setRevokedBefore` |
+| `revokeAllBefore` 上限 | `now + 301` 秒（同 ADR-016 `REVOKE_ALL_LEAD_SEC`）；**不能用來處理金鑰外洩**（§5） | `_setRevokedBefore` |
 | 合約大小 | 新合約，與 PerpetualExchange 的 EIP-170 餘裕無關 | — |
 
 ## 4. 隱私
@@ -160,7 +177,12 @@ QualifiedInvestorAttestation(address subject, bytes32 credentialType, bytes32 cr
 - 兩步之間的空窗：清單已撤銷但鏈上還沒 → 鏈下預檢已拒絕，但**鏈上閘門仍放行**，直到交易上鏈。所以 SLA 要訂在鏈上交易。
 - 反方向（鏈上已撤銷、清單還沒更新）不會放行任何東西：鏈上是權威。
 - **預先撤銷**：投資人還沒提交就撤銷，之後 `submitAttestation` 以 `CredentialIsRevoked` 拒絕（`test_preRevoked_cannotBeSubmitted`）。
-- **全部撤銷**：清單的 `revokedBefore` 對應鏈上 `revokeAllBefore`；發證者金鑰外洩時 owner 可用 `revokeAllBeforeAsOwner`，或直接 `setIssuer(issuer, type, false)`。
+- **全部撤銷（金鑰仍安全時）**：清單的 `revokedBefore` 對應鏈上 `revokeAllBefore`。用途是讓一批**正常簽出**的憑證失效，
+  例如審查規則改版、所有人須重新審查。水位上限是 `now + 301` 秒，而 `issuedAt` 由簽章者自己填——
+  持有金鑰的人隨時可以簽出 `issuedAt` 晚於水位的新憑證，**所以它擋不住外洩的金鑰**。
+- **發證者金鑰外洩**：owner 對該發證者的每個類型 `setIssuer(issuer, type, false)`（立即讓它簽過的全部憑證失效），
+  並以**新金鑰（新地址）**`setIssuer(newIssuer, type, true)`，再替受影響的投資人重新簽發。不要把同一個外洩地址加回去；
+  即使加回，信任 epoch 也會讓所有舊紀錄維持失效，但外洩金鑰之後新簽的憑證會重新被接受。
 - **不會把人鎖在部位裡**：撤銷只影響開新倉，平倉、清算、提領不檢查 KYC（`test_fullLifecycle_submitOpenRevokeClose`、PoC 步驟 8）。
 
 **與 ADR-016 程式碼的重用**（`agent/issuer/investorVc.ts` 開頭註解）：驗證端的 `StatusStateStore`（sequence 高水位、同號異文偵測、
@@ -206,6 +228,13 @@ SUBMITTER_PRIVATE_KEY=… npm run issuer -- submit --vc vc.json --rpc http://127
 否則只印出 owner 要送的呼叫。`VC_KYC_OWNER` 與 broadcaster 不同時走 Ownable2Step（新 owner 要 `acceptOwnership`）。
 正式 exchange 的 owner 是 timelock 時，`setKycRegistry` 要走 timelock 提案（`GOVERNANCE_HANDOVER.md`）。
 
+- **`BROADCASTER` 覆寫**：腳本預設以 `msg.sender`（`--sender`／`--account` 的地址）當 broadcaster；設了環境變數 `BROADCASTER`
+  就改用它，且它必須是實際簽交易的那把金鑰（`vm.startBroadcast(BROADCASTER)`），否則 forge 會拒絕。用途是 `--sender`
+  與預設不同、或多把金鑰時明確指定；broadcaster 也要通過外洩地址檢查。
+- **換 registry 會讓既有 KYC 失效**：`setKycRegistry(VCKycRegistry)` 之後，exchange 只問新 registry。舊 `KYCRegistry`
+  裡已核准的使用者在新 registry **沒有任何紀錄**，會立刻失去 RWA 市場的開倉資格（既有部位照常可平倉），
+  必須由發證者簽發 VC、重新提交取得資格。切換前要先通知並安排重新發證，或先讓兩邊並行一段時間再切。
+
 ## 9. 與 ERC-3643（T-REX）／ONCHAINID 的對照
 
 | | ERC-3643 ＋ ONCHAINID | 本設計 |
@@ -239,6 +268,7 @@ EthereumEip712Signature2021 <https://w3c-ccg.github.io/ethereum-eip712-signature
 - **逐市場不同資格做不到**：exchange 只有一個 `kyc`、`isVerified` 不帶資產；要逐市場區分只能部署多套 exchange。
 - **撤銷不處理既有部位**：與 DESIGN_BESU §3.4 相同，強制處置只能整個資產 ReduceOnly 或走鏈下程序。
 - **nonce 要求依序**：同一投資人同時拿到兩張未送出的憑證，只有 nonce 對的那張能先送。
+- **單一紀錄**：每人每類型只記一筆，另一發證者的較短憑證不能取代仍有效的那筆（§3.3）。
 - **發證者是 EOA 簽章**：用 `ECDSA`，沒有支援 ERC-1271（多簽／合約錢包發證者）。KMS 簽 EOA 是可行路徑。
 - **前端預檢不含 agent 端的防重放記憶**：瀏覽器每次重抓清單、不記 sequence 高水位；權威仍是鏈上。
 - **agent 代開倉**：閘門查的是 session 的使用者（DESIGN_BESU §3.1），所以投資人本人要有 QI；agent 授權 VC 不變。
@@ -271,7 +301,7 @@ bash scripts/poc/rwa-ssi-demo.sh          # 預設 port 8547；POC_PORT=… 可�
 
 ## 12. 驗證紀錄（2026-10-06，本機 Windows）
 
-- `forge test --match-path test/VCKycRegistry.t.sol`：39 項全過（registry 34、與 PerpetualExchange 整合 5）。
+- `forge test --match-path test/VCKycRegistry.t.sol`：45 項全過（registry 39、與 PerpetualExchange 整合 6，含 AgentSessionManager 代開倉）。2026-10-06 審查修正後重跑（信任 epoch、覆蓋規則、代開倉路徑）。
 - `forge test --match-path test/DeployVCKycRegistry.t.sol`：8 項全過。
 - `agent`：`npm run typecheck`（含新的 `tsc -p issuer`）0 錯誤；`npm test` 全量 exit 0（新增 `test:issuer` 7 組）；`npm run bundle:check` 同步（signal-api bundle 未受影響）。
 - `frontend`：`tsc --noEmit` 0 錯誤；`yarn test` 84 個檔案 1126 項全過（含新增 `investorCredentialCheck.test.ts`、`InvestorCredentialPanel.test.ts`）。

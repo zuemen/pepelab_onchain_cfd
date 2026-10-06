@@ -15,7 +15,7 @@ import Typography from '@mui/material/Typography'
 
 import { t, interpolate } from 'src/locales'
 import { getVcKycRegistryAddress } from 'src/contracts/vcKycRegistry'
-import { CREDENTIAL_TYPE_IDS, VC_KYC_REGISTRY_ABI } from 'src/contracts/investorCredential'
+import { credentialTypeName, VC_KYC_REGISTRY_ABI } from 'src/contracts/investorCredential'
 import {
   submitBlocker,
   verifyPastedCredential,
@@ -48,7 +48,12 @@ export function InvestorCredentialPanel({ wallet, registryAddress }: Props) {
   const [error, setError] = useState<string | null>(null)
   const [status, setStatus] = useState<StatusCheck | null>(null)
   const [chain, setChain] = useState<OnchainEligibility | null>(null)
-  const [mine, setMine] = useState<{ valid: boolean; expiresAt: number; isVerified: boolean } | null>(null)
+  const [mine, setMine] = useState<{
+    valid: boolean
+    expiresAt: number
+    isVerified: boolean
+    requiredLabel: string
+  } | null>(null)
   const [busy, setBusy] = useState(false)
   const [txHash, setTxHash] = useState<string | null>(null)
 
@@ -56,11 +61,19 @@ export function InvestorCredentialPanel({ wallet, registryAddress }: Props) {
     if (!registry || !wallet.provider || !wallet.address) return
     try {
       const reg = new Contract(registry, VC_KYC_REGISTRY_ABI as unknown as string[], wallet.provider)
+      // 依 registry 實際要求的類型讀紀錄（不寫死 QUALIFIED_INVESTOR）。
+      const required: string = await reg.requiredType()
       const [[rec, valid], isVerified] = await Promise.all([
-        reg.credentialOf(wallet.address, CREDENTIAL_TYPE_IDS.QUALIFIED_INVESTOR),
+        reg.credentialOf(wallet.address, required),
         reg.isVerified(wallet.address),
       ])
-      setMine({ valid: Boolean(valid), expiresAt: Number(rec.expiresAt), isVerified: Boolean(isVerified) })
+      const name = credentialTypeName(required)
+      setMine({
+        valid: Boolean(valid),
+        expiresAt: Number(rec.expiresAt),
+        isVerified: Boolean(isVerified),
+        requiredLabel: name ? t.investorVc.typeLabel[name] : required,
+      })
     } catch {
       setMine(null)
     }
@@ -174,8 +187,8 @@ export function InvestorCredentialPanel({ wallet, registryAddress }: Props) {
         {mine && (
           <Alert severity={mine.isVerified ? 'success' : 'warning'} data-testid="vc-kyc-mine">
             {mine.isVerified
-              ? interpolate(t.investorVc.mineVerified, { date: fmtDate(mine.expiresAt) })
-              : t.investorVc.mineNotVerified}
+              ? interpolate(t.investorVc.mineVerified, { type: mine.requiredLabel, date: fmtDate(mine.expiresAt) })
+              : interpolate(t.investorVc.mineNotVerified, { type: mine.requiredLabel })}
           </Alert>
         )}
 

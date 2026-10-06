@@ -101,6 +101,7 @@ const vc = await issue();
   assert.ok(!r.valid && r.reasonCode === "VC_BAD_SIGNATURE");
   d = clone();
   d.credentialSubject.credentialType = "KYC_BASIC";
+  d.type = ["VerifiableCredential", "KycBasicCredential"]; // 連 type 一起改，才會走到驗簽
   r = verifyInvestorCredential(d);
   assert.ok(!r.valid && r.reasonCode === "VC_BAD_SIGNATURE");
   d = clone();
@@ -109,6 +110,11 @@ const vc = await issue();
   assert.ok(!r.valid && r.reasonCode === "VC_HASH_MISMATCH");
   d = clone();
   d.issuer = `did:pkh:eip155:${CHAIN}:${mallory.address}`;
+  r = verifyInvestorCredential(d);
+  // 換 issuer：狀態清單網址（綁原發證者）先對不上 → MALFORMED；就算一併改網址，簽章也還原不出新 issuer。
+  assert.ok(!r.valid && r.reasonCode === "VC_MALFORMED");
+  d.credentialStatus.statusListCredential = `https://status.example.invalid/investor/${mallory.address.toLowerCase()}.json`;
+  d.credentialStatus.id = `${d.credentialStatus.statusListCredential}#3`;
   r = verifyInvestorCredential(d);
   assert.ok(!r.valid && r.reasonCode === "VC_BAD_SIGNATURE");
   d = clone();
@@ -137,7 +143,25 @@ const vc = await issue();
   });
   r = verifyInvestorCredential(forged, { trustedIssuers: [issuer.address] });
   assert.ok(!r.valid && r.reasonCode === "VC_UNTRUSTED_ISSUER");
-  ok("竄改效期／subject／類型／id／issuer／registry → 拒絕；domain 不符、過期、未來簽發、錯誤簽者、格式錯誤 → 拒絕");
+  // 未簽章的欄位也要結構一致（審查 #5、#6）
+  d = clone();
+  d.type = ["VerifiableCredential", "KycBasicCredential"];
+  r = verifyInvestorCredential(d);
+  assert.ok(!r.valid && r.reasonCode === "VC_MALFORMED", "QI 憑證不可宣稱是 KycBasicCredential");
+  d = clone();
+  d.credentialStatus.statusListCredential = `https://status.example.invalid/investor/${mallory.address.toLowerCase()}.json`;
+  d.credentialStatus.id = `${d.credentialStatus.statusListCredential}#3`;
+  r = verifyInvestorCredential(d);
+  assert.ok(!r.valid && r.reasonCode === "VC_MALFORMED", "狀態清單網址必須是這個發證者的");
+  d = clone();
+  d.credentialStatus.id = `${d.credentialStatus.statusListCredential}#9`;
+  r = verifyInvestorCredential(d);
+  assert.ok(!r.valid && r.reasonCode === "VC_MALFORMED", "status id 必須指向本憑證的索引");
+  const basic = await issue({ credentialType: "KYC_BASIC" });
+  assert.deepStrictEqual(basic.type, ["VerifiableCredential", "KycBasicCredential"]);
+  const vb = verifyInvestorCredential(basic);
+  assert.ok(vb.valid && vb.credentialType === "KYC_BASIC");
+  ok("竄改效期／subject／類型／id／issuer／registry → 拒絕；domain 不符、過期、未來簽發、錯誤簽者、格式錯誤、VC type 與類型不符、狀態清單網址非本發證者 → 拒絕");
 }
 
 // 4. 狀態清單：沿用 vcStatus.ts 的來源與狀態儲存（防重放、sticky、扣住）
