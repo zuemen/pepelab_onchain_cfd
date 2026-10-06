@@ -25,7 +25,7 @@
    - **市場時段**：現役交易所沒有逐資產模式，**週末與假日可以對著上週五收盤價開倉**（[`KNOWN_LIMITATIONS.md`](KNOWN_LIMITATIONS.md) #31）。修正在原始碼，未部署。
    - **准入**：鏈上 KYC 閘門有接上，但現役 `KYCRegistry` 是舊版——送件與核准沒有分離，所以它**不構成身分審查**；原始碼版已分離，未部署。
 4. 1P 有三句話**目前不準確**，建議在 10/7 交件前修正（第 5.1 節）：「多來源確認」、「分級由見證者上鏈並取中位數」、「RWA 標的須通過鏈上 KYC 才能開倉」。
-5. 在「現役合約 owner 金鑰不可用、`PerpetualExchange` EIP-170 餘裕 0 B」的限制下，前 5 個補強（第 4 節）：
+5. 在「現役合約 owner 金鑰不可用、`PerpetualExchange` 相對 repo 自訂大小上限的餘裕 0 B」的限制下，前 5 個補強（第 4 節）：
    **① RWA 資產卡與法遵揭露頁**、**② 參考價多源見證看板**、**③ 儲備與償付能力頁**、**④ 以新金鑰部署的「RWA 示範租戶」**、**⑤ 合格投資人 VC 閘門**。
    ①②③ 純鏈下、不需要任何金鑰；④⑤ 需要一把**新的**部署金鑰與 Base Sepolia 測試幣，但不需要現役 owner 金鑰。
 
@@ -41,13 +41,13 @@
 | 業界例子 | PAXG（每枚對應金條）、BUIDL（代幣化基金份額）、xStocks、Ondo Global Markets | Ostium（RWA 永續合約）、傳統的 CFD 與期貨 |
 
 依據：
-- IOSCO 把代幣化定義為「在 token 帳本或可程式化平台上創建、發行或表示資產」，並指出股票型 token 可能只是「發行人給付金錢收益的承諾」，沒有股東權；主要風險是法律確定性、DLT 營運、託管、交割終局性｜<https://www.iosco.org/library/pubdocs/pdf/IOSCOPD809.pdf>（FR/17/25，2025-11-11）｜一手（經摘要取得，引用原句前請開原文核對）。
+- IOSCO 把代幣化定義為在「digital token ledger」（數位代幣帳本）或可程式化平台上創建、發行或表示資產，並指出股票型 token 可能只是「發行人給付金錢收益的承諾」，沒有股東權；主要風險是法律風險、DLT 營運、託管、交割終局性｜<https://www.iosco.org/library/pubdocs/pdf/IOSCOPD809.pdf>（FR/17/25，2025-11-11）｜一手（經摘要取得，引用原句前請開原文核對）。
 - BIS 把代幣化定義為「將傳統帳本上對真實或金融資產的債權記錄到可程式化平台」｜<https://www.bis.org/publ/arpdf/ar2025e3.htm>｜一手。該章沒有討論 oracle 與鏈上鏈下橋接，**不要**引用 BIS 來支持 oracle 論點。
 - FSB 列出代幣化的五項脆弱性：流動性／期限錯配、槓桿、資產價格與品質、互連性、營運脆弱｜<https://www.fsb.org/2024/10/the-financial-stability-implications-of-tokenisation/>（2024-10-22）｜一手。
-- rwa.xyz 區分 **Distributed**（可移出發行平台、在錢包間轉移）與 **Represented**（不可移出，鏈只當記錄層）｜<https://app.rwa.xyz/blog/a-new-framework-for-tokenized-assets-distributed-and-represented>（2025-11-21）｜一手。PepeLab 兩者都不是：它沒有被代幣化的標的。
+- rwa.xyz 區分 **Distributed**（可移出發行平台、在錢包間轉移）與 **Represented**（不可移出；轉述：區塊鏈只當記錄／對帳層）｜<https://app.rwa.xyz/blog/a-new-framework-for-tokenized-assets-distributed-and-represented>（2025-11-21）｜一手。PepeLab 兩者都不是：它沒有被代幣化的標的。
 - SEC 委員 Hester Peirce 的個人聲明：「Tokenized securities are still securities」；第三方代幣化有對手方風險；**不給持有人底層證券法律與實質所有權的 token，可能是 security-based swap**｜<https://www.sec.gov/newsroom/speeches-statements/peirce-statement-tokenized-securities-070925>（2025-07-09）｜一手（個人聲明，不是 SEC 官方立場）。
   → 這句話對 PepeLab 是**有利的定性**：PepeLab 本來就自居為衍生品，而不是「代幣化股票」。
-- Ostium 的 RWA 價格用自建的 pull-based oracle（節點由 Stork 運作），休市時不接受市價單｜<https://ostium-labs.gitbook.io/ostium-docs/supporting-infrastructure/price-oracle>｜一手。它是「RWA 永續合約」這個類別的業界對照。Ostium 是否完全沒有底層資產：**未查證**。
+- Ostium 的 RWA 價格用自建的 pull-based oracle（多數節點由 Stork 運作），休市時不接受市價單｜<https://ostium-labs.gitbook.io/ostium-docs/supporting-infrastructure/price-oracle>｜一手。它是「RWA 永續合約」這個類別的業界對照。Ostium 是否完全沒有底層資產：**未查證**。
 
 **結論**：本題目用「RWA」是可以成立的，但必須說成「**參照 RWA 的衍生品層**」，並用衍生品層的判準證明自己做得夠好；不能暗示持有人擁有真實資產。
 
@@ -62,7 +62,7 @@
 | C3 | **合規准入** | KYC、合格投資人、制裁篩檢；身分登記 | 參照證券的市場要有准入閘門；身分審查由持牌機構做，鏈上只執行結果；准入可到期、可撤銷 | ERC-3643 Identity Registry 以白名單連結錢包、onchain identity 與國碼｜<https://eips.ethereum.org/EIPS/eip-3643>（Final）｜一手；Ondo 只賣給符合資格的非美國人｜<https://ondo.finance/ondo-stocks>｜一手 |
 | C4 | **轉讓限制** | 每次轉讓檢查收款方資格；凍結、強制轉移 | 衍生品部位本身不應可自由轉讓；若另有可轉讓的合成代幣，應受同一套准入 | ERC-3643 `canTransfer`、凍結、`forcedTransfer`｜同上｜一手；ERC-1400 為 Draft（2018），未收錄為正式 EIP｜<https://github.com/SecurityTokenStandard/EIP-Spec/blob/master/eip/eip-1400.md>｜一手（非 eips.ethereum.org） |
 | C5 | **市場時段與公司行動** | 股利、分割、停牌、下市要反映到代幣（multiplier、再投資） | 休市不可對過時價格開新倉；拆股不得誤清算；股利對多空部位的調整政策要明訂；期貨換月 | Chainlink Data Streams `marketStatus`，官方建議以它判斷開盤、不要看時間戳｜<https://docs.chain.link/data-streams/market-hours>｜一手；xStocks 拆股與股利再投資｜<https://support.kraken.com/articles/corporate-actions-xstocks-kraken-app>｜一手；Chainlink 24/5 美股：公司行動待處理時可能停報｜<https://docs.chain.link/data-streams/rwa-streams/24-5-us-equities-user-guide>｜一手 |
-| C6 | **法律結構與對手方** | 發行人、SPV、託管人、持有人權利 | 誰是對手方、契約條款、違約與壞帳時的損失分配順序 | IOSCO 法律確定性（同 §1）；xStocks 發行人 Backed Assets (JE) Limited、Alpaca 託管｜Kraken FAQ｜一手 |
+| C6 | **法律結構與對手方** | 發行人、SPV、託管人、持有人權利 | 誰是對手方、契約條款、違約與壞帳時的損失分配順序 | IOSCO 法律風險（同 §1）；xStocks 發行人 Backed Assets (JE) Limited、Alpaca 託管｜Kraken FAQ｜一手 |
 | C7 | **結算資產** | 贖回為法幣或實體資產 | 現金結算用的結算幣品質（受監管穩定幣、代幣化存款） | FSB 營運與流動性脆弱（同 §1） |
 | C8 | **資訊揭露** | 公開說明書、持有人權利、風險 | 「不代表所有權」、參考價來源、休市規則、對手方、槓桿與損失分配、方法論 | IOSCO（同 §1）；ESMA 2026-09 Risk Monitor 有「Tokenisation of equities」專節｜<https://www.esma.europa.eu/sites/default/files/2026-09/ESMA50-1949966494-4282_TRV_Risk_Monitor_2_2026.pdf>｜一手連結、內文引句**未讀到原文，不引用** |
 | C9 | **監理定位** | 證券型代幣（STO）或沙盒 | 槓桿衍生品屬受監理業務；原型的定位（PoC／沙盒／B2B 給持牌機構） | 台灣 STO 規範（3,000 萬元界線、專業投資人）｜<https://www.tpex.org.tw/web/STO/index.php?l=zh-tw>｜一手；《期貨交易法》第 3 條「槓桿保證金契約」、第 80 條槓桿交易商許可｜<https://law.moj.gov.tw/LawClass/LawAll.aspx?pcode=G0400100>｜一手（細節見 [`DESIGN_BESU.md`](DESIGN_BESU.md) §5）；金管會「現實世界資產（RWA）代幣化小組」2025-09-25 完成期末報告，驗證標的為國內債券、外國債券與基金｜<https://www.fsc.gov.tw/ch/home.jsp?id=96&parentpath=0%2C2&mcustomize=news_view.jsp&dataserno=202511040002&aplistdn=ou%3Dnews%2Cou%3Dmultisite%2Cou%3Dchinese%2Cou%3Dap_root%2Co%3Dfsc%2Cc%3Dtw&dtable=News>｜一手 |
@@ -83,8 +83,8 @@
 |---|---|---|---|---|
 | C1 | 參考標的與參考價 | **部分** | 標的識別：`frontend/src/lib/pepefi/assetMeta.ts:128`、`:166`、`:185`（交易所＋代號）。來源：`agent/keeper/feeds.ts:14-28`（股票／ETF／黃金全走 Yahoo，加密走 CoinGecko）、`:30-38`（第二來源只有 sBTC、sETH）。交易所讀 `MockOracle`：`contracts/src/MockOracle.sol:64`（`onlyOwner` 寫價）；`PARAMS_INVENTORY.md:154`。鏈上：Chainlink 轉接器 0x37DC… 對 5 檔資產的 `feeds()` 全為 0；Pyth 轉接器 0x551C… 只設了 sBTC、sETH 的 price id | 標的清楚，但價格是受信任的單一 keeper 寫入；股票單一來源；沒有簽名價；資料源未取得商業授權 |
 | C2 | 償付能力透明 | **部分** | `contracts/src/v2/AssetVaultV2_4.sol:431`（`reserve`）、`:441`（`outstandingValue`）、`:491`（`reserveRatioBps`）、`:486`（`ratioIsStale`）、`:543`（`observeReserve` 事件）。鏈上（AssetVaultV2 proxy 0x916D…）：`reserve` ≈ 201,291.5、`outstandingValue` ≈ 1,375.26、`reserveRatioBps` = 1,463,658（約 14,637%）、`ratioIsStale` = false、`minReserveRatioBps` = 11,000 | 負債與準備都在鏈上、可重播；但準備是測試幣 MockUSDC，金庫**非足額抵押**、是所有多頭的對手方；這不是、也不能是標的的 PoR |
-| C3 | 合規准入 | **部分** | 閘門：`contracts/src/PerpetualExchange.sol:267-271`、`:1769-1770`（只在開倉檢查）。鏈上：`kyc()` = 0x5D95…360d；`rwaAsset` 為 true 的有 sAAPL、sTSLA、sNVDA、sMSFT、sGOOGL、sBOND、sICLN、sESGU，sGOLD／sBTC／sETH 為 false。登錄：`contracts/src/KYCRegistry.sol` 原始碼已分離送件與核准，但 `RELEASE_STATUS.md:37` 顯示鏈上是舊版（2842 B ≠ 4454 B）；前端註解 `frontend/src/lib/pepefi/kycSubmitGate.ts:4-6`。個資：`frontend/src/components/pepefi/KYCModal.tsx:223-225`（送 `keccak256(salt‖姓名)`） | 閘門有接上、個資不上鏈是對的；但現役登錄沒有審核步驟，**不構成身分審查**；沒有到期日、沒有合格投資人分級；金庫 mint 不檢查 KYC |
-| C4 | 轉讓限制 | **部分** | 永續部位是交易所內部紀錄（`PerpetualExchange.sol:219`、`:224`），沒有轉讓函式；金庫代幣 `contracts/src/v2/SyntheticAssetV2.sol:5-6` 註明「transferable」，是一般 ERC-20 | 永續部位天然不可轉讓（符合）；金庫的合成代幣可自由轉給任何地址（不符合） |
+| C3 | 合規准入 | **部分** | 閘門：`contracts/src/PerpetualExchange.sol:267-271`、`:1769-1770`（只在開倉檢查）。鏈上：`kyc()` = 0x5D95…360d；`rwaAsset` 為 true 的有 sAAPL、sTSLA、sNVDA、sMSFT、sGOOGL、sBOND、sICLN、sESGU，sGOLD／sBTC／sETH 為 false。登錄：`contracts/src/KYCRegistry.sol` 原始碼已分離送件與核准，但 `RELEASE_STATUS.md:37` 顯示鏈上是舊版（2842 B ≠ 4454 B）；前端註解 `frontend/src/lib/pepefi/kycSubmitGate.ts:4-6`。個資：`frontend/src/components/pepefi/KYCModal.tsx:222-224`（送 `keccak256(salt‖姓名)`） | 閘門有接上、個資不上鏈是對的；但現役登錄沒有審核步驟，**不構成身分審查**；沒有到期日、沒有合格投資人分級；金庫 mint 不檢查 KYC |
+| C4 | 轉讓限制 | **部分** | 永續部位是交易所內部紀錄（`PerpetualExchange.sol:219`、`:224`），沒有轉讓函式；金庫代幣 `contracts/src/v2/SyntheticAssetV2.sol:7-8` 註明「transferable」，是一般 ERC-20 | 永續部位天然不可轉讓（符合）；金庫的合成代幣可自由轉給任何地址（不符合） |
 | C5 | 市場時段與公司行動 | **缺少（鏈上）／部分（鏈下）** | 現役交易所沒有 `assetMode()`（`RELEASE_STATUS.md` 的「讀不到的 getter」；`KNOWN_LIMITATIONS.md:1236` #31：週末以週五收盤價接受開倉）。原始碼有 Active／ReduceOnly／Halted：`PerpetualExchange.sol:369`、`:376-383`；keeper 休市切換：`agent/keeper/marketMode.ts`、`agent/keeper/market.ts:16-28`。拆股：`docs/RUNBOOK_KEEPER.md:238-256`（熔斷＋人工）。下市：`KNOWN_LIMITATIONS.md` #21（沒有最終結算函式） | 休市與公司行動的**設計**都有，**現役鏈上都沒有生效**；股利沒有任何調整機制；sGOLD 追蹤近月期貨（`assetMeta.ts:166`），換月跳價沒有處理 |
 | C6 | 法律結構與對手方 | **缺少（定位使然）** | README §8；[`COMPLIANCE_BOUNDARY.md`](COMPLIANCE_BOUNDARY.md) §1-§3（草案）；損失順序 [`RISK_WATERFALL.md`](RISK_WATERFALL.md) | 沒有法律實體、沒有契約條款；對手方與損失分配順序**有寫清楚**（保證金 → 保險金庫 → ADL → 壞帳事件），這是衍生品層能補的部分 |
 | C7 | 結算資產 | **部分** | 保證金是 MockUSDC 0x69fd…（README §2：部署版 `mint` 不受限，僅限測試網）；正式設計見 [`DESIGN_BESU.md`](DESIGN_BESU.md) §4（代幣化存款） | 現金結算的結構正確；結算幣是測試幣 |
@@ -109,7 +109,7 @@ Pyth 有 `Equity.US.<代號>/USD` 與 `Metal.XAU/USD`（ADR-013 §2.5，以 Herm
 **(3) AssetVaultV2 非足額抵押。** 金庫是所有多頭的對手方，用 110% 準備率門檻（破線停鑄、贖回不受限）、逐資產上限與暫停來限制曝險，不是 1:1 準備（`KNOWN_LIMITATIONS.md:200-206`、[`ADR-004`](ADR-004-reserve-transparency.md)）。
 今天的比率約 14,637%，是因為負債很小（約 1,375）而準備是大量測試幣；這個數字**不能**拿來宣稱「超額擔保」，只能拿來展示「比率與破線反應在鏈上可查」。
 
-**(4) KYC 前端只送雜湊。** 前端送的是 `keccak256(salt‖正規化姓名)` 與 `keccak256(salt‖國籍代碼)`，salt 只留在使用者端（`KYCModal.tsx:223-225`）。這做到了「個資不上鏈」，但**不等於做了 KYC**：
+**(4) KYC 前端只送雜湊。** 前端送的是 `keccak256(salt‖正規化姓名)` 與 `keccak256(salt‖國籍代碼)`，salt 只留在使用者端（`KYCModal.tsx:222-224`）。這做到了「個資不上鏈」，但**不等於做了 KYC**：
 沒有人看過證件、沒有制裁篩檢；加上現役登錄沒有審核步驟，現役閘門只是「這個地址有送過一筆資料」。真正的身分審查在設計上屬於持牌客戶（`COMPLIANCE_BOUNDARY.md` §3）。
 
 **(5) 碳分級的資料來源。** 個股用公司永續報告的範疇一＋二（經二手彙整網站轉引）除以 SEC 申報的營收；加密與黃金用網路或產業的年化絕對排放；sICLN、sBOND 是定性判斷；sESGU 只有約 24% 持股覆蓋（`CARBON_METHODOLOGY.md` §4-§5）。
@@ -124,7 +124,7 @@ Pyth 有 `Equity.US.<代號>/USD` 與 `Metal.XAU/USD`（ADR-013 §2.5，以 Herm
 
 ### 4.1 限制
 
-- `PerpetualExchange` 的 EIP-170 餘裕是 **0 B**（`PARAMS_INVENTORY.md:242`）：不加任何功能。修改既有合約不新增方法；新功能放**新合約**或**鏈下**。
+- `PerpetualExchange` 相對 repo 自訂上限 `maxRuntimeBytes` = 23,911 B（`scripts/contract-size-budget.json:6`）的餘裕是 **0 B**（`PARAMS_INVENTORY.md:242`）；距 EIP-170 的 24,576 B 尚有 665 B，**保留給必要的安全修正**，不用來加功能。因此不加任何功能。修改既有合約不新增方法；新功能放**新合約**或**鏈下**。
 - 現役合約的 owner 金鑰目前找不到：**不能**改現役合約的任何設定（`setKycRegistry`、`setRwaAsset`、ESGRegistryV2 的 `ATTESTOR_ROLE`、MockOracle 寫價以外的 owner 操作都做不到）。新合約可以用新金鑰部署，但要 Base Sepolia 測試幣當 gas。
 - 時程：10/21 前要能寫進 20P；12/7 要能 Demo。
 - 廣播交易一律由持有新金鑰的使用者本人執行（[`TENANT_DEPLOYMENT.md`](TENANT_DEPLOYMENT.md) 的既有規則）。
@@ -197,12 +197,13 @@ Pyth 有 `Equity.US.<代號>/USD` 與 `Metal.XAU/USD`（ADR-013 §2.5，以 Herm
   - GuardedOracle 當交易所的 oracle（偏離上限、時間窗限制、凍結），而不是 `MockOracle`；
   - 自己當 admin 的空白 `ESGRegistryV2`（全部從 Unrated 開始），可以指派**不同的** attestor 地址；
   - `assets.registered` 只放參照真實資產的標的（例如 sAAPL、sMSFT、sGOLD、sBOND），並可決定 `deployVault: false`，避免可自由轉讓的金庫代幣。
-- **為什麼符合 RWA 判準**：同時補 C1（受限的 oracle）、C3（真的有核准步驟）、C5（休市停開新倉、平倉與清算照常）。不違反 0 B 限制：部署的是**現有** master 原始碼，沒有新增任何方法。
+- **為什麼符合 RWA 判準**：同時補 C1（受限的 oracle）、C3（真的有核准步驟）、C5（休市停開新倉、平倉與清算照常）。不違反自訂大小上限（餘裕 0 B）：部署的是**現有** master 原始碼，沒有新增任何方法。
 - **元件**：既有腳本與設定檔（新增一份租戶 JSON）、新租戶的 keeper workflow（`TENANT_OPERATIONS.md`）、前端租戶設定。
 - **金鑰**：**不需要**現役 owner 金鑰；需要使用者本人保管的**新**部署金鑰、keeper 金鑰與 Base Sepolia 測試幣。新金鑰不得放進 repo，依 `TENANT_DEPLOYMENT.md` 只放 secret。
+- **狀態（2026-10-06）**：使用者已選擇「新金鑰重新部署到 Base Sepolia」作為 PoC 部署方式，進行中；方案 ⑤ 的 VC 准入正在 `feat/vc-kyc-registry` 分支實作。
 - **工時**：24–32 h（設定與 dry-run 4 h、部署與驗證 6 h、keeper workflow 6 h、前端租戶與驗收 8 h、文件 4 h），另需 `forge` 編譯與模擬——**要排在同機沒有其他示範在跑的時段**。
 - **Demo**：同一個前端切到示範租戶；週末對 sAAPL 開倉被拒（`AssetNotActive`），但既有部位可以平倉；未核准的錢包開 sAAPL 被拒（`NotKycVerified`），核准後通過、撤銷後不能再開但能平倉。
-- **風險**：(a) 示範租戶與現役平台是兩套位址，簡報要講清楚「現役是舊版、示範租戶是 master 版」；(b) `PerpetualExchange` 剛好卡在 EIP-170 門檻，編譯器版本或設定一變就可能超過，部署前必須跑 `contract-size` 檢查；(c) 新 keeper 會增加維運負擔（GitHub Actions cron 延遲）；(d) 新 ESGRegistryV2 的 attestor 雖然是不同地址，仍由同一團隊控制，**不能**說成獨立見證。
+- **風險**：(a) 示範租戶與現役平台是兩套位址，簡報要講清楚「現役是舊版、示範租戶是 master 版」；(b) `PerpetualExchange` 等於 repo 自訂上限 23,911 B（距 EIP-170 尚有 665 B 保留給安全修正），部署的必須是通過 `contract-size` 檢查的 master 原始碼，不得順手加功能；(c) 新 keeper 會增加維運負擔（GitHub Actions cron 延遲）；(d) 新 ESGRegistryV2 的 attestor 雖然是不同地址，仍由同一團隊控制，**不能**說成獨立見證。
 
 #### ⑤ 合格投資人 VC 閘門（新合約實作 `IKyc`）
 
@@ -274,7 +275,7 @@ Pyth 有 `Equity.US.<代號>/USD` 與 `Metal.XAU/USD`（ADR-013 §2.5，以 Herm
 
 ## 6. 不建議做的事
 
-- 不要為了「看起來像 RWA」在現役交易所加任何功能：0 B 餘裕，也沒有 owner 金鑰。
+- 不要為了「看起來像 RWA」在現役交易所加任何功能：相對自訂上限餘裕 0 B（剩下到 EIP-170 的 665 B 保留給安全修正），也沒有 owner 金鑰。
 - 不要做一個「演出來的」託管或 PoR（例如自己簽一份儲備聲明）。ADR-002 與 ADR-004 已經說明它會讓真正誠實的部分一起被懷疑。
 - 不要把 Chainlink 主網的「Coinbase AAPL」說成 Apple 股價，也不要把 Pyth 說成「已經接上」——現役交易所不讀任何簽名價。
 - 不要在 20P 預寫 ④⑤ 為已上線；寫「設計＋時程」或在完成後再更新。
