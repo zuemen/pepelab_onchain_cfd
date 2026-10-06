@@ -10,8 +10,8 @@ import { mapLimit, withRetry, RPC_CONCURRENCY } from 'src/lib/pepefi/rpcBatch'
 //   1. PositionClosed / PositionLiquidated 沒有把 asset 編進 indexed 參數，只有
 //      PositionOpened 有。要湊出「這個標的的完整活動」得先撈全部平倉事件再逐一
 //      回查 asset，反而更慢。
-//   2. Base Sepolia 的公開 RPC 把 eth_getLogs 限制在 1,000 個 block（約 33 分鐘；
-//      2026-09-29 實測，常數與方法見 lib/pepefi/chainLogs.ts 的
+//   2. Base Sepolia 的公開 RPC 把 eth_getLogs 限制在 500 個 block（約 17 分鐘，2026-10-06 實測；
+//      常數與方法見 lib/pepefi/chainLogs.ts 的
 //      MEASURED_GETLOGS_MAX_BLOCKS），要看更早就得分段掃（getLogsChunked），成本更高。
 //   3. getPosition(id) 的 struct 本身就有 asset / openedAt / closedAt /
 //      realizedPnL / isOpen——開倉、平倉、損益全在裡面，不需要事件。
