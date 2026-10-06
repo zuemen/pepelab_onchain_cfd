@@ -31,6 +31,8 @@ type Props = {
    * 而不是打開舊登錄的 submitKYC 表單（VC 登錄沒有那個函式）。
    */
   credentialsHref?: string | null;
+  /** 專屬部署的 KYC 登錄種類還沒確認：不給舊的 submitKYC 表單，只顯示確認中。 */
+  vcChecking?: boolean;
 };
 
 const STATUS_ICON: Record<KYCStatus, string> = {
@@ -49,7 +51,7 @@ const STATUS_COLOR: Record<KYCStatus, string> = {
   unknown:       'warning.main',
 };
 
-export default function KYCStatusCard({ kycRegistry, userAddress, credentialsHref = null }: Props) {
+export default function KYCStatusCard({ kycRegistry, userAddress, credentialsHref = null, vcChecking = false }: Props) {
   const [showModal, setShowModal] = useState(false);
   const { status, isPending, refetch } = useKYC(kycRegistry, userAddress);
 
@@ -95,7 +97,13 @@ export default function KYCStatusCard({ kycRegistry, userAddress, credentialsHre
           </Button>
         )}
 
-        {status === 'unverified' && !credentialsHref && (
+        {status === 'unverified' && !credentialsHref && vcChecking && (
+          <Typography variant="caption" color="text.secondary" data-testid="kyc-vc-checking" sx={{ whiteSpace: 'nowrap' }}>
+            {t.investorVc.checkingShort}
+          </Typography>
+        )}
+
+        {status === 'unverified' && !credentialsHref && !vcChecking && (
           <Button
             size="small"
             variant="outlined"
@@ -121,7 +129,7 @@ export default function KYCStatusCard({ kycRegistry, userAddress, credentialsHre
       </Box>
 
       <KYCModal
-        isOpen={showModal && !credentialsHref}
+        isOpen={showModal && !credentialsHref && !vcChecking}
         onClose={() => setShowModal(false)}
         onSuccess={() => { void refetch(); }}
         kycRegistry={kycRegistry}

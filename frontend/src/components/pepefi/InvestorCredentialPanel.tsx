@@ -91,7 +91,11 @@ export function InvestorCredentialPanel({ wallet, registryAddress }: Props) {
         <Typography variant="h6" sx={{ mb: 1 }}>
           {t.investorVc.title}
         </Typography>
-        {registryAddress === undefined && resolved.status === 'checking' ? (
+        {registryAddress === undefined && resolved.status === 'disconnected' ? (
+          <Alert severity="info" data-testid="vc-kyc-connect">
+            {t.investorVc.connectWallet}
+          </Alert>
+        ) : registryAddress === undefined && resolved.status === 'checking' ? (
           <Alert severity="info" data-testid="vc-kyc-checking">
             {t.investorVc.checking}
           </Alert>

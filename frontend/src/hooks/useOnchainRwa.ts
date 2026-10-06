@@ -3,6 +3,7 @@ import type { Contract } from 'ethers'
 import { useState, useEffect } from 'react'
 
 import { safeRead } from 'src/lib/pepefi/safeRead'
+import { isPlatformDeployment } from 'src/contracts/deployment'
 
 // ----------------------------------------------------------------------
 
@@ -13,6 +14,9 @@ import { safeRead } from 'src/lib/pepefi/safeRead'
  * 所以 UI 的 KYC 閘門要把鏈上旗標也算進去，否則按鈕看似可按、送出才 revert。
  *
  * 讀不到（null）時退回靜態表——只會「多擋」不會「少擋」：見 kycGateApplies。
+ *
+ * 只在專屬部署讀：平台部署的 RWA 旗標就是靜態表那 8 檔（Verify130 釘住），不多打 RPC，
+ * 預設站行為完全不變。
  */
 export function useOnchainRwaFlags(
   exchange: Contract | null | undefined,
@@ -22,7 +26,7 @@ export function useOnchainRwaFlags(
   const [flags, setFlags] = useState<{ ex: unknown; key: string; v: Record<string, boolean | null> } | null>(null)
 
   useEffect(() => {
-    if (!exchange || !assetIds.length) return undefined
+    if (isPlatformDeployment || !exchange || !assetIds.length) return undefined
     let cancelled = false
     void Promise.all(
       assetIds.map(async (id) => [id, await safeRead<boolean | null>(exchange.rwaAsset(id) as Promise<boolean>, null)] as const),

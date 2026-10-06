@@ -5,7 +5,7 @@ import { getVcKycSource, vcKycSource } from 'src/contracts/vcKycRegistry'
 import { resolveDeployment, parseTenantDeployment } from 'src/contracts/tenantDeployment'
 
 import { kycGateApplies } from './useOnchainRwa'
-import { vcStateFromProbe, isVcKycRegistry } from './useVcKycRegistry'
+import { kycActionMode, vcStateFromProbe, isVcKycRegistry } from './useVcKycRegistry'
 
 // ----------------------------------------------------------------------
 
@@ -48,8 +48,19 @@ describe('VC 准入登錄的來源', () => {
     expect(vcKycSource(11155111, undefined, dedicated.getAddresses(11155111)?.KYCRegistry)).toEqual({ kind: 'none' })
   })
 
-  it('env 覆寫優先於候選，且不需探測', () => {
-    expect(vcKycSource(84532, A(99), A(3))).toEqual({ kind: 'known', address: A(99) })
+  it('專屬部署：env 等於登記的 KYCRegistry 才採用（不需探測）', () => {
+    expect(vcKycSource(84532, A(3).toUpperCase().replace('0X', '0x'), A(3))).toEqual({ kind: 'known', address: A(3) })
+  })
+
+  it('專屬部署：env 與登記衝突 → 忽略 env、探測登記那一顆，並警告', () => {
+    const warnings: string[] = []
+    expect(vcKycSource(84532, A(99), A(3), (m) => warnings.push(m))).toEqual({ kind: 'probe', address: A(3) })
+    expect(warnings).toHaveLength(1)
+    expect(warnings[0]).toContain(A(99))
+  })
+
+  it('平台部署（沒有候選）：env 照舊直接採用', () => {
+    expect(vcKycSource(31337, A(99), null)).toEqual({ kind: 'known', address: A(99) })
   })
 
   it('零位址與壞位址不算候選', () => {
@@ -113,5 +124,17 @@ describe('開倉 KYC 閘門：靜態表 ∪ 鏈上 rwaAsset', () => {
   it('兩邊都不是 RWA 才不擋', () => {
     expect(kycGateApplies(false, false)).toBe(false)
     expect(kycGateApplies(undefined, null)).toBe(false)
+  })
+})
+
+describe('「去取得 KYC 資格」的呈現', () => {
+  it('VC 登錄 → 憑證頁；種類未確認 → 只顯示確認中；allowlist／平台 → 舊表單', () => {
+    expect(kycActionMode({ status: 'vc', address: A(3) }, A(3))).toBe('credentials')
+    for (const status of ['checking', 'unknown', 'disconnected'] as const) {
+      expect(kycActionMode({ status, address: null }, A(3))).toBe('checking')
+    }
+    expect(kycActionMode({ status: 'none', address: null }, A(3))).toBe('legacy')
+    // VC 登錄另有其物、交易所接的不是它：照舊表單（交易所讀的是那一顆）。
+    expect(kycActionMode({ status: 'vc', address: A(5) }, A(3))).toBe('legacy')
   })
 })

@@ -4,7 +4,7 @@ import { useParams, useNavigate, Link as RouterLink } from 'react-router'
 import { parseEther } from 'ethers'
 import { paths } from 'src/routes/paths'
 import { useContracts } from 'src/hooks/useContracts'
-import { useVcKycRegistry, isVcKycRegistry } from 'src/hooks/useVcKycRegistry'
+import { kycActionMode, useVcKycRegistry } from 'src/hooks/useVcKycRegistry'
 import { useOnchainRwaFlags, kycGateApplies } from 'src/hooks/useOnchainRwa'
 import { usePepefiWallet } from 'src/layouts/pepefi'
 import { prettyError } from 'src/lib/pepefi/errorMessages'
@@ -87,7 +87,7 @@ export default function CopyPage() {
   const contracts = useContracts(wallet.provider, wallet.signer, wallet.chainId)
   // VC 准入登錄沒有 submitKYC：「送出 KYC」改為前往憑證頁。
   const vcKyc = useVcKycRegistry(wallet.chainId, wallet.provider)
-  const kycIsVc = isVcKycRegistry(vcKyc, contracts ? String(contracts.kycRegistry.target) : null)
+  const kycAction = kycActionMode(vcKyc, contracts ? String(contracts.kycRegistry.target) : null)
 
   const [traderName,       setTraderName]       = useState('')
   const [traderRegistered, setTraderRegistered] = useState(false)
@@ -651,7 +651,11 @@ export default function CopyPage() {
 
         {kycBlocked && !kycPending && (
           <Alert severity="warning" action={
-            kycIsVc ? (
+            kycAction === 'checking' ? (
+              <Button color="inherit" size="small" disabled sx={{ fontWeight: 'bold' }}>
+                {t.investorVc.checkingShort}
+              </Button>
+            ) : kycAction === 'credentials' ? (
               <Button color="inherit" size="small" component={RouterLink} to={paths.pepefi.credentials} sx={{ fontWeight: 'bold' }}>
                 {t.investorVc.goToCredential}
               </Button>
@@ -714,7 +718,7 @@ export default function CopyPage() {
 
       {/* KYC Modal */}
       <KYCModal
-        isOpen={showKYCModal && !kycIsVc}
+        isOpen={showKYCModal && kycAction === 'legacy'}
         onClose={() => setShowKYCModal(false)}
         onSuccess={() => { void refetchKYC() }}
         kycRegistry={contracts?.kycRegistry ?? null}

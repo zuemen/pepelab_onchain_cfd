@@ -15,7 +15,9 @@
 #   VITE_SIGNAL_API_URL           本機 signal-api（預設 http://localhost:4021；專屬部署不得退回平台的）
 #   VITE_VC_STATUS_URL            選用：撤銷狀態清單的公開目錄
 #   VITE_SHOW_PERPETUALS/LEVERAGE 錄影要示範開倉與槓桿上限
-# VC 准入登錄不必設 VITE_VC_KYC_REGISTRY：前端探測租戶的 KYCRegistry 是不是 VCKycRegistry。
+#   VITE_VC_KYC_REGISTRY          明確寫成空值：專屬部署的 VC 登錄就是登記的 KYCRegistry，前端探測
+#                                 requiredType() 確認；留空可避免殼層或其他 .env 檔帶進別的位址
+#                                 （前端在專屬部署也會忽略與登記不同的值並警告）。
 #
 # 產生的檔案被根目錄 .gitignore 的 `.env.*.local` 排除，不會進版控；裡面沒有任何私鑰。
 set -euo pipefail
@@ -30,14 +32,29 @@ SIGNAL_API="http://localhost:4021"
 STATUS_URL=""
 PRINT=0
 
+usage() { sed -n 2,22p "$0" >&2; }
+
+# 值不能缺、不能含空白或換行（會寫進 .env，換行等於多注入一行設定）。
+take() {
+  if [ $# -lt 2 ] || [ -z "$2" ] || [[ "$2" == --* ]]; then
+    echo "::error::$1 需要一個值" >&2
+    usage
+    exit 2
+  fi
+  if [[ "$2" =~ [[:space:]] ]]; then
+    echo "::error::$1 的值不能含空白或換行" >&2
+    exit 2
+  fi
+}
+
 while [ $# -gt 0 ]; do
   case "$1" in
-    --anchor) ANCHOR="${2:-}"; shift 2 ;;
-    --signal-api) SIGNAL_API="${2:-}"; shift 2 ;;
-    --status-url) STATUS_URL="${2:-}"; shift 2 ;;
+    --anchor) take "$@"; ANCHOR="$2"; shift 2 ;;
+    --signal-api) take "$@"; SIGNAL_API="$2"; shift 2 ;;
+    --status-url) take "$@"; STATUS_URL="$2"; shift 2 ;;
     --print) PRINT=1; shift ;;
-    -h|--help) sed -n 2,20p "$0"; exit 0 ;;
-    *) echo "::error::不認得的參數 $1" >&2; exit 2 ;;
+    -h|--help) usage; exit 0 ;;
+    *) echo "::error::不認得的參數 $1" >&2; usage; exit 2 ;;
   esac
 done
 
@@ -50,14 +67,21 @@ if [ "$KIND" != "dedicated" ]; then
   exit 1
 fi
 
-if [ -z "$ANCHOR" ] && [ -f "$DOC" ]; then
-  ANCHOR="$(grep -E 'SessionCredentialAnchor' "$DOC" | grep -oE '0x[0-9a-fA-F]{40}' | head -1 || true)"
+if [ -z "$ANCHOR" ]; then
+  if [ -f "$DOC" ]; then
+    # 尾端邊界：40 位後面不能再接十六進位字元，避免截到同一行 tx hash 的前 40 位。
+    ANCHOR="$(grep -E 'SessionCredentialAnchor' "$DOC" | grep -oE '0x[0-9a-fA-F]{40}([^0-9a-fA-F]|$)' | head -1 | cut -c1-42 || true)"
+    [ -n "$ANCHOR" ] || echo "注意：docs/tenants/$TENANT/DEPLOYMENT.md 裡沒有 SessionCredentialAnchor 的位址" >&2
+  else
+    echo "注意：找不到 docs/tenants/$TENANT/DEPLOYMENT.md（部署文件還沒寫）；要錨定請用 --anchor 0x…" >&2
+  fi
 fi
 if [ -n "$ANCHOR" ] && ! is_addr "$ANCHOR"; then
   echo "::error::--anchor 不是位址：$ANCHOR" >&2
   exit 2
 fi
-[[ "$SIGNAL_API" =~ ^https?:// ]] || { echo "::error::--signal-api 必須是 http(s) URL" >&2; exit 2; }
+[[ "$SIGNAL_API" =~ ^https?://[^[:space:]]+$ ]] || { echo "::error::--signal-api 必須是 http(s) URL" >&2; exit 2; }
+[ -z "$STATUS_URL" ] || [[ "$STATUS_URL" =~ ^https?://[^[:space:]]+$ ]] || { echo "::error::--status-url 必須是 http(s) URL" >&2; exit 2; }
 
 body="$(cat <<EOF
 # 由 scripts/poc/rwa-poc-frontend.sh 產生；不進版控（.env.*.local）。重新產生會覆寫。
@@ -67,6 +91,7 @@ VITE_SHOW_PERPETUALS=1
 VITE_SHOW_LEVERAGE=1
 VITE_SESSION_ANCHOR_CHAIN_ID=84532
 VITE_SESSION_ANCHOR_ADDRESS=$ANCHOR
+VITE_VC_KYC_REGISTRY=
 VITE_VC_STATUS_URL=$STATUS_URL
 EOF
 )"

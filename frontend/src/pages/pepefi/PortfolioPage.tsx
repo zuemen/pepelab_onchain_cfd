@@ -10,7 +10,7 @@ import {
 import { useESG } from 'src/hooks/useESG';
 import { paths } from 'src/routes/paths';
 import { useContracts } from 'src/hooks/useContracts';
-import { useVcKycRegistry, isVcKycRegistry } from 'src/hooks/useVcKycRegistry';
+import { kycActionMode, useVcKycRegistry } from 'src/hooks/useVcKycRegistry';
 import { useLivePrices } from 'src/hooks/useLivePrices';
 
 import { usePepefiWallet } from 'src/layouts/pepefi';
@@ -234,7 +234,7 @@ export default function PortfolioPage() {
   const contracts  = useContracts(wallet.provider, wallet.signer, wallet.chainId);
   // 交易所的 KYC 登錄是 VC 登錄（專屬租戶 schema v4 的 kycRegistry=vc）時，「去取得資格」走憑證頁。
   const vcKyc = useVcKycRegistry(wallet.chainId, wallet.provider);
-  const kycIsVc = isVcKycRegistry(vcKyc, contracts ? String(contracts.kycRegistry.target) : null);
+  const kycAction = kycActionMode(vcKyc, contracts ? String(contracts.kycRegistry.target) : null);
   const livePrices = useLivePrices();
   const { data: esg } = useESG(contracts?.esgRegistry ?? null);
   // 代幣化資產持倉——RWA 配置環的另一半來源，見 RwaAllocation 的 props 註解。
@@ -717,7 +717,8 @@ export default function PortfolioPage() {
       <KYCStatusCard
         kycRegistry={contracts?.kycRegistry ?? null}
         userAddress={wallet.address ?? null}
-        credentialsHref={kycIsVc ? paths.pepefi.credentials : null}
+        credentialsHref={kycAction === 'credentials' ? paths.pepefi.credentials : null}
+        vcChecking={kycAction === 'checking'}
       />
 
       <QuickActions mode={mode} />
