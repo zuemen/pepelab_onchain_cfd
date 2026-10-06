@@ -36,7 +36,24 @@
 
 ---
 
-## 2. 接下來依序做
+## 2. 計劃表
+
+預估是「AI 實際工作時數」，不含等使用者入金或設定的時間。每個階段做完才進下一個；驗收沒過不能往下。
+
+| 階段 | 做什麼 | 驗收標準（全部成立才算完成） | 預估 | 需要使用者 |
+|---|---|---|---|---|
+| **S0 環境** | clone、`git submodule update --init --recursive`、裝相依（frontend `yarn install`、agent `npm ci`）、讀交接與相關文件 | `forge build` 成功；`yarn --cwd frontend test` 與 `npm test`（agent）各跑一次全過；`gh auth status` 是 zuemen | 0.5–1 h | 裝工具、`gh auth login`（見第 3 節） |
+| **S1 #270** | 合 master 解衝突 → 另一個 agent 對抗式審查（合約權限、VP 重放與綁定、花費累計原子性與退回、x402 v1／v2、fail-closed、揭露）→ 修正 → 複審 | CI 全綠、審查無未解的高中風險、已合併 | 2–4 h | 無 |
+| **S2 部署金鑰** | 建新的加密 keystore `pepelab-rwa-deployer`，密碼檔放 repo 外、權限 600；把地址告訴使用者 | 地址已給使用者；`cast balance` ≥ 0.05 ETH | 0.2 h | **入金約 0.1 ETH**（見第 3 節） |
+| **S3 部署整套** | 用 `DeployTenant.s.sol` 部署 master 版整套到 Base Sepolia；部署 `VCKycRegistry`、`SessionCredentialAnchor`；接 `setKycRegistry`、`setRwaAsset`（含黃金）、marketOperator、guardian；寫入碳分級見證；先模擬再廣播 | 部署紀錄 JSON 進 repo；`post-deploy-smoke.mjs` 對新部署無 FAIL（外洩地址檢查必須全 PASS）；合約在 BaseScan 驗證原始碼（有 API key 時） | 3–5 h | 可選：BaseScan API key |
+| **S4 推價與休市** | 本機跑 keeper 以新金鑰推價；跑休市切換（ReduceOnly）；寫一鍵啟動腳本 | 11 檔價格都在 5 分鐘內更新；休市時新開倉被拒、平倉可行（實際交易 hash） | 1–2 h | 無 |
+| **S5 前端接新部署** | 以租戶設定或環境變數切換「RWA PoC」位址，**不弄壞現有展示站**；本機 `yarn dev` 可用；有權限時開 Vercel preview | 本機頁面讀到新部署的資料；`/rwa`、`/oracle`、`/solvency`、`/sessions`、KYC 憑證面板都能用；現有展示站的測試仍全過 | 3–4 h | 可選：Vercel 權限（見第 3 節） |
+| **S6 x402 KYA** | 本機跑 signal-api：`PAY_TO`＝新收款地址、`X402_KYA_MODE` 開啟；代理人錢包用測試 USDC 實付 | 一筆真的 x402 付款成功（有 tx hash）；不帶 VP 被拒；超過憑證花費上限被拒 | 1–2 h | **代理人錢包的測試 USDC**（見第 3 節） |
+| **S7 PoC 劇本與實跑** | 寫 `docs/POC_SCRIPT.md`（每步：操作、預期畫面、要說的話、交易 hash、BaseScan 連結、預錄備援）；照劇本在 Base Sepolia 從頭跑一遍 | 劇本每一步都有實際 tx hash；整條故事線一次跑通；只用真實截圖 | 3–4 h | 無 |
+| **S8 文件收尾** | 更新 `RWA_ALIGNMENT.md` 方案狀態、`RELEASE_STATUS.md`（新部署）、README 部署段落、本交接文件狀態 | 文件與鏈上一致；CI 綠；推上 GitHub | 1–2 h | 無 |
+| **合計** | | | **約 15–24 h** | |
+
+### 各階段細節
 
 1. ~~合併 #268~~（已於 10/6 合併）。
 2. **審查並合併 #270**（見上表）——**從這裡開始**。
@@ -62,13 +79,38 @@
 
 ---
 
-## 3. 只有使用者能做的事
+## 3. 使用者要準備給新電腦的東西
 
-- Base Sepolia 水龍頭入金到新部署地址。
+### 3.1 開始前就要準備好
+
+| # | 項目 | 怎麼做 | 用在 |
+|---|---|---|---|
+| 1 | 安裝工具 | Git、GitHub CLI（`gh`）、Foundry（`curl -L https://foundry.paradigm.xyz \| bash` 後 `foundryup`；Windows 用 Git Bash）、Node.js 20 以上、yarn（`corepack enable`）、Python 3.10 以上。Docker 不需要 | S0 |
+| 2 | 登入 GitHub | 在新電腦終端機執行 `gh auth login`，帳號 **zuemen**，權限要有 `repo` 與 `workflow` | S0 起全部 |
+| 3 | Claude Code 權限 | 讓 Claude 可以執行 `gh`、`forge`、`cast`、`anvil`、`yarn`、`npm`、`node`、`python`、`git`；要讓它合併 PR，也要允許 `gh pr merge` | 全部 |
+| 4 | 電腦不休眠、網路穩定 | 電源設定關閉睡眠；準備備援網路（公開 RPC 偶爾 DNS 失敗） | 全部 |
+
+### 3.2 進行中會被要求的
+
+| # | 項目 | 什麼時候 | 怎麼做 |
+|---|---|---|---|
+| 5 | **Base Sepolia ETH 約 0.1** | S2 結束時，Claude 給你部署地址 | 到 <https://docs.base.org/base-chain/tools/network-faucets> 任一水龍頭領取，轉到該地址；完成後跟 Claude 說「已入金」 |
+| 6 | **Base Sepolia 測試 USDC 約 10** | S6 開始時，Claude 給你代理人錢包地址 | 到 Circle 水龍頭 <https://faucet.circle.com>，選 Base Sepolia，領 USDC 到該地址（合約 `0x036CbD53842c5426634e7929541eC2318f3dCF7e`） |
+| 7 | BaseScan API key（可選） | S3，要在 BaseScan 顯示已驗證原始碼時 | 到 etherscan.io 申請 API key（V2 一把可用於 Base）；**自己**在新電腦設定環境變數 `ETHERSCAN_API_KEY`，不要貼進對話 |
+| 8 | Vercel 權限（可選） | S5，要做線上 preview 或改 signal-api 線上環境變數時 | 在新電腦 `npx vercel login`，或由你自己在 Vercel 網頁改；不做的話 PoC 用本機前端與本機 signal-api 錄影 |
+
+### 3.3 **不要**帶到新電腦的東西
+
+- 舊電腦 `contracts/.env`、`agent/.env`：裡面是明文私鑰，其中 `contracts/.env` 的 `PRIVATE_KEY` 是**外洩地址 `0xE80A…Eb93`**。
+- 舊電腦的 keystore `pepelab-rwa-deployer`（`0xF52D…49eE`）：還沒入金，新電腦重新建一把即可。
+- 舊電腦本機的 `docs/commercial/`：只在本機、含未公開的弱點細節，不需要也不要放進 repo。若想保留參考，用隨身碟手動複製，不要推上 GitHub。
+
+### 3.4 只有使用者能做、但不擋 PoC 的事
+
 - GitHub environment／secret、branch protection、Cloudflare Worker（`docs/OWNER_ACTIONS.md`）。
-- Vercel 環境變數（signal-api 的 `PAY_TO`、`X402_KYA_MODE`、新位址）。
+- Vercel 線上環境變數（signal-api 的 `PAY_TO`、`X402_KYA_MODE`、新位址）。
 - 舊部署：外洩地址仍控制 Sepolia 舊合約與 Base 的 3 顆 adapter（keeper 已不用）；凍結腳本 `docs/RUNBOOK_FREEZE_LEGACY.md` 要使用者明確授權才能用外洩金鑰執行。
-- 現役舊合約的 owner `0x27C2…A585` 金鑰。
+- 現役舊合約的 owner `0x27C2…A585` 金鑰（找到才能升級現役合約；PoC 不需要）。
 
 ---
 
@@ -93,14 +135,20 @@
 ## 5. 接續 prompt（貼到新電腦的 Claude Code）
 
 ```
-你要接手 PepeLab（repo zuemen/pepelab_onchain_cfd）的 RWA ＋ SSI 正式 PoC，不休息地持續做到完成。
+你要接手 PepeLab（repo https://github.com/zuemen/pepelab_onchain_cfd）的「RWA ＋ SSI 正式 PoC」，不休息地持續做到完成。一律用繁體中文回答。
 
-先做：
-1. clone repo（若還沒有），`git submodule update --init --recursive`，讀 docs/HANDOFF_RWA_POC.md 全文，並遵守第 4 節的工作規則。
-2. 確認工具：gh（已登入 zuemen）、foundry（forge/cast/anvil）、node 20+、yarn、python 3.10+。缺的告訴我，我自己裝。
-3. 讀 docs/RWA_ALIGNMENT.md、docs/SSI_RWA_ACCESS.md、docs/USABILITY_AUDIT_2026-10-06.md、docs/PARAMS_INVENTORY.md。
+第一步：
+1. 若本機還沒有 repo：`gh repo clone zuemen/pepelab_onchain_cfd`，進入資料夾後 `git submodule update --init --recursive`。
+2. 讀 docs/HANDOFF_RWA_POC.md 全文。第 2 節是計劃表（S0–S8），第 3 節是我要準備的東西，第 4 節是工作規則——全部照做。
+3. 先回報 S0 的檢查結果：哪些工具已裝、哪些缺（缺的列給我，我自己裝），`gh auth status` 是否為 zuemen。
 
-然後依 docs/HANDOFF_RWA_POC.md 第 2 節的順序做：對抗式審查並合併 #270（#268 已合併） → 建新的加密部署 keystore 並把地址告訴我（我去水龍頭入金）→ 入金後部署整套到 Base Sepolia（含 VCKycRegistry、SessionCredentialAnchor、guardian、休市模式、碳分級）→ keeper 推價 → 前端接新部署（不弄壞現有展示站）→ 本機 signal-api 開 x402 KYA → 寫 docs/POC_SCRIPT.md 錄影劇本並實際照劇本在 Base Sepolia 跑一遍、記錄每步交易 hash → 文件收尾。
+接著照計劃表 S0 → S8 依序做，每個階段都要達到「驗收標準」才能進下一個：
+- S1 審查並合併 #270 → S2 建新的加密部署 keystore 並把地址給我（我去入金 0.1 ETH）→ S3 用 DeployTenant 部署整套＋VCKycRegistry＋SessionCredentialAnchor 到 Base Sepolia（先模擬再廣播）→ S4 本機 keeper 推價與休市切換 → S5 前端接新部署（不弄壞現有展示站）→ S6 本機 signal-api 開 x402 KYA，用測試 USDC 實付（我會把 USDC 打到你給的代理人地址）→ S7 寫 docs/POC_SCRIPT.md 並照劇本在 Base Sepolia 從頭跑一遍、每步記錄 tx hash 與 BaseScan 連結 → S8 文件收尾。
 
-規則：繁體中文；每個 PR 都要經過另一個 agent 的對抗式審查、修正、CI 全綠才合併；需要我本人（入金、GitHub／Vercel／Cloudflare 設定、舊金鑰）的事情集中列給我，其餘不要停下來問。每完成一個階段就更新 docs/HANDOFF_RWA_POC.md 的狀態並推上 GitHub。
+規則：
+- 每個 PR：實作 → 另一個 agent 對抗式審查 → 修正 → 複審 → CI 全綠 → 合併。
+- 絕不使用舊電腦 contracts/.env 的 PRIVATE_KEY（外洩地址 0xE80A…）；發現任何明文私鑰只回報位置、不使用。
+- 對公開鏈送交易前先模擬；刪除、force push、改 GitHub／Vercel／Cloudflare 設定需要我明確授權。
+- 需要我本人做的事（入金、測試 USDC、API key、Vercel、GitHub 設定）一次集中列給我，並寫清楚地址與步驟；其餘不要停下來問。
+- 每完成一個階段：更新 docs/HANDOFF_RWA_POC.md 的計劃表狀態欄並推上 GitHub，再用三句話跟我回報做了什麼、驗收結果、下一步。
 ```
