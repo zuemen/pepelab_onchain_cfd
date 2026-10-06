@@ -26,6 +26,7 @@ import { exchange } from './exchange';
 import { terminal } from './terminal';
 import { portfolio } from './portfolio';
 import { freshness } from './freshness';
+import { investorVc } from './investorVc';
 import { marketplace } from './marketplace';
 import { traderProfile } from './traderProfile';
 import { pepeStageSkins } from './pepeStageSkins';
@@ -75,6 +76,7 @@ const en: Catalog = {
   traderProfile,
   traderDashboard,
   legacy,
+  investorVc,
 };
 
 export default en;
