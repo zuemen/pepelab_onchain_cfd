@@ -6,6 +6,7 @@ import Card from '@mui/material/Card';
 import Button from '@mui/material/Button';
 import Typography from '@mui/material/Typography';
 import { Icon } from '@iconify/react';
+import { Link as RouterLink } from 'react-router';
 
 import { t } from 'src/locales';
 import { useKYC, type KYCStatus } from 'src/hooks/useKYC';
@@ -25,6 +26,11 @@ import KYCModal from 'src/components/pepefi/KYCModal';
 type Props = {
   kycRegistry: Contract | null;
   userAddress: string | null;
+  /**
+   * 這個部署的 KYC 登錄是 VC 准入登錄（VCKycRegistry）時給：未通過的動作改為前往憑證頁，
+   * 而不是打開舊登錄的 submitKYC 表單（VC 登錄沒有那個函式）。
+   */
+  credentialsHref?: string | null;
 };
 
 const STATUS_ICON: Record<KYCStatus, string> = {
@@ -43,7 +49,7 @@ const STATUS_COLOR: Record<KYCStatus, string> = {
   unknown:       'warning.main',
 };
 
-export default function KYCStatusCard({ kycRegistry, userAddress }: Props) {
+export default function KYCStatusCard({ kycRegistry, userAddress, credentialsHref = null }: Props) {
   const [showModal, setShowModal] = useState(false);
   const { status, isPending, refetch } = useKYC(kycRegistry, userAddress);
 
@@ -75,7 +81,21 @@ export default function KYCStatusCard({ kycRegistry, userAddress }: Props) {
           </Typography>
         </Box>
 
-        {status === 'unverified' && (
+        {status === 'unverified' && credentialsHref && (
+          <Button
+            size="small"
+            variant="outlined"
+            color="warning"
+            component={RouterLink}
+            to={credentialsHref}
+            data-testid="kyc-go-credentials"
+            sx={{ fontWeight: 'bold', whiteSpace: 'nowrap' }}
+          >
+            {t.investorVc.goToCredential}
+          </Button>
+        )}
+
+        {status === 'unverified' && !credentialsHref && (
           <Button
             size="small"
             variant="outlined"
@@ -101,7 +121,7 @@ export default function KYCStatusCard({ kycRegistry, userAddress }: Props) {
       </Box>
 
       <KYCModal
-        isOpen={showModal}
+        isOpen={showModal && !credentialsHref}
         onClose={() => setShowModal(false)}
         onSuccess={() => { void refetch(); }}
         kycRegistry={kycRegistry}

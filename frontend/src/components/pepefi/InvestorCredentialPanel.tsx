@@ -14,7 +14,7 @@ import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
 
 import { t, interpolate } from 'src/locales'
-import { getVcKycRegistryAddress } from 'src/contracts/vcKycRegistry'
+import { useVcKycRegistry } from 'src/hooks/useVcKycRegistry'
 import { credentialTypeName, VC_KYC_REGISTRY_ABI } from 'src/contracts/investorCredential'
 import {
   submitBlocker,
@@ -42,7 +42,9 @@ const fmtDate = (sec: number) => (sec > 0 ? new Date(sec * 1000).toISOString().r
 type Props = { wallet: WalletAPI; registryAddress?: string | null }
 
 export function InvestorCredentialPanel({ wallet, registryAddress }: Props) {
-  const registry = registryAddress === undefined ? getVcKycRegistryAddress(wallet.chainId) : registryAddress
+  // 沒指定時依部署解析：env／表，或專屬租戶的 KYC 登錄（探測確認是 VC 登錄）。
+  const resolved = useVcKycRegistry(wallet.chainId, wallet.provider)
+  const registry = registryAddress === undefined ? resolved.address : registryAddress
   const [text, setText] = useState('')
   const [vc, setVc] = useState<VerifiedInvestorCredential | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -89,9 +91,19 @@ export function InvestorCredentialPanel({ wallet, registryAddress }: Props) {
         <Typography variant="h6" sx={{ mb: 1 }}>
           {t.investorVc.title}
         </Typography>
-        <Alert severity="info" data-testid="vc-kyc-disabled">
-          {t.investorVc.disabled}
-        </Alert>
+        {registryAddress === undefined && resolved.status === 'checking' ? (
+          <Alert severity="info" data-testid="vc-kyc-checking">
+            {t.investorVc.checking}
+          </Alert>
+        ) : registryAddress === undefined && resolved.status === 'unknown' ? (
+          <Alert severity="warning" data-testid="vc-kyc-unknown">
+            {t.investorVc.probeFailed}
+          </Alert>
+        ) : (
+          <Alert severity="info" data-testid="vc-kyc-disabled">
+            {t.investorVc.disabled}
+          </Alert>
+        )}
       </Card>
     )
   }

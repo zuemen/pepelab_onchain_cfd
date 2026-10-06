@@ -1,6 +1,7 @@
 import type { AssetMeta } from 'src/lib/pepefi/assetMeta'
 import type { MarketStatus } from 'src/lib/pepefi/marketStatus'
 
+import { Link as RouterLink } from 'react-router'
 import { useRef, useState, useEffect } from 'react'
 
 import Box from '@mui/material/Box'
@@ -44,6 +45,7 @@ export function OrderTicket({
   kycBlocked,
   kycUnknown,
   kycPending,
+  kycCredentialsHref = null,
   staleNotice,
   tradingParams,
   marketStatus,
@@ -63,6 +65,8 @@ export function OrderTicket({
   kycUnknown: boolean
   /** 申請已送出、待審核（KYCRegistry 改審核制後才有的狀態）。 */
   kycPending?: boolean
+  /** 交易所的 KYC 登錄是 VC 准入登錄時：提示附上前往憑證頁的連結。 */
+  kycCredentialsHref?: string | null
   /**
    * 指數價已超過合約的 maxPriceAge —— 鏈上會 revert StalePrice，不讓使用者白送一筆。
    *
@@ -333,6 +337,16 @@ export function OrderTicket({
                 ? t.terminal.ticket.kycPending
                 : t.terminal.ticket.kycRequired,
             { asset: meta?.symbol ?? '' },
+          )}
+          {kycCredentialsHref && !kycPending && (
+            <Box
+              component={RouterLink}
+              to={kycCredentialsHref}
+              data-testid="ticket-kyc-credentials"
+              sx={{ display: 'block', mt: 0.5, color: C.lime, fontWeight: 700 }}
+            >
+              {t.investorVc.goToCredential} →
+            </Box>
           )}
         </Box>
       )}

@@ -10,6 +10,9 @@ export const investorVc = {
     QUALIFIED_INVESTOR: '合格投資人',
   },
   disabled: '此部署尚未啟用 VC 准入。RWA 市場的資格仍由現行 KYC 流程審核。',
+  checking: '正在確認這個部署的 KYC 登錄是否為 VC 准入登錄…',
+  probeFailed: '無法確認這個部署的 KYC 登錄種類（RPC 讀取失敗）。請稍後重新整理。',
+  goToCredential: '用合格投資人憑證取得資格',
   intro:
     'RWA 市場（例如 sAAPL）開倉需要有效的合格投資人資格。上傳發證機構給你的憑證（VC），驗證後送上鏈登記。鏈上只記錄地址、類型、到期日與憑證雜湊，不含任何個人資料。',
   mineVerified: '你的錢包已具 RWA 市場資格（要求：{type}）；憑證到期：{date}',

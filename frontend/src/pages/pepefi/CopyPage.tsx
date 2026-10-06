@@ -2,7 +2,10 @@ import { MONO } from 'src/components/pepefi/brandKit'
 import { useState, useEffect } from 'react'
 import { useParams, useNavigate, Link as RouterLink } from 'react-router'
 import { parseEther } from 'ethers'
+import { paths } from 'src/routes/paths'
 import { useContracts } from 'src/hooks/useContracts'
+import { useVcKycRegistry, isVcKycRegistry } from 'src/hooks/useVcKycRegistry'
+import { useOnchainRwaFlags, kycGateApplies } from 'src/hooks/useOnchainRwa'
 import { usePepefiWallet } from 'src/layouts/pepefi'
 import { prettyError } from 'src/lib/pepefi/errorMessages'
 import { ASSET_LABEL, ASSET_META } from 'src/lib/pepefi/assetMeta'
@@ -82,6 +85,9 @@ export default function CopyPage() {
   const { traderAddress } = useParams<{ traderAddress: string }>()
   const navigate = useNavigate()
   const contracts = useContracts(wallet.provider, wallet.signer, wallet.chainId)
+  // VC 准入登錄沒有 submitKYC：「送出 KYC」改為前往憑證頁。
+  const vcKyc = useVcKycRegistry(wallet.chainId, wallet.provider)
+  const kycIsVc = isVcKycRegistry(vcKyc, contracts ? String(contracts.kycRegistry.target) : null)
 
   const [traderName,       setTraderName]       = useState('')
   const [traderRegistered, setTraderRegistered] = useState(false)
@@ -169,7 +175,8 @@ export default function CopyPage() {
 
   useEffect(() => { setApproved(false) }, [totalMargin])
 
-  const hasKYCRequired = stratAllocs.some(a => ASSET_META[a.asset]?.regulated)
+  const onchainRwa     = useOnchainRwaFlags(contracts?.exchange, stratAllocs.map((a) => a.asset))
+  const hasKYCRequired = stratAllocs.some(a => kycGateApplies(ASSET_META[a.asset]?.regulated, onchainRwa[a.asset]))
   const kycBlocked     = hasKYCRequired && !isKYCVerified
 
   // ── F-2 · stale 擋單 ───────────────────────────────────────────────────────
@@ -644,14 +651,20 @@ export default function CopyPage() {
 
         {kycBlocked && !kycPending && (
           <Alert severity="warning" action={
-            <Button
-              color="inherit"
-              size="small"
-              onClick={() => setShowKYCModal(true)}
-              sx={{ fontWeight: 'bold' }}
-            >
-              {t.copy.confirm.kycSubmit}
-            </Button>
+            kycIsVc ? (
+              <Button color="inherit" size="small" component={RouterLink} to={paths.pepefi.credentials} sx={{ fontWeight: 'bold' }}>
+                {t.investorVc.goToCredential}
+              </Button>
+            ) : (
+              <Button
+                color="inherit"
+                size="small"
+                onClick={() => setShowKYCModal(true)}
+                sx={{ fontWeight: 'bold' }}
+              >
+                {t.copy.confirm.kycSubmit}
+              </Button>
+            )
           }>
             {t.copy.confirm.kycRequired}
           </Alert>
@@ -701,7 +714,7 @@ export default function CopyPage() {
 
       {/* KYC Modal */}
       <KYCModal
-        isOpen={showKYCModal}
+        isOpen={showKYCModal && !kycIsVc}
         onClose={() => setShowKYCModal(false)}
         onSuccess={() => { void refetchKYC() }}
         kycRegistry={contracts?.kycRegistry ?? null}

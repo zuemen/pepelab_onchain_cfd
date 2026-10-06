@@ -4,6 +4,12 @@
 // 前端在沒有位址時降級顯示「此部署尚未啟用 VC 准入」。位址來源（先到先用）：
 //   1. 建置時的 VITE_VC_KYC_REGISTRY（本機 anvil／Besu PoC 用）
 //   2. 下面的 per-chain 表（正式部署後由 owner 填入，與 addresses.ts 同樣走 PR 審查）
+//   3. 專屬租戶（kind: "dedicated"）登記裡的 contracts.KYCRegistry——**候選**，不是定論：
+//      租戶的 KYC 登錄可能是 allowlist（KYCRegistry）也可能是 VC（VCKycRegistry，schema v4
+//      的 params.kycRegistry），登記檔不記種類，所以要由 useVcKycRegistry 探測 requiredType()
+//      成功才當成 VC 登錄。平台部署（default／示範租戶）沒有候選、也不探測，行為與改版前相同。
+
+import { getAddresses, isPlatformDeployment } from './deployment'
 
 const ADDR = /^0x[0-9a-fA-F]{40}$/
 const ZERO = '0x0000000000000000000000000000000000000000'
@@ -11,15 +17,41 @@ const ZERO = '0x0000000000000000000000000000000000000000'
 /** chainId → VCKycRegistry。目前沒有任何公開鏈部署。 */
 export const VC_KYC_REGISTRY_BY_CHAIN: Readonly<Record<number, string>> = {}
 
-/** 純函式：給測試注入 env 值。 */
+const usable = (a: string | undefined | null): a is string => !!a && ADDR.test(a) && a.toLowerCase() !== ZERO
+
+/** 純函式：給測試注入 env 值。只回「已確定是 VC 登錄」的來源（env 或表），不含專屬租戶的候選。 */
 export function resolveVcKycRegistry(chainId: number | null, envValue: string | undefined): string | null {
   const fromEnv = (envValue ?? '').trim()
-  if (ADDR.test(fromEnv) && fromEnv.toLowerCase() !== ZERO) return fromEnv
+  if (usable(fromEnv)) return fromEnv
   if (chainId === null) return null
   const fromTable = VC_KYC_REGISTRY_BY_CHAIN[chainId]
-  return fromTable && ADDR.test(fromTable) && fromTable.toLowerCase() !== ZERO ? fromTable : null
+  return usable(fromTable) ? fromTable : null
 }
 
 export function getVcKycRegistryAddress(chainId: number | null): string | null {
   return resolveVcKycRegistry(chainId, import.meta.env.VITE_VC_KYC_REGISTRY as string | undefined)
+}
+
+/**
+ * 解析 VC 登錄的來源。`known`＝已確定是 VC 登錄（env／表），直接用；`probe`＝專屬租戶登記的
+ * KYCRegistry，要探測 requiredType() 才知道是不是 VC 登錄；`none`＝這個部署沒有 VC 准入。
+ * 純函式（測試注入 dedicatedKyc）。
+ */
+export type VcKycSource = { kind: 'known'; address: string } | { kind: 'probe'; address: string } | { kind: 'none' }
+
+export function vcKycSource(
+  chainId: number | null,
+  envValue: string | undefined,
+  dedicatedKyc: string | null | undefined,
+): VcKycSource {
+  const known = resolveVcKycRegistry(chainId, envValue)
+  if (known) return { kind: 'known', address: known }
+  if (usable(dedicatedKyc)) return { kind: 'probe', address: dedicatedKyc }
+  return { kind: 'none' }
+}
+
+/** 這個 build 的來源：只有專屬部署會給候選。 */
+export function getVcKycSource(chainId: number | null): VcKycSource {
+  const dedicatedKyc = isPlatformDeployment ? null : getAddresses(chainId)?.KYCRegistry
+  return vcKycSource(chainId, import.meta.env.VITE_VC_KYC_REGISTRY as string | undefined, dedicatedKyc)
 }
