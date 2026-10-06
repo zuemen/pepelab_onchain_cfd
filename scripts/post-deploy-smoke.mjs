@@ -119,10 +119,15 @@ const TENANT_SLUG = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 /** 專屬租戶登記的 contracts 鍵 → 平台 roles 的同名鍵（components.json／monitors.json 用的 ref）。 */
 const TENANT_REFS = ["PerpetualExchange", "InsuranceVault", "FeeRouter", "TraderStake", "CopyTracker",
   "StrategyRegistry", "AgentSessionManager", "KYCRegistry", "ESGRegistryV2", "AssetVaultV2"];
+/** dedicated 登記一定有的合約（AssetVaultV2 只在 params.deployVault=true 時存在）。 */
+const TENANT_REQUIRED = ["SettlementToken", "Oracle", ...TENANT_REFS.filter((k) => k !== "AssetVaultV2")];
+const TENANT_SCHEMA_VERSION = 4;
+const TENANT_KYC_KINDS = ["allowlist", "vc"];
 
 /**
  * --tenant <id>：把專屬租戶的登記與設定轉成 runSmoke 用的來源。`files` 給測試注入
- * （{ registry, config, record }），省略時讀 repo 的檔案。
+ * （{ registry, config, record }），省略時讀 repo 的檔案。`problems` 是檔案層的錯（部署紀錄讀不到或壞掉、
+ * 設定不是 schema v4、kycRegistry 不認得、登記缺必填合約），runSmoke 逐條列成 FAIL。
  *   wiringRoles：接線用。租戶只有一顆 oracle，exchange（平台規則寫 MockOracle）與金庫（GuardedOracle）都讀它。
  *   src：外洩地址檢查用——components 換成租戶的形狀（VC 登錄查 issuerTypeCount／pendingOwner）。
  */
@@ -131,17 +136,33 @@ export function tenantSources(root, id, platform, files = {}) {
   const readJson = (rel) => JSON.parse(readFileSync(join(root, rel), "utf8"));
   const registry = files.registry ?? readJson(`frontend/src/contracts/deployments/${id}.json`);
   const config = files.config ?? readJson(`deploy/tenants/${id}.json`);
+  const problems = [];
   let record = files.record;
   if (record === undefined) {
     try {
       record = readJson(`deploy/tenants/${id}.deployed.json`);
-    } catch {
+    } catch (e) {
       record = null;
+      problems.push(["部署紀錄", `deploy/tenants/${id}.deployed.json 讀不到或不是 JSON（${e.message.split("\n")[0]}）`]);
     }
+  }
+  if (record === null) {
+    if (!problems.length) problems.push(["部署紀錄", "沒有部署紀錄"]);
+  } else if (typeof record !== "object" || Array.isArray(record) || !/^0x[0-9a-fA-F]{40}$/.test(String(record.deployer))) {
+    problems.push(["部署紀錄", "格式不對：沒有 deployer 位址"]);
+  }
+  if (config.schemaVersion !== TENANT_SCHEMA_VERSION) {
+    problems.push(["部署設定", `schemaVersion 是 ${JSON.stringify(config.schemaVersion)}，這支只讀 v${TENANT_SCHEMA_VERSION}`]);
+  }
+  if (!TENANT_KYC_KINDS.includes(config.params?.kycRegistry)) {
+    problems.push(["部署設定", `params.kycRegistry 是 ${JSON.stringify(config.params?.kycRegistry)}，必須是 ${TENANT_KYC_KINDS.join(" / ")}`]);
   }
   if (registry.kind !== "dedicated") throw new Error(`${id} 的前端登記是 kind=${registry.kind}，不是 dedicated：沒有自己的合約可以檢查`);
   if (String(registry.chainId) !== PRIMARY_CHAIN) throw new Error(`${id} 的登記在鏈 ${registry.chainId}，這支只檢查 ${PRIMARY_CHAIN}`);
   const c = registry.contracts ?? {};
+  for (const k of TENANT_REQUIRED) {
+    if (!/^0x[0-9a-fA-F]{40}$/.test(String(c[k]))) problems.push(["前端登記", `contracts.${k} 缺少或不是位址`]);
+  }
   const roles = { MockUSDC: c.SettlementToken };
   for (const k of TENANT_REFS) if (c[k]) roles[k] = c[k];
   const wiringRoles = { ...roles, MockOracle: c.Oracle, GuardedOracle: c.Oracle };
@@ -155,6 +176,7 @@ export function tenantSources(root, id, platform, files = {}) {
   return {
     config,
     record,
+    problems,
     vc,
     wiringRoles,
     src: { ...platform, cfg: { ...platform.cfg, components }, frontend: { [PRIMARY_CHAIN]: { roles: leakRoles } }, tokens },
@@ -173,6 +195,7 @@ export async function runSmoke({ root, rpcUrl, apiUrl, fetchImpl = fetch, sleep,
   const roles = src.frontend[PRIMARY_CHAIN].roles;
   const wiringRoles = t ? t.wiringRoles : roles;
   const denylist = src.denylist;
+  for (const [name, why] of t?.problems ?? []) add("租戶檔案", name, "FAIL", why);
   const rpc = makeRpc(rpcUrl ?? src.cfg.chains[PRIMARY_CHAIN].rpc, { fetchImpl, sleep, allowed: SMOKE_RPC_METHODS });
   const must = async (method, params) => {
     const j = await rpc(method, params);

@@ -200,6 +200,7 @@ abstract contract TenantBase is Script {
     bytes32 internal constant VC_ISSUER      = keccak256("tenant-verify: VCKycRegistry.trustedIssuer");
     /// @dev The credential type a VC-gated tenant's `isVerified` requires.
     bytes32 internal constant QUALIFIED_INVESTOR = keccak256("QUALIFIED_INVESTOR");
+    bytes32 internal constant KYC_BASIC          = keccak256("KYC_BASIC");
 
     bytes32 internal constant ADMIN_ROLE    = 0x00;
     bytes32 internal constant KEEPER_ROLE   = keccak256("KEEPER_ROLE");
@@ -405,15 +406,21 @@ abstract contract TenantBase is Script {
         c.additionalRwa = _stringArray(json, ".assets.additionalRwa");
     }
 
-    /// @dev `parseJsonStringArray` may refuse `[]` (an empty array has no
-    ///      element type), and an empty list is the common case.
+    /// @dev A JSON array of JSON strings, nothing else. `parseJsonStringArray`
+    ///      refuses a string, an object and `null`, but turns `1` / `true`
+    ///      elements into "1" / "true"; so each element is read back raw and
+    ///      must ABI-decode as a string (offset word 0x20 + length), not as a
+    ///      32-byte number or bool.
     function _stringArray(string memory json, string memory key) internal view returns (string[] memory out) {
+        string memory why = string.concat("tenant config: ", key, " must be a JSON array of strings");
         try vm.parseJsonStringArray(json, key) returns (string[] memory a) {
-            return a;
+            out = a;
         } catch {
-            bytes memory raw = vm.parseJson(json, key);
-            require(raw.length == 0 || keccak256(raw) == keccak256(abi.encode(new string[](0))),
-                string.concat("tenant config: ", key, " must be an array of asset symbols"));
+            revert(why);
+        }
+        for (uint256 i = 0; i < out.length; i++) {
+            bytes memory raw = vm.parseJson(json, string.concat(key, "[", vm.toString(i), "]"));
+            require(raw.length >= 64 && uint256(bytes32(raw)) == 0x20, why);
         }
     }
 
@@ -1399,11 +1406,18 @@ abstract contract TenantBase is Script {
     function _holds(TenantConfig memory c, TenantDeployed memory d, address t, bytes32 role, address a) internal view returns (bool) {
         if (t == d.exchange) return role == EXCHANGE_AGENT && PerpetualExchange(t).authorizedAgents(a);
         if (t == d.kyc) {
-            if (c.vcKyc) return role == VC_ISSUER && VCKycRegistry(t).issuerTypeCount(a) > 0;
+            if (c.vcKyc) return role == VC_ISSUER && _isVcIssuer(t, a);
             return role == KYC_VERIFIER && KYCRegistry(t).verifiers(a);
         }
         if (role == EXCHANGE_AGENT || role == KYC_VERIFIER || role == VC_ISSUER) return false;
         return IAccessControl(t).hasRole(role, a);
+    }
+
+    /// @dev Trusted for either built-in type, or for any type the owner added
+    ///      (`issuerTypeCount` counts every type the issuer is trusted for).
+    function _isVcIssuer(address registry, address a) internal view returns (bool) {
+        VCKycRegistry v = VCKycRegistry(registry);
+        return v.trustedIssuer(a, QUALIFIED_INVESTOR) || v.trustedIssuer(a, KYC_BASIC) || v.issuerTypeCount(a) > 0;
     }
 
     /// @dev The set's contracts and their names, computed once per verification.
@@ -1556,7 +1570,7 @@ abstract contract TenantBase is Script {
             if (Ownable(owned[i]).owner() == dep) revert("verify tenant failed: deployer still owns an Ownable contract of the set");
         }
         if (c.vcKyc) {
-            _check(VCKycRegistry(d.kyc).issuerTypeCount(dep) == 0, "deployer is not a trusted credential issuer");
+            _check(!_isVcIssuer(d.kyc, dep), "deployer is not a trusted credential issuer");
             _check(VCKycRegistry(d.kyc).pendingOwner() != dep, "deployer is not the VC registry's pending owner");
         } else {
             _check(!KYCRegistry(d.kyc).verifiers(dep), "deployer is not a KYC verifier");
