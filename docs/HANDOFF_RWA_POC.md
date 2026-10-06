@@ -44,7 +44,7 @@
 |---|---|---|---|---|---|
 | **S0 環境** | clone、`git submodule update --init --recursive`、裝相依（frontend `yarn install`、agent `npm ci`）、讀交接與相關文件 | `forge build` 成功；`yarn --cwd frontend test` 與 `npm test`（agent）各跑一次全過；`gh auth status` 是 zuemen | 0.5–1 h | 裝工具、`gh auth login`（見第 3 節） | 未開始 |
 | **S1 #270** | 合 master 解衝突 → 另一個 agent 對抗式審查（合約權限、VP 重放與綁定、花費累計原子性與退回、x402 v1／v2、fail-closed、揭露）→ 修正 → 複審 | CI 全綠、審查無未解的高中風險、已合併 | 2–4 h | 無 | 未開始 |
-| **S2 部署金鑰** | 建新的加密 keystore `pepelab-rwa-deployer`，密碼檔放 repo 外、權限 600；把地址告訴使用者 | 地址已給使用者；`cast balance` ≥ 0.05 ETH | 0.2 h | **入金約 0.1 ETH**（見第 3 節） | 未開始 |
+| **S2 部署金鑰** | 已在舊電腦建立加密 keystore `pepelab-rwa-deployer`（`0xF52D1a91B93bFF40C7D36Cb7f898833c16a049eE`）並跨鏈入金 0.8 ETH。新電腦只要確認使用者已把 keystore 與密碼檔放好（第 3.0 節） | `cast wallet address --account pepelab-rwa-deployer --password-file ~/.foundry/pepelab-rwa-deployer.password` 等於 `0xF52D…49eE`；餘額 ≥ 0.5 ETH | 0.1 h | **複製 keystore 與密碼檔**（第 3.0 節） | 舊電腦已入金，待新電腦確認 |
 | **S3 部署整套** | 用 `DeployTenant.s.sol` 部署 master 版整套到 Base Sepolia；部署 `VCKycRegistry`、`SessionCredentialAnchor`；接 `setKycRegistry`、`setRwaAsset`（含黃金）、marketOperator、guardian；寫入碳分級見證；先模擬再廣播 | 部署紀錄 JSON 進 repo；`post-deploy-smoke.mjs` 對新部署無 FAIL（外洩地址檢查必須全 PASS）；合約在 BaseScan 驗證原始碼（有 API key 時） | 3–5 h | 可選：BaseScan API key | 未開始 |
 | **S4 推價與休市** | 本機跑 keeper 以新金鑰推價；跑休市切換（ReduceOnly）；寫一鍵啟動腳本 | 11 檔價格都在 5 分鐘內更新；休市時新開倉被拒、平倉可行（實際交易 hash） | 1–2 h | 無 | 未開始 |
 | **S5 前端接新部署** | 以租戶設定或環境變數切換「RWA PoC」位址，**不弄壞現有展示站**；本機 `yarn dev` 可用；有權限時開 Vercel preview | 本機頁面讀到新部署的資料；`/rwa`、`/oracle`、`/solvency`、`/sessions`、KYC 憑證面板都能用；現有展示站的測試仍全過 | 3–4 h | 可選：Vercel 權限（見第 3 節） | 未開始 |
@@ -57,8 +57,7 @@
 
 1. ~~合併 #268~~（已於 10/6 合併）。
 2. **審查並合併 #270**（見上表）——**從這裡開始**。
-3. **新部署金鑰**：舊電腦的 keystore `pepelab-rwa-deployer`（`0xF52D…49eE`）**不會跟著到新電腦**，而且還沒有入金。在新電腦建立新的加密 keystore：
-   `cast wallet new ~/.foundry/keystores pepelab-rwa-deployer --unsafe-password "$(cat <密碼檔>)"`（密碼檔放 repo 外、權限 600）。把地址給使用者，請使用者從 Base Sepolia 水龍頭入金約 0.1 ETH（<https://docs.base.org/base-chain/tools/network-faucets>）。**沒入金前不能部署。**
+3. **新部署金鑰（已完成）**：keystore `pepelab-rwa-deployer`（`0xF52D…49eE`）已在舊電腦建立並跨鏈入金 0.8 ETH；使用者用隨身碟把 keystore 與密碼檔放到新電腦（第 3.0 節）。新電腦先驗證地址與餘額，再進 S3。
 4. **部署新的一整套到 Base Sepolia**（master 版，含 guardian、休市 asset mode、GuardedOracle、InsuranceVault virtual shares）：
    - 先決定用哪支腳本：`contracts/script/DeployTenant.s.sol`（會接 ESGRegistryV2，碳定價啟用；新資產預設 Unrated＝1x，要用部署者當 attestor 寫入碳分級，並在文件照實說明「見證者是自己」）或 `Deploy.s.sol`（esgRegistry＝0，碳定價停用）。**建議 DeployTenant**，因為碳強度定價是題目主軸。
    - 部署 `VCKycRegistry`（`DeployVCKycRegistry.s.sol`，`VC_KYC_CHAIN_ID=84532`）、`SessionCredentialAnchor`；在新交易所 `setKycRegistry`、`setRwaAsset`（股票、債券、ESG ETF、**黃金也要標**）；設 marketOperator 與 guardian。
@@ -81,6 +80,34 @@
 
 ## 3. 使用者要準備給新電腦的東西
 
+### 3.0 從舊電腦複製到新電腦（使用者親自用隨身碟，**絕不經過 GitHub 或對話**）
+
+| 舊電腦來源 | 新電腦放置位置 | 用途 | 必要性 |
+|---|---|---|---|
+| `C:/Users/sanketsu/.foundry/keystores/pepelab-rwa-deployer` | `~/.foundry/keystores/pepelab-rwa-deployer`（Windows：`C:/Users/<你的帳號>/.foundry/keystores/`） | 新部署者的**加密**私鑰檔 | **必要** |
+| `C:/Users/sanketsu/.foundry/pepelab-rwa-deployer.password` | `~/.foundry/pepelab-rwa-deployer.password`（只有自己可讀） | 解開上面 keystore 的密碼 | **必要** |
+| `C:/Users/sanketsu/pepelab_onchain_cfd/agent/.env` | 新電腦 repo 的 `agent/.env`（已被 `.gitignore` 排除） | 舊的 agent／結算明文金鑰與 API 設定 | 可選；PoC 會用新部署者另建錢包，不需要它 |
+| `C:/Users/sanketsu/pepelab_onchain_cfd/contracts/.env` | 新電腦 repo 的 `contracts/.env`（已被 `.gitignore` 排除） | **外洩地址 `0xE80A…` 的私鑰**，只用於「凍結舊部署」（`docs/RUNBOOK_FREEZE_LEGACY.md`）或從它轉出剩餘測試幣 | 可選；**絕不可用來部署新合約** |
+
+放好後在新電腦驗證（只印地址，不印私鑰）：
+
+```bash
+cast wallet address --account pepelab-rwa-deployer --password-file ~/.foundry/pepelab-rwa-deployer.password
+# 應輸出 0xF52D1a91B93bFF40C7D36Cb7f898833c16a049eE
+cast balance 0xF52D1a91B93bFF40C7D36Cb7f898833c16a049eE --rpc-url https://sepolia.base.org --ether
+```
+
+部署時一律用 `--account pepelab-rwa-deployer --password-file ~/.foundry/pepelab-rwa-deployer.password`，不要把私鑰放進指令列或任何檔案。新的 keeper、代理人、收款、發證者錢包，由新電腦用 `cast wallet new` 建成加密 keystore（密碼檔同樣放 `~/.foundry/`），再由部署者轉 ETH 給它們；建立後把**地址**（不是私鑰）寫進下方錢包表。
+
+### 錢包一覽（只列公開地址）
+
+| 地址 | 角色 | 私鑰在哪 | 2026-10-06 20:10 餘額 | 能不能用 |
+|---|---|---|---|---|
+| `0xF52D1a91B93bFF40C7D36Cb7f898833c16a049eE` | **PoC 新部署者**（新合約的 owner） | 加密 keystore，使用者以隨身碟搬移 | Base Sepolia 0.8 ETH（從 Sepolia 跨鏈，L1 tx `0x8f5d12fa09f24e605b9a96269ef4ca9acc441abe169dccca5cf3404e685ca0e7`，已入帳） | **用這把部署 PoC** |
+| `0x27C21324D101e867E0634bf2ebe3F9Dcf3ACA585` | 現役舊合約 owner | 不在任何一台電腦上（使用者自己的錢包） | Base Sepolia 0.090 | PoC 不需要 |
+| `0x540aecd37e7a7885824e7b7e996ebddfb842ef17` | 現役 keeper（推價） | 只在 GitHub secret `KEEPER_PRIVATE_KEY` | Base Sepolia 0.147、Sepolia 0.424 | 由 GitHub Actions 使用，PoC 不動它 |
+| `0xE80A81360608C1342e66743F70a00f75d792Eb93` | **已外洩**的舊部署者 | 舊電腦 `contracts/.env` | Base Sepolia 0.0099、Sepolia 約 1.4（已轉出 0.8） | **只能用來凍結舊部署或轉出測試幣**；新合約絕不可用它 |
+
 ### 3.1 開始前就要準備好
 
 | # | 項目 | 怎麼做 | 用在 |
@@ -94,16 +121,16 @@
 
 | # | 項目 | 什麼時候 | 怎麼做 |
 |---|---|---|---|
-| 5 | **Base Sepolia ETH 約 0.1** | S2 結束時，Claude 給你部署地址 | 到 <https://docs.base.org/base-chain/tools/network-faucets> 任一水龍頭領取，轉到該地址；完成後跟 Claude 說「已入金」 |
+| 5 | ~~Base Sepolia ETH~~ | 已完成 | 舊電腦已從 Sepolia 跨鏈 0.8 ETH 到 `0xF52D…49eE`；新部署者可再轉給新建的 keeper／代理人錢包 |
 | 6 | **Base Sepolia 測試 USDC 約 10** | S6 開始時，Claude 給你代理人錢包地址 | 到 Circle 水龍頭 <https://faucet.circle.com>，選 Base Sepolia，領 USDC 到該地址（合約 `0x036CbD53842c5426634e7929541eC2318f3dCF7e`） |
 | 7 | BaseScan API key（可選） | S3，要在 BaseScan 顯示已驗證原始碼時 | 到 etherscan.io 申請 API key（V2 一把可用於 Base）；**自己**在新電腦設定環境變數 `ETHERSCAN_API_KEY`，不要貼進對話 |
 | 8 | Vercel 權限（可選） | S5，要做線上 preview 或改 signal-api 線上環境變數時 | 在新電腦 `npx vercel login`，或由你自己在 Vercel 網頁改；不做的話 PoC 用本機前端與本機 signal-api 錄影 |
 
-### 3.3 **不要**帶到新電腦的東西
+### 3.3 搬移金鑰的注意事項
 
-- 舊電腦 `contracts/.env`、`agent/.env`：裡面是明文私鑰，其中 `contracts/.env` 的 `PRIVATE_KEY` 是**外洩地址 `0xE80A…Eb93`**。
-- 舊電腦的 keystore `pepelab-rwa-deployer`（`0xF52D…49eE`）：還沒入金，新電腦重新建一把即可。
-- 舊電腦本機的 `docs/commercial/`：只在本機、含未公開的弱點細節，不需要也不要放進 repo。若想保留參考，用隨身碟手動複製，不要推上 GitHub。
+- 第 3.0 節的檔案**只能**用隨身碟或你自己控制的加密管道搬，**不可**推上 GitHub、貼進對話、放進雲端共享。repo 是公開的，網路上有機器人專門掃 GitHub 上的私鑰。
+- `.env` 與 keystore 都已被 `.gitignore` 排除；新電腦的 Claude 不得讀出或印出其中的私鑰內容，只能透過 `--account`／`--password-file` 使用。
+- 舊電腦本機的 `docs/commercial/` 含未公開弱點細節，不要放進 repo。
 
 ### 3.4 只有使用者能做、但不擋 PoC 的事
 
@@ -143,12 +170,12 @@
 3. 先回報 S0 的檢查結果：哪些工具已裝、哪些缺（缺的列給我，我自己裝），`gh auth status` 是否為 zuemen。
 
 接著照計劃表 S0 → S8 依序做，每個階段都要達到「驗收標準」才能進下一個：
-- S1 審查並合併 #270 → S2 建新的加密部署 keystore 並把地址給我（我去入金 0.1 ETH）→ S3 用 DeployTenant 部署整套＋VCKycRegistry＋SessionCredentialAnchor 到 Base Sepolia（先模擬再廣播）→ S4 本機 keeper 推價與休市切換 → S5 前端接新部署（不弄壞現有展示站）→ S6 本機 signal-api 開 x402 KYA，用測試 USDC 實付（我會把 USDC 打到你給的代理人地址）→ S7 寫 docs/POC_SCRIPT.md 並照劇本在 Base Sepolia 從頭跑一遍、每步記錄 tx hash 與 BaseScan 連結 → S8 文件收尾。
+- S1 審查並合併 #270 → S2 確認我用隨身碟放好的部署 keystore（地址應為 0xF52D…49eE、已有約 0.8 ETH，見第 3.0 節）→ S3 用 DeployTenant 部署整套＋VCKycRegistry＋SessionCredentialAnchor 到 Base Sepolia（先模擬再廣播）→ S4 本機 keeper 推價與休市切換 → S5 前端接新部署（不弄壞現有展示站）→ S6 本機 signal-api 開 x402 KYA，用測試 USDC 實付（我會把 USDC 打到你給的代理人地址）→ S7 寫 docs/POC_SCRIPT.md 並照劇本在 Base Sepolia 從頭跑一遍、每步記錄 tx hash 與 BaseScan 連結 → S8 文件收尾。
 
 規則：
 - 每個 PR：實作 → 另一個 agent 對抗式審查 → 修正 → 複審 → CI 全綠 → 合併。
 - 絕不使用舊電腦 contracts/.env 的 PRIVATE_KEY（外洩地址 0xE80A…）；發現任何明文私鑰只回報位置、不使用。
 - 對公開鏈送交易前先模擬；刪除、force push、改 GitHub／Vercel／Cloudflare 設定需要我明確授權。
-- 需要我本人做的事（入金、測試 USDC、API key、Vercel、GitHub 設定）一次集中列給我，並寫清楚地址與步驟；其餘不要停下來問。
+- 需要我本人做的事（測試 USDC、API key、Vercel、GitHub 設定）一次集中列給我，並寫清楚地址與步驟；其餘不要停下來問。
 - 每完成一個階段：更新 docs/HANDOFF_RWA_POC.md 的計劃表狀態欄並推上 GitHub，再用三句話跟我回報做了什麼、驗收結果、下一步。
 ```
