@@ -37,6 +37,7 @@ import type { HealthReport } from "./alert.ts";
 import { writeFileSync } from "node:fs";
 import { CLOSE_LEAD_RANGE, DEFAULT_CLOSE_LEAD_SEC, classifyProbeError, marketOperatorEnabled } from "./operator.ts";
 import { classifyProtected, closedForTrading, createMarketMode } from "./marketMode.ts";
+import { keeperKeySpec, loadKeeperWallet, type KeeperKeySpec } from "./keySource.ts";
 
 const SYMBOLS = [
   "sBTC", "sETH", "sAAPL", "sTSLA", "sNVDA",
@@ -74,7 +75,6 @@ const CHAIN = (process.env.KEEPER_CHAIN ?? "base-sepolia").trim();
 const CHAIN_ID = CHAIN === "sepolia" ? 11155111 : 84532;
 
 const RPC_URL = (process.env.KEEPER_RPC_URL ?? "").trim();
-const PRIVATE_KEY = (process.env.KEEPER_PRIVATE_KEY ?? "").trim();
 const ORACLE_ADDR = (process.env.KEEPER_ORACLE_ADDRESS ?? "").trim();
 const GUARDED_ADDR = (process.env.KEEPER_GUARDED_ORACLE ?? "").trim();
 // #99：讓 AssetVaultV2(.3+) 的儲備率變成可重播的時間序列。選用 —— 沒設就跳過,
@@ -121,9 +121,20 @@ if (!RPC_URL) {
   console.error("::error::KEEPER_RPC_URL 未設");
   process.exit(1);
 }
-if (!DRY_RUN && (!PRIVATE_KEY.startsWith("0x") || PRIVATE_KEY.length !== 66)) {
-  console.error("::error::KEEPER_PRIVATE_KEY 未設或格式錯誤");
+// 金鑰：KEEPER_PRIVATE_KEY（平台 workflow）或 KEEPER_KEYSTORE＋KEEPER_KEYSTORE_PASSWORD_FILE（本機），見 keySource.ts。
+// 兩者同時設定一律拒絕（含 DRY_RUN）；DRY_RUN 不需要金鑰。
+if (process.env.KEEPER_PRIVATE_KEY?.trim() && process.env.KEEPER_KEYSTORE?.trim()) {
+  console.error("::error::KEEPER_PRIVATE_KEY 與 KEEPER_KEYSTORE 只能設定一個");
   process.exit(1);
+}
+let KEY_SPEC: KeeperKeySpec | null = null;
+if (!DRY_RUN) {
+  const r = keeperKeySpec(process.env);
+  if ("error" in r) {
+    console.error(`::error::${r.error}`);
+    process.exit(1);
+  }
+  KEY_SPEC = r.spec;
 }
 if (!ethers.isAddress(ORACLE_ADDR)) {
   console.error("::error::KEEPER_ORACLE_ADDRESS 未設或不是合法地址");
@@ -200,7 +211,16 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
-  const wallet = DRY_RUN ? null : new ethers.Wallet(PRIVATE_KEY, provider);
+  let wallet: ethers.Wallet | null = null;
+  if (KEY_SPEC) {
+    try {
+      wallet = (await loadKeeperWallet(KEY_SPEC)).connect(provider);
+    } catch (e) {
+      console.error(`::error::${(e as Error).message}`);
+      process.exit(1);
+    }
+    if (KEY_SPEC.kind === "keystore") console.log(`keeper 金鑰：keystore ${KEY_SPEC.path}`);
+  }
   // 所有合約共用這一個 signer，nonce 在本機遞增（見 nonceSigner.ts 的事故說明）。
   const signer = wallet ? new LocalNonceSigner(wallet) : null;
   activeSigner = signer;
