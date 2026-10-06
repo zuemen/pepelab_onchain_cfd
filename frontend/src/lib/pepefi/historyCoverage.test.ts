@@ -41,7 +41,7 @@ describe('coverageAfterRefresh', () => {
   })
 
   it('首訪最高段就失敗：空覆蓋，但「載入較舊」仍有起點', () => {
-    const c = coverageAfterRefresh(null, { from: 50_000, to: 59_000 }, scan(50_000, 59_000, [11]))
+    const c = coverageAfterRefresh(null, { from: 50_000, to: 59_000 }, scan(50_000, 59_000, [chunkRanges(50_000, 59_000).length - 1]))
     expect(c).toEqual({ from: 59_001, to: 59_000 })
     expect(canLoadOlder(c)).toBe(true)
   })

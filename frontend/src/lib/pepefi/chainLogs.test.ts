@@ -17,6 +17,7 @@ import {
   getLogsChunkedDetailed,
   scanContractEventsStrict,
   MEASURED_GETLOGS_MAX_BLOCKS,
+  isRangeLimitError,
   UI_RETRIES,
   isChunkScanAborted,
   ChunkScanAbortedError,
@@ -238,11 +239,11 @@ describe('describeScanWindow', () => {
 })
 
 describe('CHUNK_SIZE 對齊實測上限', () => {
-  it('每段塊數不超過實測上限的約八成（2026-09-29 sepolia.base.org = 1,001 塊）', () => {
-    expect(MEASURED_GETLOGS_MAX_BLOCKS).toBe(1_001)
+  it('每段塊數不超過實測上限的約八成（2026-10-06 sepolia.base.org = 501 塊）', () => {
+    expect(MEASURED_GETLOGS_MAX_BLOCKS).toBe(501)
     expect(CHUNK_SIZE).toBeLessThanOrEqual(Math.ceil(MEASURED_GETLOGS_MAX_BLOCKS * 0.8))
     for (const [from, to] of chunkRanges(47_000_000, 47_050_000)) {
-      // 節點看的是 toBlock − fromBlock ≤ 1000
+      // 節點看的是 toBlock − fromBlock ≤ 500
       expect(to - from).toBeLessThan(MEASURED_GETLOGS_MAX_BLOCKS - 1)
     }
   })
@@ -413,5 +414,75 @@ describe('ChunkScanOptions — signal / concurrency / retries', () => {
     let m = 0
     const flakyContract = { queryFilter: vi.fn(async () => { m += 1; if (m === 1) throw new Error('429'); return [2] }) }
     expect(await queryLogsChunked(flakyContract, null, 0, CHUNK_SIZE - 1, undefined, undefined, { retries: UI_RETRIES, retryDelayMs: 0 })).toEqual([2])
+  })
+})
+
+describe('節點範圍上限變動時的自動對半切開', () => {
+  /** 模擬公開節點：toBlock − fromBlock 超過 limit 就回 Base 的 -32614 錯誤。 */
+  function limitedNode(limit: number) {
+    return {
+      getLogs: vi.fn(async (f: { fromBlock: number; toBlock: number }) => {
+        if (f.toBlock - f.fromBlock > limit) {
+          throw Object.assign(new Error(`eth_getLogs is limited to a ${limit} range`), { code: -32614 })
+        }
+        return [{ from: f.fromBlock, to: f.toBlock }]
+      }),
+    }
+  }
+
+  it('isRangeLimitError 認得各家「範圍太大」的措辭，也認得 ethers 包起來的原始錯誤', () => {
+    expect(isRangeLimitError(new Error('eth_getLogs is limited to a 500 range'))).toBe(true)
+    expect(isRangeLimitError(new Error('eth_getLogs is limited to a 1,000 range'))).toBe(true)
+    expect(isRangeLimitError({ code: -32614, message: 'whatever' })).toBe(true)
+    expect(isRangeLimitError({ shortMessage: 'could not coalesce error', error: { message: 'block range is too large' } })).toBe(true)
+    expect(isRangeLimitError({ info: { error: { message: 'query exceeds max block range 2000' } } })).toBe(true)
+    // Base 公開節點以 HTTP 413 回這個錯誤；ethers 有時只留下狀態列
+    expect(isRangeLimitError({ code: 'SERVER_ERROR', message: 'server response 413 Payload Too Large' })).toBe(true)
+    expect(isRangeLimitError({ code: 'SERVER_ERROR', info: { responseStatus: '413 Payload Too Large', responseBody: '' } })).toBe(true)
+    expect(isRangeLimitError({ info: { responseBody: '{"error":{"code":-32614,"message":"eth_getLogs is limited to a 500 range"}}' } })).toBe(true)
+    expect(isRangeLimitError(new Error('429 Too Many Requests'))).toBe(false)
+    expect(isRangeLimitError(new Error('request timeout'))).toBe(false)
+    expect(isRangeLimitError(null)).toBe(false)
+  })
+
+  it('段長超過節點上限：對半切開重抓，事件不漏、依區塊順序、不算失敗段', async () => {
+    const node = limitedNode(100)
+    const r = await getLogsChunkedDetailed(node, {}, 0, 799, { chunkSize: 400 })
+    expect(r.failedChunks).toBe(0)
+    expect(r.totalChunks).toBe(2)
+    const covered = r.logs.flatMap((l: { from: number; to: number }) => [l.from, l.to])
+    expect(covered[0]).toBe(0)
+    expect(covered[covered.length - 1]).toBe(799)
+    // 相鄰兩段首尾相接，沒有缺口也沒有重疊
+    for (let i = 1; i < r.logs.length; i++) expect(r.logs[i].from).toBe(r.logs[i - 1].to + 1)
+    for (const l of r.logs) expect(l.to - l.from).toBeLessThanOrEqual(100)
+  })
+
+  it('預設段長在 2026-10-06 的 500 上限下不需要切開', async () => {
+    const node = limitedNode(500)
+    const r = await getLogsChunkedDetailed(node, {}, 0, CHUNK_SIZE * 3 - 1)
+    expect(r.failedChunks).toBe(0)
+    expect(node.getLogs).toHaveBeenCalledTimes(3)
+  })
+
+  it('chunkSize 可由呼叫端覆寫（queryLogsChunked 的 run 參數也吃得到）', async () => {
+    const seen: Array<[number, number]> = []
+    const c = { queryFilter: vi.fn(async (_f: unknown, from: number, to: number) => { seen.push([from, to]); return [] }) }
+    await queryLogsChunked(c, null, 0, 249, undefined, undefined, { chunkSize: 100 })
+    expect(seen).toEqual([[0, 99], [100, 199], [200, 249]])
+  })
+
+  it('不是範圍錯誤（例如 429）就照舊計為失敗段，不會無限切', async () => {
+    const p = { getLogs: vi.fn(async () => { throw new Error('429 Too Many Requests') }) }
+    const r = await getLogsChunkedDetailed(p, {}, 0, CHUNK_SIZE - 1, { retryDelayMs: 0 })
+    expect(r.failedChunks).toBe(1)
+    expect(p.getLogs).toHaveBeenCalledTimes(1)
+  })
+
+  it('連單一區塊都被拒（節點真的壞了）：有界地放棄，計為失敗段', async () => {
+    const p = { getLogs: vi.fn(async () => { throw new Error('eth_getLogs is limited to a 0 range') }) }
+    const r = await getLogsChunkedDetailed(p, {}, 0, 7, { chunkSize: 8, retryDelayMs: 0 })
+    expect(r.failedChunks).toBe(1)
+    expect(p.getLogs.mock.calls.length).toBeLessThan(64)
   })
 })

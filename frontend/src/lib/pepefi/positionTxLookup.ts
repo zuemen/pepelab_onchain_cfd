@@ -39,7 +39,7 @@ export async function getBlockWithin(
   }
 }
 
-/** 估計值前後各查多少塊。兩段 CHUNK_SIZE 以內，一個部位最多兩趟 getLogs。 */
+/** 估計值前後各查多少塊（共 1,201 塊；以 CHUNK_SIZE 400 計，一個部位最多四趟 getLogs）。 */
 export const LOOKUP_HALF_WINDOW = 600;
 
 /**
