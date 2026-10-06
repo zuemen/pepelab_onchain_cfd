@@ -221,8 +221,8 @@ const TENANT_REGISTRY = {
   tokens: { sGOLD: T(13) },
 };
 const TENANT_ROLES = { admin: T(20), risk: T(21), guardian: T(22), keeper: T(23), marketOperator: T(23), treasury: T(20) };
-const tenantConfig = (kyc = "vc", roles = TENANT_ROLES) => ({ schemaVersion: 4, roles, params: { kycRegistry: kyc } });
-const TENANT_RECORD = { deployer: T(30) };
+const tenantConfig = (kyc = "vc", roles = TENANT_ROLES) => ({ schemaVersion: 4, network: { chainId: 84532 }, roles, params: { kycRegistry: kyc } });
+const TENANT_RECORD = { tenantId: "rwa-poc", mode: "broadcast", chainId: 84532, deployer: T(30) };
 
 /** 一個接線正確的專屬租戶；overrides 注入錯誤。 */
 function tenantWorld({ calls = {}, kyc = "vc", roles = TENANT_ROLES, record = TENANT_RECORD, config, registry = TENANT_REGISTRY } = {}) {
@@ -298,7 +298,7 @@ test("--tenant：exchange 的 owner／guardian／marketOperator、授權 agent�
   assert.ok(fails(a).some((r) => /authorizedAgents/.test(r.name)));
   const role = await runTenant(tenantWorld({ roles: { ...TENANT_ROLES, guardian: LEAKED } }));
   assert.ok(fails(role).some((r) => r.name === "roles.guardian"));
-  const dep = await runTenant(tenantWorld({ record: { deployer: LEAKED } }));
+  const dep = await runTenant(tenantWorld({ record: { ...TENANT_RECORD, deployer: LEAKED } }));
   assert.ok(fails(dep).some((r) => r.name === "deployer（部署紀錄）"));
 });
 
@@ -323,9 +323,12 @@ test("--tenant：部署紀錄缺少或壞掉、設定不是 v4、kycRegistry 不
   fileFail(await runTenant(tenantWorld({ record: null })), "部署紀錄", /沒有部署紀錄/);
   fileFail(await runTenant(tenantWorld({ record: { contracts: {} } })), "部署紀錄", /沒有 deployer/);
   fileFail(await runTenant(tenantWorld({ record: [] })), "部署紀錄", /沒有 deployer/);
+  fileFail(await runTenant(tenantWorld({ record: { ...TENANT_RECORD, tenantId: "other" } })), "部署紀錄", /tenantId/);
+  fileFail(await runTenant(tenantWorld({ record: { ...TENANT_RECORD, mode: "dry-run" } })), "部署紀錄", /只收 broadcast/);
+  fileFail(await runTenant(tenantWorld({ record: { ...TENANT_RECORD, chainId: 31337 } })), "部署紀錄", /chainId/);
   fileFail(await runTenant(tenantWorld({ config: { ...tenantConfig(), schemaVersion: 3 } })), "部署設定", /只讀 v4/);
   fileFail(await runTenant(tenantWorld({ kyc: "kyc" })), "部署設定", /kycRegistry/);
-  fileFail(await runTenant(tenantWorld({ config: { schemaVersion: 4, roles: TENANT_ROLES } })), "部署設定", /kycRegistry/);
+  fileFail(await runTenant(tenantWorld({ config: { schemaVersion: 4, network: { chainId: 84532 }, roles: TENANT_ROLES } })), "部署設定", /kycRegistry/);
   const { KYCRegistry: _k, ...noKyc } = TENANT_REGISTRY.contracts;
   fileFail(await runTenant(tenantWorld({ registry: { ...TENANT_REGISTRY, contracts: noKyc } })), "前端登記", /contracts\.KYCRegistry/);
   const { Oracle: _o, ...noOracle } = TENANT_REGISTRY.contracts;
