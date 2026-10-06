@@ -14,7 +14,18 @@
 
 ## 建立與入金
 
-- 部署者以外的 9 把：2026-10-06 由新電腦以 `cast wallet new` 建立，**尚未入金**。
+- 部署者以外的 9 把：2026-10-06 由新電腦以 `cast wallet new` 建立（加密 keystore），同日由部署者入金（每筆先 `cast estimate` 模擬再送出，全部 status 1）：
+
+  - MockUSDC faucet（部署者 1,000 顆，保險種子用）：[`0xb191…1fde`](https://sepolia.basescan.org/tx/0xb19157eac05c772fd599b34e05d50a86475050b7f628d216fca635b0cea01fde)
+  - keeper 0.1 ETH：[`0x5e89…0149`](https://sepolia.basescan.org/tx/0x5e899dd6e5b2cde21c0da6eec97c8a57eddf5fe4e0600e17a699063d70f10149)
+  - admin 0.03 ETH：[`0x3e82…4ac1`](https://sepolia.basescan.org/tx/0x3e82ba7c9ba949ca6fb01c94106ec9d4e4bfa4f1924dd012f0e9912cdb6d4ac1)
+  - guardian 0.01 ETH：[`0x80f0…3dbd`](https://sepolia.basescan.org/tx/0x80f0f2a7a41c72dd5144899d6090c286859d7604e6ec0d756d263b78823b3dbd)
+  - risk 0.005 ETH：[`0x2f40…d80e`](https://sepolia.basescan.org/tx/0x2f4082df9e4693c50a8abb8c3c8a9eb8ee72b983f4f78a67a40d2400e498d80e)
+  - attestor 0.01 ETH：[`0x3fe8…80f9`](https://sepolia.basescan.org/tx/0x3fe83b27d176063636cd2f6e5bfa43f6c4ad0b1eddd809190635fb3d420d80f9)
+  - issuer 0.01 ETH：[`0x0690…9f81`](https://sepolia.basescan.org/tx/0x0690678e35437fa1f5600137df540daf3d4b5468bf5aa5cfbfc31761f8cd9f81)
+  - investor 0.03 ETH：[`0x641d…44af`](https://sepolia.basescan.org/tx/0x641d0120da28788622ee98b4f429deba48c3dfc2e318bc6b931dbf800b8a44af)
+  - agent 0.03 ETH：[`0x8e4a…b531`](https://sepolia.basescan.org/tx/0x8e4a8ce821106f7c6f08ae33716f4ea028b42f977be911cecabcdb6ddf91b531)
+  - payto 0.01 ETH：[`0xb763…ffa6`](https://sepolia.basescan.org/tx/0xb763b174d11873af463c7b128e0a1ed4f452747b4db6138609378b2e8963ffa6)
 - 部署者：Base Sepolia 有 0.8 ETH，從 Sepolia 跨鏈而來（L1 tx [`0x8f5d…a0e7`](https://sepolia.etherscan.io/tx/0x8f5d12fa09f24e605b9a96269ef4ca9acc441abe169dccca5cf3404e685ca0e7)）。
 
 ## 錢包表
