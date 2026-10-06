@@ -24,7 +24,8 @@ import { SwitchChainButton } from 'src/components/pepefi/SwitchChainButton';
 //   - 刷新頁面時 useWallet 會先做靜默 session 恢復（initializing），
 //     守衛等它完成才判斷，避免已連線用戶刷新內頁被誤踢回 landing。
 
-const PUBLIC_PATHS = ['/', '/x402', '/marketplace'];
+// /rwa、/oracle、/solvency 是唯讀揭露頁（公開節點讀鏈，不需錢包），未連錢包也要看得到。
+const PUBLIC_PATHS = ['/', '/x402', '/marketplace', '/rwa', '/oracle', '/solvency'];
 const AFTER_CONNECT_PATH = '/portfolio';
 
 export function PepefiLayout() {
