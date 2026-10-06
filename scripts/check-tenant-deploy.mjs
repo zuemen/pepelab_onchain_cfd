@@ -629,6 +629,13 @@ export function checkCrossTenant(results) {
 
 export const TENANT_FILE_DIRS = ["docs/tenants/", "contracts/broadcast/tenants/"];
 
+/** deploy/tenants/ 只能放直下的 *.json；其他檔案不被排除在全集之外，而且報錯。 */
+export function checkDeployTenantsDir(files) {
+  return files
+    .filter((rel) => rel.startsWith("deploy/tenants/") && !/^deploy\/tenants\/[^/]+\.json$/.test(rel))
+    .map((rel) => `${rel}: deploy/tenants/ 只能放直下的 <id>.json／<id>.deployed.json／_template.json——子目錄與其他檔案不算租戶檔（仍算平台位址）`);
+}
+
 /** repo 裡（被追蹤＋未被忽略）兩個租戶目錄底下的檔案：[{ rel, text }]。 */
 export function tenantDirEntries(root, files = repoFiles(root)) {
   const out = [];
@@ -883,7 +890,9 @@ export function run({ root, files, log = console.log, coverage = false, context 
     for (const r of results) if (r.cfg && typeof r.cfg.tenantId === "string") ids.add(r.cfg.tenantId);
     const records = {};
     for (const r of results) if (r.rec && r.cfg?.tenantId) records[r.cfg.tenantId] = r.rec;
-    const entries = ctx.tenantDirEntries ?? tenantDirEntries(root);
+    const allFiles = ctx.repoFiles ?? repoFiles(root);
+    problems.push(...checkDeployTenantsDir(allFiles));
+    const entries = ctx.tenantDirEntries ?? tenantDirEntries(root, allFiles);
     const dirs = checkTenantDirs({ entries, configIds: ids, universe: ctx.universe, records });
     problems.push(...dirs.problems);
     for (const [id, addrs] of dirs.addrsById) {

@@ -67,6 +67,9 @@ test("排除清單：只排除租戶檔、測試、第三方 lib、lockfile、�
     "docs/tenants/default/WALLETS.md",
     "contracts/broadcast/tenants/default/DeployTenant.s.sol/84532/run-latest.json",
     "docs/tenants/Bank_A/x.md",
+    // deploy/tenants/ 只排除直下的 *.json。
+    "deploy/tenants/archive/old.json",
+    "deploy/tenants/NOTES.md",
     "scripts/deploy-129.sh",
     "docs/ROLE_SEPARATION.md",
     "ops/monitoring/monitors.json",

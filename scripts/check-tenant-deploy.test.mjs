@@ -3,7 +3,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -15,6 +15,7 @@ import {
   VAULT_PARAM_KEYS,
   RECORD_CONTRACT_KEYS,
   checkCrossTenant,
+  checkDeployTenantsDir,
   checkTenantDirs,
   checkDeployedRecord,
   checkTenantDeploy,
@@ -24,6 +25,7 @@ import {
   loadContext,
   run,
 } from "./check-tenant-deploy.mjs";
+import * as ctxLib from "./lib/platform-addresses.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, "..");
@@ -848,6 +850,37 @@ test("租戶目錄：目錄直下的檔案、default、不是 slug 的 id 都報
   assert.match(dirs([{ rel: "docs/tenants/default/WALLETS.md", text: live.MockUSDC }]), /不是合格的租戶 id/);
   assert.match(dirs([{ rel: "docs/tenants/Bank_A/x.md", text: "" }]), /不是合格的租戶 id/);
   assert.equal(dirs([{ rel: "docs/tenants/demo-bank/WALLETS.md", text: C(1) }]), "");
+});
+
+test("deploy/tenants/：子目錄與非 JSON 檔報錯，位址仍在全集", () => {
+  assert.deepEqual(checkDeployTenantsDir(["deploy/tenants/demo-bank.json", "deploy/tenants/_template.json"]), []);
+  const p = checkDeployTenantsDir(["deploy/tenants/archive/old.json", "deploy/tenants/NOTES.md"]).join("\n");
+  assert.match(p, /archive\/old\.json: deploy\/tenants\/ 只能放直下/);
+  assert.match(p, /NOTES\.md: deploy\/tenants\/ 只能放直下/);
+  // 透過 run()：整個目錄檢查時報錯。
+  const dir = mkdtempSync(join(tmpdir(), "tenant-deploy-dir-"));
+  const file = join(dir, "demo-bank.json");
+  writeFileSync(file, JSON.stringify(filled()));
+  const context = {
+    ...ctx,
+    frontendDeployments: { "demo-bank": platformReg },
+    tenantDirEntries: [],
+    repoFiles: ["deploy/tenants/NOTES.md"],
+  };
+  assert.match(run({ root, files: [file], log: () => {}, coverage: true, context }).join("\n"), /NOTES\.md: deploy\/tenants\//);
+  // 位址仍在全集：以臨時 repo 驗證排除只看路徑形狀。
+  const { platformAddressUniverse } = ctxLib;
+  const tmp = mkdtempSync(join(tmpdir(), "tenant-universe-"));
+  mkdirSync(join(tmp, "deploy/tenants/archive"), { recursive: true });
+  writeFileSync(join(tmp, "deploy/tenants/archive/old.json"), JSON.stringify({ a: C(7) }));
+  writeFileSync(join(tmp, "deploy/tenants/NOTES.md"), C(8));
+  writeFileSync(join(tmp, "deploy/tenants/x.json"), JSON.stringify({ a: C(9) }));
+  mkdirSync(join(tmp, "frontend/src/contracts"), { recursive: true });
+  writeFileSync(join(tmp, ctxLib.RETIRED_FILE), readFileSync(join(root, ctxLib.RETIRED_FILE)));
+  const u = platformAddressUniverse(tmp, {
+    files: ["deploy/tenants/archive/old.json", "deploy/tenants/NOTES.md", "deploy/tenants/x.json"],
+  });
+  assert.ok(u.has(C(7)) && u.has(C(8)) && !u.has(C(9)));
 });
 
 test("租戶目錄：廣播紀錄必須有部署設定；沒有設定時 docs 只能放 .md", () => {

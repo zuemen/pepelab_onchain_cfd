@@ -208,6 +208,7 @@ TENANT=<id> FOUNDRY_BROADCAST=broadcast/tenants/<id> forge script script/DeployT
   `deploy/tenants/`、`docs/tenants/`、`contracts/broadcast/tenants/` 這幾個租戶目錄；寫到預設的
   `contracts/broadcast/DeployTenant.s.sol/` 再 commit，整個租戶就會變成「平台位址」，`check-tenant-deploy.mjs` 與
   `check-addresses.mjs` 從此紅燈。同理，租戶的完整位址只寫在 `docs/tenants/<id>/`，其他文件寫縮寫。
+- `deploy/tenants/` 只能放直下的 `<id>.json`／`<id>.deployed.json`／`_template.json`；子目錄與其他檔案不被排除在平台位址全集之外，而且報錯。
 - 這兩個租戶目錄的規則（`check-tenant-deploy.mjs` 的 `checkTenantDirs`）：檔案一律放在 `<id>/` 底下（目錄直下不可放檔案），
   `<id>` 是 slug 且不可是 `default`；`contracts/broadcast/tenants/<id>/` 必須有 `deploy/tenants/<id>.json`，`docs/tenants/<id>/`
   在部署設定之前就可以存在、但只能放 `.md`。裡面的位址（扣掉平台全集與白名單）併入該租戶做跨租戶比對；廣播紀錄 CREATE 出來的
