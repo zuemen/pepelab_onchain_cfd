@@ -31,6 +31,8 @@ export default function OraclePage() {
         maxPriceAge={onchain.data?.maxPriceAge ?? null}
         chainId={chain.chainId}
         source={chain.source}
+        updatedAt={onchain.updatedAt}
+        stale={onchain.failed}
         onReload={() => {
           onchain.reload()
           reference.reload()

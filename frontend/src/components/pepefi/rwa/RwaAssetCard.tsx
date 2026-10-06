@@ -18,7 +18,7 @@ import { readingText } from 'src/lib/pepefi/rwaLabels'
 import { marketStatus } from 'src/lib/pepefi/marketStatus'
 import { sessionClassOf } from 'src/lib/pepefi/marketHours'
 import { RWA_CLASS, keeperPrimary, keeperSecondary } from 'src/lib/pepefi/rwaProfile'
-import { bpsToPct, rwaFlagNote, attestorNote, closureRule, kycRequirement } from 'src/lib/pepefi/rwaCards'
+import { bpsToPct, rwaFlagNote, attestorNote, closureRule, carbonCapped, kycRequirement } from 'src/lib/pepefi/rwaCards'
 
 // ----------------------------------------------------------------------
 
@@ -156,6 +156,7 @@ export function RwaAssetCard({ symbol, chain, kycAddress, modeSupport, nowSec }:
 
       <Field label={c.maxLeverage} testId="rwa-leverage">
         {readingText(chain?.maxLeverage, (n) => interpolate(c.maxLeverageValue, { n }))}
+        {chain && carbonCapped(chain.maxLeverage, chain.carbon) && <Note>{c.carbonCapped}</Note>}
       </Field>
       <Field label={c.maintenance} testId="rwa-maintenance">
         {readingText(chain?.maintenanceBps, (bps) => interpolate(c.maintenanceValue, { pct: bpsToPct(bps), bps }))}

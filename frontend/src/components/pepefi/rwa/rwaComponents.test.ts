@@ -116,6 +116,23 @@ describe('RwaAssetCard', () => {
     expect(html).not.toContain('0×')
   })
 
+  it('被碳分級壓住的上限加註「受碳分級上限」', () => {
+    const html = text(
+      render(
+        createElement(RwaAssetCard, {
+          symbol: 'sGOLD',
+          chain: liveCard({ rwaFlag: ok(false), maxLeverage: ok(1), carbon: ok({ tier: 'high', freshCount: 1, isRated: true }) }),
+          kycAddress: ok(KYC),
+          modeSupport: 'unsupported',
+          nowSec: WEEKDAY_OPEN,
+        })
+      )
+    )
+    expect(html).toContain(t.rwa.cards.carbonCapped)
+    const aapl = text(render(createElement(RwaAssetCard, { symbol: 'sAAPL', chain: liveCard(), kycAddress: ok(KYC), modeSupport: 'unsupported', nowSec: WEEKDAY_OPEN })))
+    expect(aapl).not.toContain(t.rwa.cards.carbonCapped)
+  })
+
   it('加密資產：24/7，沒有休市', () => {
     const html = text(
       render(createElement(RwaAssetCard, { symbol: 'sBTC', chain: liveCard({ rwaFlag: ok(false) }), kycAddress: ok(KYC), modeSupport: 'unsupported', nowSec: SATURDAY }))
@@ -178,6 +195,16 @@ describe('ChainSourceNote / RwaInfoLink', () => {
     const raw = render(createElement(RwaPagesNav, { current: 'oracle' }))
     for (const p of [paths.pepefi.rwa, paths.pepefi.oracle, paths.pepefi.solvency]) expect(raw).toContain(`href="${p}"`)
     expect(raw.match(/aria-current="page"/g)).toHaveLength(1)
+  })
+
+  it('上次成功讀取時間；重讀失敗時同時標示讀取失敗', () => {
+    const at = Date.UTC(2026, 9, 6, 7, 0) / 1000
+    const ok1 = render(createElement(ChainSourceNote, { chainId: 84532, source: 'public', updatedAt: at }))
+    expect(ok1).toContain('rwa-last-read')
+    expect(text(ok1)).not.toContain(t.rwa.common.readFailed)
+    const stale = text(render(createElement(ChainSourceNote, { chainId: 84532, source: 'public', updatedAt: at, failed: true })))
+    expect(stale).toContain(t.rwa.common.readFailed)
+    expect(render(createElement(ChainSourceNote, { chainId: 84532, source: 'public' }))).not.toContain('rwa-last-read')
   })
 
   it('連結到 /rwa', () => {
@@ -291,6 +318,15 @@ describe('Solvency 元件', () => {
     expect(s).toContain(t.rwa.common.readFailed)
     expect(s).not.toContain('0.00 USDC')
     expect(s).toContain(interpolate(t.rwa.solvency.ratioStale, { n: 2 }))
+  })
+
+  it('SolvencyView：decimals 讀不到時不顯示任何金額', () => {
+    const raw = render(
+      createElement(SolvencyView, { snapshot: { ...snap, usdcDecimals: null }, loading: false, history: null, historyLoading: false, chainId: 84532, source: 'public' })
+    )
+    expect(raw).toContain('solvency-decimals-failed')
+    expect(text(raw)).not.toMatch(/[0-9] USDC/)
+    expect(text(raw)).toContain(t.rwa.common.decimalsFailed)
   })
 
   it('LossWaterfall：四層依序，ADL 讀鏈上開關', () => {

@@ -26,7 +26,7 @@ function deps(over: Partial<SolvencyDeps> = {}): SolvencyDeps {
     nextPositionId: async () => 3n,
     getPosition: async (id) => ({ isOpen: id !== 1, margin: 100n * E18, asset: '0x' + '01'.repeat(32) }),
     getUnrealizedPnL: async (id) => (id === 0 ? -10n * E18 : 25n * E18),
-    adlEnabled: async () => true,
+    solvencyFlags: async () => ({ adl: true }),
     insuranceTotalAssets: async () => 1_000n * E18,
     vault: {
       reserveStatus: async () => ({
@@ -129,6 +129,20 @@ describe('loadSolvency', () => {
       })
     )
     expect(s.vault.status === 'ok' && s.vault.value.ratioBps).toBeNull()
+  })
+
+  it('decimals 讀不到時是 null（不默默用 18）', async () => {
+    const s = await loadSolvency(deps({ usdcDecimals: () => Promise.reject(new Error('rpc')) }))
+    expect(s.usdcDecimals).toBeNull()
+    const weird = await loadSolvency(deps({ usdcDecimals: async () => 255n }))
+    expect(weird.usdcDecimals).toBeNull()
+  })
+
+  it('ADL 沿用 readSolvencyFlags：null 是讀取失敗；函式存在但讀不到不是「關閉」', async () => {
+    const s = await loadSolvency(deps({ solvencyFlags: async () => ({ adl: null }) }))
+    expect(s.adl).toEqual(FAILED)
+    const off = await loadSolvency(deps({ solvencyFlags: async () => ({ adl: false }) }))
+    expect(off.adl).toEqual(ok(false))
   })
 
   it('掃描上限：超過時標示 truncated', async () => {

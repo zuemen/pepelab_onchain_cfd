@@ -13,6 +13,7 @@ import type { AssetSymbol } from 'src/contracts/addresses'
 
 import { ASSET_IDS } from 'src/contracts/addresses'
 
+import { paramsFor } from './carbon'
 import { RWA_CLASS, refersToRealWorldAsset } from './rwaProfile'
 import { ok, FAILED, supportMap, readGuarded, UNSUPPORTED } from './contractProbe'
 
@@ -199,6 +200,20 @@ export function attestorNote(attestors: Reading<number>): 'none' | 'single' | nu
   if (attestors.value === 0) return 'none'
   if (attestors.value === 1) return 'single'
   return null
+}
+
+/** 合約的全域槓桿硬上限（PerpetualExchange.MAX_LEVERAGE）。 */
+export const EXCHANGE_MAX_LEVERAGE = 5
+
+/**
+ * 槓桿上限是不是被碳分級壓住的：合約的 maxLeverageForAsset = min(owner 上限, 碳分級上限)。
+ * 鏈上值等於這個分級的上限、而且低於全域硬上限，就標「受碳分級上限」（例如高碳的 sBTC、sGOLD 只有 1×）。
+ * 兩個讀值任一不是 ok 就不下結論。
+ */
+export function carbonCapped(maxLeverage: Reading<number>, carbon: Reading<CarbonReading>): boolean {
+  if (maxLeverage.status !== 'ok' || carbon.status !== 'ok') return false
+  const cap = paramsFor(carbon.value.isRated ? carbon.value.tier : 'unrated').maxLeverage
+  return cap < EXCHANGE_MAX_LEVERAGE && maxLeverage.value === cap
 }
 
 /** bps → 百分比字串（500 → "5%"、750 → "7.5%"）。 */

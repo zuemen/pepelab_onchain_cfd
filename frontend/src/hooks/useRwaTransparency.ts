@@ -6,9 +6,11 @@ import type { RefFetchResult, OnchainSnapshot } from 'src/lib/pepefi/oracleWitne
 import type { ReserveHistory, RawReserveLog, SolvencySnapshot } from 'src/lib/pepefi/solvency'
 
 import { Contract } from 'ethers'
-import { useMemo, useState, useEffect, useCallback } from 'react'
+import { useMemo, useState, useEffect, useReducer, useCallback } from 'react'
 
 import { loadRwaSnapshot } from 'src/lib/pepefi/rwaCards'
+import { asyncReducer, initialAsyncState } from 'src/lib/pepefi/asyncState'
+import { readSolvencyFlags } from 'src/lib/pepefi/solvencyFlags'
 import PerpetualExchangeABI from 'src/contracts/abi/PerpetualExchange.json'
 import { isDeployed } from 'src/lib/pepefi/safeRead'
 import { SIGNAL_API_URL } from 'src/lib/pepefi/signalApi'
@@ -58,33 +60,37 @@ export function useReadChain(): ReadChain {
   }, [wallet.chainId, wallet.provider])
 }
 
-/** 通用：非同步載入＋重新讀取。effect 卸載後丟棄結果。 */
-function useAsync<T>(load: (() => Promise<T>) | null): { data: T | null; loading: boolean; reload: () => void } {
-  const [data, setData] = useState<T | null>(null)
-  const [loading, setLoading] = useState(false)
+export interface AsyncResult<T> {
+  data: T | null
+  loading: boolean
+  /** 上一次成功讀取的時間（unix 秒）。 */
+  updatedAt: number | null
+  /** 最近一次讀取失敗；data 若還在，是上一次成功的那份。 */
+  failed: boolean
+  reload: () => void
+}
+
+/**
+ * 通用：非同步載入＋重新讀取（狀態轉換見 lib/pepefi/asyncState.ts）。
+ * 換讀取對象（換鏈、換節點）時舊資料立刻清空；重讀失敗保留上次成功的資料並標 failed。
+ */
+function useAsync<T>(load: (() => Promise<T>) | null): AsyncResult<T> {
+  const [state, dispatch] = useReducer(asyncReducer<T>, undefined, initialAsyncState<T>)
   const [nonce, setNonce] = useState(0)
   useEffect(() => {
     if (!load) {
-      setData(null)
-      setLoading(false)
+      dispatch({ type: 'none' })
       return undefined
     }
-    let cancelled = false
-    setLoading(true)
-    load()
-      .then((d) => {
-        if (!cancelled) setData(d)
-      })
-      .catch(() => undefined)
-      .finally(() => {
-        if (!cancelled) setLoading(false)
-      })
-    return () => {
-      cancelled = true
-    }
+    dispatch({ type: 'start', source: load })
+    load().then(
+      (data) => dispatch({ type: 'success', source: load, data, at: Math.floor(Date.now() / 1000) }),
+      () => dispatch({ type: 'failure', source: load })
+    )
+    return undefined
   }, [load, nonce])
   const reload = useCallback(() => setNonce((n) => n + 1), [])
-  return { data, loading, reload }
+  return { data: state.data, loading: state.loading, updatedAt: state.updatedAt, failed: state.failed, reload }
 }
 
 export function useRwaSnapshot(chain: ReadChain, symbols: readonly AssetSymbol[]) {
@@ -175,7 +181,7 @@ export function useSolvency(chain: ReadChain) {
         nextPositionId: () => ex.nextPositionId() as Promise<bigint>,
         getPosition: (id) => ex.getPosition(id) as Promise<{ isOpen: boolean; margin: bigint; asset: string }>,
         getUnrealizedPnL: (id) => ex.getUnrealizedPnL(id) as Promise<bigint>,
-        adlEnabled: () => ex.adlEnabled() as Promise<boolean>,
+        solvencyFlags: () => readSolvencyFlags(ex),
         insuranceTotalAssets: iv ? () => iv.totalAssets() as Promise<bigint> : null,
         vault: vault
           ? {

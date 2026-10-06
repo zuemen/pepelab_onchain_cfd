@@ -9,6 +9,7 @@ import { RWA_CARD_ORDER } from './rwaProfile'
 import { ok, FAILED, selectorOf, UNSUPPORTED } from './contractProbe'
 import {
   bpsToPct,
+  carbonCapped,
   closureRule,
   rwaFlagNote,
   attestorNote,
@@ -145,6 +146,17 @@ describe('純函式', () => {
     expect(attestorNote(ok(0))).toBe('none')
     expect(attestorNote(ok(3))).toBeNull()
     expect(attestorNote(FAILED)).toBeNull()
+  })
+
+  it('carbonCapped：鏈上上限等於碳分級上限且低於 5× 才標示', () => {
+    const tier = (t: 'low' | 'mid' | 'high', isRated = true) => ok({ tier: t, freshCount: 1, isRated })
+    expect(carbonCapped(ok(1), tier('high'))).toBe(true)
+    expect(carbonCapped(ok(2), tier('mid'))).toBe(true)
+    expect(carbonCapped(ok(5), tier('low'))).toBe(false)
+    expect(carbonCapped(ok(1), tier('low', false))).toBe(true)
+    expect(carbonCapped(ok(1), tier('mid'))).toBe(false)
+    expect(carbonCapped(FAILED, tier('high'))).toBe(false)
+    expect(carbonCapped(ok(1), FAILED)).toBe(false)
   })
 
   it('bpsToPct', () => {

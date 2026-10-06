@@ -59,9 +59,17 @@
 | sBOND（BGRN）、sICLN、sESGU | Yahoo | Nasdaq（`assetclass=etf`） | 同上 |
 | sGOLD | Yahoo `GC=F`（COMEX 近月**期貨**） | gold-api.com `XAU`（**現貨**） | 兩者都有；期貨與現貨有基差（2026-10-06 實測約 35 bps），只作合理性檢查 |
 
-- 端點細節（`agent/signal-api/src/referencePrices.ts`）：每個上游 5 秒逾時；整份 60 秒快取、有來源失敗時 15 秒；single-flight；
+- 端點細節（`agent/signal-api/src/referencePrices.ts`）：每個上游 5 秒逾時；**每個上游 URL 各自快取**（成功 60 秒、失敗 15 秒）、single-flight，
+  一個來源失敗不會讓其他來源被重抓；CoinGecko 的多個 id 合併成一次請求。回應帶 `Cache-Control: public, max-age=…, s-maxage=…, stale-while-revalidate=120`
+  （s-maxage 最多 60 秒、跟著最先過期的來源走），讓 Vercel CDN 在多個實例之間共用同一份。
   一個來源失敗只讓該格帶短原因（`timeout`、`http 4xx`），不回上游原文、不補假值。沿用既有免費端點的 per-IP 節流。
   keeper 主來源與 `feeds.ts` 一致由 `referencePrices.test.ts` 釘住。
+- **CORS**：只放行 `CORS_ALLOWED_ORIGINS`（與 `/demo/*` 同一份白名單，預設是正式前端網域與本機開發埠）；帶其他 `Origin` 的請求直接 403，
+  避免其他網站把它當成免費行情來源或放大上游流量的跳板。沒有 `Origin` 的請求（curl、agent）照常可用，受 per-IP 節流約束。
+  前端的 Vercel 預覽網域不在預設白名單內，預覽站上 `/oracle` 的鏈下欄位會顯示讀取失敗。
+- **第三方資料條款**：這個端點**只即時轉發**參考價供比對——不保存歷史、不提供下載或批次匯出、每一格都標示來源與報價時間；
+  回應本身也帶同樣的聲明（`disclaimer`）。各上游（Yahoo、CoinGecko、Nasdaq、Coinbase、gold-api.com）的使用條款與商業授權**未查證**，
+  正式使用（含商業化或對外提供）前必須逐一取得授權或改用有授權的資料源。
 - 2026-10-06 實測：Nasdaq 對帶 `/1.0; +https://…` 的 User-Agent 不回應（掛到逾時），所以端點用較短的 UA。signal-api 部署在 Vercel `sin1`，
   雲端 IP 對 Nasdaq 是否可用**未驗證**；不可用時看板對應格顯示「取價失敗」，美股與 ETF 就只剩 keeper 的單一來源。
 - 端點尚未部署到線上 signal-api 之前，看板顯示「鏈下參考價讀取失敗（HTTP …），以下只顯示鏈上資料」。

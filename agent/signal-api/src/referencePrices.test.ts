@@ -5,6 +5,7 @@ import assert from "node:assert";
 process.env.BASE_SEPOLIA_RPC_URL = "http://127.0.0.1:1";
 process.env.FREE_RATE_MAX = "3";
 process.env.FREE_RATE_WINDOW_MS = "60000";
+process.env.CORS_ALLOWED_ORIGINS = "https://front.example";
 
 const rp = await import("./referencePrices.ts");
 const { SOURCES, SECONDARY_SOURCES } = await import("../../keeper/feeds.ts");
@@ -25,8 +26,8 @@ function fakeFetcher(fail: Record<string, Error> = {}, calls: string[] = []) {
     const host = new URL(url).host;
     if (fail[host]) throw fail[host];
     if (host === "api.coingecko.com") {
-      const id = new URL(url).searchParams.get("ids")!;
-      return { [id]: { usd: id === "bitcoin" ? 85_491 : 2_700, last_updated_at: T - 20 } };
+      const ids = new URL(url).searchParams.get("ids")!.split(",");
+      return Object.fromEntries(ids.map((id) => [id, { usd: id === "bitcoin" ? 85_491 : 2_700, last_updated_at: T - 20 }]));
     }
     if (host === "query1.finance.yahoo.com") {
       const sym = decodeURIComponent(new URL(url).pathname.split("/").pop()!);
@@ -114,15 +115,17 @@ function fakeFetcher(fail: Record<string, Error> = {}, calls: string[] = []) {
 {
   const timeout = Object.assign(new Error("The operation was aborted due to timeout"), { name: "TimeoutError" });
   const http = new Error("api.nasdaq.com returned 403 https://secret.example/?key=abc");
-  const report = await rp.buildReferenceReport(fakeFetcher({ "api.coinbase.com": timeout, "api.nasdaq.com": http }), {
-    now: () => T,
-  });
+  const report = await rp.buildReferenceReport(
+    rp.directFetcher(fakeFetcher({ "api.coinbase.com": timeout, "api.nasdaq.com": http })),
+    { now: () => T },
+  );
   const btc = report.assets.sBTC;
   assert.equal(btc.okCount, 2);
   const cb = btc.sources.find((s) => s.provider === "coinbase")!;
   assert.equal(cb.price, null);
   assert.equal(cb.error, "timeout");
   assert.equal(btc.spreadBps, rp.spreadBps([85_491, 85_500]));
+  assert.equal(report.assets.sETH.sources[0].price, 2_700, "合併請求後每個 id 仍各自萃取");
   const aapl = report.assets.sAAPL;
   assert.equal(aapl.okCount, 1);
   assert.equal(aapl.spreadBps, null, "只剩一個成功來源時不給價差");
@@ -132,40 +135,70 @@ function fakeFetcher(fail: Record<string, Error> = {}, calls: string[] = []) {
   assert.equal(aapl.sources[0].quoteTime, T - 3600);
   assert.equal(aapl.sources[0].fetchedAt, T);
   assert.equal(report.ok, true, "每檔至少有一個來源成功");
-  const all = await rp.buildReferenceReport(fakeFetcher({ "query1.finance.yahoo.com": http, "api.nasdaq.com": http }), { now: () => T });
+  assert.match(report.disclaimer, /不保存歷史/);
+  const all = await rp.buildReferenceReport(
+    rp.directFetcher(fakeFetcher({ "query1.finance.yahoo.com": http, "api.nasdaq.com": http })),
+    { now: () => T },
+  );
   assert.equal(all.assets.sAAPL.okCount, 0);
   assert.equal(all.ok, false);
   ok("單一上游失敗隔離、錯誤只回短原因、報價時間與取值時間分開");
 }
 
-// 6) 快取：60 秒、single-flight；有來源失敗時只快取 15 秒
+// 6) CoinGecko 合併為一次請求；每個 URL 在一份報表內只打一次
+{
+  assert.deepEqual(rp.COINGECKO_IDS, ["bitcoin", "ethereum"]);
+  const calls: string[] = [];
+  await rp.buildReferenceReport(rp.directFetcher(fakeFetcher({}, calls)), { now: () => T });
+  assert.equal(calls.filter((u) => u.includes("coingecko")).length, 1, "CoinGecko 只打一次");
+  assert.equal(new Set(calls).size, calls.length, "沒有重複 URL");
+  assert.equal(calls.length, rp.upstreamUrls().length);
+  ok("CoinGecko 多個 id 合併為一次請求；每個上游 URL 只打一次");
+}
+
+// 7) 快取：每個來源各自快取（成功 60 秒、失敗 15 秒）；一個來源失敗不讓其他來源重抓
 {
   let clock = 0;
   const calls: string[] = [];
-  const svc = rp.createReferencePriceService(fakeFetcher({}, calls), { nowMs: () => clock });
+  const svc = rp.createReferencePriceService(fakeFetcher({ "api.gold-api.com": new Error("x returned 500") }, calls), {
+    nowMs: () => clock,
+  });
   const [a, b] = await Promise.all([svc.get(), svc.get()]);
   assert.equal(a.cacheHit, false);
-  assert.equal(b.cacheHit, false);
+  assert.equal(b.report.assets.sGOLD.sources[1].error, "http 500");
   const first = calls.length;
-  assert.ok(first > 0);
-  clock = 59_000;
-  assert.equal((await svc.get()).cacheHit, true);
-  assert.equal(calls.length, first, "single-flight + 快取：沒有重打上游");
-  clock = 61_000;
-  assert.equal((await svc.get()).cacheHit, false);
+  assert.equal(first, rp.upstreamUrls().length, "single-flight：並發兩次只打一輪");
+  assert.equal(a.remainingSec, 15, "最先過期的是失敗的那個來源");
 
-  let c2 = 0;
-  const degraded = rp.createReferencePriceService(fakeFetcher({ "api.gold-api.com": new Error("x returned 500") }), {
-    nowMs: () => c2,
-  });
-  const d = await degraded.get();
-  assert.equal(d.ttlSec, 15);
-  c2 = 16_000;
-  assert.equal((await degraded.get()).cacheHit, false);
-  ok("快取 60 秒、single-flight；降級時 15 秒");
+  clock = 16_000; // 失敗來源過期，其他來源仍在 60 秒內
+  const c = await svc.get();
+  const refetched = calls.slice(first);
+  assert.deepEqual(refetched, ["https://api.gold-api.com/price/XAU"], "只有失敗的來源被重抓");
+  assert.equal(c.cacheHit, false);
+  assert.equal(c.report.assets.sAAPL.sources[0].price, 332.89, "其他來源沿用快取");
+
+  clock = 20_000;
+  assert.equal((await svc.get()).cacheHit, true);
+  clock = 40_000; // 失敗來源（16 秒時重抓、又失敗）再次過期；成功來源仍在 60 秒內
+  let before = calls.length;
+  await svc.get();
+  assert.deepEqual(calls.slice(before), ["https://api.gold-api.com/price/XAU"], "成功的來源 60 秒內都不重抓");
+  clock = 61_000;
+  before = calls.length;
+  await svc.get();
+  assert.ok(calls.slice(before).includes("https://query1.finance.yahoo.com/v8/finance/chart/AAPL?interval=1d&range=1d"), "成功的來源 60 秒後重抓");
+  ok("每個來源各自快取：成功 60 秒、失敗 15 秒；單一來源失敗時其他來源不重抓");
 }
 
-// 7) 路由：GET /reference-prices 免費（不經 x402）、Cache-Control、per-IP 節流
+// 8) Cache-Control：CDN 共用（s-maxage）＋ stale-while-revalidate
+{
+  assert.equal(rp.referencePricesCacheControl(60), "public, max-age=60, s-maxage=60, stale-while-revalidate=120");
+  assert.equal(rp.referencePricesCacheControl(9), "public, max-age=9, s-maxage=9, stale-while-revalidate=120");
+  assert.equal(rp.referencePricesCacheControl(-3), "public, max-age=0, s-maxage=0, stale-while-revalidate=120");
+  ok("Cache-Control 帶 s-maxage 與 stale-while-revalidate");
+}
+
+// 9) 路由：免費（不經 x402）、CORS 只放行前端網域、外來 Origin 403、per-IP 節流
 {
   const svc = rp.createReferencePriceService(fakeFetcher(), { nowMs: () => 0 });
   const app = createApp({
@@ -173,17 +206,27 @@ function fakeFetcher(fail: Record<string, Error> = {}, calls: string[] = []) {
     payoutCodeReader: { getCode: async () => "0x" },
     referencePriceService: svc,
   });
-  const get = () => app.fetch(new Request("http://localhost/reference-prices", { headers: { "x-forwarded-for": "8.8.4.4" } }));
-  const res = await get();
+  const get = (headers: Record<string, string> = {}) =>
+    app.fetch(new Request("http://localhost/reference-prices", { headers: { "x-forwarded-for": "8.8.4.4", ...headers } }));
+  const res = await get({ origin: "https://front.example" });
   assert.equal(res.status, 200);
-  assert.equal(res.headers.get("access-control-allow-origin"), "*");
+  assert.equal(res.headers.get("access-control-allow-origin"), "https://front.example", "前端網域可讀");
   const j = (await res.json()) as any;
   assert.equal(j.ok, true);
   assert.equal(Object.keys(j.assets).length, rp.REFERENCE_SYMBOLS.length);
-  assert.equal(res.headers.get("cache-control"), `public, max-age=${j.cache.remainingSec}`);
-  await get();
-  await get();
+  assert.equal(res.headers.get("cache-control"), rp.referencePricesCacheControl(j.cache.remainingSec));
+  const foreign = await get({ origin: "https://evil.example" });
+  assert.equal(foreign.status, 403, "其他網站的頁面不能拿來當行情來源");
+  assert.notEqual(foreign.headers.get("access-control-allow-origin"), "*");
+  const noOrigin = await get();
+  assert.equal(noOrigin.status, 200, "沒有 Origin（curl／agent）照常可用");
+  assert.equal(noOrigin.headers.get("access-control-allow-origin"), null);
+  // 外來 Origin 在節流之前就被 403 擋下，不佔額度：到這裡用了 2 次，第 3 次放行、第 4 次 429。
+  assert.equal((await get()).status, 200);
   assert.equal((await get()).status, 429, "比照既有免費端點的 per-IP 節流");
+  // 其他免費端點的 CORS 維持 *。
+  const health = await app.fetch(new Request("http://localhost/healthz", { headers: { origin: "https://evil.example" } }));
+  assert.equal(health.headers.get("access-control-allow-origin"), "*");
 
   const broken = createApp({
     payTo: "0x4444444444444444444444444444444444444444",
@@ -195,7 +238,8 @@ function fakeFetcher(fail: Record<string, Error> = {}, calls: string[] = []) {
   const j2 = (await r2.json()) as any;
   assert.equal(j2.ok, false);
   assert.ok(!JSON.stringify(j2).includes("SECRET"));
-  ok("GET /reference-prices → 200（不需付款）、CORS *、Cache-Control、節流 429；服務失敗 503 不帶原文");
+  ok("GET /reference-prices → 200（不需付款）、CORS 只放行前端網域、外來 Origin 403、Cache-Control、節流 429；失敗 503 不帶原文");
 }
 
-console.log(`\n✅ referencePrices.test.ts 全過（${n} 組）`);
+console.log(`
+✅ referencePrices.test.ts 全過（${n} 組）`);

@@ -25,6 +25,10 @@ export interface SolvencyViewProps {
   chainId: number | null
   source: ReadSource
   onReload?: () => void
+  /** 上一次成功讀取的時間（unix 秒）。 */
+  updatedAt?: number | null
+  /** 最近一次重新讀取失敗（畫面上是上一次成功的資料）。 */
+  stale?: boolean
 }
 
 function Stat({ label, value, testId, children }: { label: string; value: string; testId?: string; children?: ReactNode }) {
@@ -59,10 +63,11 @@ const Caption = ({ children, warn = false }: { children: ReactNode; warn?: boole
 )
 
 /** /solvency 的內容（不含資料讀取，方便測試）。 */
-export function SolvencyView({ snapshot, loading, history, historyLoading, chainId, source, onReload }: SolvencyViewProps) {
+export function SolvencyView({ snapshot, loading, history, historyLoading, chainId, source, onReload, updatedAt = null, stale = false }: SolvencyViewProps) {
   const s = t.rwa.solvency
-  const dec = snapshot?.usdcDecimals ?? 18
-  const usdc = (v: bigint) => `${formatAmount(v, dec)} USDC`
+  // decimals 讀不到時不猜 18：金額一律改成「小數位數讀取失敗」。
+  const dec = snapshot ? snapshot.usdcDecimals : 18
+  const usdc = (v: bigint) => (dec === null ? t.rwa.common.decimalsFailed : `${formatAmount(v, dec)} USDC`)
   const pos = snapshot?.positions
   const vault = snapshot?.vault
 
@@ -85,7 +90,7 @@ export function SolvencyView({ snapshot, loading, history, historyLoading, chain
           {s.subtitle}
         </Typography>
         <Box sx={{ mt: 1, display: 'flex', gap: 2, alignItems: 'center', flexWrap: 'wrap' }}>
-          <ChainSourceNote chainId={chainId} source={source} />
+          <ChainSourceNote chainId={chainId} source={source} updatedAt={updatedAt} failed={stale} />
           {onReload && source !== null && (
             <Button size="small" variant="text" onClick={onReload} disabled={loading}>
               {loading ? t.rwa.common.loading : t.rwa.common.retry}
@@ -93,6 +98,12 @@ export function SolvencyView({ snapshot, loading, history, historyLoading, chain
           )}
         </Box>
       </Box>
+
+      {dec === null && (
+        <Alert severity="error" variant="outlined" data-testid="solvency-decimals-failed">
+          {t.rwa.common.decimalsFailed}
+        </Alert>
+      )}
 
       <Alert severity="warning" variant="outlined" data-testid="solvency-not-por">
         {s.notPoR}

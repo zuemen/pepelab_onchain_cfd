@@ -20,6 +20,8 @@ export default function SolvencyPage() {
         historyLoading={history.loading}
         chainId={chain.chainId}
         source={chain.source}
+        updatedAt={solvency.updatedAt}
+        stale={solvency.failed}
         onReload={() => {
           solvency.reload()
           history.reload()

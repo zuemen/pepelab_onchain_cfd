@@ -15,9 +15,9 @@ const BAR_COLOR = {
   badDebt: 'error.main',
 } as const
 
-function layerValue(layer: WaterfallLayer, decimals: number): string {
+function layerValue(layer: WaterfallLayer, decimals: number | null): string {
   const v = t.rwa.solvency.layerValue
-  const fmt = (x: bigint) => `${formatAmount(x, decimals)} USDC`
+  const fmt = (x: bigint) => (decimals === null ? t.rwa.common.decimalsFailed : `${formatAmount(x, decimals)} USDC`)
   switch (layer.key) {
     case 'margin':
       return interpolate(v.margin, { amount: readingText(layer.amount ?? undefined, fmt) })
@@ -33,7 +33,7 @@ function layerValue(layer: WaterfallLayer, decimals: number): string {
 }
 
 /** 損失吸收瀑布：保證金 → 保險金庫 → ADL → 壞帳事件（docs/RISK_WATERFALL.md §2.3）。 */
-export function LossWaterfall({ layers, decimals }: { layers: WaterfallLayer[]; decimals: number }) {
+export function LossWaterfall({ layers, decimals }: { layers: WaterfallLayer[]; decimals: number | null }) {
   const s = t.rwa.solvency
   return (
     <Card variant="outlined" data-testid="loss-waterfall" sx={{ p: 2.5 }}>

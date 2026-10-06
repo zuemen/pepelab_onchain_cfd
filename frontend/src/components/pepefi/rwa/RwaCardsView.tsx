@@ -22,10 +22,14 @@ export interface RwaCardsViewProps {
   source: ReadSource
   nowSec: number
   onReload?: () => void
+  /** 上一次成功讀取的時間（unix 秒）。 */
+  updatedAt?: number | null
+  /** 最近一次重新讀取失敗（畫面上是上一次成功的資料）。 */
+  stale?: boolean
 }
 
 /** /rwa 的內容（不含資料讀取，方便測試）。 */
-export function RwaCardsView({ symbols, snapshot, loading, chainId, source, nowSec, onReload }: RwaCardsViewProps) {
+export function RwaCardsView({ symbols, snapshot, loading, chainId, source, nowSec, onReload, updatedAt = null, stale = false }: RwaCardsViewProps) {
   const c = t.rwa.cards
   const allFailed =
     !loading &&
@@ -44,7 +48,7 @@ export function RwaCardsView({ symbols, snapshot, loading, chainId, source, nowS
           {c.subtitle}
         </Typography>
         <Box sx={{ mt: 1, display: 'flex', gap: 2, alignItems: 'center', flexWrap: 'wrap' }}>
-          <ChainSourceNote chainId={chainId} source={source} />
+          <ChainSourceNote chainId={chainId} source={source} updatedAt={updatedAt} failed={stale} />
           {onReload && source !== null && (
             <Button size="small" variant="text" onClick={onReload} disabled={loading}>
               {loading ? t.rwa.common.loading : t.rwa.common.retry}

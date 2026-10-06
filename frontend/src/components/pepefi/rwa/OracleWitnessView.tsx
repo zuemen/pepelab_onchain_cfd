@@ -32,6 +32,10 @@ export interface OracleWitnessViewProps {
   chainId: number | null
   source: ReadSource
   onReload?: () => void
+  /** 上一次成功讀取的時間（unix 秒）。 */
+  updatedAt?: number | null
+  /** 最近一次重新讀取失敗（畫面上是上一次成功的資料）。 */
+  stale?: boolean
 }
 
 const LEVEL_COLOR = { ok: 'success', warn: 'warning', alert: 'error' } as const
@@ -85,6 +89,8 @@ export function OracleWitnessView({
   chainId,
   source,
   onReload,
+  updatedAt = null,
+  stale = false,
 }: OracleWitnessViewProps) {
   const o = t.rwa.oracle
   const refFailed = reference?.status === 'failed' ? reference.reason : null
@@ -101,7 +107,7 @@ export function OracleWitnessView({
           {o.subtitle}
         </Typography>
         <Box sx={{ mt: 1, display: 'flex', gap: 2, alignItems: 'center', flexWrap: 'wrap' }}>
-          <ChainSourceNote chainId={chainId} source={source} />
+          <ChainSourceNote chainId={chainId} source={source} updatedAt={updatedAt} failed={stale} />
           {onReload && (
             <Button size="small" variant="text" onClick={onReload} disabled={onchainLoading}>
               {onchainLoading ? t.rwa.common.loading : t.rwa.common.retry}

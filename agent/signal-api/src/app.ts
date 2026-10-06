@@ -69,7 +69,7 @@ import {
   BadIntervalError,
 } from "./candles.ts";
 import { getBenchmarks, BadDateError } from "./benchmarks.ts";
-import { createReferencePriceService } from "./referencePrices.ts";
+import { createReferencePriceService, referencePricesCacheControl } from "./referencePrices.ts";
 import { LruCache } from "./lru.ts";
 import {
   createExposureService,
@@ -615,13 +615,37 @@ export function createApp(opts: CreateAppOptions = {}): Hono<{ Variables: AppVar
     assessPayoutAddress(codeReader, payTo, { requireEoa: true });
 
   // GET 資料端點對所有來源開放（瀏覽器 demo + 外部 agent 都要用）。
-  app.use("*", cors({ origin: "*", allowMethods: ["GET", "POST", "OPTIONS"] }));
+  // 例外：/reference-prices 轉發的是第三方行情（授權未查證，見 docs/RWA_TRANSPARENCY.md §2），
+  // 只讓前端網域（CORS_ALLOWED_ORIGINS，與 /demo/* 同一份白名單）在瀏覽器裡讀。
+  app.use(
+    "*",
+    cors({
+      origin: (origin, c) =>
+        c.req.path === "/reference-prices"
+          ? CORS_ALLOWED_ORIGINS.includes(origin.replace(/\/$/, ""))
+            ? origin
+            : null
+          : "*",
+      allowMethods: ["GET", "POST", "OPTIONS"],
+    }),
+  );
 
   // /demo/*（會動用伺服器錢包）額外限制來源。
   // 註：CORS header 只約束瀏覽器讀取回應，擋不住任何非瀏覽器客戶端 —— 所以這裡是
   // 直接**拒絕請求**（403），而不是只把 Access-Control-Allow-Origin 拿掉。
   // 沒有 Origin header 的請求（curl / agent）不受此限，仍受下方的 per-IP 冷卻與
   // 總量硬上限約束。
+  const rejectForeignOrigin = async (c: Context, next: Next) => {
+    if (c.req.method === "OPTIONS") return next();
+    const origin = c.req.header("origin")?.replace(/\/$/, "");
+    if (origin && !CORS_ALLOWED_ORIGINS.includes(origin)) {
+      return c.json({ ok: false, error: `origin 未在白名單內：${origin}` }, 403);
+    }
+    return next();
+  };
+  // 其他網站的頁面不能拿 /reference-prices 當免費行情來源（也避免被當成放大上游流量的跳板）。
+  app.use("/reference-prices", rejectForeignOrigin);
+
   app.use("/demo/*", async (c, next) => {
     if (c.req.method === "OPTIONS") return next();
     const origin = c.req.header("origin")?.replace(/\/$/, "");
@@ -825,8 +849,9 @@ export function createApp(opts: CreateAppOptions = {}): Hono<{ Variables: AppVar
   // ── 免費：鏈下參考價多源見證（RWA 透明度看板 /oracle 用，唯讀）──────────────
   //
   // 位置理由同 /candles：必須留在 paymentMiddleware 之前，這是免費公開資料，不接 x402。
-  // 每個上游 5 秒逾時、整份 60 秒快取（有來源失敗時 15 秒），single-flight；
+  // 每個上游 5 秒逾時；每個上游 URL 各自快取（成功 60 秒、失敗 15 秒）、single-flight；
   // 一個來源失敗只讓那一格帶 error，不回假數字（見 referencePrices.ts）。
+  // s-maxage 讓 Vercel CDN 在多個實例之間共用同一份；只即時轉發、不存歷史、不提供下載。
   const referencePrices = opts.referencePriceService ?? createReferencePriceService();
   app.get("/reference-prices", async (c) => {
     try {
@@ -834,7 +859,7 @@ export function createApp(opts: CreateAppOptions = {}): Hono<{ Variables: AppVar
       return c.json(
         { ...report, cache: { hit: cacheHit, ageSec, ttlSec, remainingSec } },
         200,
-        { "Cache-Control": `public, max-age=${remainingSec}` },
+        { "Cache-Control": referencePricesCacheControl(remainingSec) },
       );
     } catch (err) {
       return c.json({ ok: false, error: internalError("reference-prices", err) }, 503);

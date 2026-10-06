@@ -219,10 +219,20 @@ export async function fetchJsonDefault(url: string, timeoutMs: number): Promise<
   return res.json();
 }
 
+/** 參考價清單裡所有 CoinGecko id（排序固定，讓合併後的 URL 穩定、可快取）。 */
+export const COINGECKO_IDS: readonly string[] = [
+  ...new Set(
+    Object.values(REFERENCE_ASSETS).flatMap((a) =>
+      a.sources.filter((s) => s.provider === "coingecko").map((s) => s.ticker),
+    ),
+  ),
+].sort();
+
 export function urlFor(src: RefSource): string {
   switch (src.provider) {
     case "coingecko":
-      return `https://api.coingecko.com/api/v3/simple/price?ids=${encodeURIComponent(src.ticker)}&vs_currencies=usd&include_last_updated_at=true`;
+      // 所有 CoinGecko id 合併成一次請求（每個 id 一個請求會白白放大上游流量）。
+      return `https://api.coingecko.com/api/v3/simple/price?ids=${COINGECKO_IDS.map(encodeURIComponent).join(",")}&vs_currencies=usd&include_last_updated_at=true`;
     case "yahoo":
       return `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(src.ticker)}?interval=1d&range=1d`;
     case "coinbase":
@@ -258,17 +268,15 @@ function shortError(err: unknown): string {
   return m ? `http ${m[1]}` : "fetch failed";
 }
 
-export async function buildReferenceReport(
-  fetchJson: JsonFetcher,
-  opts: { now?: () => number; timeoutMs?: number; symbols?: readonly string[] } = {},
-): Promise<ReferencePricesReport> {
-  const now = opts.now ?? (() => Math.floor(Date.now() / 1000));
-  const timeoutMs = opts.timeoutMs ?? UPSTREAM_TIMEOUT_MS;
-  const symbols = opts.symbols ?? REFERENCE_SYMBOLS;
+/** 一個上游 URL 的取值結果。 */
+export type UpstreamResult = { json: unknown; error?: undefined } | { json?: undefined; error: string };
+/** 依 URL 取值（呼叫端決定快取策略）。 */
+export type UpstreamFetcher = (url: string) => Promise<UpstreamResult>;
 
-  // 同一個 URL 只打一次（例如 CoinGecko 未來若合併多個 id）。
-  const pending = new Map<string, Promise<{ json?: unknown; error?: string }>>();
-  const fetchOnce = (url: string) => {
+/** 不快取：每個 URL 在同一份報表內只打一次。給測試與單次呼叫用。 */
+export function directFetcher(fetchJson: JsonFetcher, timeoutMs = UPSTREAM_TIMEOUT_MS): UpstreamFetcher {
+  const pending = new Map<string, Promise<UpstreamResult>>();
+  return (url) => {
     let p = pending.get(url);
     if (!p) {
       p = fetchJson(url, timeoutMs).then(
@@ -279,6 +287,14 @@ export async function buildReferenceReport(
     }
     return p;
   };
+}
+
+export async function buildReferenceReport(
+  upstream: UpstreamFetcher,
+  opts: { now?: () => number; symbols?: readonly string[] } = {},
+): Promise<ReferencePricesReport> {
+  const now = opts.now ?? (() => Math.floor(Date.now() / 1000));
+  const symbols = opts.symbols ?? REFERENCE_SYMBOLS;
 
   const assets: Record<string, AssetReference> = {};
   await Promise.all(
@@ -287,12 +303,11 @@ export async function buildReferenceReport(
       if (!def) return;
       const sources = await Promise.all(
         def.sources.map(async (src): Promise<SourceQuote> => {
-          const r = await fetchOnce(urlFor(src));
+          const r = await upstream(urlFor(src));
           const fetchedAt = now();
           const base = { provider: src.provider, ticker: src.ticker, role: src.role, fetchedAt };
           if (r.error !== undefined) return { ...base, price: null, quoteTime: null, error: r.error };
-          const e = extract(src, r.json);
-          return { ...base, ...e };
+          return { ...base, ...extract(src, r.json) };
         }),
       );
       const okPrices = sources.map((s) => s.price).filter((p): p is number => p !== null);
@@ -314,51 +329,107 @@ export async function buildReferenceReport(
     generatedAt: now(),
     assets,
     disclaimer:
-      "鏈下參考價僅供比對；鏈上 oracle 由 keeper 寫入 MockOracle。各上游的商業授權未查證。",
+      "鏈下參考價僅即時轉發、供比對；不保存歷史、不提供下載。鏈上 oracle 由 keeper 寫入 MockOracle。各上游的商業授權未查證，正式使用前需取得授權。",
   };
 }
 
-// ── 快取（single-flight）─────────────────────────────────────────────────────
+// ── 快取：每個上游 URL 各自快取（single-flight）────────────────────────────────
+//
+// 審查（PR #268）：以前整份報表一起快取，任何一個來源失敗整份只快取 15 秒，於是**所有**
+// 上游每 15 秒被重打一次。現在每個 URL 各自快取：成功 60 秒、失敗 15 秒，一個來源失敗
+// 不會讓其他來源被重抓。
+
+export interface CachedUpstream {
+  fetch: UpstreamFetcher;
+  /** 這次 fetch 是否命中快取、以及這筆快取的年齡與剩餘時間（毫秒）。 */
+  stats: (url: string) => { ageMs: number; remainingMs: number } | null;
+}
+
+export function createUpstreamCache(
+  fetchJson: JsonFetcher,
+  opts: { okTtlMs?: number; errorTtlMs?: number; nowMs?: () => number; timeoutMs?: number } = {},
+): CachedUpstream & { hits: () => number; misses: () => number } {
+  const okTtl = opts.okTtlMs ?? 60_000;
+  const errTtl = opts.errorTtlMs ?? 15_000;
+  const nowMs = opts.nowMs ?? Date.now;
+  const timeoutMs = opts.timeoutMs ?? UPSTREAM_TIMEOUT_MS;
+  const cache = new Map<string, { at: number; ttl: number; result: UpstreamResult }>();
+  const inflight = new Map<string, Promise<UpstreamResult>>();
+  let hits = 0;
+  let misses = 0;
+
+  const fetch: UpstreamFetcher = (url) => {
+    const c = cache.get(url);
+    if (c && nowMs() - c.at < c.ttl) {
+      hits += 1;
+      return Promise.resolve(c.result);
+    }
+    let p = inflight.get(url);
+    if (!p) {
+      misses += 1;
+      p = fetchJson(url, timeoutMs)
+        .then(
+          (json): UpstreamResult => ({ json }),
+          (err): UpstreamResult => ({ error: shortError(err) }),
+        )
+        .then((result) => {
+          cache.set(url, { at: nowMs(), ttl: result.error === undefined ? okTtl : errTtl, result });
+          return result;
+        })
+        .finally(() => inflight.delete(url));
+      inflight.set(url, p);
+    }
+    return p;
+  };
+
+  const stats = (url: string) => {
+    const c = cache.get(url);
+    if (!c) return null;
+    const ageMs = Math.max(0, nowMs() - c.at);
+    return { ageMs, remainingMs: Math.max(0, c.ttl - ageMs) };
+  };
+
+  return { fetch, stats, hits: () => hits, misses: () => misses };
+}
+
+/** 報表會用到的所有上游 URL（去重）。 */
+export function upstreamUrls(symbols: readonly string[] = REFERENCE_SYMBOLS): string[] {
+  return [...new Set(symbols.flatMap((s) => REFERENCE_ASSETS[s]?.sources.map(urlFor) ?? []))];
+}
+
+/**
+ * /reference-prices 的 Cache-Control。s-maxage 讓 CDN 跨實例共用（最多 60 秒，有來源失敗時
+ * 跟著那個來源的短 TTL 走）；stale-while-revalidate 讓過期後的第一個請求不必等上游。
+ */
+export function referencePricesCacheControl(remainingSec: number): string {
+  const s = Math.max(0, Math.min(60, remainingSec));
+  return `public, max-age=${s}, s-maxage=${s}, stale-while-revalidate=120`;
+}
 
 export function createReferencePriceService(
   fetchJson: JsonFetcher = fetchJsonDefault,
-  opts: { ttlMs?: number; degradedTtlMs?: number; nowMs?: () => number; timeoutMs?: number } = {},
+  opts: { okTtlMs?: number; errorTtlMs?: number; nowMs?: () => number; timeoutMs?: number } = {},
 ) {
-  const ttl = opts.ttlMs ?? 60_000;
-  const degradedTtl = opts.degradedTtlMs ?? 15_000;
   const nowMs = opts.nowMs ?? Date.now;
-  let cached: { at: number; ttl: number; report: ReferencePricesReport } | null = null;
-  let inflight: Promise<{ at: number; ttl: number; report: ReferencePricesReport }> | null = null;
-
-  const view = (c: { at: number; ttl: number; report: ReferencePricesReport }, hit: boolean) => {
-    const ageMs = Math.max(0, nowMs() - c.at);
-    return {
-      report: c.report,
-      cacheHit: hit,
-      ageSec: Math.floor(ageMs / 1000),
-      ttlSec: Math.round(c.ttl / 1000),
-      remainingSec: Math.max(0, Math.floor((c.ttl - ageMs) / 1000)),
-    };
-  };
+  const upstream = createUpstreamCache(fetchJson, opts);
+  const urls = upstreamUrls();
 
   return {
+    upstream,
     async get() {
-      if (cached && nowMs() - cached.at < cached.ttl) return view(cached, true);
-      if (!inflight) {
-        inflight = buildReferenceReport(fetchJson, {
-          now: () => Math.floor(nowMs() / 1000),
-          timeoutMs: opts.timeoutMs,
-        })
-          .then((report) => {
-            const degraded = Object.values(report.assets).some((a) => a.sources.some((s) => s.price === null));
-            cached = { at: nowMs(), ttl: degraded ? degradedTtl : ttl, report };
-            return cached;
-          })
-          .finally(() => {
-            inflight = null;
-          });
-      }
-      return view(await inflight, false);
+      const missesBefore = upstream.misses();
+      const report = await buildReferenceReport(upstream.fetch, { now: () => Math.floor(nowMs() / 1000) });
+      const st = urls.map((u) => upstream.stats(u)).filter((x): x is NonNullable<typeof x> => x !== null);
+      const ageMs = st.length ? Math.max(...st.map((x) => x.ageMs)) : 0;
+      const remainingMs = st.length ? Math.min(...st.map((x) => x.remainingMs)) : 0;
+      return {
+        report,
+        cacheHit: upstream.misses() === missesBefore,
+        ageSec: Math.floor(ageMs / 1000),
+        ttlSec: Math.round((opts.okTtlMs ?? 60_000) / 1000),
+        /** 最先過期的那個來源還能快取多久（秒）。 */
+        remainingSec: Math.floor(remainingMs / 1000),
+      };
     },
   };
 }

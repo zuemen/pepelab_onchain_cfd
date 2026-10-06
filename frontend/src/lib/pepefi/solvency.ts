@@ -13,7 +13,7 @@ import type { Reading, FnSupport } from './contractProbe'
 import { chunkRanges } from './chainLogs'
 import { withTimeout } from './safeRead'
 import { mapLimit, withRetry, RPC_CONCURRENCY } from './rpcBatch'
-import { ok, FAILED, supportMap, readGuarded, UNSUPPORTED } from './contractProbe'
+import { ok, FAILED, supportMap, UNSUPPORTED } from './contractProbe'
 
 export const SOLVENCY_EXCHANGE_VIEWS = [
   'nextPositionId()',
@@ -54,7 +54,8 @@ export interface VaultStatus {
 }
 
 export interface SolvencySnapshot {
-  usdcDecimals: number
+  /** MockUSDC 的 decimals；讀不到為 null——畫面標「小數位數讀取失敗」、不顯示金額（不猜 18）。 */
+  usdcDecimals: number | null
   exchangeBalance: Reading<bigint>
   positions: PositionTotals
   insuranceAssets: Reading<bigint>
@@ -75,7 +76,11 @@ export interface SolvencyDeps {
   nextPositionId: () => Promise<bigint>
   getPosition: (id: number) => Promise<RawPosition>
   getUnrealizedPnL: (id: number) => Promise<bigint>
-  adlEnabled: () => Promise<boolean>
+  /**
+   * ADL 與組合保證金的開關，沿用 solvencyFlags.ts 的 readSolvencyFlags（Agent 監控頁同一份讀法）。
+   * null＝讀不到。
+   */
+  solvencyFlags: () => Promise<{ adl: boolean | null | undefined }>
   /** 保險金庫沒部署（0x0）時為 null。 */
   insuranceTotalAssets: null | (() => Promise<bigint>)
   /** AssetVaultV2 沒部署時為 null。 */
@@ -202,13 +207,22 @@ export async function loadSolvency(deps: SolvencyDeps): Promise<SolvencySnapshot
 
   const [decimals, exchangeBalance, positions, insuranceAssets, adl, vault] = await Promise.all([
     withTimeout(Promise.resolve(deps.usdcDecimals()), ms).then(
-      (d) => Number(d),
-      () => 18
+      (d) => {
+        const n = Number(d)
+        return Number.isInteger(n) && n >= 0 && n <= 36 ? n : null
+      },
+      () => null
     ),
     read(() => deps.exchangeUsdcBalance()),
     scanPositions(deps, sup, ms),
     deps.insuranceTotalAssets ? read(deps.insuranceTotalAssets) : Promise.resolve(UNSUPPORTED),
-    readGuarded(sup['adlEnabled()'], () => deps.adlEnabled(), ms),
+    // 函式不存在就不呼叫；存在（或無法判斷）時走 readSolvencyFlags，null 一律是讀取失敗。
+    sup['adlEnabled()'] === 'unsupported'
+      ? Promise.resolve(UNSUPPORTED)
+      : withTimeout(deps.solvencyFlags(), ms).then(
+          (f): Reading<boolean> => (typeof f.adl === 'boolean' ? ok(f.adl) : FAILED),
+          (): Reading<boolean> => FAILED
+        ),
     vaultP,
   ])
 
@@ -217,7 +231,7 @@ export async function loadSolvency(deps: SolvencyDeps): Promise<SolvencySnapshot
     exchangeBalance,
     positions,
     insuranceAssets,
-    adl: adl.status === 'ok' ? ok(Boolean(adl.value)) : adl,
+    adl,
     vault,
   }
 }

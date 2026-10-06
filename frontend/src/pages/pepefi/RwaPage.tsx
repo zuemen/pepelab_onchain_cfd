@@ -11,7 +11,7 @@ import { RwaCardsView } from 'src/components/pepefi/rwa/RwaCardsView'
 
 export default function RwaPage() {
   const chain = useReadChain()
-  const { data, loading, reload } = useRwaSnapshot(chain, RWA_CARD_ORDER)
+  const { data, loading, reload, updatedAt, failed } = useRwaSnapshot(chain, RWA_CARD_ORDER)
   const [nowSec, setNowSec] = useState(() => Math.floor(Date.now() / 1000))
 
   // 「目前是否休市」每分鐘重算一次（只看排定時段，不必重讀鏈）。
@@ -30,6 +30,8 @@ export default function RwaPage() {
         source={chain.source}
         nowSec={nowSec}
         onReload={reload}
+        updatedAt={updatedAt}
+        stale={failed}
       />
     </Container>
   )
