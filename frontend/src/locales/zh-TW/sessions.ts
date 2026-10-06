@@ -166,7 +166,7 @@ export const sessions = {
     importHint: '讀不到已發佈的狀態清單（需要設定 VITE_VC_STATUS_URL，且狀態主機要開放 CORS 讓本站讀取）。可以匯入目前發佈中的那一份（.json），撤銷會接在它之後；若從來沒有發佈過，請明確確認後以 sequence 1 簽署。',
     confirmNoList: '目前沒有任何已發佈的清單（第一次撤銷）',
     confirmNoListPrompt:
-      '確定這個簽發者從來沒有發佈過狀態清單？撤銷會以 sequence 1 簽出。若其實已有發佈中的清單，驗證端會拒收這份，撤銷不會生效——不確定時請改用匯入。',
+      '讀不到已發佈的狀態清單（{reason}）。確定這個簽發者從來沒有發佈過狀態清單？撤銷會以 sequence 1 簽出。若其實已有發佈中的清單，驗證端會拒收這份，撤銷不會生效——不確定時請改用匯入。',
     importList: '匯入目前的狀態清單',
     importedList: '已匯入 sequence {seq}',
     importFailed: '匯入失敗：{reason}',

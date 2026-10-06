@@ -67371,27 +67371,28 @@ function clientIp(c) {
 }
 var FREE_RATE_WINDOW_MS = Number(process.env.FREE_RATE_WINDOW_MS ?? "60000");
 var FREE_RATE_MAX = Number(process.env.FREE_RATE_MAX ?? "60");
-function windowLimiter(max, windowMs) {
+function windowLimiter(max, windowMs, clock = Date.now) {
   const hits = /* @__PURE__ */ new Map();
   const retryAfter = (e, now) => Math.ceil((e.resetAt - now) / 1e3);
   return {
     hit(ip) {
-      const now = Date.now();
+      const now = clock();
       const e = hits.get(ip);
       if (!e || now >= e.resetAt) {
-        hits.set(ip, { count: 1, resetAt: now + windowMs });
+        const resetAt = now + windowMs;
+        hits.set(ip, { count: 1, resetAt });
         if (hits.size > 5e3) {
           for (const [k, v] of hits) if (now >= v.resetAt) hits.delete(k);
         }
-        return { limited: false, retryAfterSec: 0 };
+        return { limited: false, retryAfterSec: 0, token: resetAt };
       }
       e.count += 1;
-      if (e.count > max) return { limited: true, retryAfterSec: retryAfter(e, now) };
-      return { limited: false, retryAfterSec: 0 };
+      if (e.count > max) return { limited: true, retryAfterSec: retryAfter(e, now), token: e.resetAt };
+      return { limited: false, retryAfterSec: 0, token: e.resetAt };
     },
-    unhit(ip) {
+    unhit(ip, token) {
       const e = hits.get(ip);
-      if (e && Date.now() < e.resetAt && e.count > 0) e.count -= 1;
+      if (e && e.resetAt === token && e.count > 0) e.count -= 1;
     }
   };
 }
@@ -68122,7 +68123,7 @@ function createApp(opts = {}) {
         const ip = clientIp(c);
         const throttled = kyaFailLimiter.hit(ip);
         if (throttled.limited) {
-          kyaFailLimiter.unhit(ip);
+          kyaFailLimiter.unhit(ip, throttled.token);
           return c.json(
             {
               ok: false,
@@ -68138,10 +68139,10 @@ function createApp(opts = {}) {
         try {
           d = await kya.authorize(c, pay);
         } catch (err) {
-          kyaFailLimiter.unhit(ip);
+          kyaFailLimiter.unhit(ip, throttled.token);
           throw err;
         }
-        if (d.ok || d.status === 503) kyaFailLimiter.unhit(ip);
+        if (d.ok || d.status === 503) kyaFailLimiter.unhit(ip, throttled.token);
         if (!d.ok) return c.json(d.body, d.status);
         kyaHold = d.hold;
         kyaProto = useV2 ? "v2" : "v1";

@@ -243,28 +243,33 @@ function clientIp(c: { req: { header: (k: string) => string | undefined } }): st
 // serverless 上這是 per-instance 的 best-effort，與 /demo 的硬上限同一等級的防線。
 const FREE_RATE_WINDOW_MS = Number(process.env.FREE_RATE_WINDOW_MS ?? "60000");
 const FREE_RATE_MAX = Number(process.env.FREE_RATE_MAX ?? "60"); // 每 IP 每視窗
-/** 固定視窗的每 IP 計數器（per-instance best-effort）。`hit` 計一次並回報是否超過；`unhit` 退回一次（同一視窗內）。 */
-function windowLimiter(max: number, windowMs: number) {
+/**
+ * 固定視窗的每 IP 計數器（per-instance best-effort）。`hit` 計一次並回報是否超過，附上這次計在哪個視窗
+ * （`token`＝該視窗的 resetAt）；`unhit(ip, token)` 只在同一個視窗內退回——請求跨過視窗邊界才結束時，
+ * 不會把新視窗裡別人的計數扣掉。
+ */
+export function windowLimiter(max: number, windowMs: number, clock: () => number = Date.now) {
   const hits = new Map<string, { count: number; resetAt: number }>();
   const retryAfter = (e: { resetAt: number }, now: number) => Math.ceil((e.resetAt - now) / 1000);
   return {
-    hit(ip: string): { limited: boolean; retryAfterSec: number } {
-      const now = Date.now();
+    hit(ip: string): { limited: boolean; retryAfterSec: number; token: number } {
+      const now = clock();
       const e = hits.get(ip);
       if (!e || now >= e.resetAt) {
-        hits.set(ip, { count: 1, resetAt: now + windowMs });
+        const resetAt = now + windowMs;
+        hits.set(ip, { count: 1, resetAt });
         if (hits.size > 5_000) {
           for (const [k, v] of hits) if (now >= v.resetAt) hits.delete(k);
         }
-        return { limited: false, retryAfterSec: 0 };
+        return { limited: false, retryAfterSec: 0, token: resetAt };
       }
       e.count += 1;
-      if (e.count > max) return { limited: true, retryAfterSec: retryAfter(e, now) };
-      return { limited: false, retryAfterSec: 0 };
+      if (e.count > max) return { limited: true, retryAfterSec: retryAfter(e, now), token: e.resetAt };
+      return { limited: false, retryAfterSec: 0, token: e.resetAt };
     },
-    unhit(ip: string): void {
+    unhit(ip: string, token: number): void {
       const e = hits.get(ip);
-      if (e && Date.now() < e.resetAt && e.count > 0) e.count -= 1;
+      if (e && e.resetAt === token && e.count > 0) e.count -= 1;
     },
   };
 }
@@ -1367,7 +1372,7 @@ export function createApp(opts: CreateAppOptions = {}): Hono<{ Variables: AppVar
         const ip = clientIp(c);
         const throttled = kyaFailLimiter.hit(ip);
         if (throttled.limited) {
-          kyaFailLimiter.unhit(ip);
+          kyaFailLimiter.unhit(ip, throttled.token);
           return c.json(
             {
               ok: false,
@@ -1383,11 +1388,11 @@ export function createApp(opts: CreateAppOptions = {}): Hono<{ Variables: AppVar
         try {
           d = await kya.authorize(c, pay);
         } catch (err) {
-          kyaFailLimiter.unhit(ip);
+          kyaFailLimiter.unhit(ip, throttled.token);
           throw err;
         }
         // 通過、或 503（我們這邊的基礎設施／設定）不算在請求方頭上。
-        if (d.ok || d.status === 503) kyaFailLimiter.unhit(ip);
+        if (d.ok || d.status === 503) kyaFailLimiter.unhit(ip, throttled.token);
         if (!d.ok) return c.json(d.body, d.status);
         kyaHold = d.hold;
         kyaProto = useV2 ? "v2" : "v1";

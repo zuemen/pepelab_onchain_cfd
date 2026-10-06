@@ -110,7 +110,7 @@ export async function revokeDelegationCredential(p: {
   let published = p.imported ? { kind: 'list' as const, list: p.imported } : await fetchPublishedStatusList(statusUrl(), p.user, p.sessionManager)
   if (published.kind === 'unavailable' && p.confirmedNoPublishedList) published = { kind: 'none' }
   const base = revocationBase(published, loadLastList(p.sessionManager, p.user))
-  if (!base.ok) throw new Error(interpolate(t.sessions.delegation.revokeBaseUnavailable, { reason: base.reason }))
+  if (!base.ok) throw Object.assign(new Error(interpolate(t.sessions.delegation.revokeBaseUnavailable, { reason: base.reason })), { reason: base.reason })
   const fields = revocationListFields({ issuer: getAddress(p.user), jti: p.credential.credentialSubject.nonce, previous: base.previous })
   const td = statusListTypedData(fields, p.sessionManager)
   const signature = await p.signer.signTypedData(td.domain, td.types, td.value)
@@ -166,6 +166,8 @@ export function DelegationCredentialPanel({
   const [busy, setBusy] = useState<'' | 'issue' | 'anchor' | 'unanchor' | 'revoke' | 'confirm'>('')
   const [imported, setImported] = useState<CredentialStatusList | null>(null)
   const [needImport, setNeedImport] = useState(false)
+  /** Why the published list could not be read (shown in the "nothing published" confirmation). */
+  const [baseFailure, setBaseFailure] = useState<string | null>(null)
   const [anchored, setAnchored] = useState<boolean | null>(null)
   const [spend, setSpend] = useState<KyaSpend | null>(null)
   const [showJson, setShowJson] = useState(false)
@@ -255,7 +257,7 @@ export function DelegationCredentialPanel({
 
   const revoke = async (confirmedNoPublishedList = false) => {
     if (!signer || !stored) return
-    if (confirmedNoPublishedList && !window.confirm(t.sessions.delegation.confirmNoListPrompt)) return
+    if (confirmedNoPublishedList && !window.confirm(interpolate(t.sessions.delegation.confirmNoListPrompt, { reason: baseFailure ?? '?' }))) return
     try {
       setBusy('revoke')
       const r = await revokeDelegationCredential({
@@ -275,7 +277,11 @@ export function DelegationCredentialPanel({
         true,
       )
     } catch (e) {
-      setNeedImport(true)
+      const reason = (e as { reason?: unknown }).reason
+      if (typeof reason === 'string') {
+        setNeedImport(true)
+        setBaseFailure(reason)
+      }
       notify(prettyError(e), false)
     } finally {
       setBusy('')
@@ -450,7 +456,8 @@ export function DelegationCredentialPanel({
                 {imported ? interpolate(d.importedList, { seq: String(imported.sequence) }) : d.importList}
                 <input hidden type="file" accept="application/json,.json" onChange={(e) => void importList(e.target.files?.[0])} />
               </Button>
-              {!imported && (
+              {/* A list signed in this browser means something may have been published: import it, never "none". */}
+              {!imported && !loadLastList(sessionManager, userAddress) && (
                 <Button size="small" color="warning" onClick={() => void revoke(true)} disabled={busy !== '' || !signer} sx={{ textTransform: 'none' }}>
                   {d.confirmNoList}
                 </Button>

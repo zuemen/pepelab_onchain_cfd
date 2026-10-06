@@ -33,7 +33,7 @@ process.env.UPSTASH_REDIS_REST_URL = upstash.url;
 process.env.UPSTASH_REDIS_REST_TOKEN = "test-token";
 for (const k of ["X402_PROTOCOL", "PAY_TO", "X402_KYA_MODE", "SIGNAL_API_PUBLIC_URL", "DELEGATION_VC_CHAIN_IDS"]) delete process.env[k];
 
-const { createApp } = await import("./app.ts");
+const { createApp, windowLimiter } = await import("./app.ts");
 const { createKyaGate, upstashKyaSpendStore, memoryKyaSpendStore, kyaTotalKey, resolveKyaConfig, KYA_RESERVE_SCRIPT, KYA_MAX_TTL_SEC } = await import("./kya.ts");
 const shared = await import("@pepelab/shared");
 const { issueDelegationCredential, kyaFetch, presentForX402, AGENT_PRESENTATION_HEADER, AGENT_KYA_HEADER, AGENT_KYA_SPEND_HEADER } = shared;
@@ -510,6 +510,24 @@ const vpBig = async (pay: string, path = `/signals/${TRADER}`) =>
   assert.equal(res.status, 402, "settle 例外在 x402-hono 內被接住、改成 402（不是丟出來的 500）");
   assert.equal(BigInt(upstash.strings.get(kyaTotalKey(big.credentialHash)) ?? "0"), before);
   ok("x402-hono 鎖在 0.5.3：settle 斷線在套件內變成 402、不丟例外；KYA 退回預留（v1 已知少算的限制見文件）");
+}
+
+// 22) 限流的退回只作用在同一個視窗：跨過視窗邊界才結束的請求，不會扣掉新視窗的計數
+{
+  let t = 1_000_000;
+  const lim = windowLimiter(1, 60_000, () => t);
+  const old = lim.hit("ip");
+  assert.equal(old.limited, false);
+  t += 60_001; // 舊請求還在驗證中，視窗換了
+  const fresh = lim.hit("ip");
+  assert.equal(fresh.limited, false);
+  assert.notEqual(fresh.token, old.token);
+  lim.unhit("ip", old.token); // 舊請求結束：屬於上一個視窗，不退
+  assert.equal(lim.hit("ip").limited, true, "新視窗的計數沒有被舊請求扣掉");
+  const t2 = lim.hit("ip2");
+  lim.unhit("ip2", t2.token); // 同一視窗內正常退回
+  assert.equal(lim.hit("ip2").limited, false);
+  ok("每 IP 限流：unhit 帶視窗 token，只在同一個視窗內退回；跨視窗的舊請求不會扣掉新視窗的計數");
 }
 
 await facilitator.close();

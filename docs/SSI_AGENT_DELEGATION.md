@@ -181,7 +181,7 @@ DID，內含一張 v3 憑證；`proof` 用 `EthereumEip712Signature2021`、`proo
   讀不到就不簽，請使用者匯入目前的清單（只靠瀏覽器記憶簽出的清單可能比已發佈的舊，驗證端會拒收，撤銷不會生效）；
   從來沒有發佈過清單的簽發者，由使用者明確確認「目前沒有已發佈的清單」後以 sequence 1 簽署。要讓前端讀得到，
   必須設定 `VITE_VC_STATUS_URL`，而且狀態主機要開 CORS 給前端網域。
-  設了 `VITE_VC_STATUS_PUBLISH_URL` 就 POST；讀回沒確認到（或沒設）時一律下載一份交給營運方 `npm run vc-status install`；**只有讀回確認新清單已發佈**
+  設了 `VITE_VC_STATUS_PUBLISH_URL` 就 POST（這個外部 publisher 不在本 repo，**必須套用與 `npm run vc-status install` 相同的拒絕規則**：驗簽、sequence 嚴格遞增、不得少掉既有的撤銷項；否則一份較舊或少了撤銷的清單會蓋掉已發佈的那份）；讀回沒確認到（或沒設）時一律下載一份交給營運方 `npm run vc-status install`；**只有讀回確認新清單已發佈**
   才顯示「已撤銷」，之前顯示「撤銷待發佈（尚未生效）」並提供「確認已發佈」。要立即擋下付費 API 用「解除錨定」（一筆交易）。
   錨定合約位址：`frontend/src/contracts/sessionCredentialAnchor.ts`；`VITE_SESSION_ANCHOR_ADDRESS` 只覆寫
   `VITE_SESSION_ANCHOR_CHAIN_ID`（預設 31337）那條鏈。送 `anchor`／`unanchor` 之前檢查位址有 code、綁的 manager 與憑證相同。
