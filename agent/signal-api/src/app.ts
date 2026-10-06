@@ -69,6 +69,16 @@ import {
   BadIntervalError,
 } from "./candles.ts";
 import { getBenchmarks, BadDateError } from "./benchmarks.ts";
+import {
+  KYA_ADVERTISE_HEADERS,
+  createKyaGate,
+  memoryKyaSpendStore,
+  providerKyaChainReader,
+  resolveKyaConfig,
+  upstashKyaSpendStore,
+  type KyaGate,
+  type KyaHold,
+} from "./kya.ts";
 import { createReferencePriceService, referencePricesCacheControl } from "./referencePrices.ts";
 import { LruCache } from "./lru.ts";
 import {
@@ -233,24 +243,54 @@ function clientIp(c: { req: { header: (k: string) => string | undefined } }): st
 // serverless 上這是 per-instance 的 best-effort，與 /demo 的硬上限同一等級的防線。
 const FREE_RATE_WINDOW_MS = Number(process.env.FREE_RATE_WINDOW_MS ?? "60000");
 const FREE_RATE_MAX = Number(process.env.FREE_RATE_MAX ?? "60"); // 每 IP 每視窗
-const freeHits = new Map<string, { count: number; resetAt: number }>();
-
-function freeRateLimited(ip: string): { limited: boolean; retryAfterSec: number } {
-  const now = Date.now();
-  const e = freeHits.get(ip);
-  if (!e || now >= e.resetAt) {
-    freeHits.set(ip, { count: 1, resetAt: now + FREE_RATE_WINDOW_MS });
-    if (freeHits.size > 5_000) {
-      for (const [k, v] of freeHits) if (now >= v.resetAt) freeHits.delete(k);
-    }
-    return { limited: false, retryAfterSec: 0 };
-  }
-  e.count += 1;
-  if (e.count > FREE_RATE_MAX) {
-    return { limited: true, retryAfterSec: Math.ceil((e.resetAt - now) / 1000) };
-  }
-  return { limited: false, retryAfterSec: 0 };
+/**
+ * 固定視窗的每 IP 計數器（per-instance best-effort）。`hit` 計一次並回報是否超過，附上這次計在哪個視窗
+ * （`token`＝該視窗的 resetAt）；`unhit(ip, token)` 只在同一個視窗內退回——請求跨過視窗邊界才結束時，
+ * 不會把新視窗裡別人的計數扣掉。
+ */
+export function windowLimiter(max: number, windowMs: number, clock: () => number = Date.now) {
+  const hits = new Map<string, { count: number; resetAt: number }>();
+  const retryAfter = (e: { resetAt: number }, now: number) => Math.ceil((e.resetAt - now) / 1000);
+  return {
+    hit(ip: string): { limited: boolean; retryAfterSec: number; token: number } {
+      const now = clock();
+      const e = hits.get(ip);
+      if (!e || now >= e.resetAt) {
+        const resetAt = now + windowMs;
+        hits.set(ip, { count: 1, resetAt });
+        if (hits.size > 5_000) {
+          for (const [k, v] of hits) if (now >= v.resetAt) hits.delete(k);
+        }
+        return { limited: false, retryAfterSec: 0, token: resetAt };
+      }
+      e.count += 1;
+      if (e.count > max) return { limited: true, retryAfterSec: retryAfter(e, now), token: e.resetAt };
+      return { limited: false, retryAfterSec: 0, token: e.resetAt };
+    },
+    unhit(ip: string, token: number): void {
+      const e = hits.get(ip);
+      if (e && e.resetAt === token && e.count > 0) e.count -= 1;
+    },
+  };
 }
+
+const freeLimiter = windowLimiter(FREE_RATE_MAX, FREE_RATE_WINDOW_MS);
+const freeRateLimited = (ip: string) => freeLimiter.hit(ip);
+
+// KYA 驗證失敗的每 IP 上限：自簽一張憑證不用付錢，卻會讓驗證端去讀撤銷清單與鏈上 session。
+// 付費端點不走上面的免費限流（由付費牆自然節流），所以「沒付成、被 KYA 拒絕」的請求另外計數。
+// 計數是每個 serverless 實例各自的（best-effort），IP 取自 x-forwarded-for 的第一段——依賴平台（Vercel）覆寫這個 header。
+function positiveIntEnv(name: string, fallback: number): number {
+  const raw = process.env[name]?.trim();
+  if (!raw) return fallback;
+  const n = Number(raw);
+  if (Number.isSafeInteger(n) && n > 0) return n;
+  console.error(`::error::[kya] ${name}=${raw} 不是正整數，改用預設 ${fallback}`);
+  return fallback;
+}
+const KYA_FAIL_WINDOW_MS = positiveIntEnv("KYA_FAIL_WINDOW_MS", 60_000);
+const KYA_FAIL_MAX = positiveIntEnv("KYA_FAIL_MAX", 20); // 每 IP 每視窗
+const kyaFailLimiter = windowLimiter(KYA_FAIL_MAX, KYA_FAIL_WINDOW_MS);
 
 // CORS：GET 的公開資料維持全開（agent/瀏覽器都要用），但**寫入型**的
 // POST /demo/buy-signal 只允許白名單 origin（預設只有本機與正式前端）。
@@ -470,6 +510,29 @@ export interface CreateAppOptions {
   x402V2Timing?: Pick<X402V2Options, "now" | "timer" | "initBackoffMs" | "unpaidInitTimeoutMs" | "initTimeoutMs">;
   /** 覆寫 /signals/:trader 的資料來源（測試用；預設讀鏈上 getTraderPerformance）。 */
   signalReader?: (trader: string) => Promise<unknown>;
+  /**
+   * x402 KYA 閘門（docs/SSI_AGENT_DELEGATION.md）。省略＝依 X402_KYA_MODE 環境變數（預設 off）；
+   * 傳 null＝強制關閉；傳 KyaGate＝測試／PoC 注入（鏈上讀取、花費帳、撤銷檢查都可替換）。
+   */
+  kya?: KyaGate | null;
+}
+
+/** 依環境變數建立 KYA 閘門；X402_KYA_MODE 未設或 off → null（行為與加入 KYA 前相同）。 */
+function kyaFromEnv(defaultProvider: ethers.ContractRunner): KyaGate | null {
+  const config = resolveKyaConfig();
+  if (config.mode === "off") return null;
+  const rpc = process.env.KYA_RPC_URL?.trim();
+  const chainProvider = rpc ? new ethers.JsonRpcProvider(rpc, undefined, { batchMaxCount: 1 }) : defaultProvider;
+  // 預設與記帳同一個 Upstash（多實例共用）；X402_KYA_SPEND_STORE=memory 只給單機開發。
+  const spend = process.env.X402_KYA_SPEND_STORE?.trim().toLowerCase() === "memory" ? memoryKyaSpendStore() : upstashKyaSpendStore();
+  // mode=invalid 時 resolveKyaConfig 已印過 ::error::；這裡不能再印「=on」讓人以為有開。
+  if (config.mode === "on") {
+    console.error(
+      `[kya] X402_KYA_MODE=on：付費端點要求 X-Agent-Presentation（v3 委託憑證）；錨定 ${config.anchor}；` +
+        `session manager ${config.sessionManager ?? "（未設定→付費端點 503）"}；花費帳 ${spend.describe}`,
+    );
+  }
+  return createKyaGate({ config, chain: providerKyaChainReader(chainProvider), spend });
 }
 
 /** /risk/exposure 讀的合約：全部來自 addresses.ts（前端同源），不寫死。 */
@@ -573,6 +636,8 @@ export function createApp(opts: CreateAppOptions = {}): Hono<{ Variables: AppVar
   // v2／both 的付費牆建不起來（例如 X402_NETWORK 沒有對應的 CAIP-2）：不讓整個 app 起不來，
   // 只讓付費端點回 503（免費端點照常），啟動時印一行錯誤。
   let x402v2SetupError: string | null = null;
+  // v2 付費牆即將把授權送去 settle 的請求（KYA：付費牆丟例外時判斷錢可能動了沒有）。
+  const settleStarted = new WeakSet<Request>();
   if (x402Protocol !== "v1") {
     try {
       x402v2 = createX402V2({
@@ -592,6 +657,9 @@ export function createApp(opts: CreateAppOptions = {}): Hono<{ Variables: AppVar
         unknownRecordContext: (c) => ({
           ledgerEntry: (c as Context<{ Variables: AppVariables }>).get("ledgerEntry") ?? null,
         }),
+        onSettleStart: (c) => {
+          settleStarted.add(c.req.raw);
+        },
         onSettlementUnknown: async (record) => {
           // Full list: the row is persisted to the manual list (not dropped) and the worker
           // raises ::error:: on the overflow counter. Still worth a loud line here.
@@ -609,6 +677,7 @@ export function createApp(opts: CreateAppOptions = {}): Hono<{ Variables: AppVar
     }
   }
   const codeReader: CodeReader = opts.payoutCodeReader ?? provider;
+  const kya: KyaGate | null = opts.kya !== undefined ? opts.kya : kyaFromEnv(provider);
   // payTo 必須是 EOA（= FEE_SETTLEMENT_PRIVATE_KEY 的地址）：外洩清單、EIP-7702 委派、
   // 合約（含未設 PAY_TO 時回退的 FeeRouter）一律 unsafe。結果快取 10 分鐘、fail-closed。
   const checkPayTo = (): Promise<PayoutAssessment> =>
@@ -856,6 +925,23 @@ export function createApp(opts: CreateAppOptions = {}): Hono<{ Variables: AppVar
       );
     } catch (err) {
       return c.json({ ok: false, error: internalError("reference-prices", err) }, 503);
+    }
+  });
+
+  // ── KYA：某張委託憑證目前的 x402 花費（免費、唯讀；前端進度條用）─────────────
+  // 位置理由同 /candles：必須留在 paymentMiddleware 之前。credentialHash 是 EIP-712 digest，
+  // 不知道憑證內容就猜不到；回應只有金額，沒有身分資料。
+  app.get("/kya/spend/:hash", async (c) => {
+    if (!kya) return c.json({ ok: false, error: "kya_disabled", message: "本服務未啟用 x402 KYA（X402_KYA_MODE=off）。" }, 404);
+    const hash = c.req.param("hash").toLowerCase();
+    if (!/^0x[0-9a-f]{64}$/.test(hash)) return c.json({ ok: false, error: "bad_hash" }, 400);
+    const period = Number(c.req.query("period") ?? "86400");
+    if (!Number.isSafeInteger(period) || period <= 0) return c.json({ ok: false, error: "bad_period" }, 400);
+    try {
+      const s = await kya.spendOf(hash, period);
+      return c.json({ ok: true, credentialHash: hash, periodSeconds: period, totalAtomic: s.total.toString(), periodAtomic: s.period.toString() });
+    } catch (err) {
+      return c.json({ ok: false, error: internalError("kya_spend", err) }, 503);
     }
   });
 
@@ -1253,10 +1339,95 @@ export function createApp(opts: CreateAppOptions = {}): Hono<{ Variables: AppVar
           503,
         );
       }
+      if (kya?.config.mode === "invalid") {
+        return c.json(
+          {
+            ok: false,
+            error: "kya_misconfigured",
+            message: "X402_KYA_MODE 設定錯誤（見伺服器啟動 log），付費端點暫停服務。",
+            note: "未扣款：沒有發出付款要求。",
+          },
+          503,
+        );
+      }
       const blocked = await payToGuard(c, async () => {});
       if (blocked) return blocked;
     }
 
+    // ── x402 KYA（docs/SSI_AGENT_DELEGATION.md；X402_KYA_MODE=on 才啟用）─────────
+    // 在付款交給 facilitator 之前：驗 presentation／委託憑證／撤銷／鏈上 session／錨定，並以
+    // credentialHash 原子預留花費。只看「付費牆實際會處理的那一張」付款 header（與下面的分流一致）；
+    // 兩種都帶（both 模式）由下面回 400，這裡不預留。未付款的請求不檢查，只在 402 上宣告。
+    let kyaHold: KyaHold | null = null;
+    let kyaProto: "v1" | "v2" = "v1";
+    if (paidRoute && kya) {
+      const v2Hdr = c.req.header("PAYMENT-SIGNATURE");
+      const v1Hdr = c.req.header("X-PAYMENT");
+      const useV2 = x402v2 !== null && (x402Protocol === "v2" || (Boolean(v2Hdr) && !v1Hdr));
+      const pay = useV2 ? v2Hdr : x402Protocol === "v2" ? undefined : v1Hdr;
+      const ambiguous = x402Protocol === "both" && x402v2 !== null && Boolean(v2Hdr) && Boolean(v1Hdr);
+      if (pay && !ambiguous) {
+        // 進入驗證前先計一次（同步，所以並行的請求也擋得住），驗證通過或是我們這邊的 503 再退回：
+        // 計數器同時是「每 IP 進行中＋失敗」的上限，不會因為 await 期間一起湧入而超過。
+        const ip = clientIp(c);
+        const throttled = kyaFailLimiter.hit(ip);
+        if (throttled.limited) {
+          kyaFailLimiter.unhit(ip, throttled.token);
+          return c.json(
+            {
+              ok: false,
+              error: "kya_rate_limited",
+              message: `委託憑證驗證失敗次數過多，請 ${throttled.retryAfterSec}s 後再試。`,
+              note: "未扣款：付款授權沒有送給 facilitator。",
+            },
+            429,
+            { "Retry-After": String(throttled.retryAfterSec) },
+          );
+        }
+        let d: Awaited<ReturnType<KyaGate["authorize"]>>;
+        try {
+          d = await kya.authorize(c, pay);
+        } catch (err) {
+          kyaFailLimiter.unhit(ip, throttled.token);
+          throw err;
+        }
+        // 通過、或 503（我們這邊的基礎設施／設定）不算在請求方頭上。
+        if (d.ok || d.status === 503) kyaFailLimiter.unhit(ip, throttled.token);
+        if (!d.ok) return c.json(d.body, d.status);
+        kyaHold = d.hold;
+        kyaProto = useV2 ? "v2" : "v1";
+      }
+    }
+    let out: Response | void;
+    try {
+      out = await dispatchPaywall(c, next, paidRoute);
+    } catch (err) {
+      // 付費牆丟例外（沒有回應）：授權若還沒送去 settle（v1 的 x402-hono 在套件內接住 settle 錯誤；
+      // v2 以 onSettleStart 標記），錢沒有動 → 退回預留；送過了 → 結果不明，保留。
+      if (kya && kyaHold) {
+        const settleAttempted =
+          kyaProto === "v2" ? settleStarted.has(c.req.raw) : Boolean(c.res?.headers.get("X-PAYMENT-RESPONSE"));
+        await kya.abandon(kyaHold, settleAttempted);
+      }
+      throw err;
+    }
+    if (!kya || !paidRoute) return out;
+    const res = out ?? c.res;
+    const extra = kyaHold ? await kya.finalize(kyaHold, res, kyaProto) : res.status === 402 ? KYA_ADVERTISE_HEADERS : {};
+    if (Object.keys(extra).length === 0) return out;
+    const withKya = new Response(res.body, res);
+    for (const [k, v] of Object.entries(extra)) withKya.headers.set(k, v);
+    if (out) return withKya;
+    c.res = undefined as unknown as Response;
+    c.res = withKya;
+  });
+
+  /** 協定分流＋付費牆（原本 app.use 內的後半段，抽出來讓 KYA 能在前後包一層；內容不變）。 */
+  const dispatchPaywall = async (
+    c: Context<{ Variables: AppVariables }>,
+    next: Next,
+    paidRoute: boolean,
+  ): Promise<Response | void> => {
     // ── 協定分流（docs/ADR-010）──────────────────────────────────────────────
     //   v1（預設）：一律 v1，PAYMENT-SIGNATURE 被忽略 —— 與遷移前完全相同。
     //   v2        ：一律 v2，X-PAYMENT 被忽略（視同未付款，回 v2 的 402）。
@@ -1293,7 +1464,7 @@ export function createApp(opts: CreateAppOptions = {}): Hono<{ Variables: AppVar
         c.res = res;
       }
     }
-  });
+  };
 
   // ── 付費後才會執行到這裡 ─────────────────────────────────────────────────
   //
