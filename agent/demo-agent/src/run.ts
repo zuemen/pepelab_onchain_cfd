@@ -28,8 +28,15 @@ import {
   parseOracleBody,
   parseSignalsBody,
   type AuthorizationVC,
+  type AgentCredential,
   jsonSafe,
   guardViemAccount,
+  isDelegationCredential,
+  verifyDelegationCredential,
+  delegationAsVerifyResult,
+  kyaFetch,
+  formatUsdcAtomic,
+  AGENT_KYA_SPEND_HEADER,
 } from "@pepelab/shared";
 
 loadEnv();
@@ -37,12 +44,14 @@ loadEnv();
 // 可選：使用者簽發的授權 VC（W3C VC / did:pkh）。提供時下單前必須驗證通過。
 //   AGENT_AUTH_VC      = VC JSON 字串
 //   AGENT_AUTH_VC_PATH = VC JSON 檔路徑
-function loadAuthVc(): AuthorizationVC | null {
+// 接受 v2 授權 VC 或 v3 委託憑證（AgentDelegationCredential，docs/SSI_AGENT_DELEGATION.md）。
+// v3 時 x402 付款會自動附上 X-Agent-Presentation（KYA）。
+function loadAuthVc(): AgentCredential | null {
   const raw = process.env.AGENT_AUTH_VC?.trim();
   const path = process.env.AGENT_AUTH_VC_PATH?.trim();
   try {
-    if (raw) return JSON.parse(raw) as AuthorizationVC;
-    if (path) return JSON.parse(readFileSync(path, "utf8")) as AuthorizationVC;
+    if (raw) return JSON.parse(raw) as AgentCredential;
+    if (path) return JSON.parse(readFileSync(path, "utf8")) as AgentCredential;
   } catch (e) {
     console.log(`⚠ 無法載入 AGENT_AUTH_VC：${(e as Error).message}`);
   }
@@ -149,9 +158,15 @@ async function executeOrSimulate(
     console.log(`  本來會下的單：${wouldBe}（模擬，未送鏈）。`);
     return;
   }
-  const v = verifyAuthorizationVC(AUTH_VC);
+  const v = isDelegationCredential(AUTH_VC)
+    ? (() => {
+        const r3 = verifyDelegationCredential(AUTH_VC);
+        return { ...delegationAsVerifyResult(r3), reason: r3.reason };
+      })()
+    : verifyAuthorizationVC(AUTH_VC as AuthorizationVC);
   if (v.valid) {
-    console.log(`🪪 授權憑證已驗證 ✓（issuer ${v.issuer} → agent ${v.agent}, session #${v.sessionId}）`);
+    const kind = isDelegationCredential(AUTH_VC) ? "委託憑證 v3" : "授權憑證 v2";
+    console.log(`🪪 ${kind}已驗證 ✓（issuer ${v.issuer} → agent ${v.agent}, session #${v.sessionId}）`);
   } else {
     console.log(`🛑 授權憑證驗證失敗 → 拒絕下單：${v.reason}`);
     console.log(`  （正反對照：竄改 VC 或換 agent 即無法下單）`);
@@ -223,8 +238,26 @@ async function paidRun() {
   // 轉型：x402-fetch 0.5.1 的 SignerWallet 型別與 viem 2.52 的 client 型別有版本落差
   // （執行面 isSignerWallet 只看 chain+transport，皆具備），故精準轉成其參數型別。
   // 單筆付款上限明確傳入（X402_MAX_PAYMENT_USDC，預設 0.02 USDC），不吃套件預設 0.10。
+  // v3 委託憑證：付款請求自動附上 presentation（x402 KYA；簽章守門 (d) 只放行合規的 presentation）。
+  const baseFetch =
+    AUTH_VC && isDelegationCredential(AUTH_VC)
+      ? kyaFetch({
+          credential: AUTH_VC,
+          holderAddress: account.address,
+          // 憑證只出示給本 agent 要付費的 signal-api（不送給其他 x402 服務）。
+          allowedOrigins: [API],
+          signTypedData: (domain, types, message) =>
+            (account.signTypedData as unknown as (td: Record<string, unknown>) => Promise<string>)({
+              domain,
+              types,
+              primaryType: Object.keys(types)[0],
+              message,
+            }),
+        })
+      : fetch;
+  if (baseFetch !== fetch) console.log("x402 KYA    : 付款時附上 v3 委託憑證的 Verifiable Presentation");
   const payFetch = wrapFetchWithPayment(
-    fetch,
+    baseFetch,
     walletClient as unknown as Parameters<typeof wrapFetchWithPayment>[1],
     resolveX402MaxValue(),
   );
@@ -240,6 +273,11 @@ async function paidRun() {
   const sigRes = await payFetch(`${API}/signals/${TRADER}`, { method: "GET" });
   const sigBody = (await sigRes.json().catch(() => null)) as any;
   console.log(JSON.stringify(sigBody, null, 2));
+  const spend = sigRes.headers.get(AGENT_KYA_SPEND_HEADER);
+  if (spend) {
+    const m = /total=(\d+);period=(\d+);maxTotal=(\d+);maxPerPeriod=(\d+)/.exec(spend);
+    if (m) console.log(`x402 花費（依憑證累計）：總額 ${formatUsdcAtomic(BigInt(m[1]!))}/${formatUsdcAtomic(BigInt(m[3]!))}、本期 ${formatUsdcAtomic(BigInt(m[2]!))}/${formatUsdcAtomic(BigInt(m[4]!))} USDC`);
+  }
 
   // A-1 同類修正：`body?.data ?? body` 會讓錯誤物件變成「資料」，決策就此建立在
   // 錯誤訊息上。兩份回應都先過 shared 的嚴格解析，任一不可用就停在這裡。

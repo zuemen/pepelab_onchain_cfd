@@ -248,3 +248,10 @@ export function assembleAuthorizationVC(p: {
   }
   return vc
 }
+
+// ── v3: agent DELEGATION credential (W3C VC 2.0 + x402 allowance) ───────────
+// Lives in its own module (agentDelegation.ts) so v1/v2 above stay byte-for-byte
+// unchanged; re-exported here so "the VC schema" keeps a single import path.
+// v3 does NOT replace v2: write paths accept both, x402 KYA requires v3.
+export const AUTH_VC_VERSION_DELEGATION = 3
+export * from './agentDelegation'

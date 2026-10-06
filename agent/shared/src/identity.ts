@@ -21,6 +21,9 @@
 // Versions (schema lives in frontend/src/contracts/agentAuth.ts):
 //   v2 — domain binds `verifyingContract` (session manager), struct adds
 //        `validUntil` + `nonce`. Issued by the frontend and `issueAuthorizationVC`.
+//   v3 — AgentDelegationCredential (W3C VC 2.0, x402 allowance, on-chain anchor). Schema in
+//        frontend/src/contracts/agentDelegation.ts; sign/verify/present in ./delegation.ts.
+//        Additive: nothing in this file's v1/v2 path changes, and v2 keeps verifying.
 //   v1 — legacy; verifies with a warning until LEGACY_VC_SUNSET_ISO, then rejected.
 //        v1 has no nonce, but still takes part in supersession (vcNonce.ts), and once a
 //        v2 VC was accepted for an (issuer, sessionId), v1 is refused for it.
@@ -55,6 +58,7 @@ export {
   AUTH_VC_CHAIN_ID,
   AUTH_VC_VERSION,
   AUTH_VC_VERSION_LEGACY,
+  AUTH_VC_VERSION_DELEGATION,
   LEGACY_VC_SUNSET_ISO,
   DEFAULT_VC_VALIDITY_SEC,
   authDomainV2,

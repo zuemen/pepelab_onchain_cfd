@@ -36,6 +36,13 @@
 //       MCP get_agent_verification 會帶 agent 金鑰呼叫）。personal_sign 有
 //       "\x19Ethereum Signed Message" 前綴，不可能被當成交易、permit 或 7702 authorization，
 //       且挑戰字串格式固定、不含任何授權語意。
+//   (d) EIP-712：x402 KYA 的 `AgentX402Presentation`（docs/SSI_AGENT_DELEGATION.md）——代理人出示
+//       v3 委託憑證時，對「這一個付費請求」簽的持有證明。型別必須與
+//       frontend/src/contracts/agentDelegation.ts 的 PRESENTATION_TYPES 逐欄相同、message 鍵恰好相同；
+//       domain 只能是 {name:'PepeLabAgentPresentation', version:'1', chainId}（chainId ∈ 接受的鏈，
+//       無 verifyingContract／salt）；holder 與 payer 都必須是 agent 自己；created 在 ±60 秒內。
+//       它不帶任何金額或授權語意（金額在同一請求的 EIP-3009 授權裡，仍受 (b) 全部限制），
+//       所以不佔 x402 累計額度。
 // 其餘全部拒絕：approve / increaseAllowance / permit / Permit2 / 任意合約呼叫 / 其他
 // typed data / 其他訊息 / 7702 authorization / 裸 hash 簽章。
 //
@@ -46,6 +53,8 @@ import { ethers } from "ethers";
 import { AGENT_CHAIN_ID } from "./addresses.ts";
 import { OFFICIAL_BASE_SEPOLIA_USDC } from "./env.ts";
 import { resolveX402MaxValue, resolveX402TotalSpendCap } from "./x402Client.ts";
+// 直接讀純資料的 schema 模組（不經 delegation.ts）：delegation → identity → provider → signingGuard 會成環。
+import { AUTH_VC_CHAIN_ID, PRESENTATION_TYPES } from "../../../frontend/src/contracts/agentAuth";
 
 /** 拒絕原因代碼（穩定字串，寫進稽核與錯誤）。 */
 export type SigningGuardReason =
@@ -451,6 +460,84 @@ export function x402PayToAllowlist(env: NodeJS.ProcessEnv = process.env): string
 let warnedTofu = false;
 
 
+// ── (d) x402 KYA presentation ────────────────────────────────────────────────
+const PRESENTATION_PRIMARY = "AgentX402Presentation";
+const PRESENTATION_DOMAIN_FIELDS = ["name", "version", "chainId"];
+
+/** types 是否宣告為 KYA presentation（只看型別名稱；細節由 assertAllowedPresentation 檢查）。 */
+export function isPresentationTypedData(types: Record<string, unknown>): boolean {
+  return Object.keys(types ?? {}).some((n) => n === PRESENTATION_PRIMARY);
+}
+
+function presentationChainIds(env: NodeJS.ProcessEnv = process.env): bigint[] {
+  const raw = env.DELEGATION_VC_CHAIN_IDS?.trim();
+  const ids = raw
+    ? raw.split(",").map((s) => s.trim()).filter((s) => /^\d+$/.test(s)).map((s) => BigInt(s))
+    : [];
+  return ids.length ? ids : [BigInt(AGENT_CHAIN_ID), BigInt(AUTH_VC_CHAIN_ID)];
+}
+
+/**
+ * (d) 白名單：KYA presentation。逐欄比對型別、message 鍵、domain；holder／payer 必須是簽章者；
+ * created 在 ±WV_MAX_SKEW_MS 內。違反任何一項丟 TYPED_DATA_NOT_ALLOWLISTED。
+ */
+export function assertAllowedPresentation(
+  domain: { name?: unknown; version?: unknown; chainId?: unknown; verifyingContract?: unknown; salt?: unknown },
+  types: Record<string, unknown>,
+  message: Record<string, unknown>,
+  signer: string,
+  primaryType?: string,
+): void {
+  const T = "TYPED_DATA_NOT_ALLOWLISTED" as const;
+  if ("EIP712Domain" in (types ?? {})) {
+    const d = types.EIP712Domain as Array<{ name: string }>;
+    const ok = Array.isArray(d) && d.length === PRESENTATION_DOMAIN_FIELDS.length && d.every((f, i) => f?.name === PRESENTATION_DOMAIN_FIELDS[i]);
+    if (!ok) throw new SigningGuardError(T, "presentation 的 types.EIP712Domain 只能是 name, version, chainId");
+  }
+  const names = Object.keys(types ?? {}).filter((n) => n !== "EIP712Domain");
+  if (names.length !== 1 || names[0] !== PRESENTATION_PRIMARY) {
+    throw new SigningGuardError(T, `typed data 型別 [${names.join(", ")}] 不在允許清單`);
+  }
+  if (primaryType !== undefined && primaryType !== PRESENTATION_PRIMARY) {
+    throw new SigningGuardError(T, `primaryType ${primaryType} 不在允許清單`);
+  }
+  const want = PRESENTATION_TYPES[PRESENTATION_PRIMARY]!;
+  const fields = types[PRESENTATION_PRIMARY] as Array<{ name: string; type: string }>;
+  if (!Array.isArray(fields) || fields.length !== want.length || fields.some((f, i) => f?.name !== want[i]!.name || f?.type !== want[i]!.type)) {
+    throw new SigningGuardError(T, "AgentX402Presentation 的欄位與 schema 不符");
+  }
+  const keys = Object.keys(message ?? {}).sort();
+  const expected = want.map((f) => f.name).sort();
+  if (keys.length !== expected.length || keys.some((k, i) => k !== expected[i])) {
+    throw new SigningGuardError(T, `presentation message 欄位 [${keys.join(", ")}] 與型別不一致`);
+  }
+  const chainOk =
+    (typeof domain?.chainId === "number" || typeof domain?.chainId === "bigint") &&
+    presentationChainIds().includes(BigInt(domain.chainId as number | bigint));
+  if (
+    domain?.name !== "PepeLabAgentPresentation" ||
+    domain?.version !== "1" ||
+    !chainOk ||
+    domain?.verifyingContract !== undefined ||
+    domain?.salt !== undefined
+  ) {
+    throw new SigningGuardError(T, "presentation 的 domain 不符（name／version／chainId，且不得帶 verifyingContract／salt）");
+  }
+  const me = ethers.getAddress(signer);
+  for (const k of ["holder", "payer"] as const) {
+    const v = typeof message[k] === "string" ? (message[k] as string) : "";
+    if (!ethers.isAddress(v) || ethers.getAddress(v) !== me) {
+      throw new SigningGuardError(T, `presentation.${k} 不是 agent 自己`);
+    }
+  }
+  const created = big(message.created);
+  const nowSec = BigInt(Math.floor(Date.now() / 1000));
+  const skew = BigInt(WV_MAX_SKEW_MS / 1000);
+  if (created === null || created > nowSec + skew || created < nowSec - skew) {
+    throw new SigningGuardError(T, `presentation.created 不在現在 ±${skew} 秒內`);
+  }
+}
+
 // ── (c) personal message ─────────────────────────────────────────────────────
 export function assertAllowedMessage(message: unknown, signer: string): void {
   const text =
@@ -492,6 +579,10 @@ export class GuardedWallet extends ethers.Wallet {
     types: Record<string, ethers.TypedDataField[]>,
     value: Record<string, any>,
   ): Promise<string> {
+    if (isPresentationTypedData(types)) {
+      assertAllowedPresentation(domain as any, types, value, this.address);
+      return super.signTypedData(domain, types, value);
+    }
     const r = reserveX402(domain as any, types, value, this.address);
     return withX402Reservation(r, () => super.signTypedData(domain, types, value));
   }
@@ -537,6 +628,10 @@ export function guardViemAccount<A extends { type: string; address: string }>(ac
   }
   if (typeof acc.signTypedData === "function") {
     wrapped.signTypedData = async (td: any) => {
+      if (isPresentationTypedData(td?.types ?? {})) {
+        assertAllowedPresentation(td?.domain ?? {}, td?.types ?? {}, td?.message ?? {}, acc.address, td?.primaryType);
+        return acc.signTypedData(td);
+      }
       const r = reserveX402(td?.domain ?? {}, td?.types ?? {}, td?.message ?? {}, acc.address, td?.primaryType);
       return withX402Reservation(r, () => acc.signTypedData(td));
     };

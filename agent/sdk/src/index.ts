@@ -5,6 +5,7 @@
 //   signalApi   signal-api 型別化 client（逾時、只對冪等 GET 重試、x402 由呼叫端注入）
 //   vc          Agent 授權 VC v2（EIP-712）建構與驗證（拒絕 v1）
 //   vcStatus    授權 VC 的撤銷（簽發者簽章的狀態清單，ADR-016）：建構、驗證、狀態檢查器
+//   delegation  委託授權 VC v3（W3C VC 2.0＋x402 額度）與 x402 KYA presentation（createDelegationCredential、presentForX402）
 //
 // SDK 不持有、不讀取任何私鑰。
 export * from "./addresses.ts";
@@ -17,3 +18,4 @@ export * from "./signalApiTypes.ts";
 export * from "./signalApi.ts";
 export * from "./vc.ts";
 export * from "./vcStatus.ts";
+export * from "./delegation.ts";
