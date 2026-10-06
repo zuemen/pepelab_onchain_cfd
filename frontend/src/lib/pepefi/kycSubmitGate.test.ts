@@ -1,6 +1,6 @@
 import { it, expect, describe } from 'vitest'
 
-import { decideKycSubmitGate, isMissingFunctionError, type KycSubmitGateInput } from './kycSubmitGate'
+import { decideKycSubmitGate, isMissingFunctionError, kycOutcomeAfterSubmit, type KycSubmitGateInput } from './kycSubmitGate'
 
 const ok = <T,>(value: T) => ({ ok: true as const, value })
 const fail = (error: unknown) => ({ ok: false as const, error })
@@ -82,5 +82,19 @@ describe('isMissingFunctionError', () => {
     expect(isMissingFunctionError(rateLimited)).toBe(false)
     expect(isMissingFunctionError(new Error('x'))).toBe(false)
     expect(isMissingFunctionError(null)).toBe(false)
+  })
+})
+
+describe('kycOutcomeAfterSubmit', () => {
+  it('送出後鏈上已是 verified（線上自助驗證版 KYCRegistry）：顯示已通過', () => {
+    expect(kycOutcomeAfterSubmit(true)).toBe('verified')
+  })
+
+  it('送出後仍未 verified（審核制）：顯示待審核', () => {
+    expect(kycOutcomeAfterSubmit(false)).toBe('awaitingReview')
+  })
+
+  it('讀不到（null）：不放大成已通過，維持待審核', () => {
+    expect(kycOutcomeAfterSubmit(null)).toBe('awaitingReview')
   })
 })

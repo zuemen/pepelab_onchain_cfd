@@ -75,3 +75,21 @@ export function decideKycSubmitGate(i: KycSubmitGateInput): KycSubmitGate {
   if (!i.isVerifiedResult.ok) return { kind: 'checkFailed', reason: reasonOf(i.isVerifiedResult.error) }
   return { kind: 'clear' }
 }
+
+/**
+ * submitKYC 確認之後，這一輪的 Dialog 要停在哪個畫面。
+ *
+ * 兩種 KYCRegistry 的行為不同：
+ *  - 審核制（原始碼現行版）：submitKYC 只留下待審申請，isVerified 仍是 false。
+ *  - 自助驗證（Base Sepolia 線上 0x5D95…360d 的舊版）：submitKYC 當下就把 verified 設成 true，
+ *    沒有審核佇列（沒有 isPending／approveKYC）。
+ *
+ * 舊版 Dialog 一律顯示「已送出、等待審核」，在線上那一版會讓使用者以為還不能交易，
+ * 其實已經通過。只有**確定讀到 true** 才顯示已通過；讀不到（null）一律當成待審，
+ * 不把「不知道」放大成「已通過」——合規閘門本身仍由 useKYC 重新讀鏈上決定。
+ */
+export type KycAfterSubmit = 'verified' | 'awaitingReview'
+
+export function kycOutcomeAfterSubmit(isVerifiedNow: boolean | null): KycAfterSubmit {
+  return isVerifiedNow === true ? 'verified' : 'awaitingReview'
+}

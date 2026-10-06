@@ -3,7 +3,8 @@ import type { Contract } from 'ethers';
 import { t, interpolate } from 'src/locales';
 import { prettyError } from 'src/lib/pepefi/errorMessages';
 import { withRetry } from 'src/lib/pepefi/rpcBatch';
-import { settle, isMissingFunctionError, decideKycSubmitGate } from 'src/lib/pepefi/kycSubmitGate';
+import { safeRead } from 'src/lib/pepefi/safeRead';
+import { settle, isMissingFunctionError, decideKycSubmitGate, kycOutcomeAfterSubmit } from 'src/lib/pepefi/kycSubmitGate';
 import {
   toKycReceipt,
   kycSubmitArgs,
@@ -120,6 +121,11 @@ export default function KYCModal({ isOpen, onClose, onSuccess, kycRegistry, isPe
   const [error,       setError]       = useState<string | null>(null);
   /** 這一輪送出成功 → 停在「已送出、待審核」畫面，不要直接關掉讓人以為過了。 */
   const [submitted,   setSubmitted]   = useState(false);
+  /**
+   * 這一輪送出後鏈上**已經** isVerified（Base Sepolia 線上的舊版 KYCRegistry 是自助驗證，
+   * submitKYC 當下就通過）。這時不能再顯示「等待審核」，否則使用者以為還不能交易。
+   */
+  const [verifiedNow, setVerifiedNow] = useState(false);
   /** 這一輪送出的 salt 與雜湊——只在使用者端，送出後顯示給使用者自行保存。 */
   const [receipt,     setReceipt]     = useState<(KycReceipt & { normalizedName: string; normalizedNationality: string }) | null>(null);
   const [receiptSaved, setReceiptSaved] = useState(false);
@@ -158,6 +164,7 @@ export default function KYCModal({ isOpen, onClose, onSuccess, kycRegistry, isPe
   // 換帳號／換鏈（kycRegistry 會跟著 signer 重建）：上一個帳號這一輪的送出結果不能留著。
   useEffect(() => {
     setSubmitted(false);
+    setVerifiedNow(false);
     setReceipt(null);
     setConfirmFailed(false);
   }, [kycRegistry]);
@@ -213,7 +220,9 @@ export default function KYCModal({ isOpen, onClose, onSuccess, kycRegistry, isPe
     return () => { cancelled = true; };
   }, [isOpen, kycRegistry, submitted, confirmFailed]);
 
-  const awaitingReview = isPending || submitted;
+  /** 表單這一輪已經結束（待審或已通過）：不再顯示填表與送出鍵。 */
+  const finished = isPending || submitted;
+  const awaitingReview = finished && !verifiedNow;
 
   const handleSubmit = async () => {
     if (!kycRegistry) return;
@@ -256,6 +265,12 @@ export default function KYCModal({ isOpen, onClose, onSuccess, kycRegistry, isPe
         return;
       }
       show(txHash, saved);
+      // 線上（Base Sepolia）的 KYCRegistry 是舊版自助驗證：submitKYC 當下就通過。
+      // 確定讀到 true 才顯示「已通過」；讀不到就維持「待審核」（見 kycOutcomeAfterSubmit）。
+      const verifiedRead = loc
+        ? await safeRead<boolean | null>(kycRegistry.isVerified(loc.user) as Promise<boolean>, null)
+        : null;
+      setVerifiedNow(kycOutcomeAfterSubmit(verifiedRead) === 'verified');
       // submitKYC 現在只 emit KYCSubmitted——使用者「還沒」通過。舊版在這裡直接
       // onClose()，畫面看起來就像驗證完成了，然後他回去下單被合約 revert
       // NotKycVerified，完全不知道發生什麼事。改成留在原地明確告知「待審核」。
@@ -289,7 +304,7 @@ export default function KYCModal({ isOpen, onClose, onSuccess, kycRegistry, isPe
       <DialogTitle sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', pb: 1 }}>
         <Box>
           <Typography variant="h6" sx={{ fontWeight: 'bold' }}>
-            {awaitingReview ? t.kyc.titleAwaitingReview : t.kyc.title}
+            {verifiedNow ? t.kyc.titleVerified : awaitingReview ? t.kyc.titleAwaitingReview : t.kyc.title}
           </Typography>
           <Typography variant="caption" color="text.secondary">
             {t.kyc.subtitle}
@@ -310,17 +325,17 @@ export default function KYCModal({ isOpen, onClose, onSuccess, kycRegistry, isPe
 
       <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2.5, pt: 1 }}>
         {/* 審核制說明。這是這個 Dialog 最重要的一句話：送出 ≠ 通過。 */}
-        <Alert severity={awaitingReview ? 'success' : 'info'} variant="outlined">
+        <Alert severity={finished ? 'success' : 'info'} variant="outlined">
           <Typography variant="subtitle2" sx={{ fontWeight: 'bold', mb: 0.5 }}>
-            {awaitingReview ? t.kyc.noticeTitleAwaitingReview : t.kyc.noticeTitle}
+            {verifiedNow ? t.kyc.noticeTitleVerified : awaitingReview ? t.kyc.noticeTitleAwaitingReview : t.kyc.noticeTitle}
           </Typography>
           <Typography variant="caption" display="block" sx={{ opacity: 0.9 }}>
-            {awaitingReview ? t.kyc.noticeBodyAwaitingReview : t.kyc.noticeBody}
+            {verifiedNow ? t.kyc.noticeBodyVerified : awaitingReview ? t.kyc.noticeBodyAwaitingReview : t.kyc.noticeBody}
           </Typography>
         </Alert>
 
         {/* Demo disclaimer — 已送出待審時不用再看填表注意事項 */}
-        {!awaitingReview && (
+        {!finished && (
         <Alert
           severity="warning"
           variant="outlined"
@@ -341,7 +356,7 @@ export default function KYCModal({ isOpen, onClose, onSuccess, kycRegistry, isPe
         )}
 
         {/* 揭露：舊版前端曾把姓名與國籍明文寫上鏈，那些資料無法刪除。 */}
-        {!awaitingReview && (
+        {!finished && (
           <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
             {t.kyc.legacyPlaintextNotice}
           </Typography>
@@ -387,7 +402,7 @@ export default function KYCModal({ isOpen, onClose, onSuccess, kycRegistry, isPe
         })()}
 
         {/* 上一筆交易的狀態：不能重送時說明原因（查詢失敗附重試）。 */}
-        {!awaitingReview && prevTxBlocks && !confirmFailed && (
+        {!finished && prevTxBlocks && !confirmFailed && (
           <Alert
             severity={prevTx === 'checking' ? 'info' : 'warning'}
             action={prevTx === 'checkFailed' ? (
@@ -427,7 +442,7 @@ export default function KYCModal({ isOpen, onClose, onSuccess, kycRegistry, isPe
         )}
 
         {/* Form — 待審核時隱藏，重複送出只是再燒一次 gas */}
-        {!awaitingReview && (
+        {!finished && (
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
           <TextField
             label={t.kyc.nameLabel}
@@ -477,9 +492,9 @@ export default function KYCModal({ isOpen, onClose, onSuccess, kycRegistry, isPe
           fullWidth
           sx={{ py: 1.2 }}
         >
-          {awaitingReview ? t.kyc.close : t.kyc.cancel}
+          {finished ? t.kyc.close : t.kyc.cancel}
         </Button>
-        {!awaitingReview && (
+        {!finished && (
           <Button
             variant="contained"
             color="primary"

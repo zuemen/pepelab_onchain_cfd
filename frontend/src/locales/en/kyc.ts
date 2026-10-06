@@ -6,6 +6,7 @@ import type { Catalog } from '../zh-TW';
 export const kyc: Catalog['kyc'] = {
   title: 'Submit KYC Application',
   titleAwaitingReview: 'KYC Application Under Review',
+  titleVerified: 'KYC Verified',
   subtitle: 'Trading stock / bond synthetic assets requires KYC review',
   closeAria: 'Close',
 
@@ -14,6 +15,9 @@ export const kyc: Catalog['kyc'] = {
   noticeTitleAwaitingReview: '✅ Application submitted, awaiting review',
   noticeBody:
     "Submitting leaves a pending application on-chain (KYCSubmitted) — approval only happens once a reviewer calls approveKYC. You still can't trade regulated assets before it's approved.",
+  noticeTitleVerified: '✅ KYC verified — regulated assets are unlocked',
+  noticeBodyVerified:
+    'Your KYC is recorded on-chain (isVerified = true). The KYCRegistry currently deployed is the self-service demo version: submitting verifies you immediately, with no manual review. Close this dialog and you can place orders.',
   noticeBodyAwaitingReview:
     'Your KYC application is recorded on-chain (KYCSubmitted). Regulated assets unlock once a reviewer approves it (approveKYC); until then, the contract still blocks your orders (NotKycVerified). You can close this dialog now and come back later — refresh to check the status.',
 
