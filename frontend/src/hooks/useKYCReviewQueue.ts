@@ -31,8 +31,8 @@ export type { ReviewBucket }
 
 /** 審核佇列的回看視窗：7 天。 */
 const KYC_SCAN_WINDOW_SEC = 7 * 24 * 3600;
-/** 7 天 ÷ 2 秒 ÷ CHUNK_SIZE(800) ≈ 378 段；留一點餘裕。 */
-const KYC_SCAN_MAX_CHUNKS = 400;
+/** 7 天 ÷ 2 秒 ÷ CHUNK_SIZE(400) ≈ 756 段；留一點餘裕（2026-10-06 節點上限降為 500 塊後段長減半）。 */
+const KYC_SCAN_MAX_CHUNKS = 800;
 /** 378 段序列要一分半；併發 3 實測約 40 秒（同樣 7 天視窗的排行榜掃描）。 */
 const KYC_SCAN_CONCURRENCY = 3;
 
