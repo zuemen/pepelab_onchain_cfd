@@ -1,5 +1,5 @@
 {
-  "digest": "25b0f91fbc199de8",
+  "digest": "a7ecb3cadcb0493a",
   "files": {
     "agent/shared/src/abis.ts": "872c3136604d6584",
     "agent/shared/src/addresses.ts": "a6cb279048c58a4b",
@@ -22,7 +22,7 @@
     "agent/shared/src/verification.ts": "c7823c4dc411e59a",
     "agent/shared/src/write.ts": "14a30b298396573e",
     "agent/shared/src/x402Client.ts": "5da0cba5d9e429ee",
-    "agent/signal-api/src/app.ts": "1a7fc1ba196252c2",
+    "agent/signal-api/src/app.ts": "e8c7842406b46ba5",
     "agent/signal-api/src/benchmarks.ts": "bac063beeb2f0f45",
     "agent/signal-api/src/candles.ts": "1fd61b7585fca322",
     "agent/signal-api/src/exposure.ts": "dffd7355ac1e0842",
@@ -30,6 +30,7 @@
     "agent/signal-api/src/lru.ts": "32e45fb037d32c24",
     "agent/signal-api/src/onchainRevenue.ts": "c369334c41ba8fe5",
     "agent/signal-api/src/paymentIdentifier.ts": "02f7b817399d86d4",
+    "agent/signal-api/src/referencePrices.ts": "7fb6ae200423c546",
     "agent/signal-api/src/settlement.ts": "5f2049831b4e989b",
     "agent/signal-api/src/symbols.ts": "d47aefadcf0a34a5",
     "agent/signal-api/src/vercel-entry.ts": "1efb6cf837c1969a",

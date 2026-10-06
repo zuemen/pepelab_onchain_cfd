@@ -161,6 +161,9 @@ Pyth 有 `Equity.US.<代號>/USD` 與 `Metal.XAU/USD`（ADR-013 §2.5，以 Herm
 - **金鑰**：不需要。
 - **Demo**：打開 sAAPL 資產卡，週末時顯示「休市中：鏈上價格為週五收盤，本平台現役合約仍接受開倉（已知限制 #31）」；點 sGOLD 顯示「鏈上未標為需 KYC」。
 - **風險**：文案寫得太像法律意見——所有監理文字都標「需法遵確認」；休市狀態依賴 Yahoo，拿不到時要顯示「無法判斷」而不是「開盤」。
+- **狀態（2026-10-06）**：前端已實作（分支 `feat/rwa-transparency`，路由 `/rwa`），資料來源與限制見 [`RWA_TRANSPARENCY.md`](RWA_TRANSPARENCY.md) §1。
+  與上述設計的差異：「目前是否休市」用前端的排定時段（`marketHours.ts`，keeper 規則的複製，不含假日），沒有接 Yahoo `currentTradingPeriod`；
+  公司行動政策只寫進每檔的風險揭露，沒有另做一頁。
 
 #### ② 參考價多源見證看板（鏈下）
 
@@ -175,6 +178,9 @@ Pyth 有 `Equity.US.<代號>/USD` 與 `Metal.XAU/USD`（ADR-013 §2.5，以 Herm
 - **金鑰**：不需要（只讀）。若使用 Pyth Hermes 需要 Pyth 的 API key（不是區塊鏈金鑰），取得條件**未查證**。
 - **Demo**：表格即時顯示 sAAPL 鏈上價、Yahoo 價、第二來源價與偏離；週末時顯示「來源報價時間停在週五 16:00 ET，鏈上寫入時間仍是新的」——這一欄正是已知限制 #31 的證據，也是評審會欣賞的誠實。
 - **風險**：Yahoo 與 CoinGecko 的商業授權未查證（`COMPLIANCE_BOUNDARY.md` §2）；Chainlink 主網代幣化股價與現股定義不同，不能說成「Chainlink 驗證了股價」。
+- **狀態（2026-10-06）**：部分完成（分支 `feat/rwa-transparency`，路由 `/oracle`＋signal-api 免費端點 `GET /reference-prices`），見 [`RWA_TRANSPARENCY.md`](RWA_TRANSPARENCY.md) §2。
+  第二來源實際用的是：加密 Yahoo（keeper 第二來源）＋Coinbase 現貨；美股與 ETF 用 Nasdaq 公開報價（不需金鑰）；黃金用 gold-api.com XAU 現貨（與 GC=F 期貨有基差）。
+  未做：每日帶雜湊的 JSON 快照、Pyth／Chainlink 來源、熔斷規則欄位。
 
 #### ③ 儲備與償付能力頁
 
@@ -188,6 +194,8 @@ Pyth 有 `Equity.US.<代號>/USD` 與 `Metal.XAU/USD`（ADR-013 §2.5，以 Herm
 - **金鑰**：不需要。
 - **Demo**：一張比率曲線＋一張損失吸收瀑布圖；指著 `ratioIsStale` 說明「有資產無法計價時，畫面顯示『無法確認』而不是樂觀數字」。
 - **風險**：比率數字很漂亮但沒有意義（測試幣）——畫面上必須和數字並列說明。keeper 是否持續呼叫 `observeReserve` 要先確認（`PARAMS_INVENTORY.md:189`），否則歷史會有斷點。
+- **狀態（2026-10-06）**：前端已實作（分支 `feat/rwa-transparency`，路由 `/solvency`），見 [`RWA_TRANSPARENCY.md`](RWA_TRANSPARENCY.md) §3。
+  歷史曲線只讀 `ReserveObserved`（最近約 24 小時，當天只有 4 個觀測點，keeper 排程延遲造成斷點）；`ReserveBreached`／`ReserveRestored` 與 `BadDebt` 事件歷史未做。
 
 #### ④ RWA 示範租戶（以新金鑰部署 master 版整套）
 

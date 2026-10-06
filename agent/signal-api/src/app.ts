@@ -69,6 +69,7 @@ import {
   BadIntervalError,
 } from "./candles.ts";
 import { getBenchmarks, BadDateError } from "./benchmarks.ts";
+import { createReferencePriceService, referencePricesCacheControl } from "./referencePrices.ts";
 import { LruCache } from "./lru.ts";
 import {
   createExposureService,
@@ -457,6 +458,8 @@ export interface CreateAppOptions {
   isRegisteredTrader?: (trader: string) => Promise<boolean>;
   /** 覆寫 /risk/exposure 的鏈上讀取來源（測試用；預設是 app 的 provider）。 */
   exposureReader?: ExposureReader;
+  /** 覆寫 /reference-prices 的資料服務（測試用；預設打真實上游）。 */
+  referencePriceService?: { get: ReturnType<typeof createReferencePriceService>["get"] };
   /** 覆寫 x402 協定版本（測試用；正式環境一律走 X402_PROTOCOL env，預設 v1）。 */
   x402Protocol?: X402Protocol;
   /** 覆寫 v2 的 facilitator client（測試用；預設是 X402_FACILITATOR_URL 的 HTTP client）。 */
@@ -612,13 +615,30 @@ export function createApp(opts: CreateAppOptions = {}): Hono<{ Variables: AppVar
     assessPayoutAddress(codeReader, payTo, { requireEoa: true });
 
   // GET 資料端點對所有來源開放（瀏覽器 demo + 外部 agent 都要用）。
-  app.use("*", cors({ origin: "*", allowMethods: ["GET", "POST", "OPTIONS"] }));
+  // 例外：/reference-prices 轉發的是第三方行情（授權未查證，見 docs/RWA_TRANSPARENCY.md §2），
+  // 只讓前端網域（CORS_ALLOWED_ORIGINS，與 /demo/* 同一份白名單）在瀏覽器裡讀。
+  // 兩個 cors 實例分開：其他路由的回應 header 與以前逐位元相同（x402 golden 測試釘住，
+  // 不能多出 Vary: Origin），只有 /reference-prices 走白名單。
+  const openCors = cors({ origin: "*", allowMethods: ["GET", "POST", "OPTIONS"] });
+  const frontendOnlyCors = cors({ origin: CORS_ALLOWED_ORIGINS, allowMethods: ["GET", "OPTIONS"] });
+  app.use("*", (c, next) => (c.req.path === "/reference-prices" ? frontendOnlyCors(c, next) : openCors(c, next)));
 
   // /demo/*（會動用伺服器錢包）額外限制來源。
   // 註：CORS header 只約束瀏覽器讀取回應，擋不住任何非瀏覽器客戶端 —— 所以這裡是
   // 直接**拒絕請求**（403），而不是只把 Access-Control-Allow-Origin 拿掉。
   // 沒有 Origin header 的請求（curl / agent）不受此限，仍受下方的 per-IP 冷卻與
   // 總量硬上限約束。
+  const rejectForeignOrigin = async (c: Context, next: Next) => {
+    if (c.req.method === "OPTIONS") return next();
+    const origin = c.req.header("origin")?.replace(/\/$/, "");
+    if (origin && !CORS_ALLOWED_ORIGINS.includes(origin)) {
+      return c.json({ ok: false, error: `origin 未在白名單內：${origin}` }, 403);
+    }
+    return next();
+  };
+  // 其他網站的頁面不能拿 /reference-prices 當免費行情來源（也避免被當成放大上游流量的跳板）。
+  app.use("/reference-prices", rejectForeignOrigin);
+
   app.use("/demo/*", async (c, next) => {
     if (c.req.method === "OPTIONS") return next();
     const origin = c.req.header("origin")?.replace(/\/$/, "");
@@ -717,6 +737,13 @@ export function createApp(opts: CreateAppOptions = {}): Hono<{ Variables: AppVar
             "?date=YYYY-MM-DD 加碼回該日或之前最近一個交易日的收盤。不做模擬保底，" +
             "上游拿不到就在該指數的 error 欄位標明。",
         },
+        "GET /reference-prices": {
+          price: "free",
+          desc:
+            "鏈下參考價多源見證（唯讀）：每檔資產列出 keeper 主來源與獨立第二來源的價格、上游報價時間、" +
+            "取值時間與來源間價差 bps。加密：CoinGecko＋Yahoo＋Coinbase；美股／ETF：Yahoo＋Nasdaq；" +
+            "黃金：Yahoo GC=F（期貨）＋gold-api.com XAU（現貨，有基差）。60 秒快取，失敗的來源帶 error、不補假值。",
+        },
         "GET /risk/exposure": {
           price: "free",
           desc:
@@ -809,6 +836,26 @@ export function createApp(opts: CreateAppOptions = {}): Hono<{ Variables: AppVar
         return c.json({ ok: false, error: (err as Error).message }, 400);
       }
       return c.json({ ok: false, error: internalError("benchmarks", err) }, 502);
+    }
+  });
+
+  // ── 免費：鏈下參考價多源見證（RWA 透明度看板 /oracle 用，唯讀）──────────────
+  //
+  // 位置理由同 /candles：必須留在 paymentMiddleware 之前，這是免費公開資料，不接 x402。
+  // 每個上游 5 秒逾時；每個上游 URL 各自快取（成功 60 秒、失敗 15 秒）、single-flight；
+  // 一個來源失敗只讓那一格帶 error，不回假數字（見 referencePrices.ts）。
+  // s-maxage 讓 Vercel CDN 在多個實例之間共用同一份；只即時轉發、不存歷史、不提供下載。
+  const referencePrices = opts.referencePriceService ?? createReferencePriceService();
+  app.get("/reference-prices", async (c) => {
+    try {
+      const { report, cacheHit, ageSec, ttlSec, remainingSec } = await referencePrices.get();
+      return c.json(
+        { ...report, cache: { hit: cacheHit, ageSec, ttlSec, remainingSec } },
+        200,
+        { "Cache-Control": referencePricesCacheControl(remainingSec) },
+      );
+    } catch (err) {
+      return c.json({ ok: false, error: internalError("reference-prices", err) }, 503);
     }
   });
 

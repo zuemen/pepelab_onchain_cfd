@@ -6,6 +6,8 @@ import Box from '@mui/material/Box'
 import { assetPolicy } from 'src/tenant'
 import { ASSETS_LIST } from 'src/lib/pepefi/assetMeta'
 
+import { RwaInfoLink } from 'src/components/pepefi/rwa/RwaInfoLink'
+
 import { C, monoCss } from './terminal-theme'
 import { MarketStatusBadge } from './MarketStatusBadge'
 
@@ -71,6 +73,10 @@ export function MarketSelector({
           </Box>
         )
       })}
+      {/* 參照資產、准入、價格來源與休市規則的揭露頁（/rwa）。 */}
+      <Box sx={{ alignSelf: 'center', px: 1, flexShrink: 0 }}>
+        <RwaInfoLink dense />
+      </Box>
     </Box>
   )
 }

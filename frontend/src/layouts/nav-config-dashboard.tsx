@@ -87,6 +87,17 @@ export const navData: NavSectionProps['data'] = byFeatureFlags([
     ],
   },
   /**
+   * RWA 透明度（唯讀揭露頁，docs/RWA_TRANSPARENCY.md）
+   */
+  {
+    subheader: t.rwa.nav.section,
+    items: [
+      { title: t.rwa.nav.cards, path: paths.pepefi.rwa, icon: ICONS.file },
+      { title: t.rwa.nav.oracle, path: paths.pepefi.oracle, icon: ICONS.analytics },
+      { title: t.rwa.nav.solvency, path: paths.pepefi.solvency, icon: ICONS.banking },
+    ],
+  },
+  /**
    * Trader
    */
   {

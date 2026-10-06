@@ -1,6 +1,7 @@
 import { esg } from './esg';
 import { kyc } from './kyc';
 import { nav } from './nav';
+import { rwa } from './rwa';
 import { copy } from './copy';
 import { x402 } from './x402';
 import { pepe } from './pepe';
@@ -70,6 +71,7 @@ const zhTW = {
   traderProfile,
   traderDashboard,
   legacy,
+  rwa,
   investorVc,
 };
 

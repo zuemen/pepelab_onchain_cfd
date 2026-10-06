@@ -3,6 +3,7 @@ import type { Catalog } from '../zh-TW';
 import { esg } from './esg';
 import { kyc } from './kyc';
 import { nav } from './nav';
+import { rwa } from './rwa';
 import { copy } from './copy';
 import { x402 } from './x402';
 import { pepe } from './pepe';
@@ -76,6 +77,7 @@ const en: Catalog = {
   traderProfile,
   traderDashboard,
   legacy,
+  rwa,
   investorVc,
 };
 

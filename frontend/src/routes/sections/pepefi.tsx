@@ -38,6 +38,10 @@ const RewardsPage       = lazy(() => import('src/pages/pepefi/RewardsPage'));
 const SessionsPage      = lazy(() => import('src/pages/pepefi/SessionsPage'));
 const AgentMonitorPage  = lazy(() => import('src/pages/pepefi/AgentMonitorPage'));
 const PepeLabPage       = lazy(() => import('src/pages/pepefi/PepeLabPage'));
+// RWA 透明度三頁（docs/RWA_TRANSPARENCY.md）
+const RwaPage           = lazy(() => import('src/pages/pepefi/RwaPage'));
+const OraclePage        = lazy(() => import('src/pages/pepefi/OraclePage'));
+const SolvencyPage      = lazy(() => import('src/pages/pepefi/SolvencyPage'));
 const InvestorCredentialPage = lazy(() => import('src/pages/pepefi/InvestorCredentialPage'));
 
 // ----------------------------------------------------------------------
@@ -116,6 +120,9 @@ export const pepefiRoutes: RouteObject[] = [
           { path: 'sessions', element: <SessionsPage /> },
           { path: 'agent-monitor', element: <AgentMonitorPage /> },
           { path: 'x402', element: <X402DocsPage /> },
+          { path: 'rwa', element: <RwaPage /> },
+          { path: 'oracle', element: <OraclePage /> },
+          { path: 'solvency', element: <SolvencyPage /> },
           {
             path: 'pepe',
             element: <FeatureGate enabled={FEATURES.gamefi}><PepeLabPage /></FeatureGate>,

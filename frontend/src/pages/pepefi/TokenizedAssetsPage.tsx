@@ -26,6 +26,7 @@ import AssetIcon from 'src/components/pepefi/AssetIcon'
 import { WhoRunsWhat, AssetProvenanceSummary } from 'src/components/pepefi/AssetProvenance'
 import { AssetDetailPanel } from 'src/components/pepefi/AssetDetailPanel'
 import { SyntheticDisclosure } from 'src/components/pepefi/SyntheticDisclosure'
+import { RwaInfoLink } from 'src/components/pepefi/rwa/RwaInfoLink'
 import { SHOW_PERPETUALS } from 'src/lib/pepefi/featureFlags'
 import Skeleton from 'src/components/pepefi/Skeleton'
 import { useToast } from 'src/components/pepefi/ToastProvider'
@@ -687,6 +688,7 @@ export default function TokenizedAssetsPage() {
       <Box>
         <Typography variant="h4" sx={{ fontWeight: 800 }}>{mode === 'simple' ? t.tokens.titleSimple : t.tokens.title}</Typography>
         <Typography variant="body2" color="text.secondary">{t.tokens.subtitle}</Typography>
+        <RwaInfoLink />
       </Box>
 
       <Alert severity="info">
