@@ -17,6 +17,9 @@ export const kyc = {
   noticeTitleAwaitingReview: '✅ 申請已送出，等待審核',
   noticeBody:
     '送出後會在鏈上留下一筆待審申請（KYCSubmitted），需由審核人員核准（approveKYC）才會通過。核准前仍無法交易受管制標的。',
+  noticeTitleSelfService: '此部署為自助驗證：送出即通過',
+  noticeBodySelfService:
+    '目前部署在這條鏈上的 KYCRegistry 是展示用的舊版：送出後鏈上立即記為已驗證（isVerified），沒有人工審核。原始碼現行版是審核制（送出後需 approveKYC），尚待擁有者重新部署。',
   noticeTitleVerified: '✅ 已通過 KYC，可以交易受管制標的',
   noticeBodyVerified:
     '鏈上已記錄你的 KYC（isVerified = true）。目前部署的 KYCRegistry 是展示用的自助驗證版本，送出即通過、不經人工審核。關掉這個視窗後即可下單。',

@@ -15,6 +15,9 @@ export const kyc: Catalog['kyc'] = {
   noticeTitleAwaitingReview: '✅ Application submitted, awaiting review',
   noticeBody:
     "Submitting leaves a pending application on-chain (KYCSubmitted) — approval only happens once a reviewer calls approveKYC. You still can't trade regulated assets before it's approved.",
+  noticeTitleSelfService: 'This deployment is self-service: submitting verifies you immediately',
+  noticeBodySelfService:
+    'The KYCRegistry deployed on this chain is the older demo version: submitting marks you verified on-chain right away (isVerified), with no manual review. The current source uses a review flow (approveKYC after submission); it awaits a redeploy by the owner.',
   noticeTitleVerified: '✅ KYC verified — regulated assets are unlocked',
   noticeBodyVerified:
     'Your KYC is recorded on-chain (isVerified = true). The KYCRegistry currently deployed is the self-service demo version: submitting verifies you immediately, with no manual review. Close this dialog and you can place orders.',

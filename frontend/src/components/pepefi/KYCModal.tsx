@@ -4,7 +4,14 @@ import { t, interpolate } from 'src/locales';
 import { prettyError } from 'src/lib/pepefi/errorMessages';
 import { withRetry } from 'src/lib/pepefi/rpcBatch';
 import { safeRead } from 'src/lib/pepefi/safeRead';
-import { settle, isMissingFunctionError, decideKycSubmitGate, kycOutcomeAfterSubmit } from 'src/lib/pepefi/kycSubmitGate';
+import {
+  settle,
+  isMissingFunctionError,
+  decideKycSubmitGate,
+  kycOutcomeAfterSubmit,
+  kycRegistryModeFromProbe,
+  type KycRegistryMode,
+} from 'src/lib/pepefi/kycSubmitGate';
 import {
   toKycReceipt,
   kycSubmitArgs,
@@ -126,6 +133,8 @@ export default function KYCModal({ isOpen, onClose, onSuccess, kycRegistry, isPe
    * submitKYC 當下就通過）。這時不能再顯示「等待審核」，否則使用者以為還不能交易。
    */
   const [verifiedNow, setVerifiedNow] = useState(false);
+  /** 審核制或自助驗證（線上舊版）——決定送出前的說明文字。讀不到時沿用審核制的保守說法。 */
+  const [registryMode, setRegistryMode] = useState<KycRegistryMode>('unknown');
   /** 這一輪送出的 salt 與雜湊——只在使用者端，送出後顯示給使用者自行保存。 */
   const [receipt,     setReceipt]     = useState<(KycReceipt & { normalizedName: string; normalizedNationality: string }) | null>(null);
   const [receiptSaved, setReceiptSaved] = useState(false);
@@ -207,6 +216,16 @@ export default function KYCModal({ isOpen, onClose, onSuccess, kycRegistry, isPe
     })();
     return () => { cancelled = true; };
   }, [isOpen, kycRegistry, prevTxRun]);
+
+  // 這個 registry 是審核制還是自助驗證：只影響說明文字，不影響任何閘門。
+  useEffect(() => {
+    if (!isOpen || !kycRegistry) return;
+    let cancelled = false;
+    void settle(kycRegistry.isPending('0x0000000000000000000000000000000000000001') as Promise<boolean>).then((probe) => {
+      if (!cancelled) setRegistryMode(kycRegistryModeFromProbe(probe));
+    });
+    return () => { cancelled = true; };
+  }, [isOpen, kycRegistry]);
 
   const prevTxBlocks = prevTx !== 'clear';
 
@@ -327,10 +346,22 @@ export default function KYCModal({ isOpen, onClose, onSuccess, kycRegistry, isPe
         {/* 審核制說明。這是這個 Dialog 最重要的一句話：送出 ≠ 通過。 */}
         <Alert severity={finished ? 'success' : 'info'} variant="outlined">
           <Typography variant="subtitle2" sx={{ fontWeight: 'bold', mb: 0.5 }}>
-            {verifiedNow ? t.kyc.noticeTitleVerified : awaitingReview ? t.kyc.noticeTitleAwaitingReview : t.kyc.noticeTitle}
+            {verifiedNow
+              ? t.kyc.noticeTitleVerified
+              : awaitingReview
+                ? t.kyc.noticeTitleAwaitingReview
+                : registryMode === 'selfService'
+                  ? t.kyc.noticeTitleSelfService
+                  : t.kyc.noticeTitle}
           </Typography>
           <Typography variant="caption" display="block" sx={{ opacity: 0.9 }}>
-            {verifiedNow ? t.kyc.noticeBodyVerified : awaitingReview ? t.kyc.noticeBodyAwaitingReview : t.kyc.noticeBody}
+            {verifiedNow
+              ? t.kyc.noticeBodyVerified
+              : awaitingReview
+                ? t.kyc.noticeBodyAwaitingReview
+                : registryMode === 'selfService'
+                  ? t.kyc.noticeBodySelfService
+                  : t.kyc.noticeBody}
           </Typography>
         </Alert>
 

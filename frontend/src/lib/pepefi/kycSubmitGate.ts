@@ -93,3 +93,18 @@ export type KycAfterSubmit = 'verified' | 'awaitingReview'
 export function kycOutcomeAfterSubmit(isVerifiedNow: boolean | null): KycAfterSubmit {
   return isVerifiedNow === true ? 'verified' : 'awaitingReview'
 }
+
+/**
+ * 這個 KYCRegistry 是哪一種流程，決定送出前的說明文字。
+ *
+ * 探測方式：呼叫 isPending(任意地址)。
+ *  - 讀得到 → 審核制（原始碼現行版）。
+ *  - 確定函式不存在（isMissingFunctionError）→ 自助驗證的舊版（線上 Base Sepolia）。
+ *  - 其他錯誤（逾時、限流）→ unknown：沿用審核制的保守說明，不宣稱「送出即通過」。
+ */
+export type KycRegistryMode = 'review' | 'selfService' | 'unknown'
+
+export function kycRegistryModeFromProbe(probe: Settled<unknown>): KycRegistryMode {
+  if (probe.ok) return 'review'
+  return isMissingFunctionError(probe.error) ? 'selfService' : 'unknown'
+}

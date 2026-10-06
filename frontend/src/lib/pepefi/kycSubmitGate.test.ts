@@ -1,6 +1,6 @@
 import { it, expect, describe } from 'vitest'
 
-import { decideKycSubmitGate, isMissingFunctionError, kycOutcomeAfterSubmit, type KycSubmitGateInput } from './kycSubmitGate'
+import { decideKycSubmitGate, isMissingFunctionError, kycOutcomeAfterSubmit, kycRegistryModeFromProbe, type KycSubmitGateInput } from './kycSubmitGate'
 
 const ok = <T,>(value: T) => ({ ok: true as const, value })
 const fail = (error: unknown) => ({ ok: false as const, error })
@@ -96,5 +96,20 @@ describe('kycOutcomeAfterSubmit', () => {
 
   it('讀不到（null）：不放大成已通過，維持待審核', () => {
     expect(kycOutcomeAfterSubmit(null)).toBe('awaitingReview')
+  })
+})
+
+describe('kycRegistryModeFromProbe', () => {
+  it('isPending 讀得到：審核制', () => {
+    expect(kycRegistryModeFromProbe(ok(false))).toBe('review')
+  })
+
+  it('isPending 不存在（線上舊版）：自助驗證', () => {
+    expect(kycRegistryModeFromProbe(fail(missingFn))).toBe('selfService')
+  })
+
+  it('限流／逾時：unknown，不宣稱送出即通過', () => {
+    expect(kycRegistryModeFromProbe(fail(rateLimited))).toBe('unknown')
+    expect(kycRegistryModeFromProbe(fail(timeout))).toBe('unknown')
   })
 })
