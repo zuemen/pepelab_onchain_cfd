@@ -8,7 +8,7 @@
 
 ## 1. 目前狀態
 
-- **master**：`3d4de28`（#267 合併後）。CI 全綠，Dependabot 警示 0。
+- **master**：#268 合併後（2026-10-06 19:00）。CI 全綠，Dependabot 警示 0。
 - **展示站**：<https://pepelab-onchain-cfd-djot.vercel.app>（Base Sepolia 84532，舊版合約；主鏈設定 `PRIMARY_CHAIN_ID = 84532`）。
 - **鏈上現役合約是舊版**：交易所 `0x827e…` 沒有 guardian、休市停單（asset mode）；owner 是 `0x27C2…A585`，**金鑰不在手上**，所以現役合約的設定改不了。PoC 要用**新金鑰重新部署一整套**（使用者已同意）。
 
@@ -25,21 +25,21 @@
 | #259 #264 #261 #265 #260 | 風險模型＋Besu 計畫 Phase 0–4（`docs/PARAMS_INVENTORY.md`、`risk_model/`、`docs/RISK_MODEL_CFD.md`、`besu/`、`docs/BESU_CALIBRATION.md`、`docs/DESIGN_BESU.md`） |
 | #266 | `docs/RWA_ALIGNMENT.md`：RWA 判準與 PepeLab 評分、補強方案 |
 | #267 | **SSI → RWA 准入**：`VCKycRegistry`（實作 IKyc，鏈上驗 EIP-712 合格投資人證明、信任 epoch、撤銷、不存個資）、發證服務、前端提交憑證、`DeployVCKycRegistry.s.sol`、PoC 腳本 `scripts/poc/rwa-ssi-demo.*`、`docs/SSI_RWA_ACCESS.md` |
+| #268 | RWA 資產卡 `/rwa`、參考價見證看板 `/oracle`、儲備與償付能力頁 `/solvency`、signal-api 免費端點 `/reference-prices`（審查 6 項已修） |
 | #269 | 可用性稽核與修正：公開節點 eth_getLogs 上限降為 500 塊，chainLogs 改 400 塊＋自動對半重試；`docs/USABILITY_AUDIT_2026-10-06.md` |
 
 ### 還開著的 PR
 
 | PR | 分支 | 狀態 | 接手要做的事 |
 |---|---|---|---|
-| #268 | `feat/rwa-transparency` | RWA 資產卡 `/rwa`、參考價見證看板 `/oracle`、儲備與償付能力頁 `/solvency`、signal-api 免費端點 `/reference-prices`。**審查結論：修正後可合併**；修正已交給 agent，可能已推上也可能沒有 | 先 `git merge origin/master`（#269 改了 chainLogs）。核對下列審查項都已修：(1) `referencePrices.ts` 每個來源各自快取（成功 60 秒、失敗短 TTL）、CoinGecko 合併請求、`Cache-Control: s-maxage`；(2) `docs/RWA_TRANSPARENCY.md` §2 第三方條款（只即時轉發、不存歷史、標示來源）＋CORS 限縮前端網域；(3) `solvency.ts` 小數位數讀不到時不要默默用 18；(4) `useRwaTransparency.ts` 失敗時不保留舊資料當現值；(5) adlEnabled 改用 `solvencyFlags.ts`；(6) 被碳分級壓住的卡片加註。沒修的補完，CI 綠就合併 |
 | #270 | `feat/ssi-delegation-kya` | **SSI 委託授權**：AgentDelegationCredential v3（W3C VC 2.0、did:pkh、EIP-712）、新合約 `SessionCredentialAnchor`、x402 KYA（`X402_KYA_MODE`，預設 off；付款前驗 VP＝憑證主體＝付款人、撤銷、鏈上 session、錨定、重放、依憑證累計花費）、前端 `/sessions`、PoC 腳本 `scripts/poc/agent-delegation-demo.sh`、`docs/SSI_AGENT_DELEGATION.md`。CI 15 項綠，**尚未審查** | 先合 master（和 #267 在 `agent/package.json` test 行、`frontend/vitest.pinnedEnv.ts` 有相鄰新增，手動合併）。做一次對抗式審查（合約權限、VP 重放與綁定、花費累計的原子性與退回、x402 v1／v2 兩條路徑、fail-closed、揭露），修正後合併 |
 
 ---
 
 ## 2. 接下來依序做
 
-1. **合併 #268**（見上表）。
-2. **審查並合併 #270**（見上表）。
+1. ~~合併 #268~~（已於 10/6 合併）。
+2. **審查並合併 #270**（見上表）——**從這裡開始**。
 3. **新部署金鑰**：舊電腦的 keystore `pepelab-rwa-deployer`（`0xF52D…49eE`）**不會跟著到新電腦**，而且還沒有入金。在新電腦建立新的加密 keystore：
    `cast wallet new ~/.foundry/keystores pepelab-rwa-deployer --unsafe-password "$(cat <密碼檔>)"`（密碼檔放 repo 外、權限 600）。把地址給使用者，請使用者從 Base Sepolia 水龍頭入金約 0.1 ETH（<https://docs.base.org/base-chain/tools/network-faucets>）。**沒入金前不能部署。**
 4. **部署新的一整套到 Base Sepolia**（master 版，含 guardian、休市 asset mode、GuardedOracle、InsuranceVault virtual shares）：
@@ -100,7 +100,7 @@
 2. 確認工具：gh（已登入 zuemen）、foundry（forge/cast/anvil）、node 20+、yarn、python 3.10+。缺的告訴我，我自己裝。
 3. 讀 docs/RWA_ALIGNMENT.md、docs/SSI_RWA_ACCESS.md、docs/USABILITY_AUDIT_2026-10-06.md、docs/PARAMS_INVENTORY.md。
 
-然後依 docs/HANDOFF_RWA_POC.md 第 2 節的順序做：合併 #268（核對審查項）→ 對抗式審查並合併 #270 → 建新的加密部署 keystore 並把地址告訴我（我去水龍頭入金）→ 入金後部署整套到 Base Sepolia（含 VCKycRegistry、SessionCredentialAnchor、guardian、休市模式、碳分級）→ keeper 推價 → 前端接新部署（不弄壞現有展示站）→ 本機 signal-api 開 x402 KYA → 寫 docs/POC_SCRIPT.md 錄影劇本並實際照劇本在 Base Sepolia 跑一遍、記錄每步交易 hash → 文件收尾。
+然後依 docs/HANDOFF_RWA_POC.md 第 2 節的順序做：對抗式審查並合併 #270（#268 已合併） → 建新的加密部署 keystore 並把地址告訴我（我去水龍頭入金）→ 入金後部署整套到 Base Sepolia（含 VCKycRegistry、SessionCredentialAnchor、guardian、休市模式、碳分級）→ keeper 推價 → 前端接新部署（不弄壞現有展示站）→ 本機 signal-api 開 x402 KYA → 寫 docs/POC_SCRIPT.md 錄影劇本並實際照劇本在 Base Sepolia 跑一遍、記錄每步交易 hash → 文件收尾。
 
 規則：繁體中文；每個 PR 都要經過另一個 agent 的對抗式審查、修正、CI 全綠才合併；需要我本人（入金、GitHub／Vercel／Cloudflare 設定、舊金鑰）的事情集中列給我，其餘不要停下來問。每完成一個階段就更新 docs/HANDOFF_RWA_POC.md 的狀態並推上 GitHub。
 ```
