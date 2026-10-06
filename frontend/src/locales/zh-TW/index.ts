@@ -25,6 +25,7 @@ import { exchange } from './exchange';
 import { terminal } from './terminal';
 import { portfolio } from './portfolio';
 import { freshness } from './freshness';
+import { investorVc } from './investorVc';
 import { marketplace } from './marketplace';
 import { traderProfile } from './traderProfile';
 import { pepeStageSkins } from './pepeStageSkins';
@@ -71,6 +72,7 @@ const zhTW = {
   traderDashboard,
   legacy,
   rwa,
+  investorVc,
 };
 
 export type Catalog = typeof zhTW;

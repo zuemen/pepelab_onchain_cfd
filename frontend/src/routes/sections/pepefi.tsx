@@ -42,6 +42,7 @@ const PepeLabPage       = lazy(() => import('src/pages/pepefi/PepeLabPage'));
 const RwaPage           = lazy(() => import('src/pages/pepefi/RwaPage'));
 const OraclePage        = lazy(() => import('src/pages/pepefi/OraclePage'));
 const SolvencyPage      = lazy(() => import('src/pages/pepefi/SolvencyPage'));
+const InvestorCredentialPage = lazy(() => import('src/pages/pepefi/InvestorCredentialPage'));
 
 // ----------------------------------------------------------------------
 
@@ -110,6 +111,8 @@ export const pepefiRoutes: RouteObject[] = [
           { path: 'admin/oracle', element: <AdminOraclePage /> },
           { path: 'admin/treasury', element: <AdminTreasuryPage /> },
           { path: 'admin/kyc', element: <AdminKYCPage /> },
+          // 合格投資人 VC → RWA 市場資格（docs/SSI_RWA_ACCESS.md）。registry 未設定時頁面自己降級。
+          { path: 'credentials', element: <InvestorCredentialPage /> },
           {
             path: 'rewards',
             element: <FeatureGate enabled={FEATURES.pepeRewards}><RewardsPage /></FeatureGate>,
