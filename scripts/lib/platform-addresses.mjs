@@ -45,7 +45,13 @@ export const RETIRED_FILE = "frontend/src/contracts/retiredPlatformAddresses.jso
  * 另外：帶 `KEEPER_TENANT:` 的租戶 workflow 不算平台的（isTenantScopedWorkflow）。
  */
 export const UNIVERSE_EXCLUDES = [
-  { re: /^deploy\/tenants\//, why: "租戶自己的部署設定、範本與部署紀錄（租戶之間另由 checkCrossTenant 比對）" },
+  {
+    re: /^(deploy\/tenants|docs\/tenants|contracts\/broadcast\/tenants)\//,
+    why:
+      "租戶自己的設定、紀錄、廣播紀錄與文件（deploy/tenants、docs/tenants、contracts/broadcast/tenants；" +
+      "租戶之間另由 checkCrossTenant 比對）。租戶廣播一律以 FOUNDRY_BROADCAST=broadcast/tenants/<id> 寫到這裡，" +
+      "否則部署者與整組合約會被當成平台位址",
+  },
   {
     re: /^frontend\/src\/contracts\/deployments\/(?!default\.json$)/,
     why: "租戶自己的前端部署登記（default.json 是平台的，仍納入）",

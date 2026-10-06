@@ -183,8 +183,9 @@ TENANT=<id> forge script script/DeployTenant.s.sol:DeployTenant \
 - 這種演練寫出的紀錄 `mode` 也是 `broadcast`、`chainId` 也是 84532，從檔案本身看不出它是假的。
   分辨的方法是對**真正的鏈**跑 `VerifyTenant`：本機演練的位址在鏈上沒有 code，會以
   `a recorded contract has no code on this chain` 失敗。**永遠不要跳過 §4 的 VerifyTenant。**
-- forge 會在 `contracts/broadcast/DeployTenant.s.sol/84532/` 留下 `run-*.json`。那個目錄是進版控的，
-  演練完要刪掉，不要 commit。
+- 演練一樣加 `FOUNDRY_BROADCAST=broadcast/tenants/<id>`（§4）。forge 會在 `contracts/broadcast/tenants/<id>/DeployTenant.s.sol/<chainId>/`
+  留下 `run-*.json`：chainId 31337 的被 `contracts/.gitignore` 忽略；fork 演練寫成 84532 的**要刪掉，不要 commit**。
+  沒加這個變數時寫到預設的 `contracts/broadcast/DeployTenant.s.sol/`，同樣要刪掉。
 
 ## 4. 廣播（擁有者本人執行）
 
@@ -192,9 +193,21 @@ TENANT=<id> forge script script/DeployTenant.s.sol:DeployTenant \
 
 ```bash
 cd contracts
-TENANT=<id> forge script script/DeployTenant.s.sol:DeployTenant \
-  --rpc-url "$BASE_SEPOLIA_RPC_URL" --private-key "$<部署者金鑰的環境變數>" --broadcast --slow -vv
+TENANT=<id> FOUNDRY_BROADCAST=broadcast/tenants/<id> forge script script/DeployTenant.s.sol:DeployTenant \
+  --rpc-url "$BASE_SEPOLIA_RPC_URL" \
+  --account <keystore 名稱> --password-file ~/.foundry/<keystore 名稱>.password --sender 0x<部署者位址> \
+  --broadcast --slow -vv
+# 測試網以 EOA 當 admin 時再加 ALLOW_EOA_ADMIN=true（主網不放行）
 ```
+
+- 金鑰一律用 Foundry 的**加密 keystore**（`cast wallet import`／`cast wallet new` 建立，放在 `~/.foundry/keystores/`），
+  以 `--account`＋`--password-file` 使用；不要用 `--private-key`，私鑰不該出現在指令列、shell 歷史或環境變數。
+- **一定要設 `FOUNDRY_BROADCAST=broadcast/tenants/<id>`**（Foundry 以環境變數覆寫 `foundry.toml` 的 `broadcast` 目錄；
+  `forge config --json | jq .broadcast` 可確認）。廣播紀錄裡有部署者、每一顆合約與每個角色的位址（含補零成 32 位元組的
+  log topic）。`scripts/lib/platform-addresses.mjs` 把**每一個被追蹤的檔案**裡的位址都算成平台位址，只排除
+  `deploy/tenants/`、`docs/tenants/`、`contracts/broadcast/tenants/` 這幾個租戶目錄；寫到預設的
+  `contracts/broadcast/DeployTenant.s.sol/` 再 commit，整個租戶就會變成「平台位址」，`check-tenant-deploy.mjs` 與
+  `check-addresses.mjs` 從此紅燈。同理，租戶的完整位址只寫在 `docs/tenants/<id>/`，其他文件寫縮寫。
 
 - 一定要加 `--slow`：後面的交易依賴前面剛部署的合約，公共 RPC 一次收到整批容易丟交易。
 - **保險金庫種子**：第 3 步建出租戶的 InsuranceVault 後，立刻從部署者存入 1 顆完整結算代幣，份額轉給 `roles.treasury`，
@@ -319,7 +332,8 @@ TENANT=<id> TENANT_RECORD=cache/tenants/<id>.deployed.json TENANT_PRIVILEGE_SCAN
    擁有者的待辦，也是第一個專屬租戶上線的前置條件（`TENANT_OPERATIONS.md` §1.6 第 0 步）。
    專屬租戶的 build **必須**設 `VITE_SIGNAL_API_URL`，而且不能是平台的 signal-api（沒設就 build 失敗，
    不會悄悄退回平台的；`TENANT_OPERATIONS.md` §2）。
-4. `contracts/broadcast/DeployTenant.s.sol/<chainId>/run-*.json` 是這次部署的機器可讀紀錄，照慣例進版控。
+4. `contracts/broadcast/tenants/<id>/DeployTenant.s.sol/<chainId>/run-*.json`（§4 的 `FOUNDRY_BROADCAST`）是這次部署的機器可讀紀錄，照慣例進版控；
+   `dry-run/` 子目錄不收。**不要**把租戶的廣播 commit 到 `contracts/broadcast/DeployTenant.s.sol/`（理由見 §4）。
 5. 接著做營運面：keeper 的 environment 與 workflow、signal-api、SDK——[`TENANT_OPERATIONS.md`](TENANT_OPERATIONS.md)。
    **keeper 第一次寫價成功之前不要對外開放前端。**
 6. 租戶 admin 之後要做的事（都經過 multisig，不在部署腳本裡）：

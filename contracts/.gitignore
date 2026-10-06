@@ -14,6 +14,8 @@ out/
 #
 # 本機 anvil（chainId 31337）—— 每次重啟即作廢，無保存價值。
 /broadcast/*/31337/
+# 租戶的廣播（FOUNDRY_BROADCAST=broadcast/tenants/<id>）多一層目錄，本機 anvil 的照樣不收。
+/broadcast/tenants/*/*/31337/
 # dry-run —— 沒有真的上鏈，位址是模擬出來的，收進版控只會誤導。
 /broadcast/**/dry-run/
 
