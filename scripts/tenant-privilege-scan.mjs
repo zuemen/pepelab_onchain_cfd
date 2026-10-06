@@ -9,6 +9,8 @@
 // 做法：起一條本機 anvil（chainId 31337，broadcast 產物已被 contracts/.gitignore 排除），
 // 用 anvil 的公開測試帳號真的廣播 DeployTenant，再對同一條鏈跑 VerifyTenant：
 //   1. 乾淨的租戶：掃描必須成功，而且真的分了段（eth_getLogs 次數 > 來源合約數）；
+//      設定用 schema v4 的 params.kycRegistry="vc"（VCKycRegistry）＋assets.additionalRwa=["sGOLD"]，
+//      所以 KYC 這一路掃的是 IssuerSet 事件；admin 再指派一個發證者，驗證必須通過、只印 NOTE；
 //   2. admin 把 GuardedOracle 的 KEEPER_ROLE 給一個不在任何已知名單上的位址——
 //      a. 不讀歷史（MAX_BLOCKS=1、不要求）：驗證照樣通過，只印 NOTE —— 證明只有掃描看得到它；
 //      b. 讀歷史：驗證必須以 "unexpected KEEPER_ROLE" 失敗；
@@ -225,7 +227,7 @@ try {
   cast("send", usdc, "mint(address,uint256)", DEPLOYER, "1000000000000000000", "--private-key", DEPLOYER_KEY);
 
   writeFileSync(CONFIG, JSON.stringify({
-    schemaVersion: 3,
+    schemaVersion: 4,
     tenantId: TENANT,
     status: "ready",
     frontendTenant: TENANT,
@@ -237,8 +239,9 @@ try {
       oiCapNonRwaUsdc: 1000, oiCapRwaUsdc: 500, maxProfitBps: 50000, maxLeverage: 5,
       liquidationPenaltyBps: 2000, markPremiumCapBps: 0, vaultFeeShareBps: 0,
       deployVault: true, vaultRedeemFeeBps: 30, vaultMinReserveRatioBps: 11000,
+      kycRegistry: "vc",
     },
-    assets: { registered: ASSETS },
+    assets: { registered: ASSETS, additionalRwa: ["sGOLD"] },
   }, null, 2));
 
   run("forge", ["script", "script/DeployTenant.s.sol:DeployTenant", "--rpc-url", RPC,
@@ -258,6 +261,14 @@ try {
     throw new Error(`掃描數字不對：blocks=${blocks} calls=${calls} grants=${grants}（預期分段 ${CHUNK}、來源 ${sources} 個）`);
   }
   console.log(`✓ clean tenant: ${blocks} blocks in ${Math.ceil(blocks / CHUNK)} chunks, ${calls} eth_getLogs calls, ${grants} grant events`);
+
+  // ── 1b. admin 指派 VC 發證者：上線後的營運任命，掃描讀到 IssuerSet，只印 NOTE ──────
+  const issuerRecord = JSON.parse(readFileSync(RECORD, "utf8"));
+  cast("send", issuerRecord.contracts.KYCRegistry, "setIssuer(address,bytes32,bool)", STRANGER,
+    keccak("QUALIFIED_INVESTOR"), "true", "--private-key", ADMIN_KEY);
+  const appointed = verify({ TENANT_LOG_CHUNK_BLOCKS: String(CHUNK), TENANT_PRIVILEGE_SCAN_REQUIRED: "true" });
+  assertIncludes(appointed, "NOTE trusted credential issuer", "an issuer the admin appointed is reported, not failed");
+  console.log("✓ VC issuer appointment read from IssuerSet events (NOTE)");
 
   // ── 2. 鏈上多一個陌生的 KEEPER ────────────────────────────────────────────
   const record = JSON.parse(readFileSync(RECORD, "utf8"));

@@ -71,7 +71,7 @@ const SECRET_KEY_NAME = /private|mnemonic|secret|seed|password|api_?key|auth_?to
 export const STATUSES = ["template", "ready", "deployed"];
 export const ROLE_KEYS = ["admin", "risk", "guardian", "keeper", "marketOperator", "treasury"];
 export const SECRET_ENV_KEYS = ["deployerPrivateKey", "keeperPrivateKey", "rpcUrl"];
-export const SCHEMA_VERSION = 3;
+export const SCHEMA_VERSION = 4;
 export const SHARED_KEYS = ["settlementToken", "priceSource", "referenceSource"];
 /**
  * shared.* 是與平台共用的元件，所以**只能**指向平台在該鏈的這些角色（白名單，不是黑名單）：
@@ -103,8 +103,25 @@ export const PARAM_KEYS = [
   "deployVault",
   "vaultRedeemFeeBps",
   "vaultMinReserveRatioBps",
+  "kycRegistry",
 ];
 export const ORACLE_KINDS = ["guarded", "mock"];
+/**
+ * params.kycRegistry（v4）：exchange 的 KYC 閘門是哪一種登錄。
+ *   allowlist  KYCRegistry——verifier 逐一核准地址（平台現況）；
+ *   vc         VCKycRegistry——投資人提交受信任發證者簽的合格投資人憑證（docs/SSI_RWA_ACCESS.md）。
+ * 兩者都由 DeployTenant 在部署當下建好、接上 exchange，所有權從一開始就是 roles.admin；
+ * 在 admin 指派 verifier／發證者之前，所有 RWA 市場對所有人關閉。
+ */
+export const KYC_REGISTRY_KINDS = ["allowlist", "vc"];
+/**
+ * 內建的 RWA 分類（要 KYC 的資產）。資產本身的性質，不是租戶設定——租戶不能把 sAAPL 標成非 RWA
+ * 來關掉 KYC。與 contracts/script/VerifyTenant.s.sol 的 `_isRwa` 相同（測試讀那個檔案比對），
+ * 後者又與平台的 Cutover130Base._isRwa 由 forge 測試釘住。
+ * 租戶只能用 assets.additionalRwa「追加」（例如把 sGOLD 也納入 KYC），不能取消。
+ */
+export const BUILTIN_RWA_ASSETS = ["sAAPL", "sTSLA", "sNVDA", "sMSFT", "sGOOGL", "sICLN", "sESGU", "sBOND"];
+const ASSET_KEYS = ["registered", "additionalRwa"];
 /**
  * 數值參數的範圍（含兩端）。與 contracts/script/VerifyTenant.s.sol（TenantBase）的常數相同，
  * check-tenant-deploy.test.mjs 讀那個檔案逐一比對。
@@ -251,7 +268,10 @@ export function checkTenantDeploy({ file, cfg, ctx }) {
 
   for (const k of Object.keys(cfg)) if (!TOP_KEYS.includes(k)) bad(`未知欄位 ${k}（打錯字？）`);
   if (cfg.schemaVersion !== SCHEMA_VERSION) {
-    bad(`schemaVersion 必須是 ${SCHEMA_VERSION}（v3：oracle 限速、exchange／金庫風控參數、shared.referenceSource）`);
+    bad(
+      `schemaVersion 必須是 ${SCHEMA_VERSION}（v3：oracle 限速、exchange／金庫風控參數、shared.referenceSource；` +
+        "v4：params.kycRegistry、assets.additionalRwa）",
+    );
   }
 
   // ── 秘密不得進設定檔 ──
@@ -386,6 +406,9 @@ export function checkTenantDeploy({ file, cfg, ctx }) {
   for (const k of Object.keys(prm)) if (!PARAM_KEYS.includes(k)) bad(`params 未知欄位 ${k}`);
   if (!ORACLE_KINDS.includes(prm.oracleKind)) bad(`params.oracleKind 必須是 ${ORACLE_KINDS.join(" / ")}`);
   if (typeof prm.deployVault !== "boolean") bad("params.deployVault 必須是 true 或 false");
+  if (!KYC_REGISTRY_KINDS.includes(prm.kycRegistry)) {
+    bad(`params.kycRegistry 必須是 ${KYC_REGISTRY_KINDS.join(" / ")}（沒有預設值）`);
+  }
   if (prm.oracleKind === "mock") {
     // MockOracle 沒有偏離上限，一把金鑰可以寫任意價格。
     if (cfg.network?.chainId === 8453) bad("params.oracleKind=mock 不得用於 Base 主網（8453）");
@@ -439,6 +462,18 @@ export function checkTenantDeploy({ file, cfg, ctx }) {
       if (missing.length) {
         bad(`前端租戶「${cfg.frontendTenant}」白名單開了金庫沒註冊的資產：${missing.join(", ")}`);
       }
+    }
+  }
+  for (const k of Object.keys(cfg.assets ?? {})) if (!ASSET_KEYS.includes(k)) bad(`assets 未知欄位 ${k}`);
+  // 追加的 RWA（v4）：只能加、不能減；必須是已註冊的資產。
+  const extra = cfg.assets?.additionalRwa;
+  if (!Array.isArray(extra)) {
+    bad("assets.additionalRwa 必須是陣列（沒有追加就寫 []）");
+  } else {
+    if (new Set(extra).size !== extra.length) bad("assets.additionalRwa 有重複");
+    for (const s of extra) {
+      if (BUILTIN_RWA_ASSETS.includes(s)) bad(`assets.additionalRwa：${s} 本來就是 RWA（內建分類），清單只能追加`);
+      else if (!Array.isArray(reg) || !reg.includes(s)) bad(`assets.additionalRwa：${s} 不在 assets.registered 裡`);
     }
   }
 
@@ -643,7 +678,15 @@ export function envPlan(cfg) {
     `# maxLeverage=${p.maxLeverage}  liquidationPenaltyBps=${p.liquidationPenaltyBps}  markPremiumCapBps=${p.markPremiumCapBps}  vaultFeeShareBps=${p.vaultFeeShareBps}`,
     `# 金庫：redeemFeeBps=${p.vaultRedeemFeeBps}  minReserveRatioBps=${p.vaultMinReserveRatioBps}`,
     `# assets.registered=${(cfg.assets?.registered ?? []).join(",")}`,
+    `# KYC 登錄=${p.kycRegistry === "vc" ? "VCKycRegistry（可驗證憑證）" : "KYCRegistry（白名單）"}`,
+    `# RWA（要 KYC）=${rwaAssetsOf(cfg).join(",")}（內建分類＋assets.additionalRwa）`,
   ].join("\n");
+}
+
+/** 這份設定的 exchange 會標成 RWA 的資產：內建分類＋assets.additionalRwa（DeployTenant 的 `_isRwaFor`）。 */
+export function rwaAssetsOf(cfg) {
+  const extra = Array.isArray(cfg.assets?.additionalRwa) ? cfg.assets.additionalRwa : [];
+  return (cfg.assets?.registered ?? []).filter((s) => BUILTIN_RWA_ASSETS.includes(s) || extra.includes(s));
 }
 
 // ── main ────────────────────────────────────────────────────────────────

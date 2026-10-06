@@ -15,6 +15,7 @@ import "../src/FeeRouter.sol";
 import "../src/InsuranceVault.sol";
 import "../src/InsuranceSeeder.sol";
 import "../src/KYCRegistry.sol";
+import "../src/VCKycRegistry.sol";
 
 interface ITenantVault {
     function usdc() external view returns (address);
@@ -76,7 +77,7 @@ abstract contract TenantBase is Script {
     ///      simulated address set can never be committed by accident.
     string internal constant OUT_DIR = "cache/tenants/";
 
-    uint256 internal constant SCHEMA_VERSION = 3;
+    uint256 internal constant SCHEMA_VERSION = 4;
 
     // ── launch parameters that are not per-tenant (not addresses) ─────────────
     // Same values the live platform runs (docs/DEPLOY_130_CUTOVER.md sec.3.2).
@@ -187,11 +188,18 @@ abstract contract TenantBase is Script {
     bytes32 internal constant ROLE_GRANTED_TOPIC = keccak256("RoleGranted(bytes32,address,address)");
     bytes32 internal constant AGENT_SET_TOPIC    = keccak256("AgentAuthorizationSet(address,bool)");
     bytes32 internal constant VERIFIER_SET_TOPIC = keccak256("VerifierSet(address,bool)");
+    bytes32 internal constant ISSUER_SET_TOPIC   = keccak256("IssuerSet(address,bytes32,bool,uint64)");
     /// @dev Pseudo-roles for the two privilege lists that are mappings, not
     ///      AccessControl roles: the exchange's authorised agents and the KYC
     ///      registry's verifiers.
     bytes32 internal constant EXCHANGE_AGENT = keccak256("tenant-verify: PerpetualExchange.authorizedAgents");
     bytes32 internal constant KYC_VERIFIER   = keccak256("tenant-verify: KYCRegistry.verifiers");
+    /// @dev `params.kycRegistry: "vc"`: VCKycRegistry's trusted credential
+    ///      issuers (`issuerTypeCount > 0`). Like a KYC verifier, an
+    ///      appointment the admin makes after launch.
+    bytes32 internal constant VC_ISSUER      = keccak256("tenant-verify: VCKycRegistry.trustedIssuer");
+    /// @dev The credential type a VC-gated tenant's `isVerified` requires.
+    bytes32 internal constant QUALIFIED_INVESTOR = keccak256("QUALIFIED_INVESTOR");
 
     bytes32 internal constant ADMIN_ROLE    = 0x00;
     bytes32 internal constant KEEPER_ROLE   = keccak256("KEEPER_ROLE");
@@ -229,6 +237,14 @@ abstract contract TenantBase is Script {
         uint256  vaultRedeemFeeBps;        // deployVault only
         uint256  vaultMinReserveRatioBps;  // deployVault only
         string[] assets;          // assets.registered
+        /// @dev params.kycRegistry: "allowlist" (false) = KYCRegistry, verifiers
+        ///      flip a flag; "vc" (true) = VCKycRegistry, an investor submits a
+        ///      credential a trusted issuer signed (docs/SSI_RWA_ACCESS.md).
+        bool     vcKyc;
+        /// @dev assets.additionalRwa: registered assets the tenant gates as RWA
+        ///      on top of the built-in eight (`_isRwa`). Only adds: a built-in
+        ///      RWA asset can never be listed, so none can be switched off.
+        string[] additionalRwa;
     }
 
     struct TenantDeployed {
@@ -313,7 +329,7 @@ abstract contract TenantBase is Script {
     ///      mock oracle, the vault parameters without a vault) must be written
     ///      as `null`, so a reader never sees a number that is not on chain.
     function _parseConfig(string memory json, string memory expectedId) internal view returns (TenantConfig memory c) {
-        require(vm.parseJsonUint(json, ".schemaVersion") == SCHEMA_VERSION, "tenant config: schemaVersion must be 3");
+        require(vm.parseJsonUint(json, ".schemaVersion") == SCHEMA_VERSION, "tenant config: schemaVersion must be 4");
         c.tenantId = vm.parseJsonString(json, ".tenantId");
         require(keccak256(bytes(c.tenantId)) == keccak256(bytes(expectedId)), "tenant config: tenantId != TENANT");
         c.status  = vm.parseJsonString(json, ".status");
@@ -380,6 +396,25 @@ abstract contract TenantBase is Script {
                 "tenant config: params.vaultRedeemFeeBps / vaultMinReserveRatioBps must be null when params.deployVault is false");
         }
         c.assets = vm.parseJsonStringArray(json, ".assets.registered");
+
+        _requireKey(json, ".params.kycRegistry");
+        bytes32 kyc = keccak256(bytes(vm.parseJsonString(json, ".params.kycRegistry")));
+        if (kyc == keccak256("vc")) c.vcKyc = true;
+        else if (kyc != keccak256("allowlist")) revert("tenant config: params.kycRegistry must be 'allowlist' or 'vc'");
+        _requireKey(json, ".assets.additionalRwa");
+        c.additionalRwa = _stringArray(json, ".assets.additionalRwa");
+    }
+
+    /// @dev `parseJsonStringArray` may refuse `[]` (an empty array has no
+    ///      element type), and an empty list is the common case.
+    function _stringArray(string memory json, string memory key) internal view returns (string[] memory out) {
+        try vm.parseJsonStringArray(json, key) returns (string[] memory a) {
+            return a;
+        } catch {
+            bytes memory raw = vm.parseJson(json, key);
+            require(raw.length == 0 || keccak256(raw) == keccak256(abi.encode(new string[](0))),
+                string.concat("tenant config: ", key, " must be an array of asset symbols"));
+        }
     }
 
     /// @notice The checks that need no chain: role separation, caps, assets.
@@ -465,6 +500,25 @@ abstract contract TenantBase is Script {
                 require(keccak256(bytes(c.assets[i])) != keccak256(bytes(c.assets[j])), "assets.registered: duplicate symbol");
             }
         }
+        for (uint256 i = 0; i < c.additionalRwa.length; i++) {
+            string memory sym = c.additionalRwa[i];
+            require(_inList(c.assets, sym), string.concat("assets.additionalRwa: ", sym, " is not in assets.registered"));
+            require(!_isRwa(sym), string.concat("assets.additionalRwa: ", sym, " is already RWA (built in) - the list only adds"));
+            for (uint256 j = i + 1; j < c.additionalRwa.length; j++) {
+                require(keccak256(bytes(sym)) != keccak256(bytes(c.additionalRwa[j])), "assets.additionalRwa: duplicate symbol");
+            }
+        }
+    }
+
+    function _inList(string[] memory list, string memory sym) internal pure returns (bool) {
+        for (uint256 i = 0; i < list.length; i++) if (keccak256(bytes(list[i])) == keccak256(bytes(sym))) return true;
+        return false;
+    }
+
+    /// @dev What the tenant's exchange gates: the built-in eight plus the
+    ///      config's `assets.additionalRwa`. Never fewer than `_isRwa`.
+    function _isRwaFor(TenantConfig memory c, string memory sym) internal pure returns (bool) {
+        return _isRwa(sym) || _inList(c.additionalRwa, sym);
     }
 
     /// @notice The config checks that depend on the chain the run is on.
@@ -751,7 +805,7 @@ abstract contract TenantBase is Script {
 
     function _verifyAssetRisk(PerpetualExchange ex, TenantConfig memory c, string memory sym) internal view {
         bytes32 id = _assetId(sym);
-        bool rwa = _isRwa(sym);
+        bool rwa = _isRwaFor(c, sym);
         if (ex.rwaAsset(id) != rwa) revert(string.concat("verify tenant failed: rwaAsset flag ", sym));
         uint256 cap = rwa ? c.oiCapRwa : c.oiCapNonRwa;
         if (ex.maxLongOI(id) != cap || ex.maxShortOI(id) != cap) {
@@ -816,11 +870,27 @@ abstract contract TenantBase is Script {
         _eq("feeRouter.copyTracker", fr.copyTracker(), d.copyTracker);
         _eq("feeRouter.owner", fr.owner(), owner);
 
-        console.log("--- KYCRegistry / ESGRegistryV2 ---");
+        console.log(c.vcKyc ? "--- VCKycRegistry / ESGRegistryV2 ---" : "--- KYCRegistry / ESGRegistryV2 ---");
         _eq("kyc.owner", Ownable(d.kyc).owner(), owner);
+        if (c.vcKyc) _verifyVcKyc(d);
         _check(_has(d.esgRegistry, ADMIN_ROLE, owner), "ESGRegistryV2 admin is the tenant owner");
         _eqUint("esgRegistry.maxAttestationAge (contract default)",
             ITenantEsgRegistry(d.esgRegistry).maxAttestationAge(), ESG_MAX_ATTESTATION_AGE);
+    }
+
+    /// @dev The VC registry's own settings. The EIP-712 immutables are masked
+    ///      by the code check; the domain separator proves them (an investor's
+    ///      credential only verifies against this name, version, chain, address).
+    function _verifyVcKyc(TenantDeployed memory d) internal view {
+        VCKycRegistry v = VCKycRegistry(d.kyc);
+        // Ownable2Step: a transfer the admin has started but not finished is
+        // not the configured state.
+        _eq("vcKyc.pendingOwner", v.pendingOwner(), address(0));
+        _check(v.requiredType() == QUALIFIED_INVESTOR, "vcKyc.requiredType == QUALIFIED_INVESTOR");
+        bytes32 want = keccak256(abi.encode(
+            keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)"),
+            keccak256("PepeLabVCKycRegistry"), keccak256("1"), block.chainid, d.kyc));
+        _check(v.domainSeparator() == want, "vcKyc.domainSeparator == EIP-712(PepeLabVCKycRegistry, 1, this chain, this address)");
     }
 
     function _verifyOracle(TenantConfig memory c, TenantDeployed memory d, address owner) internal view {
@@ -1013,7 +1083,8 @@ abstract contract TenantBase is Script {
         if (c.guardedOracle) (files[0], names[0]) = ("GuardedOracle.sol", "GuardedOracle");
         else (files[0], names[0]) = ("MockOracle.sol", "MockOracle");
         (files[1], names[1]) = ("ESGRegistryV2.sol", "ESGRegistryV2");
-        (files[2], names[2]) = ("KYCRegistry.sol", "KYCRegistry");
+        if (c.vcKyc) (files[2], names[2]) = ("VCKycRegistry.sol", "VCKycRegistry");
+        else (files[2], names[2]) = ("KYCRegistry.sol", "KYCRegistry");
         (files[3], names[3]) = ("InsuranceVault.sol", "InsuranceVault");
         (files[4], names[4]) = ("FeeRouter.sol", "FeeRouter");
         (files[5], names[5]) = ("TraderStake.sol", "TraderStake");
@@ -1211,7 +1282,7 @@ abstract contract TenantBase is Script {
         targets = new address[](n);
         topics = new bytes32[](n);
         (targets[0], topics[0]) = (d.exchange, AGENT_SET_TOPIC);
-        (targets[1], topics[1]) = (d.kyc, VERIFIER_SET_TOPIC);
+        (targets[1], topics[1]) = (d.kyc, c.vcKyc ? ISSUER_SET_TOPIC : VERIFIER_SET_TOPIC);
         (targets[2], topics[2]) = (d.esgRegistry, ROLE_GRANTED_TOPIC);
         uint256 k = 3;
         if (c.guardedOracle) {
@@ -1238,6 +1309,11 @@ abstract contract TenantBase is Script {
         }
         if (topics.length == 2 && topics[0] == VERIFIER_SET_TOPIC) {
             return (true, PrivilegeGrant(emitter, KYC_VERIFIER, address(uint160(uint256(topics[1])))));
+        }
+        // IssuerSet(issuer indexed, credentialType indexed, trusted, epoch): a
+        // removal is an event too; `_checkHolder` reads the current state.
+        if (topics.length == 3 && topics[0] == ISSUER_SET_TOPIC) {
+            return (true, PrivilegeGrant(emitter, VC_ISSUER, address(uint160(uint256(topics[1])))));
         }
     }
 
@@ -1275,12 +1351,14 @@ abstract contract TenantBase is Script {
         if (role == ATTESTOR_ROLE) return "ATTESTOR_ROLE holder";
         if (role == EXCHANGE_AGENT) return "authorised agent";
         if (role == KYC_VERIFIER) return "KYC verifier";
+        if (role == VC_ISSUER) return "trusted credential issuer";
         return string.concat("holder of role ", vm.toString(role));
     }
 
     /// @dev 0 = must not hold it, 1 = must hold it, 2 = may hold it (an
     ///      appointment the tenant admin makes after launch — ESG attestors and
-    ///      KYC verifiers; reported, but never the deployer or a contract).
+    ///      KYC verifiers / VC issuers; reported, but never the deployer or a
+    ///      contract).
     ///      Anything not listed — another role, another holder — is 0.
     function _expectedHolder(
         TenantConfig memory c,
@@ -1293,8 +1371,8 @@ abstract contract TenantBase is Script {
     ) internal pure returns (uint8) {
         if (t == d.exchange) return role == EXCHANGE_AGENT && (a == d.sessionManager || a == d.copyTracker) ? 1 : 0;
         bool appointable = a != d.deployer && !_isIn(all, a);
-        if (t == d.kyc) return role == KYC_VERIFIER && appointable ? 2 : 0;
-        if (role == EXCHANGE_AGENT || role == KYC_VERIFIER) return 0;
+        if (t == d.kyc) return role == (c.vcKyc ? VC_ISSUER : KYC_VERIFIER) && appointable ? 2 : 0;
+        if (role == EXCHANGE_AGENT || role == KYC_VERIFIER || role == VC_ISSUER) return 0;
         if (t == d.esgRegistry) {
             if (role == ADMIN_ROLE) return a == owner ? 1 : 0;
             if (role == ATTESTOR_ROLE) return appointable ? 2 : 0;
@@ -1318,10 +1396,13 @@ abstract contract TenantBase is Script {
         return 0;
     }
 
-    function _holds(TenantDeployed memory d, address t, bytes32 role, address a) internal view returns (bool) {
+    function _holds(TenantConfig memory c, TenantDeployed memory d, address t, bytes32 role, address a) internal view returns (bool) {
         if (t == d.exchange) return role == EXCHANGE_AGENT && PerpetualExchange(t).authorizedAgents(a);
-        if (t == d.kyc) return role == KYC_VERIFIER && KYCRegistry(t).verifiers(a);
-        if (role == EXCHANGE_AGENT || role == KYC_VERIFIER) return false;
+        if (t == d.kyc) {
+            if (c.vcKyc) return role == VC_ISSUER && VCKycRegistry(t).issuerTypeCount(a) > 0;
+            return role == KYC_VERIFIER && KYCRegistry(t).verifiers(a);
+        }
+        if (role == EXCHANGE_AGENT || role == KYC_VERIFIER || role == VC_ISSUER) return false;
         return IAccessControl(t).hasRole(role, a);
     }
 
@@ -1341,7 +1422,7 @@ abstract contract TenantBase is Script {
         address a
     ) internal view {
         if (a == address(0)) return;
-        bool held = _holds(d, t, role, a);
+        bool held = _holds(c, d, t, role, a);
         uint8 want = _expectedHolder(c, d, sv.all, owner, t, role, a);
         if (held && want == 0) {
             console.log("unexpected holder", a, "on", t);
@@ -1355,7 +1436,7 @@ abstract contract TenantBase is Script {
     }
 
     /// @notice On every contract with a privilege list (AccessControl roles,
-    ///         the exchange's authorised agents, the KYC verifiers) the holders
+    ///         the exchange's authorised agents, the KYC verifiers / VC issuers) the holders
     ///         are exactly the expected ones. AccessControl cannot list its
     ///         members, so two passes:
     ///           1. every known address (`_knownAddresses`) x every role this
@@ -1370,8 +1451,8 @@ abstract contract TenantBase is Script {
         address[] memory known = _knownAddresses(c, d, owner);
         SetView memory sv;
         (sv.names, sv.all) = _tenantContracts(c, d);
-        bytes32[9] memory roles = [ADMIN_ROLE, KEEPER_ROLE, GUARDIAN_ROLE, RISK_ROLE, PAUSER_ROLE, MINTER_ROLE,
-            ATTESTOR_ROLE, EXCHANGE_AGENT, KYC_VERIFIER];
+        bytes32[10] memory roles = [ADMIN_ROLE, KEEPER_ROLE, GUARDIAN_ROLE, RISK_ROLE, PAUSER_ROLE, MINTER_ROLE,
+            ATTESTOR_ROLE, EXCHANGE_AGENT, KYC_VERIFIER, VC_ISSUER];
         for (uint256 t = 0; t < targets.length; t++) {
             for (uint256 r = 0; r < roles.length; r++) {
                 for (uint256 a = 0; a < known.length; a++) _checkHolder(c, d, sv, owner, targets[t], roles[r], known[a]);
@@ -1474,7 +1555,12 @@ abstract contract TenantBase is Script {
         for (uint256 i = 0; i < owned.length; i++) {
             if (Ownable(owned[i]).owner() == dep) revert("verify tenant failed: deployer still owns an Ownable contract of the set");
         }
-        _check(!KYCRegistry(d.kyc).verifiers(dep), "deployer is not a KYC verifier");
+        if (c.vcKyc) {
+            _check(VCKycRegistry(d.kyc).issuerTypeCount(dep) == 0, "deployer is not a trusted credential issuer");
+            _check(VCKycRegistry(d.kyc).pendingOwner() != dep, "deployer is not the VC registry's pending owner");
+        } else {
+            _check(!KYCRegistry(d.kyc).verifiers(dep), "deployer is not a KYC verifier");
+        }
         if (c.guardedOracle) {
             _check(!_has(d.oracle, ADMIN_ROLE, dep) && !_has(d.oracle, GUARDIAN_ROLE, dep) && !_has(d.oracle, KEEPER_ROLE, dep),
                 "deployer has no role on the oracle");

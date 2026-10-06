@@ -20,6 +20,13 @@
 //   4. signal-api：GET /healthz、GET /（payTo 與 payToSafety）、未付款的 GET /oracle/sBTC
 //      必須回 402 付款要求——回 503 payto_unsafe 代表付費端點 fail-closed。
 //
+// --tenant <id>：改讀專屬租戶的合約（frontend/src/contracts/deployments/<id>.json，必須是 kind=dedicated）
+// 與部署設定（deploy/tenants/<id>.json）。接線規則相同（租戶的 exchange 與金庫讀同一顆 oracle）；外洩地址
+// 檢查的對象換成租戶的 owner／guardian／marketOperator／授權 agent／KYC verifier 或 VC 發證者
+// （params.kycRegistry=vc 時查 VCKycRegistry.issuerTypeCount 與 pendingOwner），另外逐一比對設定裡的
+// 角色地址與部署紀錄的 deployer；keeper 錢包取 roles.keeper。signal-api 必須以 --signal-api 指定租戶自己的
+// （不會退回平台的）。
+//
 // 只用 eth_chainId／eth_blockNumber／eth_getBlockByNumber／eth_getBalance／eth_getCode／eth_getStorageAt／
 // eth_call 與 HTTP GET；不送交易、不付款。
 //
@@ -27,6 +34,7 @@
 //   node scripts/post-deploy-smoke.mjs
 //   node scripts/post-deploy-smoke.mjs --rpc https://… --signal-api https://… --json out.json
 //   node scripts/post-deploy-smoke.mjs --skip-http        # 只做鏈上檢查
+//   node scripts/post-deploy-smoke.mjs --tenant <id> --skip-http   # 專屬租戶（deploy/tenants/<id>.json＋dedicated 登記）
 //   node scripts/post-deploy-smoke.mjs --skip-http --fresh-since <unix 秒或 ISO> --max-age 21600
 //     # dispatch keeper 後用：最近一次寫價必須晚於 --fresh-since（證明 keeper 真的跑了），而且每一檔都不超過 --max-age 秒
 //     #（keeper 只重寫有變動或超過 heartbeat 的資產，所以不要求每一檔都在 dispatch 之後）
@@ -107,14 +115,63 @@ export function decodeString(hex) {
   return Buffer.from(h.slice(128, 128 + len * 2), "hex").toString("utf8");
 }
 
+const TENANT_SLUG = /^[a-z0-9]+(-[a-z0-9]+)*$/;
+/** 專屬租戶登記的 contracts 鍵 → 平台 roles 的同名鍵（components.json／monitors.json 用的 ref）。 */
+const TENANT_REFS = ["PerpetualExchange", "InsuranceVault", "FeeRouter", "TraderStake", "CopyTracker",
+  "StrategyRegistry", "AgentSessionManager", "KYCRegistry", "ESGRegistryV2", "AssetVaultV2"];
+
+/**
+ * --tenant <id>：把專屬租戶的登記與設定轉成 runSmoke 用的來源。`files` 給測試注入
+ * （{ registry, config, record }），省略時讀 repo 的檔案。
+ *   wiringRoles：接線用。租戶只有一顆 oracle，exchange（平台規則寫 MockOracle）與金庫（GuardedOracle）都讀它。
+ *   src：外洩地址檢查用——components 換成租戶的形狀（VC 登錄查 issuerTypeCount／pendingOwner）。
+ */
+export function tenantSources(root, id, platform, files = {}) {
+  if (!TENANT_SLUG.test(String(id)) || id === "default") throw new Error(`--tenant 必須是租戶 id（小寫、連字號），不是 ${id}`);
+  const readJson = (rel) => JSON.parse(readFileSync(join(root, rel), "utf8"));
+  const registry = files.registry ?? readJson(`frontend/src/contracts/deployments/${id}.json`);
+  const config = files.config ?? readJson(`deploy/tenants/${id}.json`);
+  let record = files.record;
+  if (record === undefined) {
+    try {
+      record = readJson(`deploy/tenants/${id}.deployed.json`);
+    } catch {
+      record = null;
+    }
+  }
+  if (registry.kind !== "dedicated") throw new Error(`${id} 的前端登記是 kind=${registry.kind}，不是 dedicated：沒有自己的合約可以檢查`);
+  if (String(registry.chainId) !== PRIMARY_CHAIN) throw new Error(`${id} 的登記在鏈 ${registry.chainId}，這支只檢查 ${PRIMARY_CHAIN}`);
+  const c = registry.contracts ?? {};
+  const roles = { MockUSDC: c.SettlementToken };
+  for (const k of TENANT_REFS) if (c[k]) roles[k] = c[k];
+  const wiringRoles = { ...roles, MockOracle: c.Oracle, GuardedOracle: c.Oracle };
+  const leakRoles = { ...roles, [registry.oracleKind === "guarded" ? "GuardedOracle" : "MockOracle"]: c.Oracle };
+  const vc = config.params?.kycRegistry === "vc";
+  const components = platform.cfg.components.map((comp) =>
+    comp.id === "KYCRegistry" && vc ? { ...comp, reads: ["owner()", "pendingOwner()"], denyChecks: ["issuerTypeCount(address)"] } : comp,
+  );
+  const tokenGroup = platform.cfg.components.find((x) => x.id === "SyntheticAssetV2")?.group;
+  const tokens = { [PRIMARY_CHAIN]: tokenGroup ? { [tokenGroup]: { ...(registry.tokens ?? {}) } } : {} };
+  return {
+    config,
+    record,
+    vc,
+    wiringRoles,
+    src: { ...platform, cfg: { ...platform.cfg, components }, frontend: { [PRIMARY_CHAIN]: { roles: leakRoles } }, tokens },
+  };
+}
+
 const roleHash = (role) => (role === "DEFAULT_ADMIN_ROLE" ? "0x" + "0".repeat(64) : keccak256(role));
 const hours = (s) => `${(s / 3600).toFixed(1)} 小時`;
 
-export async function runSmoke({ root, rpcUrl, apiUrl, fetchImpl = fetch, sleep, skipHttp = false, nowSec, freshSince = null, maxAgeSec = null }) {
+export async function runSmoke({ root, rpcUrl, apiUrl, fetchImpl = fetch, sleep, skipHttp = false, nowSec, freshSince = null, maxAgeSec = null, tenant = null, tenantFiles }) {
   const results = [];
   const add = (group, name, level, detail) => results.push({ group, name, level, detail });
-  const src = loadSources(root);
+  const platform = loadSources(root);
+  const t = tenant ? tenantSources(root, tenant, platform, tenantFiles) : null;
+  const src = t ? t.src : platform;
   const roles = src.frontend[PRIMARY_CHAIN].roles;
+  const wiringRoles = t ? t.wiringRoles : roles;
   const denylist = src.denylist;
   const rpc = makeRpc(rpcUrl ?? src.cfg.chains[PRIMARY_CHAIN].rpc, { fetchImpl, sleep, allowed: SMOKE_RPC_METHODS });
   const must = async (method, params) => {
@@ -131,7 +188,7 @@ export async function runSmoke({ root, rpcUrl, apiUrl, fetchImpl = fetch, sleep,
     block = await must("eth_blockNumber", []);
     const b = await must("eth_getBlockByNumber", [block, false]);
     blockTs = Number(BigInt(b.timestamp));
-    add("RPC", "Base Sepolia", "PASS", `區塊 ${Number(BigInt(block))}`);
+    add("RPC", "Base Sepolia", "PASS", `區塊 ${Number(BigInt(block))}${t ? `（租戶 ${tenant}）` : ""}`);
   } catch (e) {
     add("RPC", "Base Sepolia", "FAIL", e.message);
     return results;
@@ -162,7 +219,7 @@ export async function runSmoke({ root, rpcUrl, apiUrl, fetchImpl = fetch, sleep,
   };
 
   // 1. 接線
-  for (const w of wiringCalls(root, roles)) {
+  for (const w of wiringCalls(root, wiringRoles)) {
     const r = await call(w.to, selector(w.fn));
     if (r.error) {
       add("接線", w.name, "FAIL", `呼叫失敗：${r.error}`);
@@ -223,6 +280,15 @@ export async function runSmoke({ root, rpcUrl, apiUrl, fetchImpl = fetch, sleep,
           else if (BigInt(r.value) !== 0n) add("外洩地址", `${label}.${fn.split("(")[0]}(${shortAddr(bad)})`, "FAIL", "外洩地址仍在名單內");
         }
       }
+    }
+  }
+  if (t) {
+    // 租戶設定裡的角色與部署者：檔案層的對照（鏈上的部分上面已讀）。
+    const named = Object.entries(t.config.roles ?? {}).map(([k, v]) => [`roles.${k}`, v]);
+    if (t.record?.deployer) named.push(["deployer（部署紀錄）", t.record.deployer]);
+    for (const [label, addr] of named) {
+      leakChecks++;
+      if (denylist.includes(lc(addr))) add("外洩地址", label, "FAIL", `租戶設定的角色是外洩地址 ${shortAddr(addr)}`);
     }
   }
   const leakRows = results.filter((r) => r.group === "外洩地址");
@@ -301,8 +367,9 @@ export async function runSmoke({ root, rpcUrl, apiUrl, fetchImpl = fetch, sleep,
         if (stale6h.length) add("keeper", "V2 金庫 oracle 價格年齡", "WARN", `超過 6 小時（V2_5 金庫會視為 unpriced、停止 mint）：${stale6h.join("、")}`);
       }
     }
-    const owner = await call(oracle, selector("owner()"));
-    if (!owner.error) {
+    // 平台：MockOracle 的 owner 就是寫價者。租戶的 GuardedOracle 沒有 owner，寫價者是設定的 roles.keeper。
+    const owner = t ? { value: t.config.roles?.keeper } : await call(oracle, selector("owner()"));
+    if (!owner.error && owner.value) {
       const keeper = wordToAddr(owner.value);
       const bal = BigInt(await must("eth_getBalance", [keeper, block]));
       const eth = Number(bal) / 1e18;
@@ -313,7 +380,9 @@ export async function runSmoke({ root, rpcUrl, apiUrl, fetchImpl = fetch, sleep,
   }
 
   // 4. signal-api
-  if (!skipHttp) {
+  if (!skipHttp && t && !apiUrl) {
+    add("signal-api", "租戶的 signal-api", "FAIL", "--tenant 需要 --signal-api 指定租戶自己的 signal-api（不會退回平台的；只做鏈上檢查請加 --skip-http）");
+  } else if (!skipHttp) {
     const url = apiUrl ?? signalApiUrl(root);
     const get = async (path) => {
       const res = await fetchImpl(url + path, { method: "GET", headers: { accept: "application/json" }, signal: AbortSignal.timeout(20000) });
@@ -378,7 +447,7 @@ async function main() {
   const maxAgeArg = opt("--max-age");
   const maxAgeSec = maxAgeArg === undefined ? null : Number(maxAgeArg);
   if (maxAgeSec !== null && !(maxAgeSec > 0)) throw new Error(`--max-age 要是正整數秒數：${maxAgeArg}`);
-  const results = await runSmoke({ root, rpcUrl: opt("--rpc"), apiUrl: opt("--signal-api"), skipHttp: args.includes("--skip-http"), freshSince, maxAgeSec });
+  const results = await runSmoke({ root, rpcUrl: opt("--rpc"), apiUrl: opt("--signal-api"), skipHttp: args.includes("--skip-http"), freshSince, maxAgeSec, tenant: opt("--tenant") ?? null });
   console.log(renderResults(results));
   const out = opt("--json");
   if (out) writeFileSync(out, JSON.stringify({ checkedAt: new Date().toISOString(), results }, null, 1) + "\n");

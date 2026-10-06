@@ -1,7 +1,8 @@
 # 新增一個白標租戶
 
 > 2026-10-01 更新（合約部署腳本已參數化、前端依租戶切換位址）；2026-10-02 依 PR #228 審查修正
-> （設定 schema v3：oracle 限速與風控參數、共用元件白名單、平台位址全集、CI 鏈上驗證）。隔離模型與理由見
+> （設定 schema v3：oracle 限速與風控參數、共用元件白名單、平台位址全集、CI 鏈上驗證）；2026-10-06 schema v4
+> （`params.kycRegistry`：KYC 閘門可選可驗證憑證登錄；`assets.additionalRwa`：追加要 KYC 的資產）。隔離模型與理由見
 > [`ADR-008-tenant-isolation.md`](ADR-008-tenant-isolation.md)，前端設定層見
 > [`frontend/docs/adr/0009-tenant-config-layer.md`](../frontend/docs/adr/0009-tenant-config-layer.md)，
 > 部署之後的 keeper／signal-api／SDK 見 [`TENANT_OPERATIONS.md`](TENANT_OPERATIONS.md)。
@@ -98,7 +99,7 @@
      不是獨立的參考）。參考來源確認過的寫價不受單次上限與時間窗限制，所以它不得是任何租戶角色或結算幣。
      `"none"` 時 `VerifyTenant` 會印出「無參考來源」：keeper 的寫價只受單次上限與時間窗限制。
      Base 主網的 guarded oracle 必須有參考來源；`oracleKind: "mock"` 必須是 `"none"`。
-5. `params` 是寫上鏈的參數（schema v3）。**每一個鍵都要寫出來，沒有預設值**；值是範圍內的整數，或 `null`。
+5. `params` 是寫上鏈的參數（schema v4）。**每一個鍵都要寫出來，沒有預設值**；值是範圍內的整數，或 `null`。
    `null` 只在兩種情況合法：`status: "template"`（數字還沒決定），或這個參數對這份設定不適用——
    `oracleKind: "mock"` 的三個 oracle 參數、`deployVault: false` 的兩個金庫參數，這兩種情況**必須**是 `null`
    （不能寫一個不存在的上限讓讀的人以為有）。範圍在 `scripts/check-tenant-deploy.mjs` 的 `PARAM_RANGES` 與
@@ -119,12 +120,18 @@
    | `deployVault` | `true`／`false` | 要不要部署代幣化資產金庫（`AssetVaultV2` proxy＋每檔資產一顆代幣）。需要 `oracleKind: "guarded"` |
    | `vaultRedeemFeeBps` | 0–300 | 金庫贖回費（合約預設 30）。沒有金庫時必須是 `null` |
    | `vaultMinReserveRatioBps` | 10000–20000 | 鑄造所需的最低準備率（合約預設 11000＝110%）。沒有金庫時必須是 `null` |
+   | `kycRegistry` | `allowlist`／`vc` | exchange 的 KYC 閘門（v4，沒有預設值）。`"allowlist"`：`KYCRegistry`，verifier 逐一核准地址（平台現況）。`"vc"`：`VCKycRegistry`（[`SSI_RWA_ACCESS.md`](SSI_RWA_ACCESS.md)），投資人提交受信任發證者簽的「合格投資人」憑證、鏈上驗 EIP-712 簽章，`requiredType` 固定 `QUALIFIED_INVESTOR`。兩種都由部署腳本建好並接上 exchange；`vc` 的登錄從建構子起 owner 就是 `roles.admin`（Ownable2Step，不需要接受步驟）。admin 指派 verifier／發證者之前，所有 RWA 市場對所有人關閉 |
 
    `executionFee`（0.0001 ETH）、exchange 與金庫的 `maxPriceAge`（6 小時）、oracle 自己的 `maxPriceAge`（0，
    理由見 ADR-008）是腳本常數，不是租戶設定；`VerifyTenant` 一樣逐項讀回。
 
-   哪些資產是 RWA（要 KYC）**不是租戶設定**：由資產本身決定，腳本內建的分類與平台相同（測試釘住）。
+   哪些資產是 RWA（要 KYC）的**下限不是租戶設定**：由資產本身決定，腳本內建的分類與平台相同（測試釘住，
+   8 檔：sAAPL、sTSLA、sNVDA、sMSFT、sGOOGL、sICLN、sESGU、sBOND）。租戶只能用 `assets.additionalRwa`
+   **追加**（見下一項），不能把內建的 RWA 改成不要 KYC。
 6. `assets.registered` 是這個租戶要上架的資產，必須涵蓋前端 `assets.enabled`——前端不能開一檔沒註冊的資產。
+   `assets.additionalRwa`（v4，必填，沒有追加就寫 `[]`）是租戶額外要 KYC 的資產：每一檔都必須在
+   `registered` 裡、不能重複、不能是內建 RWA（清單只能加）。例如把 `sGOLD` 也納入合格投資人限制。
+   部署當下就寫上 exchange 的 RWA 旗標，OI 上限也用 `oiCapRwaUsdc`；`VerifyTenant` 每天讀回，與設定不符就失敗。
 7. `fees` 在收費模式定案前固定是 `{"status": "pending-decision", "baseFeeBps": null, "tenantMarkupBps": null}`；
    這個狀態的租戶不能標成 `deployed`。
 8. 檢查：
@@ -238,8 +245,9 @@ TENANT=<id> TENANT_RECORD=cache/tenants/<id>.deployed.json TENANT_PRIVILEGE_SCAN
 它檢查（任何一項不符就失敗，訊息指出是哪一項）：
 
 - 每顆合約有 code 且位址互不相同、也不是共用元件；exchange 的 owner／guardian／marketOperator／oracle／保險金／
-  FeeRouter／KYC 接線；FeeRouter 的 treasury 是租戶的；
-- **風控參數與設定逐項相等**：每檔資產的 RWA 旗標、OI 上限、獲利上限、槓桿上限、維持保證金覆寫（必須是 0）；
+  FeeRouter／KYC 接線；FeeRouter 的 treasury 是租戶的；`kycRegistry: "vc"` 時另讀 VC 登錄的 `pendingOwner` 必須是零、
+  `requiredType` 必須是 `QUALIFIED_INVESTOR`、EIP-712 domain separator 必須對應本鏈與本位址；
+- **風控參數與設定逐項相等**：每檔資產的 RWA 旗標（內建分類＋`assets.additionalRwa`）、OI 上限、獲利上限、槓桿上限、維持保證金覆寫（必須是 0）；
   ESG 的 `maxAttestationAge`（合約預設 180 天）；資產模式不是 Active、金庫的 unpriced exemption 生效時印 WARN；清算罰金、mark 溢價上限、
   保險金分成；兩個舊版費率仍是合約預設（接上 ESGRegistry 之後不生效，被改了代表有人動過）；
   exchange 與金庫的 `maxPriceAge`（6 小時）；金庫的贖回費與最低準備率；
@@ -260,11 +268,13 @@ TENANT=<id> TENANT_RECORD=cache/tenants/<id>.deployed.json TENANT_PRIVILEGE_SCAN
   等於紀錄裡的實作、admin 與 beacon 是零（UUPS）；其他合約三個 slot 都必須是零。admin 事後升級到別的實作就會失敗；
 - **角色持有者等於預期集合**（PR #228 複審 C4）：合約不是 Enumerable，所以分兩輪。
   (1) 每次都跑：部署者、owner、所有租戶角色、共用元件與整組合約的每一顆，在每個有權限清單的合約上（DEFAULT_ADMIN、
-  KEEPER、GUARDIAN、RISK、PAUSER、MINTER、ATTESTOR、exchange 的授權 agent、KYC verifier）都必須「該有才有」。
-  (2) 從紀錄的 `deployBlock` 起以 `eth_getLogs` 掃 `RoleGranted`、`AgentAuthorizationSet`、`VerifierSet`：凡是被授予過、
+  KEEPER、GUARDIAN、RISK、PAUSER、MINTER、ATTESTOR、exchange 的授權 agent、KYC verifier／VC 發證者）都必須「該有才有」。
+  (2) 從紀錄的 `deployBlock` 起以 `eth_getLogs` 掃 `RoleGranted`、`AgentAuthorizationSet`、`VerifierSet`（`kycRegistry: "vc"`
+  時改掃 `IssuerSet`）：凡是被授予過、
   現在仍持有的位址都必須在預期集合內（oracle：ADMIN＝owner、KEEPER＝keeper、GUARDIAN＝guardian；金庫：ADMIN＝owner、
   RISK＝risk、PAUSER＝guardian；token：ADMIN＝owner、MINTER＝金庫；ESG：ADMIN＝owner；exchange 的 agent 只能是
-  sessionManager 與 copyTracker），不認得的角色也算失敗。ESG 的 ATTESTOR 與 KYC 的 verifier 是上線後的營運任命：
+  sessionManager 與 copyTracker），不認得的角色也算失敗。ESG 的 ATTESTOR 與 KYC 的 verifier（或 VC 登錄的受信任發證者，
+  以 `issuerTypeCount > 0` 判定）是上線後的營運任命：
   允許、印 NOTE，但不得是部署者或任何一顆租戶合約。**限制**：公開 RPC 一次只給 1,000 個區塊，掃描跨度超過
   `TENANT_PRIVILEGE_SCAN_MAX_BLOCKS`（預設 50,000，Base 約 28 小時）時第二輪印 NOTE 略過——之後每天的 CI 只剩第一輪，
   除非換用範圍更大的 RPC 並調高上限；所以上線當下必須以 `TENANT_PRIVILEGE_SCAN_REQUIRED=true` 跑一次（略過即失敗）。
@@ -323,8 +333,14 @@ TENANT=<id> TENANT_RECORD=cache/tenants/<id>.deployed.json TENANT_PRIVILEGE_SCAN
 5. 接著做營運面：keeper 的 environment 與 workflow、signal-api、SDK——[`TENANT_OPERATIONS.md`](TENANT_OPERATIONS.md)。
    **keeper 第一次寫價成功之前不要對外開放前端。**
 6. 租戶 admin 之後要做的事（都經過 multisig，不在部署腳本裡）：
-   - 指派 KYC verifier（`KYCRegistry.setVerifier`）。在那之前所有 RWA 市場對所有人關閉。
+   - 指派 KYC verifier（`KYCRegistry.setVerifier`），或 `kycRegistry: "vc"` 時信任發證者
+     （`VCKycRegistry.setIssuer(issuer, keccak256("QUALIFIED_INVESTOR"), true)`）。在那之前所有 RWA 市場對所有人關閉。
    - 指派碳分級見證人（`ESGRegistryV2` 的 `ATTESTOR_ROLE`）。在那之前每檔資產都是 Unrated——槓桿 1 倍、費率最高那一級（fail-closed）。
+     見證人寫入分級用 `contracts/script/AttestTenantCarbon.s.sol`（只做 attest；清單與平台的 `Deploy102CarbonRegistry`
+     共用 `CarbonAttestations`；`ESG_REGISTRY`、`ATTEST_CHAIN_ID` 必填，先不加 `--broadcast` 模擬）。見證人若是租戶自己的金鑰，
+     對外要照實說明分級是營運方自己的聲明，不是獨立機構。
+   - 部署後的唯讀粗檢：`node scripts/post-deploy-smoke.mjs --tenant <id> --skip-http`（接線、外洩地址、價格新鮮度；
+     租戶的 signal-api 上線後改用 `--signal-api <網址>`）。
    - 保險金：**部署腳本已自動存入 1 顆完整結算代幣作種子，份額交給租戶的 `roles.treasury`**（§4）；
      treasury 要把這份份額保留到金庫停用。1 顆只關掉 §3.3 的零供給問題，不是夠用的保險金：
      admin 視交易規模與風險自行加碼（`InsuranceVault.deposit` 取得份額，或 `recapitalize` 贈與、不發份額）。

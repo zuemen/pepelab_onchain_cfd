@@ -40,6 +40,9 @@ contract TenantVerifyHarness is TenantBase {
     }
 
     function isRwa(string calldata sym) external pure returns (bool) { return _isRwa(sym); }
+    function isRwaFor(string calldata configJson, string calldata id, string calldata sym) external view returns (bool) {
+        return _isRwaFor(_parseConfig(configJson, id), sym);
+    }
     function tokenName(string calldata sym) external pure returns (string memory) { return _tokenName(sym); }
     function requireSlug(string calldata id) external pure { _requireSlug(id); }
 }
@@ -75,6 +78,8 @@ abstract contract TenantFixture is Test {
         uint256 vaultRedeemFeeBps;          // written as null without a vault
         uint256 vaultMinReserveRatioBps;
         string  assets;   // JSON array body, e.g. "\"sBTC\",\"sETH\""
+        string  kycRegistry;     // "allowlist" | "vc"
+        string  additionalRwa;   // JSON array body, "" = none
     }
 
     string internal constant ALL_ASSETS =
@@ -114,15 +119,17 @@ abstract contract TenantFixture is Test {
         s.vaultRedeemFeeBps = 30;
         s.vaultMinReserveRatioBps = 11_000;
         s.assets = ALL_ASSETS;
+        s.kycRegistry = "allowlist";
+        s.additionalRwa = "";
     }
 
-    /// @dev v3 config. The oracle limits are written as `null` for a mock
+    /// @dev v4 config (v3 + params.kycRegistry, assets.additionalRwa). The oracle limits are written as `null` for a mock
     ///      oracle and the vault parameters as `null` without a vault, as the
     ///      schema requires; tests that need the other shapes edit the string
     ///      (`vm.replace`).
     function _json(Spec memory s) internal pure returns (string memory) {
         string memory head = string.concat(
-            "{\"schemaVersion\":3,\"tenantId\":\"", s.id,
+            "{\"schemaVersion\":4,\"tenantId\":\"", s.id,
             "\",\"status\":\"", s.status,
             "\",\"frontendTenant\":\"", s.id,
             "\",\"network\":{\"chainId\":", vm.toString(s.chainId), "},"
@@ -140,7 +147,8 @@ abstract contract TenantFixture is Test {
             "\",\"priceSource\":\"", vm.toString(s.priceSource),
             "\",\"referenceSource\":\"", s.referenceSource == address(0) ? "none" : vm.toString(s.referenceSource), "\"},"
         );
-        return string.concat(head, roles, shared, _paramsJson(s), "\"assets\":{\"registered\":[", s.assets, "]}}");
+        return string.concat(head, roles, shared, _paramsJson(s),
+            "\"assets\":{\"registered\":[", s.assets, "],\"additionalRwa\":[", s.additionalRwa, "]}}");
     }
 
     function _paramsJson(Spec memory s) internal pure returns (string memory) {
@@ -164,7 +172,7 @@ abstract contract TenantFixture is Test {
             ",\"deployVault\":", s.deployVault ? "true" : "false",
             ",\"vaultRedeemFeeBps\":", s.deployVault ? vm.toString(s.vaultRedeemFeeBps) : "null",
             ",\"vaultMinReserveRatioBps\":", s.deployVault ? vm.toString(s.vaultMinReserveRatioBps) : "null",
-            "},"
+            ",\"kycRegistry\":\"", s.kycRegistry, "\"},"
         );
         return string.concat(oracle, exchange, vault);
     }

@@ -15,6 +15,7 @@ import "../src/FeeRouter.sol";
 import "../src/InsuranceVault.sol";
 import "../src/InsuranceSeeder.sol";
 import "../src/KYCRegistry.sol";
+import "../src/VCKycRegistry.sol";
 import "../src/MockOracle.sol";
 import "../src/ESGRegistryV2.sol";
 import "../src/v2/GuardedOracle.sol";
@@ -28,7 +29,8 @@ import "./VerifyTenant.s.sol";
 ///         What a tenant gets, all new, none shared with the live platform or
 ///         with another tenant:
 ///           oracle (GuardedOracle, or MockOracle on a testnet), ESGRegistryV2,
-///           KYCRegistry, InsuranceVault (+ the stateless InsuranceSeeder that
+///           KYCRegistry (or, with `params.kycRegistry: "vc"`, a VCKycRegistry
+///           owned by the admin from its constructor), InsuranceVault (+ the stateless InsuranceSeeder that
 ///           seeds it), FeeRouter (treasury = the tenant's),
 ///           TraderStake, PerpetualExchange, StrategyRegistry, CopyTracker,
 ///           AgentSessionManager, and — when `params.deployVault` — an
@@ -197,6 +199,10 @@ contract DeployTenant is TenantBase {
         console.log("maxLeverage (every asset)        :", c.maxLeverage);
         console.log("liquidationPenalty / markPremiumCap / vaultFeeShare bps:", c.liquidationPenaltyBps, c.markPremiumCapBps, c.vaultFeeShareBps);
         console.log("AssetVaultV2                     :", c.deployVault ? "yes" : "no");
+        console.log("KYC registry                     :", c.vcKyc ? "VCKycRegistry (verifiable credentials)" : "KYCRegistry (allowlist)");
+        for (uint256 i = 0; i < c.additionalRwa.length; i++) {
+            console.log("additional RWA (KYC-gated)       :", c.additionalRwa[i]);
+        }
     }
 
     // ── the broadcast ─────────────────────────────────────────────────────
@@ -218,7 +224,12 @@ contract DeployTenant is TenantBase {
         //    every asset is Tier.Unrated — the most conservative fee/leverage
         //    row — until the admin appoints attestors.
         d.esgRegistry = address(new ESGRegistryV2(c.admin));
-        d.kyc = address(new KYCRegistry());
+        //    `params.kycRegistry: "vc"`: the credential registry is the
+        //    tenant admin's from the constructor (Ownable2Step, nothing to
+        //    accept); it trusts no issuer until the admin appoints one, so
+        //    every RWA market stays closed until then — same as an allowlist
+        //    registry with no verifier.
+        d.kyc = c.vcKyc ? address(new VCKycRegistry(c.admin, QUALIFIED_INVESTOR)) : address(new KYCRegistry());
 
         // 3. The tenant's money path. The treasury is immutable on the router.
         d.insuranceVault = address(new InsuranceVault(c.usdc));
@@ -259,7 +270,7 @@ contract DeployTenant is TenantBase {
         //    has lasted a few blocks and closing it writes the paused time —
         //    the estimate (x1.3) ran out of gas in the anvil rehearsal.
         PerpetualExchange(d.exchange).unpause{gas: UNPAUSE_GAS}();
-        _handOverOwnables(d, c.admin);
+        _handOverOwnables(c, d, c.admin);
 
         vm.stopBroadcast();
     }
@@ -283,7 +294,7 @@ contract DeployTenant is TenantBase {
         // Caps are never left at 0 (= unlimited).
         for (uint256 i = 0; i < c.assets.length; i++) {
             bytes32 id = _assetId(c.assets[i]);
-            bool rwa = _isRwa(c.assets[i]);
+            bool rwa = _isRwaFor(c, c.assets[i]);
             if (rwa) ex.setRwaAsset(id, true);
             uint256 cap = rwa ? c.oiCapRwa : c.oiCapNonRwa;
             ex.setMaxOpenInterest(id, cap, cap);
@@ -337,13 +348,14 @@ contract DeployTenant is TenantBase {
             "insurance seed: the treasury position must be worth the whole seed");
     }
 
-    function _handOverOwnables(TenantDeployed memory d, address admin) internal {
+    function _handOverOwnables(TenantConfig memory c, TenantDeployed memory d, address admin) internal {
         Ownable(d.exchange).transferOwnership(admin);
         Ownable(d.copyTracker).transferOwnership(admin);
         Ownable(d.insuranceVault).transferOwnership(admin);
         Ownable(d.feeRouter).transferOwnership(admin);
         Ownable(d.traderStake).transferOwnership(admin);
-        Ownable(d.kyc).transferOwnership(admin);
+        // A VC registry was born owned by the admin (step 2).
+        if (!c.vcKyc) Ownable(d.kyc).transferOwnership(admin);
     }
 
     function _deployGuardedOracle(TenantConfig memory c, address deployer, uint256[] memory seeds) internal returns (address) {

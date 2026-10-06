@@ -9,6 +9,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import {
+  BUILTIN_RWA_ASSETS,
   MUST_DIFFER,
   PARAM_RANGES,
   ORACLE_PARAM_KEYS,
@@ -18,6 +19,7 @@ import {
   checkDeployedRecord,
   checkTenantDeploy,
   envPlan,
+  rwaAssetsOf,
   frontendDeployment,
   frontendMismatches,
   loadContext,
@@ -54,6 +56,7 @@ const filled = () => {
     deployVault: true,
     vaultRedeemFeeBps: 30,
     vaultMinReserveRatioBps: 11000,
+    kycRegistry: "allowlist",
   };
   return c;
 };
@@ -225,10 +228,10 @@ test("設定檔沒有放已部署位址的欄位（v2：位址只在 <id>.deploy
   const c = filled();
   c.deployed = { PerpetualExchange: A(20) };
   assert.match(check(c), /未知欄位 deployed/);
-  for (const v of [1, 2]) {
+  for (const v of [1, 2, 3]) {
     const old = filled();
     old.schemaVersion = v;
-    assert.match(check(old), /schemaVersion 必須是 3/);
+    assert.match(check(old), /schemaVersion 必須是 4/);
   }
 });
 
@@ -562,7 +565,68 @@ test("PARAM_RANGES 與 VerifyTenant.s.sol（TenantBase）的常數逐一相同",
     vaultRedeemFeeBps: [0, c("MAX_VAULT_REDEEM_FEE_BPS")],
     vaultMinReserveRatioBps: [c("VAULT_MIN_RESERVE_BPS_MIN"), c("VAULT_MIN_RESERVE_BPS_MAX")],
   });
-  assert.equal(c("SCHEMA_VERSION"), 3);
+  assert.equal(c("SCHEMA_VERSION"), 4);
+});
+
+test("BUILTIN_RWA_ASSETS 與 VerifyTenant.s.sol 的 _isRwa 完全相同（後者再由 forge 測試釘到平台 Cutover130Base）", () => {
+  const sol = readFileSync(join(root, "contracts/script/VerifyTenant.s.sol"), "utf8");
+  const body = /function _isRwa\(string memory sym\)[^{]*\{([\s\S]*?)\n    \}/.exec(sol);
+  assert.ok(body, "VerifyTenant.s.sol 找不到 _isRwa");
+  const syms = [...body[1].matchAll(/keccak256\("([^"]+)"\)/g)].map((m) => m[1]);
+  assert.deepEqual([...syms].sort(), [...BUILTIN_RWA_ASSETS].sort());
+  assert.equal(BUILTIN_RWA_ASSETS.length, 8);
+});
+
+test("v4：params.kycRegistry 只接受 allowlist／vc，沒有預設值", () => {
+  for (const v of ["allowlist", "vc"]) {
+    const c = filled();
+    c.params.kycRegistry = v;
+    assert.equal(check(c), "", v);
+  }
+  for (const v of ["kyc", null, undefined, ""]) {
+    const c = filled();
+    if (v === undefined) delete c.params.kycRegistry;
+    else c.params.kycRegistry = v;
+    assert.match(check(c), /params\.kycRegistry 必須是 allowlist \/ vc/, String(v));
+  }
+});
+
+test("v4：assets.additionalRwa 只能追加已註冊、非內建 RWA 的資產；必填（沒有就寫 []）", () => {
+  const ok = filled();
+  ok.assets.additionalRwa = ["sGOLD"];
+  assert.equal(check(ok), "");
+  assert.deepEqual(rwaAssetsOf(ok), ok.assets.registered.filter((s) => BUILTIN_RWA_ASSETS.includes(s) || s === "sGOLD"));
+  assert.ok(rwaAssetsOf(ok).includes("sGOLD"));
+  assert.ok(!rwaAssetsOf(filled()).includes("sGOLD"), "沒有追加時 sGOLD 不是 RWA");
+
+  const builtin = filled();
+  builtin.assets.additionalRwa = ["sAAPL"];
+  assert.match(check(builtin), /sAAPL 本來就是 RWA（內建分類），清單只能追加/);
+
+  const unregistered = filled();
+  unregistered.assets.additionalRwa = ["sETH"];
+  assert.match(check(unregistered), /assets\.additionalRwa：sETH 不在 assets\.registered 裡/);
+
+  const dup = filled();
+  dup.assets.additionalRwa = ["sGOLD", "sGOLD"];
+  assert.match(check(dup), /assets\.additionalRwa 有重複/);
+
+  const missing = filled();
+  delete missing.assets.additionalRwa;
+  assert.match(check(missing), /assets\.additionalRwa 必須是陣列/);
+
+  const unknownKey = filled();
+  unknownKey.assets.removedRwa = ["sAAPL"];
+  assert.match(check(unknownKey), /assets 未知欄位 removedRwa/);
+});
+
+test("--print-env 印出 KYC 登錄種類與 RWA 清單", () => {
+  const c = filled();
+  c.params.kycRegistry = "vc";
+  c.assets.additionalRwa = ["sGOLD"];
+  const out = envPlan(c);
+  assert.match(out, /KYC 登錄=VCKycRegistry/);
+  assert.match(out, /RWA（要 KYC）=[^\n]*sGOLD/);
 });
 
 test("guardian 與 risk 不得是同一個地址", () => {

@@ -1,6 +1,6 @@
 {
   "$comment": "示範租戶 demo-bank（虛構機構）的部署設定。所有位址都是佔位值、status=template，不能也不會被用來部署。對應前端設定 frontend/src/tenant/tenants/demo-bank.json。",
-  "schemaVersion": 3,
+  "schemaVersion": 4,
   "tenantId": "demo-bank",
   "status": "template",
   "frontendTenant": "demo-bank",
@@ -39,10 +39,12 @@
     "vaultFeeShareBps": 0,
     "deployVault": true,
     "vaultRedeemFeeBps": 30,
-    "vaultMinReserveRatioBps": 11000
+    "vaultMinReserveRatioBps": 11000,
+    "kycRegistry": "allowlist"
   },
   "assets": {
-    "registered": ["sAAPL", "sMSFT", "sNVDA", "sGOLD", "sBOND", "sESGU", "sICLN"]
+    "registered": ["sAAPL", "sMSFT", "sNVDA", "sGOLD", "sBOND", "sESGU", "sICLN"],
+    "additionalRwa": []
   },
   "fees": {
     "status": "pending-decision",
