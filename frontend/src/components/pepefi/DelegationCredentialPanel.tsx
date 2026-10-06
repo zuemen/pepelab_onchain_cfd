@@ -104,8 +104,11 @@ export async function revokeDelegationCredential(p: {
   credential: DelegationCredential
   /** The currently published list, imported by the user when VITE_VC_STATUS_URL cannot be read. */
   imported?: CredentialStatusList | null
+  /** The user explicitly confirmed nothing has been published for them yet (first revocation, sequence 1). */
+  confirmedNoPublishedList?: boolean
 }): Promise<{ list: CredentialStatusList; published: boolean }> {
-  const published = p.imported ? { kind: 'list' as const, list: p.imported } : await fetchPublishedStatusList(statusUrl(), p.user, p.sessionManager)
+  let published = p.imported ? { kind: 'list' as const, list: p.imported } : await fetchPublishedStatusList(statusUrl(), p.user, p.sessionManager)
+  if (published.kind === 'unavailable' && p.confirmedNoPublishedList) published = { kind: 'none' }
   const base = revocationBase(published, loadLastList(p.sessionManager, p.user))
   if (!base.ok) throw new Error(interpolate(t.sessions.delegation.revokeBaseUnavailable, { reason: base.reason }))
   const fields = revocationListFields({ issuer: getAddress(p.user), jti: p.credential.credentialSubject.nonce, previous: base.previous })
@@ -123,7 +126,7 @@ export async function revokeDelegationCredential(p: {
       const r = await fetch(publishUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(list) })
       // Accepted by the publisher is not yet "verifiers see it": confirm by reading it back.
       if (r.ok && (await isRevocationPublished(p.user, p.sessionManager, p.credential))) return { list, published: true }
-      if (r.ok) return { list, published: false }
+      // Accepted but not readable back yet: still hand the user the durable copy below.
     } catch {
       /* fall through to download */
     }
@@ -250,11 +253,19 @@ export function DelegationCredentialPanel({
     }
   }
 
-  const revoke = async () => {
+  const revoke = async (confirmedNoPublishedList = false) => {
     if (!signer || !stored) return
+    if (confirmedNoPublishedList && !window.confirm(t.sessions.delegation.confirmNoListPrompt)) return
     try {
       setBusy('revoke')
-      const r = await revokeDelegationCredential({ signer, user: userAddress, sessionManager, credential: stored.credential, imported })
+      const r = await revokeDelegationCredential({
+        signer,
+        user: userAddress,
+        sessionManager,
+        credential: stored.credential,
+        imported,
+        confirmedNoPublishedList,
+      })
       setNeedImport(false)
       onStored(afterRevocation(stored, r))
       notify(
@@ -439,6 +450,11 @@ export function DelegationCredentialPanel({
                 {imported ? interpolate(d.importedList, { seq: String(imported.sequence) }) : d.importList}
                 <input hidden type="file" accept="application/json,.json" onChange={(e) => void importList(e.target.files?.[0])} />
               </Button>
+              {!imported && (
+                <Button size="small" color="warning" onClick={() => void revoke(true)} disabled={busy !== '' || !signer} sx={{ textTransform: 'none' }}>
+                  {d.confirmNoList}
+                </Button>
+              )}
             </Alert>
           )}
           {showJson && (

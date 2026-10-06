@@ -243,7 +243,7 @@ function clientIp(c: { req: { header: (k: string) => string | undefined } }): st
 // serverless 上這是 per-instance 的 best-effort，與 /demo 的硬上限同一等級的防線。
 const FREE_RATE_WINDOW_MS = Number(process.env.FREE_RATE_WINDOW_MS ?? "60000");
 const FREE_RATE_MAX = Number(process.env.FREE_RATE_MAX ?? "60"); // 每 IP 每視窗
-/** 固定視窗的每 IP 計數器（per-instance best-effort）。`hit` 計一次並回報是否超過；`peek` 只看不計。 */
+/** 固定視窗的每 IP 計數器（per-instance best-effort）。`hit` 計一次並回報是否超過；`unhit` 退回一次（同一視窗內）。 */
 function windowLimiter(max: number, windowMs: number) {
   const hits = new Map<string, { count: number; resetAt: number }>();
   const retryAfter = (e: { resetAt: number }, now: number) => Math.ceil((e.resetAt - now) / 1000);
@@ -262,11 +262,9 @@ function windowLimiter(max: number, windowMs: number) {
       if (e.count > max) return { limited: true, retryAfterSec: retryAfter(e, now) };
       return { limited: false, retryAfterSec: 0 };
     },
-    peek(ip: string): { limited: boolean; retryAfterSec: number } {
-      const now = Date.now();
+    unhit(ip: string): void {
       const e = hits.get(ip);
-      if (!e || now >= e.resetAt || e.count < max) return { limited: false, retryAfterSec: 0 };
-      return { limited: true, retryAfterSec: retryAfter(e, now) };
+      if (e && Date.now() < e.resetAt && e.count > 0) e.count -= 1;
     },
   };
 }
@@ -276,8 +274,17 @@ const freeRateLimited = (ip: string) => freeLimiter.hit(ip);
 
 // KYA 驗證失敗的每 IP 上限：自簽一張憑證不用付錢，卻會讓驗證端去讀撤銷清單與鏈上 session。
 // 付費端點不走上面的免費限流（由付費牆自然節流），所以「沒付成、被 KYA 拒絕」的請求另外計數。
-const KYA_FAIL_WINDOW_MS = Number(process.env.KYA_FAIL_WINDOW_MS ?? "60000");
-const KYA_FAIL_MAX = Number(process.env.KYA_FAIL_MAX ?? "20"); // 每 IP 每視窗
+// 計數是每個 serverless 實例各自的（best-effort），IP 取自 x-forwarded-for 的第一段——依賴平台（Vercel）覆寫這個 header。
+function positiveIntEnv(name: string, fallback: number): number {
+  const raw = process.env[name]?.trim();
+  if (!raw) return fallback;
+  const n = Number(raw);
+  if (Number.isSafeInteger(n) && n > 0) return n;
+  console.error(`::error::[kya] ${name}=${raw} 不是正整數，改用預設 ${fallback}`);
+  return fallback;
+}
+const KYA_FAIL_WINDOW_MS = positiveIntEnv("KYA_FAIL_WINDOW_MS", 60_000);
+const KYA_FAIL_MAX = positiveIntEnv("KYA_FAIL_MAX", 20); // 每 IP 每視窗
 const kyaFailLimiter = windowLimiter(KYA_FAIL_MAX, KYA_FAIL_WINDOW_MS);
 
 // CORS：GET 的公開資料維持全開（agent/瀏覽器都要用），但**寫入型**的
@@ -513,10 +520,13 @@ function kyaFromEnv(defaultProvider: ethers.ContractRunner): KyaGate | null {
   const chainProvider = rpc ? new ethers.JsonRpcProvider(rpc, undefined, { batchMaxCount: 1 }) : defaultProvider;
   // 預設與記帳同一個 Upstash（多實例共用）；X402_KYA_SPEND_STORE=memory 只給單機開發。
   const spend = process.env.X402_KYA_SPEND_STORE?.trim().toLowerCase() === "memory" ? memoryKyaSpendStore() : upstashKyaSpendStore();
-  console.error(
-    `[kya] X402_KYA_MODE=on：付費端點要求 X-Agent-Presentation（v3 委託憑證）；錨定 ${config.anchor}；` +
-      `session manager ${config.sessionManager ?? "（未設定→付費端點 503）"}；花費帳 ${spend.describe}`,
-  );
+  // mode=invalid 時 resolveKyaConfig 已印過 ::error::；這裡不能再印「=on」讓人以為有開。
+  if (config.mode === "on") {
+    console.error(
+      `[kya] X402_KYA_MODE=on：付費端點要求 X-Agent-Presentation（v3 委託憑證）；錨定 ${config.anchor}；` +
+        `session manager ${config.sessionManager ?? "（未設定→付費端點 503）"}；花費帳 ${spend.describe}`,
+    );
+  }
   return createKyaGate({ config, chain: providerKyaChainReader(chainProvider), spend });
 }
 
@@ -1352,9 +1362,12 @@ export function createApp(opts: CreateAppOptions = {}): Hono<{ Variables: AppVar
       const pay = useV2 ? v2Hdr : x402Protocol === "v2" ? undefined : v1Hdr;
       const ambiguous = x402Protocol === "both" && x402v2 !== null && Boolean(v2Hdr) && Boolean(v1Hdr);
       if (pay && !ambiguous) {
+        // 進入驗證前先計一次（同步，所以並行的請求也擋得住），驗證通過或是我們這邊的 503 再退回：
+        // 計數器同時是「每 IP 進行中＋失敗」的上限，不會因為 await 期間一起湧入而超過。
         const ip = clientIp(c);
-        const throttled = kyaFailLimiter.peek(ip);
+        const throttled = kyaFailLimiter.hit(ip);
         if (throttled.limited) {
+          kyaFailLimiter.unhit(ip);
           return c.json(
             {
               ok: false,
@@ -1366,12 +1379,16 @@ export function createApp(opts: CreateAppOptions = {}): Hono<{ Variables: AppVar
             { "Retry-After": String(throttled.retryAfterSec) },
           );
         }
-        const d = await kya.authorize(c, pay);
-        if (!d.ok) {
-          // 503（我們這邊的基礎設施）不算在請求方頭上。
-          if (d.status !== 503) kyaFailLimiter.hit(ip);
-          return c.json(d.body, d.status);
+        let d: Awaited<ReturnType<KyaGate["authorize"]>>;
+        try {
+          d = await kya.authorize(c, pay);
+        } catch (err) {
+          kyaFailLimiter.unhit(ip);
+          throw err;
         }
+        // 通過、或 503（我們這邊的基礎設施／設定）不算在請求方頭上。
+        if (d.ok || d.status === 503) kyaFailLimiter.unhit(ip);
+        if (!d.ok) return c.json(d.body, d.status);
         kyaHold = d.hold;
         kyaProto = useV2 ? "v2" : "v1";
       }

@@ -66523,12 +66523,18 @@ function createKyaGate(o) {
       const f2 = r3.fields;
       const hash4 = r3.credentialHash;
       if (chainIdOk === null) {
+        let id2;
         try {
-          chainIdOk = await o.chain.chainId();
+          id2 = await o.chain.chainId();
         } catch (e) {
           console.error("[kya] \u8B80\u53D6 chainId \u5931\u6557\uFF1A", e);
           return deny(503, "kya_chain_unavailable", "\u7121\u6CD5\u78BA\u8A8D\u93C8\u4E0A\u8B80\u53D6\u4F86\u6E90\u7684 chainId\uFF0C\u4E0D\u767C\u51FA\u4ED8\u6B3E\u3002");
         }
+        if (!cfg.acceptedChainIds.includes(id2)) {
+          console.error(`::error::[kya] \u8B80\u53D6\u7AEF RPC \u7684 chainId ${id2} \u4E0D\u5728 DELEGATION_VC_CHAIN_IDS [${cfg.acceptedChainIds.join(", ")}]`);
+          return deny(503, "kya_misconfigured", "KYA \u7684\u93C8\u4E0A\u8B80\u53D6\u4F86\u6E90\u8207\u63A5\u53D7\u7684\u93C8\u8A2D\u5B9A\u4E0D\u4E00\u81F4\uFF0C\u4ED8\u8CBB\u7AEF\u9EDE\u66AB\u505C\u670D\u52D9\u3002");
+        }
+        chainIdOk = id2;
       }
       if (r3.chainId !== chainIdOk) {
         return deny(403, "kya_credential_invalid", `\u59D4\u8A17\u6191\u8B49\u7C3D\u7D66 chainId ${r3.chainId}\uFF0C\u672C\u670D\u52D9\u8B80\u53D6\u7684\u662F chainId ${chainIdOk}\u3002`, {
@@ -67383,18 +67389,24 @@ function windowLimiter(max, windowMs) {
       if (e.count > max) return { limited: true, retryAfterSec: retryAfter(e, now) };
       return { limited: false, retryAfterSec: 0 };
     },
-    peek(ip) {
-      const now = Date.now();
+    unhit(ip) {
       const e = hits.get(ip);
-      if (!e || now >= e.resetAt || e.count < max) return { limited: false, retryAfterSec: 0 };
-      return { limited: true, retryAfterSec: retryAfter(e, now) };
+      if (e && Date.now() < e.resetAt && e.count > 0) e.count -= 1;
     }
   };
 }
 var freeLimiter = windowLimiter(FREE_RATE_MAX, FREE_RATE_WINDOW_MS);
 var freeRateLimited = (ip) => freeLimiter.hit(ip);
-var KYA_FAIL_WINDOW_MS = Number(process.env.KYA_FAIL_WINDOW_MS ?? "60000");
-var KYA_FAIL_MAX = Number(process.env.KYA_FAIL_MAX ?? "20");
+function positiveIntEnv(name, fallback) {
+  const raw2 = process.env[name]?.trim();
+  if (!raw2) return fallback;
+  const n2 = Number(raw2);
+  if (Number.isSafeInteger(n2) && n2 > 0) return n2;
+  console.error(`::error::[kya] ${name}=${raw2} \u4E0D\u662F\u6B63\u6574\u6578\uFF0C\u6539\u7528\u9810\u8A2D ${fallback}`);
+  return fallback;
+}
+var KYA_FAIL_WINDOW_MS = positiveIntEnv("KYA_FAIL_WINDOW_MS", 6e4);
+var KYA_FAIL_MAX = positiveIntEnv("KYA_FAIL_MAX", 20);
 var kyaFailLimiter = windowLimiter(KYA_FAIL_MAX, KYA_FAIL_WINDOW_MS);
 var CORS_ALLOWED_ORIGINS = (process.env.CORS_ALLOWED_ORIGINS ?? "http://localhost:5173,http://localhost:4173,https://pepelab-onchain-cfd-djot.vercel.app").split(",").map((s) => s.trim().replace(/\/$/, "")).filter(Boolean);
 var FACILITATOR_RETRY_AFTER_SEC = 5;
@@ -67508,9 +67520,11 @@ function kyaFromEnv(defaultProvider) {
   const rpc = process.env.KYA_RPC_URL?.trim();
   const chainProvider = rpc ? new ethers_exports.JsonRpcProvider(rpc, void 0, { batchMaxCount: 1 }) : defaultProvider;
   const spend = process.env.X402_KYA_SPEND_STORE?.trim().toLowerCase() === "memory" ? memoryKyaSpendStore() : upstashKyaSpendStore();
-  console.error(
-    `[kya] X402_KYA_MODE=on\uFF1A\u4ED8\u8CBB\u7AEF\u9EDE\u8981\u6C42 X-Agent-Presentation\uFF08v3 \u59D4\u8A17\u6191\u8B49\uFF09\uFF1B\u9328\u5B9A ${config3.anchor}\uFF1Bsession manager ${config3.sessionManager ?? "\uFF08\u672A\u8A2D\u5B9A\u2192\u4ED8\u8CBB\u7AEF\u9EDE 503\uFF09"}\uFF1B\u82B1\u8CBB\u5E33 ${spend.describe}`
-  );
+  if (config3.mode === "on") {
+    console.error(
+      `[kya] X402_KYA_MODE=on\uFF1A\u4ED8\u8CBB\u7AEF\u9EDE\u8981\u6C42 X-Agent-Presentation\uFF08v3 \u59D4\u8A17\u6191\u8B49\uFF09\uFF1B\u9328\u5B9A ${config3.anchor}\uFF1Bsession manager ${config3.sessionManager ?? "\uFF08\u672A\u8A2D\u5B9A\u2192\u4ED8\u8CBB\u7AEF\u9EDE 503\uFF09"}\uFF1B\u82B1\u8CBB\u5E33 ${spend.describe}`
+    );
+  }
   return createKyaGate({ config: config3, chain: providerKyaChainReader(chainProvider), spend });
 }
 function exposureTargets() {
@@ -68106,8 +68120,9 @@ function createApp(opts = {}) {
       const ambiguous = x402Protocol === "both" && x402v2 !== null && Boolean(v2Hdr) && Boolean(v1Hdr);
       if (pay && !ambiguous) {
         const ip = clientIp(c);
-        const throttled = kyaFailLimiter.peek(ip);
+        const throttled = kyaFailLimiter.hit(ip);
         if (throttled.limited) {
+          kyaFailLimiter.unhit(ip);
           return c.json(
             {
               ok: false,
@@ -68119,11 +68134,15 @@ function createApp(opts = {}) {
             { "Retry-After": String(throttled.retryAfterSec) }
           );
         }
-        const d = await kya.authorize(c, pay);
-        if (!d.ok) {
-          if (d.status !== 503) kyaFailLimiter.hit(ip);
-          return c.json(d.body, d.status);
+        let d;
+        try {
+          d = await kya.authorize(c, pay);
+        } catch (err) {
+          kyaFailLimiter.unhit(ip);
+          throw err;
         }
+        if (d.ok || d.status === 503) kyaFailLimiter.unhit(ip);
+        if (!d.ok) return c.json(d.body, d.status);
         kyaHold = d.hold;
         kyaProto = useV2 ? "v2" : "v1";
       }

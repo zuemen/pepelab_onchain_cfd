@@ -1,5 +1,5 @@
 {
-  "digest": "1622c545839be7b7",
+  "digest": "557a3045eb49012d",
   "files": {
     "agent/shared/src/abis.ts": "872c3136604d6584",
     "agent/shared/src/addresses.ts": "a6cb279048c58a4b",
@@ -23,11 +23,11 @@
     "agent/shared/src/verification.ts": "c7823c4dc411e59a",
     "agent/shared/src/write.ts": "6dd4fe73cabb0ff6",
     "agent/shared/src/x402Client.ts": "5da0cba5d9e429ee",
-    "agent/signal-api/src/app.ts": "a7501133cd47517b",
+    "agent/signal-api/src/app.ts": "d87f0dcfaf589970",
     "agent/signal-api/src/benchmarks.ts": "bac063beeb2f0f45",
     "agent/signal-api/src/candles.ts": "1fd61b7585fca322",
     "agent/signal-api/src/exposure.ts": "dffd7355ac1e0842",
-    "agent/signal-api/src/kya.ts": "8420597e4199c048",
+    "agent/signal-api/src/kya.ts": "acbad6fef8d71aa6",
     "agent/signal-api/src/ledger.ts": "a8fd8c0d60444c54",
     "agent/signal-api/src/lru.ts": "32e45fb037d32c24",
     "agent/signal-api/src/onchainRevenue.ts": "c369334c41ba8fe5",

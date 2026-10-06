@@ -163,7 +163,10 @@ export const sessions: Catalog['sessions'] = {
     confirmingPublished: 'Checking…',
     revocationConfirmed: 'Revocation confirmed in the status directory; the credential is no longer valid.',
     revocationNotYetPublished: 'The status directory does not carry this revocation yet; the credential is still valid.',
-    importHint: 'If the published status list cannot be read, import the one currently published (.json); the revocation will build on it.',
+    importHint: 'The published status list cannot be read (set VITE_VC_STATUS_URL, and the status host must allow CORS from this site). Import the one currently published (.json) and the revocation builds on it; if nothing was ever published, confirm that explicitly to sign sequence 1.',
+    confirmNoList: 'Nothing has been published yet (first revocation)',
+    confirmNoListPrompt:
+      'Confirm this issuer has never published a status list? The revocation will be signed as sequence 1. If a list is in fact published, verifiers will reject this one and the revocation will not take effect — import the current list instead if unsure.',
     importList: 'Import current status list',
     importedList: 'Imported sequence {seq}',
     importFailed: 'Import failed: {reason}',

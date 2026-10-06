@@ -368,12 +368,19 @@ export function createKyaGate(o: KyaGateOptions): KyaGate {
 
       // 憑證的鏈必須是讀取端實際連的那條（session 與錨定都從這條鏈讀；錨定只存 hash，不分鏈）。
       if (chainIdOk === null) {
+        let id: number;
         try {
-          chainIdOk = await o.chain.chainId();
+          id = await o.chain.chainId();
         } catch (e) {
           console.error("[kya] 讀取 chainId 失敗：", e);
           return deny(503, "kya_chain_unavailable", "無法確認鏈上讀取來源的 chainId，不發出付款。");
         }
+        // 讀取端的鏈不在接受清單裡＝伺服器設定錯（KYA_RPC_URL／DELEGATION_VC_CHAIN_IDS），不是請求方的錯。
+        if (!cfg.acceptedChainIds.includes(id)) {
+          console.error(`::error::[kya] 讀取端 RPC 的 chainId ${id} 不在 DELEGATION_VC_CHAIN_IDS [${cfg.acceptedChainIds.join(", ")}]`);
+          return deny(503, "kya_misconfigured", "KYA 的鏈上讀取來源與接受的鏈設定不一致，付費端點暫停服務。");
+        }
+        chainIdOk = id;
       }
       if (r3.chainId !== chainIdOk) {
         return deny(403, "kya_credential_invalid", `委託憑證簽給 chainId ${r3.chainId}，本服務讀取的是 chainId ${chainIdOk}。`, {

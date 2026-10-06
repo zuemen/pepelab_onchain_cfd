@@ -133,7 +133,7 @@ Schema 單一來源：`frontend/src/contracts/agentDelegation.ts`（純函式、
 | `DELEGATION_VC_CHAIN_IDS` | `AGENT_CHAIN_ID,84532` | 接受的 DID 鏈 |
 | `X402_KYA_MAX_SKEW_SEC` | 120 | presentation 時間容忍（上限 600） |
 | `X402_KYA_SPEND_STORE` | Upstash | `memory` 只給單機開發 |
-| `KYA_FAIL_MAX`／`KYA_FAIL_WINDOW_MS` | 20／60000 | 每個 IP 在視窗內的 KYA 驗證失敗上限；超過 → 429 `kya_rate_limited`（不再做驗證） |
+| `KYA_FAIL_MAX`／`KYA_FAIL_WINDOW_MS` | 20／60000 | 每個 IP 在視窗內「進行中＋失敗」的 KYA 驗證上限（進入時先計、通過或 503 時退回，所以並行請求也擋得住）；超過 → 429 `kya_rate_limited`（不再做驗證）。必須是正整數，否則用預設並印 `::error::`。每個實例各自計數（best-effort），IP 取自 `x-forwarded-for` 第一段，依賴平台覆寫該 header |
 
 **Presentation**（header `X-Agent-Presentation`，base64url JSON）：W3C `VerifiablePresentation`，`holder`＝代理人
 DID，內含一張 v3 憑證；`proof` 用 `EthereumEip712Signature2021`、`proofPurpose: authentication`，
@@ -147,7 +147,7 @@ DID，內含一張 v3 憑證；`proof` 用 `EthereumEip712Signature2021`、`proo
 3. presentation：holder 簽章、±120 秒、綁定本請求（方法＋正規化路徑）與本付款（nonce＋payer）→ 403 `kya_presentation_invalid`。
 4. **身分一致**：presentation 簽者 ＝ 憑證主體（代理人 DID）＝ x402 付款人（`authorization.from`）。
 5. 憑證簽章／期限／綁定的 session manager → 403 `kya_credential_invalid`；憑證的 chainId 必須等於讀取端 RPC 實際連的鏈
-   （`VC_WRONG_CHAIN`）；期間、剩餘效期或總額超出花費帳能正確表示的範圍 → 403（`KYA_ALLOWANCE_OUT_OF_RANGE`，請簽較短效期）；
+   （`VC_WRONG_CHAIN`；讀取端的鏈本身不在 `DELEGATION_VC_CHAIN_IDS` 裡是伺服器設定錯 → 503 `kya_misconfigured`）；期間、剩餘效期或總額超出花費帳能正確表示的範圍 → 403（`KYA_ALLOWANCE_OUT_OF_RANGE`，請簽較短效期）；
    端點不在 `x402.endpoints` → 403 `kya_endpoint_not_allowed`。
 6. 撤銷（ADR-016 狀態清單，fail-closed）：被撤銷 → 403 `kya_credential_revoked`；拿不到狀態 → 503 `kya_status_unverified`
    （回應只帶原因代碼，完整訊息只寫伺服器 log）。
@@ -178,8 +178,10 @@ DID，內含一張 v3 憑證；`proof` 用 `EthereumEip712Signature2021`、`proo
   顯示代理人／簽發者 DID、session 額度、credentialHash、狀態（有效／已撤銷／過期／session 已撤銷、錨定或已被取代）、
   x402 花費進度（讀 `/kya/spend`）、憑證 JSON 與下載、解除錨定。撤銷（或撤銷 session 時一併撤銷）：先從
   `VITE_VC_STATUS_URL/<issuer>.json` 讀**目前已發佈**的清單並驗簽，接在它之後簽新的 ADR-016 清單（累積、sequence 遞增）；
-  讀不到就不簽，請使用者匯入目前的清單（只靠瀏覽器記憶簽出的清單可能比已發佈的舊，驗證端會拒收，撤銷不會生效）。
-  設了 `VITE_VC_STATUS_PUBLISH_URL` 就 POST，否則下載交給營運方 `npm run vc-status install`；**只有讀回確認新清單已發佈**
+  讀不到就不簽，請使用者匯入目前的清單（只靠瀏覽器記憶簽出的清單可能比已發佈的舊，驗證端會拒收，撤銷不會生效）；
+  從來沒有發佈過清單的簽發者，由使用者明確確認「目前沒有已發佈的清單」後以 sequence 1 簽署。要讓前端讀得到，
+  必須設定 `VITE_VC_STATUS_URL`，而且狀態主機要開 CORS 給前端網域。
+  設了 `VITE_VC_STATUS_PUBLISH_URL` 就 POST；讀回沒確認到（或沒設）時一律下載一份交給營運方 `npm run vc-status install`；**只有讀回確認新清單已發佈**
   才顯示「已撤銷」，之前顯示「撤銷待發佈（尚未生效）」並提供「確認已發佈」。要立即擋下付費 API 用「解除錨定」（一筆交易）。
   錨定合約位址：`frontend/src/contracts/sessionCredentialAnchor.ts`；`VITE_SESSION_ANCHOR_ADDRESS` 只覆寫
   `VITE_SESSION_ANCHOR_CHAIN_ID`（預設 31337）那條鏈。送 `anchor`／`unanchor` 之前檢查位址有 code、綁的 manager 與憑證相同。

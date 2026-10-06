@@ -470,6 +470,48 @@ const vpBig = async (pay: string, path = `/signals/${TRADER}`) =>
   ok("期間／效期／上限超出花費帳能正確表示的範圍 → 403 拒收；reserve 腳本參數不合法時不寫入任何 key");
 }
 
+// 19) 並行：同一 IP 200 個同時進來的失敗請求，真正做驗證的不超過上限（進入時先計數）
+{
+  let calls = 0;
+  const counting = { ...kya, authorize: (c: Parameters<typeof kya.authorize>[0], h: string) => (calls++, kya.authorize(c, h)) };
+  const app = createApp({ ...seams, x402Protocol: "both", kya: counting });
+  const pays = await Promise.all(Array.from({ length: 200 }, () => v1Payment(app)));
+  const res = await Promise.all(pays.map((p) => app.request(URL_SIGNALS, { headers: { "X-PAYMENT": p, "x-forwarded-for": "10.0.1.19" } })));
+  const codes = res.map((r) => r.status);
+  assert.ok(calls <= 20, `authorize 被呼叫 ${calls} 次（上限 20）`);
+  assert.equal(codes.filter((c) => c === 403).length, calls);
+  assert.equal(codes.filter((c) => c === 429).length, 200 - calls);
+  ok(`200 個並行的失敗請求只有 ${calls} 個進入 KYA 驗證（≤ 上限 20），其餘 429`);
+}
+
+// 20) 讀取端 RPC 的鏈不在接受清單（伺服器設定錯）→ 503 kya_misconfigured，不計入限流
+{
+  const misChain = createKyaGate({ ...gateBase, spend: memoryKyaSpendStore(), chain: { ...gateBase.chain, chainId: async () => 1 } });
+  const app = createApp({ ...seams, x402Protocol: "both", kya: misChain });
+  for (let i = 0; i < 25; i++) {
+    const pay = await v1Payment(app);
+    const res = await app.request(URL_SIGNALS, { headers: { "X-PAYMENT": pay, [AGENT_PRESENTATION_HEADER]: await vpBig(pay), "x-forwarded-for": "10.0.1.20" } });
+    assert.equal(res.status, 503, `第 ${i + 1} 次`);
+    assert.equal(((await res.json()) as { error: string }).error, "kya_misconfigured");
+  }
+  ok("讀取端 RPC 的鏈不在 DELEGATION_VC_CHAIN_IDS → 503 kya_misconfigured；503 不計入每 IP 失敗上限");
+}
+
+// 21) 釘住 v1 套件行為：x402-hono 鎖在 0.5.3，settle 斷線不會丟出套件（回 402），KYA 判 failed 退回
+{
+  const { readFileSync } = await import("node:fs");
+  const pkgUrl = import.meta.resolve("x402-hono").replace(/\/dist\/.*$/, "/package.json");
+  assert.equal(JSON.parse(readFileSync(new URL(pkgUrl), "utf8")).version, "0.5.3", "KYA 的 v1 結算分類依賴 x402-hono 0.5.3 的行為");
+  const before = BigInt(upstash.strings.get(kyaTotalKey(big.credentialHash)) ?? "0");
+  facilitator.mode = "settle_destroy";
+  const pay = await v1Payment(appOn);
+  const res = await appOn.request(URL_SIGNALS, { headers: { "X-PAYMENT": pay, [AGENT_PRESENTATION_HEADER]: await vpBig(pay), "x-forwarded-for": "10.0.1.21" } });
+  facilitator.mode = "ok";
+  assert.equal(res.status, 402, "settle 例外在 x402-hono 內被接住、改成 402（不是丟出來的 500）");
+  assert.equal(BigInt(upstash.strings.get(kyaTotalKey(big.credentialHash)) ?? "0"), before);
+  ok("x402-hono 鎖在 0.5.3：settle 斷線在套件內變成 402、不丟例外；KYA 退回預留（v1 已知少算的限制見文件）");
+}
+
 await facilitator.close();
 await upstash.close();
 await rpc.close();
