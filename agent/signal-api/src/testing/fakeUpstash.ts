@@ -128,6 +128,31 @@ export async function startFakeUpstash(): Promise<FakeUpstash> {
           list(KEYS[1]).push(ARGV[1]);
           return ok(1);
         }
+        // kya.ts 的 x402 KYA 花費預留／退回（語意與 Lua 逐行相同）。
+        if (script.startsWith("-- pepelab:kya_reserve")) {
+          // 參數先驗完才寫（與 Lua 相同；上限讀腳本裡內嵌的數字）。
+          const maxTtl = Number(/pt > (\d+)/.exec(script)?.[1]);
+          const [a0, mt, mp, pt, tt] = ARGV.slice(0, 5).map(Number);
+          if ([a0, mt, mp, pt, tt].some((x) => !Number.isFinite(x)) || a0 < 0 || pt < 1 || tt < 1 || pt > maxTtl || tt > maxTtl) {
+            return void res.writeHead(400).end(JSON.stringify({ error: "ERR kya_reserve: bad arguments" }));
+          }
+          const t = Number(strings.get(KEYS[0]) ?? "0");
+          const p = Number(strings.get(KEYS[1]) ?? "0");
+          const a = Number(ARGV[0]);
+          if (t + a > Number(ARGV[1])) return ok([0, String(t), String(p), "total"]);
+          if (p + a > Number(ARGV[2])) return ok([0, String(t), String(p), "period"]);
+          strings.set(KEYS[0], String(t + a));
+          strings.set(KEYS[1], String(p + a));
+          return ok([1, String(t + a), String(p + a), "ok"]);
+        }
+        if (script.startsWith("-- pepelab:kya_release")) {
+          const a = Number(ARGV[0]);
+          for (const key of KEYS.slice(0, 2)) {
+            const v = Number(strings.get(key) ?? "0");
+            if (v > 0) strings.set(key, String(Math.max(0, v - a)));
+          }
+          return ok(1);
+        }
         if (script.startsWith("-- pepelab:unknown_move")) {
           const l = list(KEYS[0]);
           const i = l.indexOf(ARGV[0]);

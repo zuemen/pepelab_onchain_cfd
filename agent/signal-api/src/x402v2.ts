@@ -322,6 +322,11 @@ export interface X402V2Options {
    * A hook rather than reading the context here keeps this module ignorant of the app's variables.
    */
   unknownRecordContext?: (c: Context) => Pick<UnknownSettlementRecord, "ledgerEntry">;
+  /**
+   * 就要把授權送去 settle 之前呼叫（同步）。app.ts 的 KYA 用它判斷「付費牆丟例外時，錢有沒有可能已經動了」：
+   * 沒呼叫過＝結算前就失敗，可以退回花費預留；呼叫過＝結果不明，保留。
+   */
+  onSettleStart?: (c: Context) => void;
   /** /supported 失敗後的退避（ms），預設 DEFAULT_INIT_BACKOFF_MS。 */
   initBackoffMs?: number;
   /** both 模式未付款 402 等 /supported 的上限（ms），預設 DEFAULT_UNPAID_INIT_TIMEOUT_MS。 */
@@ -641,6 +646,7 @@ export function createX402V2(opts: X402V2Options): X402V2Paywall {
       };
 
       let settle: Awaited<ReturnType<typeof httpServer.processSettlement>>;
+      opts.onSettleStart?.(c);
       try {
         settle = await httpServer.processSettlement(paymentPayload, paymentRequirements, declaredExtensions, {
           request: context,

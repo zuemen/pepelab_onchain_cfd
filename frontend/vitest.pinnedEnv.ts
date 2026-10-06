@@ -26,6 +26,11 @@ export const PINNED_ENV = [
   'VITE_SIGNAL_API_URL',
   // 靜態資產前綴：global-config.ts 的 CONFIG.assetsDir，會進圖片網址。
   'VITE_ASSETS_DIR',
+  // v3 委託憑證（docs/SSI_AGENT_DELEGATION.md）：錨定合約位址覆寫、撤銷清單發佈端點。
+  'VITE_SESSION_ANCHOR_ADDRESS',
+  'VITE_SESSION_ANCHOR_CHAIN_ID',
+  'VITE_VC_STATUS_PUBLISH_URL',
+  'VITE_VC_STATUS_URL',
 ] as const;
 
 /**

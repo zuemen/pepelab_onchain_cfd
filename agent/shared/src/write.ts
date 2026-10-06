@@ -33,6 +33,18 @@ import { SigningGuardError } from "./signingGuard.ts";
 import { checkAndRecordVcNonce } from "./vcNonce.ts";
 import { checkCredentialStatus } from "./vcStatus.ts";
 import { redactSecrets } from "./redact.ts";
+import {
+  compareDelegationWithSession,
+  delegationAsVerifyResult,
+  delegationFieldsFromCredential,
+  isDelegationCredential,
+  readOnchainSession,
+  verifyDelegationCredential,
+  type DelegationCredential,
+} from "./delegation.ts";
+
+/** 寫入路徑接受的授權憑證：v2（v1 至淘汰日）授權 VC，或 v3 委託憑證（docs/SSI_AGENT_DELEGATION.md）。 */
+export type AgentCredential = AuthorizationVC | DelegationCredential;
 
 const ZERO = "0x0000000000000000000000000000000000000000";
 
@@ -222,13 +234,14 @@ function resolveSession():
  * 回 `{ status }` 代表撤銷狀態檢查未過（被撤銷或狀態未知——寫入一律 fail-closed）。
  */
 async function verifyVcAgainstChain(
-  vc: AuthorizationVC,
+  vc: AgentCredential,
   sessionId: number,
   agentAddress: string,
   mgr: ethers.Contract,
   action: "open" | "close",
   out: { warnings: string[] } = { warnings: [] },
 ): Promise<string | null | { degraded: string } | { status: VcStatusRejection }> {
+  if (isDelegationCredential(vc)) return verifyDelegationAgainstChain(vc, sessionId, agentAddress, mgr, action, out);
   // v2 VC 的 domain 綁 session manager 位址：必須等於本 agent 實際呼叫的那一顆。
   const mgrAddress = await mgr.getAddress();
   const res = verifyAuthorizationVC(vc, { expectedVerifyingContract: mgrAddress });
@@ -294,6 +307,61 @@ async function verifyVcAgainstChain(
   return d.kind === "reject" ? d.reason : null;
 }
 
+/**
+ * v3 委託憑證（AgentDelegationCredential）的寫入前檢查，語意與 v2 相同、比對更完整：
+ * 驗簽（domain 綁本 agent 的 session manager）→ 持有者＝本 agent、sessionId 相符 →
+ * ADR-016 撤銷狀態（fail-closed）→ 與鏈上 sessions(id)＋allowedAssets(id) **逐欄**比對
+ * （user、agent、單筆上限、總預算、槓桿、到期、資產白名單、未撤銷）→ nonce／取代檢查。
+ */
+async function verifyDelegationAgainstChain(
+  vc: DelegationCredential,
+  sessionId: number,
+  agentAddress: string,
+  mgr: ethers.Contract,
+  action: "open" | "close",
+  out: { warnings: string[] },
+): Promise<string | null | { degraded: string } | { status: VcStatusRejection }> {
+  const mgrAddress = await mgr.getAddress();
+  const r3 = verifyDelegationCredential(vc, { expectedSessionManager: mgrAddress });
+  if (!r3.valid) return `委託憑證(VC v3)驗證失敗（${r3.reasonCode ?? "VC_INVALID"}）：${r3.reason}`;
+  if (r3.sessionId !== sessionId) return `VC sessionId(${r3.sessionId}) 與請求(${sessionId}) 不符`;
+  if (r3.agent && ethers.getAddress(r3.agent) !== ethers.getAddress(agentAddress))
+    return `VC 授權的 agent(${r3.agent}) 非本 session key(${agentAddress})`;
+
+  const res = delegationAsVerifyResult(r3);
+  const st = await checkCredentialStatus(res, { action: "write", verifyingContract: mgrAddress });
+  if (!st.ok) {
+    return {
+      status: {
+        reasonCode: st.status === "revoked" ? "VC_REVOKED" : "VC_STATUS_UNVERIFIED",
+        detail: st.reasonCode,
+        message: st.message,
+      },
+    };
+  }
+  for (const w of st.warnings ?? []) {
+    out.warnings.push(w);
+    console.warn(`[write] ⚠ ${w}`);
+  }
+
+  try {
+    const runner = mgr.runner?.provider ?? mgr.runner;
+    if (!runner) return "session manager 沒有連線的 provider，無法讀取鏈上 session";
+    const s = await readOnchainSession(runner, mgrAddress, sessionId);
+    const mm = compareDelegationWithSession(r3.fields!, s);
+    if (mm) return `${mm.message}（${mm.code}）`;
+  } catch (err) {
+    return `讀取鏈上 session 失敗：${redactSecrets((err as Error).message)}`;
+  }
+
+  const d = vcNonceDecision(checkAndRecordVcNonce(res), action);
+  if (d.kind === "degraded") {
+    console.error(`::error::[write] 平倉在降級模式放行：VC nonce 狀態故障（${d.code}），僅以 VC 驗章＋鏈上比對為準`);
+    return { degraded: d.code };
+  }
+  return d.kind === "reject" ? d.reason : null;
+}
+
 /** 撤銷狀態檢查未過（被撤銷 → VC_REVOKED；狀態拿不到／驗不過 → VC_STATUS_UNVERIFIED）。 */
 export interface VcStatusRejection {
   reasonCode: "VC_REVOKED" | "VC_STATUS_UNVERIFIED";
@@ -340,7 +408,7 @@ export async function openPositionForSession(params: {
   isLong: boolean;
   marginUsdc: number;
   leverage: number;
-  authVc?: AuthorizationVC;
+  authVc?: AgentCredential;
   allowUnsignedForTesting?: boolean;
 }): Promise<WriteResult> {
   const base = {
@@ -386,11 +454,34 @@ export async function openPositionForSession(params: {
     }
 
     // caps 預檢（省 gas、錯誤更清楚）：單筆保證金 / 槓桿不得超過 VC 授權上限。
-    const caps = params.authVc.credentialSubject.authorization;
-    if (params.marginUsdc > Number(caps.maxMarginPerTrade))
-      return reject(req, "vc", "VC_MARGIN_CAP_EXCEEDED", `單筆保證金 ${params.marginUsdc} 超過上限 ${caps.maxMarginPerTrade}`);
-    if (params.leverage > Number(caps.maxLeverage))
-      return reject(req, "vc", "VC_LEVERAGE_CAP_EXCEEDED", `槓桿 ${params.leverage} 超過上限 ${caps.maxLeverage}`);
+    if (isDelegationCredential(params.authVc)) {
+      // v3：上限是鏈上原始單位（18 位小數），另有資產白名單。
+      const f = delegationFieldsFromCredential(params.authVc).fields;
+      let marginRaw: bigint;
+      try {
+        marginRaw = ethers.parseUnits(String(params.marginUsdc), 18);
+      } catch {
+        return reject(req, "vc", "VC_MARGIN_CAP_EXCEEDED", `保證金 ${params.marginUsdc} 不是合法金額`);
+      }
+      if (marginRaw > BigInt(f.maxMarginPerTrade))
+        return reject(req, "vc", "VC_MARGIN_CAP_EXCEEDED", `單筆保證金 ${params.marginUsdc} 超過上限 ${ethers.formatUnits(f.maxMarginPerTrade, 18)}`);
+      if (params.leverage > f.maxLeverage)
+        return reject(req, "vc", "VC_LEVERAGE_CAP_EXCEEDED", `槓桿 ${params.leverage} 超過上限 ${f.maxLeverage}`);
+      let assetId: string | null = null;
+      try {
+        assetId = assetIdOf(params.symbol).toLowerCase();
+      } catch {
+        /* 未知代號：交給下面的 assetIdOf 回錯 */
+      }
+      if (assetId && f.allowedAssets.length > 0 && !f.allowedAssets.map((a) => a.toLowerCase()).includes(assetId))
+        return reject(req, "vc", "VC_ASSET_NOT_ALLOWED", `資產 ${params.symbol} 不在憑證的資產白名單內`);
+    } else {
+      const caps = params.authVc.credentialSubject.authorization;
+      if (params.marginUsdc > Number(caps.maxMarginPerTrade))
+        return reject(req, "vc", "VC_MARGIN_CAP_EXCEEDED", `單筆保證金 ${params.marginUsdc} 超過上限 ${caps.maxMarginPerTrade}`);
+      if (params.leverage > Number(caps.maxLeverage))
+        return reject(req, "vc", "VC_LEVERAGE_CAP_EXCEEDED", `槓桿 ${params.leverage} 超過上限 ${caps.maxLeverage}`);
+    }
   }
 
   // ERC-8126 風險閘門（預設關，旗標開啟才生效）。
@@ -640,7 +731,7 @@ async function handlePreBroadcastError(
 export async function closePositionForSession(params: {
   sessionId: number;
   positionId: number;
-  authVc?: AuthorizationVC;
+  authVc?: AgentCredential;
   allowUnsignedForTesting?: boolean;
 }): Promise<WriteResult> {
   const base = { action: "close" as const, sessionId: params.sessionId, positionId: params.positionId };

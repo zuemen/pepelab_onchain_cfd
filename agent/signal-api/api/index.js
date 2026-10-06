@@ -1869,7 +1869,7 @@ var require_sender = __commonJS({
        */
       static frame(data4, options) {
         let mask2;
-        let merge = false;
+        let merge2 = false;
         let offset = 2;
         let skipMasking = false;
         if (options.mask) {
@@ -1902,7 +1902,7 @@ var require_sender = __commonJS({
           }
         } else {
           dataLength2 = data4.length;
-          merge = options.mask && options.readOnly && !skipMasking;
+          merge2 = options.mask && options.readOnly && !skipMasking;
         }
         let payloadLength = dataLength2;
         if (dataLength2 >= 65536) {
@@ -1912,7 +1912,7 @@ var require_sender = __commonJS({
           offset += 2;
           payloadLength = 126;
         }
-        const target = Buffer.allocUnsafe(merge ? dataLength2 + offset : offset);
+        const target = Buffer.allocUnsafe(merge2 ? dataLength2 + offset : offset);
         target[0] = options.fin ? options.opcode | 128 : options.opcode;
         if (options.rsv1) target[0] |= 64;
         target[1] = payloadLength;
@@ -1929,7 +1929,7 @@ var require_sender = __commonJS({
         target[offset - 2] = mask2[2];
         target[offset - 1] = mask2[3];
         if (skipMasking) return [target, data4];
-        if (merge) {
+        if (merge2) {
           applyMask(data4, mask2, target, offset, dataLength2);
           return [target];
         }
@@ -2685,7 +2685,7 @@ var require_websocket = __commonJS({
     var http3 = __require("http");
     var net = __require("net");
     var tls = __require("tls");
-    var { randomBytes: randomBytes6, createHash: createHash2 } = __require("crypto");
+    var { randomBytes: randomBytes7, createHash: createHash2 } = __require("crypto");
     var { Duplex, Readable: Readable2 } = __require("stream");
     var { URL: URL2 } = __require("url");
     var PerMessageDeflate2 = require_permessage_deflate();
@@ -3223,7 +3223,7 @@ var require_websocket = __commonJS({
         }
       }
       const defaultPort = isSecure ? 443 : 80;
-      const key = randomBytes6(16).toString("base64");
+      const key = randomBytes7(16).toString("base64");
       const request = isSecure ? https2.request : http3.request;
       const protocolSet = /* @__PURE__ */ new Set();
       let perMessageDeflate;
@@ -5967,7 +5967,7 @@ function createHasher(hashCons) {
   hashC.create = () => hashCons();
   return hashC;
 }
-function randomBytes4(bytesLength = 32) {
+function randomBytes5(bytesLength = 32) {
   if (crypto4 && typeof crypto4.getRandomValues === "function") {
     return crypto4.getRandomValues(new Uint8Array(bytesLength));
   }
@@ -10427,7 +10427,7 @@ function weierstrass2(curveDef) {
   function prepSig(msgHash, privateKey, opts = defaultSigOpts) {
     if (["recovered", "canonical"].some((k) => k in opts))
       throw new Error("sign() legacy options not supported");
-    const { hash: hash4, randomBytes: randomBytes6 } = CURVE;
+    const { hash: hash4, randomBytes: randomBytes7 } = CURVE;
     let { lowS, prehash, extraEntropy: ent } = opts;
     if (lowS == null)
       lowS = true;
@@ -10439,7 +10439,7 @@ function weierstrass2(curveDef) {
     const d = normPrivateKeyToScalar(privateKey);
     const seedArgs = [int2octets(d), int2octets(h1int)];
     if (ent != null && ent !== false) {
-      const e = ent === true ? randomBytes6(Fp2.BYTES) : ent;
+      const e = ent === true ? randomBytes7(Fp2.BYTES) : ent;
       seedArgs.push(ensureBytes2("extraEntropy", e));
     }
     const seed = concatBytes5(...seedArgs);
@@ -10761,7 +10761,7 @@ function getHash2(hash4) {
   return {
     hash: hash4,
     hmac: (key, ...msgs) => hmac2(hash4, key, concatBytes3(...msgs)),
-    randomBytes: randomBytes4
+    randomBytes: randomBytes5
   };
 }
 function createCurve2(curveDef, defHash) {
@@ -10994,7 +10994,7 @@ function challenge(...args) {
 function schnorrGetPublicKey(privateKey) {
   return schnorrGetExtPubKey(privateKey).bytes;
 }
-function schnorrSign(message, privateKey, auxRand = randomBytes4(32)) {
+function schnorrSign(message, privateKey, auxRand = randomBytes5(32)) {
   const m = ensureBytes2("message", message);
   const { bytes: px, scalar: d } = schnorrGetExtPubKey(privateKey);
   const a = ensureBytes2("auxRand", auxRand, 32);
@@ -14748,8 +14748,8 @@ var handle = (app2) => {
 var import_dotenv = __toESM(require_dist(), 1);
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
-function dotenvLoadOptions(path2) {
-  return { path: path2, quiet: true, override: false, debug: false, fast: false, encoding: "utf8" };
+function dotenvLoadOptions(path4) {
+  return { path: path4, quiet: true, override: false, debug: false, fast: false, encoding: "utf8" };
 }
 function loadEnv() {
   const here = dirname(fileURLToPath(import.meta.url));
@@ -17432,8 +17432,8 @@ function parseEther(ether) {
 }
 
 // ../node_modules/ethers/lib.esm/utils/uuid.js
-function uuidV4(randomBytes6) {
-  const bytes2 = getBytes(randomBytes6, "randomBytes");
+function uuidV4(randomBytes7) {
+  const bytes2 = getBytes(randomBytes7, "randomBytes");
   bytes2[6] = bytes2[6] & 15 | 64;
   bytes2[8] = bytes2[8] & 63 | 128;
   const value = hexlify(bytes2);
@@ -17689,12 +17689,12 @@ var Result = class _Result extends Array {
 };
 function checkResultErrors(result) {
   const errors = [];
-  const checkErrors = function(path2, object2) {
+  const checkErrors = function(path4, object2) {
     if (!Array.isArray(object2)) {
       return;
     }
     for (let key in object2) {
-      const childPath = path2.slice();
+      const childPath = path4.slice();
       childPath.push(key);
       try {
         checkErrors(childPath, object2[key]);
@@ -20308,7 +20308,7 @@ function weierstrass(curveDef) {
   function prepSig(msgHash, privateKey, opts = defaultSigOpts) {
     if (["recovered", "canonical"].some((k) => k in opts))
       throw new Error("sign() legacy options not supported");
-    const { hash: hash4, randomBytes: randomBytes6 } = CURVE;
+    const { hash: hash4, randomBytes: randomBytes7 } = CURVE;
     let { lowS, prehash, extraEntropy: ent } = opts;
     if (lowS == null)
       lowS = true;
@@ -20319,7 +20319,7 @@ function weierstrass(curveDef) {
     const d = normPrivateKeyToScalar(privateKey);
     const seedArgs = [int2octets(d), int2octets(h1int)];
     if (ent != null) {
-      const e = ent === true ? randomBytes6(Fp2.BYTES) : ent;
+      const e = ent === true ? randomBytes7(Fp2.BYTES) : ent;
       seedArgs.push(ensureBytes("extraEntropy", e));
     }
     const seed = concatBytes2(...seedArgs);
@@ -36473,9 +36473,9 @@ var IpcSocketProvider = class extends SocketProvider {
   get socket() {
     return this.#socket;
   }
-  constructor(path2, network, options) {
+  constructor(path4, network, options) {
     super(network, options);
-    this.#socket = connect(path2);
+    this.#socket = connect(path4);
     this.socket.on("ready", async () => {
       try {
         await this._start();
@@ -37307,11 +37307,11 @@ function getPassword(password) {
 function spelunk(object2, _path) {
   const match2 = _path.match(/^([a-z0-9$_.-]*)(:([a-z]+))?(!)?$/i);
   assertArgument(match2 != null, "invalid path", "path", _path);
-  const path2 = match2[1];
+  const path4 = match2[1];
   const type = match2[3];
   const reqd = match2[4] === "!";
   let cur = object2;
-  for (const comp of path2.toLowerCase().split(".")) {
+  for (const comp of path4.toLowerCase().split(".")) {
     if (Array.isArray(cur)) {
       if (!comp.match(/^[0-9]+$/)) {
         break;
@@ -37333,7 +37333,7 @@ function spelunk(object2, _path) {
       break;
     }
   }
-  assertArgument(!reqd || cur != null, "missing required value", "path", path2);
+  assertArgument(!reqd || cur != null, "missing required value", "path", path4);
   if (type && cur != null) {
     if (type === "int") {
       if (typeof cur === "string" && cur.match(/^-?[0-9]+$/)) {
@@ -37358,7 +37358,7 @@ function spelunk(object2, _path) {
     if (type === typeof cur) {
       return cur;
     }
-    assertArgument(false, `wrong type found for ${type} `, "path", path2);
+    assertArgument(false, `wrong type found for ${type} `, "path", path4);
   }
   return cur;
 }
@@ -37538,7 +37538,7 @@ function _encryptKeystore(key, kdf, account, options) {
   };
   if (account.mnemonic) {
     const client = options.client != null ? options.client : `ethers/${version}`;
-    const path2 = account.mnemonic.path || defaultPath;
+    const path4 = account.mnemonic.path || defaultPath;
     const locale = account.mnemonic.locale || "en";
     const mnemonicKey = key.slice(32, 64);
     const entropy = getBytes(account.mnemonic.entropy, "account.mnemonic.entropy");
@@ -37551,7 +37551,7 @@ function _encryptKeystore(key, kdf, account, options) {
     data4["x-ethers"] = {
       client,
       gethFilename,
-      path: path2,
+      path: path4,
       locale,
       mnemonicCounter: hexlify(mnemonicIv).substring(2),
       mnemonicCiphertext: hexlify(mnemonicCiphertext).substring(2),
@@ -37619,11 +37619,11 @@ function ser_I(index2, chainCode, publicKey, privateKey) {
   const I = getBytes(computeHmac("sha512", chainCode, data4));
   return { IL: I.slice(0, 32), IR: I.slice(32) };
 }
-function derivePath(node, path2) {
-  const components = path2.split("/");
-  assertArgument(components.length > 0, "invalid path", "path", path2);
+function derivePath(node, path4) {
+  const components = path4.split("/");
+  assertArgument(components.length > 0, "invalid path", "path", path4);
   if (components[0] === "m") {
-    assertArgument(node.depth === 0, `cannot derive root path (i.e. path starting with "m/") for a node at non-zero depth ${node.depth}`, "path", path2);
+    assertArgument(node.depth === 0, `cannot derive root path (i.e. path starting with "m/") for a node at non-zero depth ${node.depth}`, "path", path4);
     components.shift();
   }
   let result = node;
@@ -37693,7 +37693,7 @@ var HDNodeWallet = class _HDNodeWallet extends BaseWallet {
   /**
    *  @private
    */
-  constructor(guard, signingKey, parentFingerprint, chainCode, path2, index2, depth, mnemonic, provider3) {
+  constructor(guard, signingKey, parentFingerprint, chainCode, path4, index2, depth, mnemonic, provider3) {
     super(signingKey, provider3);
     assertPrivate(guard, _guard6, "HDNodeWallet");
     defineProperties(this, { publicKey: signingKey.compressedPublicKey });
@@ -37702,7 +37702,7 @@ var HDNodeWallet = class _HDNodeWallet extends BaseWallet {
       parentFingerprint,
       fingerprint,
       chainCode,
-      path: path2,
+      path: path4,
       index: index2,
       depth
     });
@@ -37786,22 +37786,22 @@ var HDNodeWallet = class _HDNodeWallet extends BaseWallet {
   deriveChild(_index) {
     const index2 = getNumber(_index, "index");
     assertArgument(index2 <= 4294967295, "invalid index", "index", index2);
-    let path2 = this.path;
-    if (path2) {
-      path2 += "/" + (index2 & ~HardenedBit);
+    let path4 = this.path;
+    if (path4) {
+      path4 += "/" + (index2 & ~HardenedBit);
       if (index2 & HardenedBit) {
-        path2 += "'";
+        path4 += "'";
       }
     }
     const { IR, IL } = ser_I(index2, this.chainCode, this.publicKey, this.privateKey);
     const ki = new SigningKey(toBeHex((toBigInt(IL) + BigInt(this.privateKey)) % N2, 32));
-    return new _HDNodeWallet(_guard6, ki, this.fingerprint, hexlify(IR), path2, index2, this.depth + 1, this.mnemonic, this.provider);
+    return new _HDNodeWallet(_guard6, ki, this.fingerprint, hexlify(IR), path4, index2, this.depth + 1, this.mnemonic, this.provider);
   }
   /**
    *  Return the HDNode for %%path%% from this node.
    */
-  derivePath(path2) {
-    return derivePath(this, path2);
+  derivePath(path4) {
+    return derivePath(this, path4);
   }
   static #fromSeed(_seed, mnemonic) {
     assertArgument(isBytesLike(_seed), "invalid seed", "seed", "[REDACTED]");
@@ -37846,43 +37846,43 @@ var HDNodeWallet = class _HDNodeWallet extends BaseWallet {
   /**
    *  Creates a new random HDNode.
    */
-  static createRandom(password, path2, wordlist9) {
+  static createRandom(password, path4, wordlist9) {
     if (password == null) {
       password = "";
     }
-    if (path2 == null) {
-      path2 = defaultPath2;
+    if (path4 == null) {
+      path4 = defaultPath2;
     }
     if (wordlist9 == null) {
       wordlist9 = LangEn.wordlist();
     }
     const mnemonic = Mnemonic.fromEntropy(randomBytes3(16), password, wordlist9);
-    return _HDNodeWallet.#fromSeed(mnemonic.computeSeed(), mnemonic).derivePath(path2);
+    return _HDNodeWallet.#fromSeed(mnemonic.computeSeed(), mnemonic).derivePath(path4);
   }
   /**
    *  Create an HD Node from %%mnemonic%%.
    */
-  static fromMnemonic(mnemonic, path2) {
-    if (!path2) {
-      path2 = defaultPath2;
+  static fromMnemonic(mnemonic, path4) {
+    if (!path4) {
+      path4 = defaultPath2;
     }
-    return _HDNodeWallet.#fromSeed(mnemonic.computeSeed(), mnemonic).derivePath(path2);
+    return _HDNodeWallet.#fromSeed(mnemonic.computeSeed(), mnemonic).derivePath(path4);
   }
   /**
    *  Creates an HD Node from a mnemonic %%phrase%%.
    */
-  static fromPhrase(phrase, password, path2, wordlist9) {
+  static fromPhrase(phrase, password, path4, wordlist9) {
     if (password == null) {
       password = "";
     }
-    if (path2 == null) {
-      path2 = defaultPath2;
+    if (path4 == null) {
+      path4 = defaultPath2;
     }
     if (wordlist9 == null) {
       wordlist9 = LangEn.wordlist();
     }
     const mnemonic = Mnemonic.fromPhrase(phrase, password, wordlist9);
-    return _HDNodeWallet.#fromSeed(mnemonic.computeSeed(), mnemonic).derivePath(path2);
+    return _HDNodeWallet.#fromSeed(mnemonic.computeSeed(), mnemonic).derivePath(path4);
   }
   /**
    *  Creates an HD Node from a %%seed%%.
@@ -37934,7 +37934,7 @@ var HDNodeVoidWallet = class _HDNodeVoidWallet extends VoidSigner {
   /**
    *  @private
    */
-  constructor(guard, address, publicKey, parentFingerprint, chainCode, path2, index2, depth, provider3) {
+  constructor(guard, address, publicKey, parentFingerprint, chainCode, path4, index2, depth, provider3) {
     super(address, provider3);
     assertPrivate(guard, _guard6, "HDNodeVoidWallet");
     defineProperties(this, { publicKey });
@@ -37944,7 +37944,7 @@ var HDNodeVoidWallet = class _HDNodeVoidWallet extends VoidSigner {
       fingerprint,
       parentFingerprint,
       chainCode,
-      path: path2,
+      path: path4,
       index: index2,
       depth
     });
@@ -37982,23 +37982,23 @@ var HDNodeVoidWallet = class _HDNodeVoidWallet extends VoidSigner {
   deriveChild(_index) {
     const index2 = getNumber(_index, "index");
     assertArgument(index2 <= 4294967295, "invalid index", "index", index2);
-    let path2 = this.path;
-    if (path2) {
-      path2 += "/" + (index2 & ~HardenedBit);
+    let path4 = this.path;
+    if (path4) {
+      path4 += "/" + (index2 & ~HardenedBit);
       if (index2 & HardenedBit) {
-        path2 += "'";
+        path4 += "'";
       }
     }
     const { IR, IL } = ser_I(index2, this.chainCode, this.publicKey, null);
     const Ki = SigningKey.addPoints(IL, this.publicKey, true);
     const address = computeAddress(Ki);
-    return new _HDNodeVoidWallet(_guard6, address, Ki, this.fingerprint, hexlify(IR), path2, index2, this.depth + 1, this.provider);
+    return new _HDNodeVoidWallet(_guard6, address, Ki, this.fingerprint, hexlify(IR), path4, index2, this.depth + 1, this.provider);
   }
   /**
    *  Return the signer for %%path%% from this node.
    */
-  derivePath(path2) {
-    return derivePath(this, path2);
+  derivePath(path4) {
+    return derivePath(this, path4);
   }
 };
 function getAccountPath(_index) {
@@ -38697,6 +38697,13 @@ function parseUsdcAtomic(s) {
   const frac = (m[2] ?? "").padEnd(USDC_DECIMALS, "0");
   return BigInt(m[1]) * 10n ** BigInt(USDC_DECIMALS) + BigInt(frac || "0");
 }
+function formatUsdcAtomic(v) {
+  const neg = v < 0n;
+  const a = neg ? -v : v;
+  const base2 = 10n ** BigInt(USDC_DECIMALS);
+  const frac = (a % base2).toString().padStart(USDC_DECIMALS, "0").replace(/0+$/, "");
+  return `${neg ? "-" : ""}${a / base2}${frac ? "." + frac : ""}`;
+}
 var X402_DEFAULT_MAX_TOTAL_SPEND_USDC = "1";
 function resolveX402TotalSpendCap() {
   const raw2 = process.env.X402_MAX_TOTAL_SPEND_USDC?.trim() || process.env.LOOP_MAX_SPEND_USDC?.trim() || X402_DEFAULT_MAX_TOTAL_SPEND_USDC;
@@ -38710,6 +38717,189 @@ function resolveX402MaxValue() {
   if (v <= 0n) throw new Error(`X402_MAX_PAYMENT_USDC \u5FC5\u9808 > 0\uFF08\u6536\u5230 ${raw2}\uFF09`);
   return v;
 }
+
+// ../../frontend/src/contracts/agentDelegation.ts
+var DELEGATION_PRIMARY_TYPE = "AgentDelegationCredential";
+var DELEGATION_DOMAIN_NAME = "PepeLabAgentDelegation";
+var DEFAULT_X402_PERIOD_SEC = 24 * 3600;
+var AGENT_PRESENTATION_HEADER = "X-Agent-Presentation";
+var AGENT_KYA_HEADER = "X-Agent-KYA";
+var AGENT_KYA_SPEND_HEADER = "X-Agent-KYA-Spend";
+function delegationDomain(chainId, sessionManager2) {
+  return { name: DELEGATION_DOMAIN_NAME, version: "3", chainId, verifyingContract: sessionManager2 };
+}
+var DELEGATION_TYPES = {
+  AgentDelegationCredential: [
+    { name: "issuer", type: "address" },
+    { name: "agent", type: "address" },
+    { name: "sessionManager", type: "address" },
+    { name: "sessionId", type: "uint256" },
+    { name: "maxMarginPerTrade", type: "uint256" },
+    { name: "totalMarginBudget", type: "uint256" },
+    { name: "maxLeverage", type: "uint256" },
+    { name: "sessionExpiry", type: "uint256" },
+    { name: "allowedAssets", type: "bytes32[]" },
+    { name: "x402", type: "X402Allowance" },
+    { name: "validFrom", type: "uint256" },
+    { name: "validUntil", type: "uint256" },
+    { name: "nonce", type: "bytes32" }
+  ],
+  X402Allowance: [
+    { name: "maxPerPeriod", type: "uint256" },
+    { name: "periodSeconds", type: "uint256" },
+    { name: "maxTotal", type: "uint256" },
+    { name: "endpoints", type: "string[]" }
+  ]
+};
+function canonicalAssets(ids) {
+  return [...new Set(ids.map((s) => s.toLowerCase()))].sort();
+}
+function isDelegationCredential(vc) {
+  const v = vc;
+  return !!v && Array.isArray(v.type) && v.type.includes(DELEGATION_PRIMARY_TYPE) && v.proof?.eip712?.domain?.version === "3";
+}
+function buildDelegationTypedValue(f2) {
+  return {
+    issuer: f2.issuer,
+    agent: f2.agent,
+    sessionManager: f2.sessionManager,
+    sessionId: BigInt(f2.sessionId),
+    maxMarginPerTrade: BigInt(f2.maxMarginPerTrade),
+    totalMarginBudget: BigInt(f2.totalMarginBudget),
+    maxLeverage: BigInt(f2.maxLeverage),
+    sessionExpiry: BigInt(f2.sessionExpiry),
+    allowedAssets: canonicalAssets(f2.allowedAssets),
+    x402: {
+      maxPerPeriod: BigInt(f2.x402.maxPerPeriod),
+      periodSeconds: BigInt(f2.x402.periodSeconds),
+      maxTotal: BigInt(f2.x402.maxTotal),
+      endpoints: [...f2.x402.endpoints]
+    },
+    validFrom: BigInt(f2.validFrom),
+    validUntil: BigInt(f2.validUntil),
+    nonce: f2.nonce
+  };
+}
+var DID_RE = /^did:pkh:eip155:(\d+):(0x[0-9a-fA-F]{40})$/;
+function delegationFieldsFromCredential(vc) {
+  const iss = DID_RE.exec(String(vc.issuer ?? ""));
+  const sub = DID_RE.exec(String(vc.credentialSubject?.id ?? ""));
+  if (!iss || !sub) throw new Error("issuer / credentialSubject.id must be did:pkh:eip155");
+  if (iss[1] !== sub[1]) throw new Error("issuer and holder DIDs are on different chains");
+  const chainId = Number(iss[1]);
+  const cs = vc.credentialSubject;
+  const s = cs.session;
+  const x = cs.x402;
+  const uintStr = (v, name) => {
+    const t = String(v ?? "");
+    if (!/^\d{1,78}$/.test(t)) throw new Error(`${name} must be a non-negative integer string`);
+    return t;
+  };
+  const uintNum = (v, name) => {
+    if (typeof v !== "number" || !Number.isSafeInteger(v) || v < 0) throw new Error(`${name} must be a non-negative integer`);
+    return v;
+  };
+  const secs = (iso, name) => {
+    const ms = Date.parse(String(iso ?? ""));
+    if (!Number.isFinite(ms) || ms % 1e3 !== 0) throw new Error(`${name} must be an ISO date on a whole second`);
+    return ms / 1e3;
+  };
+  if (!/^0x[0-9a-fA-F]{64}$/.test(String(cs.nonce ?? ""))) throw new Error("credentialSubject.nonce must be bytes32");
+  if (!/^0x[0-9a-fA-F]{40}$/.test(String(cs.sessionManager ?? ""))) throw new Error("sessionManager must be an address");
+  if (!Array.isArray(s?.allowedAssets) || !s.allowedAssets.every((a) => /^0x[0-9a-fA-F]{64}$/.test(String(a))))
+    throw new Error("session.allowedAssets must be bytes32[]");
+  if (!Array.isArray(x?.endpoints) || !x.endpoints.every((e) => typeof e === "string" && e.length > 0 && e.length <= 128))
+    throw new Error("x402.endpoints must be non-empty strings");
+  const fields = {
+    issuer: iss[2],
+    agent: sub[2],
+    sessionManager: cs.sessionManager,
+    sessionId: uintNum(cs.sessionId, "sessionId"),
+    maxMarginPerTrade: uintStr(s.maxMarginPerTrade, "maxMarginPerTrade"),
+    totalMarginBudget: uintStr(s.totalMarginBudget, "totalMarginBudget"),
+    maxLeverage: uintNum(s.maxLeverage, "maxLeverage"),
+    sessionExpiry: uintNum(s.expiry, "session.expiry"),
+    allowedAssets: [...s.allowedAssets],
+    x402: {
+      maxPerPeriod: uintStr(x.maxPerPeriod, "x402.maxPerPeriod"),
+      periodSeconds: uintNum(x.periodSeconds, "x402.periodSeconds"),
+      maxTotal: uintStr(x.maxTotal, "x402.maxTotal"),
+      endpoints: [...x.endpoints]
+    },
+    validFrom: secs(vc.validFrom, "validFrom"),
+    validUntil: secs(vc.validUntil, "validUntil"),
+    nonce: cs.nonce
+  };
+  return { fields, chainId };
+}
+function matchX402Endpoint(patterns, method, path4) {
+  const segs = path4.split("/").filter(Boolean);
+  for (const p of patterns) {
+    const m = /^([A-Za-z]+)\s+(\/\S*)$/.exec(p.trim());
+    if (!m || m[1].toUpperCase() !== method.toUpperCase()) continue;
+    const ps = m[2].split("/").filter(Boolean);
+    if (ps.length !== segs.length) continue;
+    if (ps.every((q, i) => q === "*" ? segs[i].length > 0 : q === segs[i])) return p;
+  }
+  return null;
+}
+function presentationDomain(chainId) {
+  return { name: "PepeLabAgentPresentation", version: "1", chainId };
+}
+var PRESENTATION_TYPES = {
+  AgentX402Presentation: [
+    { name: "holder", type: "address" },
+    { name: "credentialHash", type: "bytes32" },
+    { name: "method", type: "string" },
+    { name: "path", type: "string" },
+    { name: "paymentNonce", type: "bytes32" },
+    { name: "payer", type: "address" },
+    { name: "created", type: "uint256" }
+  ]
+};
+function buildPresentationTypedValue(f2) {
+  return {
+    holder: f2.holder,
+    credentialHash: f2.credentialHash,
+    method: f2.method.toUpperCase(),
+    path: f2.path,
+    paymentNonce: f2.paymentNonce,
+    payer: f2.payer,
+    created: BigInt(f2.created)
+  };
+}
+function decodeHeaderJson(s) {
+  const b64 = s.replace(/-/g, "+").replace(/_/g, "/");
+  const bin = atob(b64 + "=".repeat((4 - b64.length % 4) % 4));
+  const bytes2 = Uint8Array.from(bin, (c) => c.charCodeAt(0));
+  return JSON.parse(new TextDecoder().decode(bytes2));
+}
+
+// ../../frontend/src/contracts/agentAuth.ts
+var AUTH_VC_CHAIN_ID = 84532;
+var DEFAULT_VC_VALIDITY_DAYS = 30;
+var DEFAULT_VC_VALIDITY_SEC = DEFAULT_VC_VALIDITY_DAYS * 24 * 3600;
+var DOMAIN_NAME = "PepeLabAgentAuthorization";
+function authDomainV2(verifyingContract) {
+  return { name: DOMAIN_NAME, version: "2", chainId: AUTH_VC_CHAIN_ID, verifyingContract };
+}
+var V1_FIELDS = [
+  { name: "issuer", type: "address" },
+  { name: "agent", type: "address" },
+  { name: "sessionId", type: "uint256" },
+  { name: "maxMarginPerTrade", type: "string" },
+  { name: "totalBudget", type: "string" },
+  { name: "maxLeverage", type: "uint256" },
+  { name: "expiry", type: "uint256" },
+  { name: "issuedAt", type: "uint256" }
+];
+var AUTH_TYPES_V2 = {
+  AgentTradingAuthorization: [
+    ...V1_FIELDS,
+    { name: "validUntil", type: "uint256" },
+    { name: "nonce", type: "bytes32" }
+  ]
+};
 
 // ../shared/src/signingGuard.ts
 var SigningGuardError = class extends Error {
@@ -38959,6 +39149,58 @@ function x402PayToAllowlist(env = process.env) {
   return null;
 }
 var warnedTofu = false;
+var PRESENTATION_PRIMARY = "AgentX402Presentation";
+var PRESENTATION_DOMAIN_FIELDS = ["name", "version", "chainId"];
+function isPresentationTypedData(types) {
+  return Object.keys(types ?? {}).some((n2) => n2 === PRESENTATION_PRIMARY);
+}
+function presentationChainIds(env = process.env) {
+  const raw2 = env.DELEGATION_VC_CHAIN_IDS?.trim();
+  const ids = raw2 ? raw2.split(",").map((s) => s.trim()).filter((s) => /^\d+$/.test(s)).map((s) => BigInt(s)) : [];
+  return ids.length ? ids : [BigInt(AGENT_CHAIN_ID), BigInt(AUTH_VC_CHAIN_ID)];
+}
+function assertAllowedPresentation(domain, types, message, signer, primaryType) {
+  const T = "TYPED_DATA_NOT_ALLOWLISTED";
+  if ("EIP712Domain" in (types ?? {})) {
+    const d = types.EIP712Domain;
+    const ok = Array.isArray(d) && d.length === PRESENTATION_DOMAIN_FIELDS.length && d.every((f2, i) => f2?.name === PRESENTATION_DOMAIN_FIELDS[i]);
+    if (!ok) throw new SigningGuardError(T, "presentation \u7684 types.EIP712Domain \u53EA\u80FD\u662F name, version, chainId");
+  }
+  const names2 = Object.keys(types ?? {}).filter((n2) => n2 !== "EIP712Domain");
+  if (names2.length !== 1 || names2[0] !== PRESENTATION_PRIMARY) {
+    throw new SigningGuardError(T, `typed data \u578B\u5225 [${names2.join(", ")}] \u4E0D\u5728\u5141\u8A31\u6E05\u55AE`);
+  }
+  if (primaryType !== void 0 && primaryType !== PRESENTATION_PRIMARY) {
+    throw new SigningGuardError(T, `primaryType ${primaryType} \u4E0D\u5728\u5141\u8A31\u6E05\u55AE`);
+  }
+  const want = PRESENTATION_TYPES[PRESENTATION_PRIMARY];
+  const fields = types[PRESENTATION_PRIMARY];
+  if (!Array.isArray(fields) || fields.length !== want.length || fields.some((f2, i) => f2?.name !== want[i].name || f2?.type !== want[i].type)) {
+    throw new SigningGuardError(T, "AgentX402Presentation \u7684\u6B04\u4F4D\u8207 schema \u4E0D\u7B26");
+  }
+  const keys = Object.keys(message ?? {}).sort();
+  const expected = want.map((f2) => f2.name).sort();
+  if (keys.length !== expected.length || keys.some((k, i) => k !== expected[i])) {
+    throw new SigningGuardError(T, `presentation message \u6B04\u4F4D [${keys.join(", ")}] \u8207\u578B\u5225\u4E0D\u4E00\u81F4`);
+  }
+  const chainOk = (typeof domain?.chainId === "number" || typeof domain?.chainId === "bigint") && presentationChainIds().includes(BigInt(domain.chainId));
+  if (domain?.name !== "PepeLabAgentPresentation" || domain?.version !== "1" || !chainOk || domain?.verifyingContract !== void 0 || domain?.salt !== void 0) {
+    throw new SigningGuardError(T, "presentation \u7684 domain \u4E0D\u7B26\uFF08name\uFF0Fversion\uFF0FchainId\uFF0C\u4E14\u4E0D\u5F97\u5E36 verifyingContract\uFF0Fsalt\uFF09");
+  }
+  const me = ethers_exports.getAddress(signer);
+  for (const k of ["holder", "payer"]) {
+    const v = typeof message[k] === "string" ? message[k] : "";
+    if (!ethers_exports.isAddress(v) || ethers_exports.getAddress(v) !== me) {
+      throw new SigningGuardError(T, `presentation.${k} \u4E0D\u662F agent \u81EA\u5DF1`);
+    }
+  }
+  const created = big(message.created);
+  const nowSec = BigInt(Math.floor(Date.now() / 1e3));
+  const skew = BigInt(WV_MAX_SKEW_MS / 1e3);
+  if (created === null || created > nowSec + skew || created < nowSec - skew) {
+    throw new SigningGuardError(T, `presentation.created \u4E0D\u5728\u73FE\u5728 \xB1${skew} \u79D2\u5167`);
+  }
+}
 function assertAllowedMessage(message, signer) {
   const text = typeof message === "string" ? message : message instanceof Uint8Array ? (() => {
     try {
@@ -38981,6 +39223,10 @@ var GuardedWallet = class _GuardedWallet extends ethers_exports.Wallet {
     return super.signTransaction(tx);
   }
   async signTypedData(domain, types, value) {
+    if (isPresentationTypedData(types)) {
+      assertAllowedPresentation(domain, types, value, this.address);
+      return super.signTypedData(domain, types, value);
+    }
     const r = reserveX402(domain, types, value, this.address);
     return withX402Reservation(r, () => super.signTypedData(domain, types, value));
   }
@@ -39325,27 +39571,6 @@ async function getTraderPerformance(c, trader) {
     suggestion
   };
 }
-
-// ../../frontend/src/contracts/agentAuth.ts
-var DEFAULT_VC_VALIDITY_DAYS = 30;
-var DEFAULT_VC_VALIDITY_SEC = DEFAULT_VC_VALIDITY_DAYS * 24 * 3600;
-var V1_FIELDS = [
-  { name: "issuer", type: "address" },
-  { name: "agent", type: "address" },
-  { name: "sessionId", type: "uint256" },
-  { name: "maxMarginPerTrade", type: "string" },
-  { name: "totalBudget", type: "string" },
-  { name: "maxLeverage", type: "uint256" },
-  { name: "expiry", type: "uint256" },
-  { name: "issuedAt", type: "uint256" }
-];
-var AUTH_TYPES_V2 = {
-  AgentTradingAuthorization: [
-    ...V1_FIELDS,
-    { name: "validUntil", type: "uint256" },
-    { name: "nonce", type: "bytes32" }
-  ]
-};
 
 // ../shared/src/identity.ts
 function agentDid(address, chainId = AGENT_CHAIN_ID) {
@@ -39727,11 +39952,136 @@ async function buildAgentVerification(params) {
 }
 
 // ../shared/src/policyGate.ts
-import path from "node:path";
+import path2 from "node:path";
 import { fileURLToPath as fileURLToPath2 } from "node:url";
 
 // ../shared/src/fileLock.ts
+import fs from "node:fs";
+import path from "node:path";
+import { randomBytes as randomBytes4 } from "node:crypto";
+var LockTimeoutError = class extends Error {
+  constructor(target) {
+    super(`\u53D6\u5F97\u6A94\u6848\u9396\u903E\u6642\uFF1A${target}.lock`);
+    this.name = "LockTimeoutError";
+  }
+};
 var SLEEP = new Int32Array(new SharedArrayBuffer(4));
+function sleepMs(ms) {
+  Atomics.wait(SLEEP, 0, 0, ms);
+}
+function pidAlive(pid) {
+  if (!Number.isInteger(pid) || pid <= 0) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (e) {
+    return e.code === "EPERM";
+  }
+}
+function readLock(file) {
+  try {
+    return JSON.parse(fs.readFileSync(file, "utf8"));
+  } catch {
+    return null;
+  }
+}
+function tryReclaim(lockPath, staleMs) {
+  const cur = readLock(lockPath);
+  let stale = false;
+  if (!cur) {
+    try {
+      stale = Date.now() - fs.statSync(lockPath).mtimeMs > staleMs;
+    } catch {
+      return;
+    }
+  } else {
+    stale = !pidAlive(cur.pid);
+  }
+  if (!stale) return;
+  const aside = `${lockPath}.reclaim.${process.pid}.${randomBytes4(4).toString("hex")}`;
+  try {
+    fs.renameSync(lockPath, aside);
+  } catch {
+    return;
+  }
+  const moved = readLock(aside);
+  if (cur && moved && moved.token !== cur.token) {
+    try {
+      fs.linkSync(aside, lockPath);
+    } catch {
+    }
+  }
+  try {
+    fs.unlinkSync(aside);
+  } catch {
+  }
+}
+var TRANSIENT_LOCK_ERRORS = /* @__PURE__ */ new Set(["EPERM", "EACCES", "EBUSY"]);
+function isTransientIoError(code) {
+  if (code === "EPERM" || code === "EBUSY") return true;
+  return code === "EACCES" && process.platform === "win32";
+}
+function retryTransientSync(fn, opts = {}) {
+  const attempts = Math.max(1, opts.attempts ?? 5);
+  const baseMs = opts.baseMs ?? 1;
+  for (let i = 1; ; i++) {
+    try {
+      return fn();
+    } catch (e) {
+      const code = String(e?.code);
+      if (!isTransientIoError(code) || i >= attempts) throw e;
+      (opts.sleep ?? sleepMs)(baseMs * i);
+    }
+  }
+}
+function isNotFound(e) {
+  return e?.code === "ENOENT";
+}
+function withFileLockSync(target, fn, opts = {}) {
+  const timeoutMs = opts.timeoutMs ?? 5e3;
+  const staleMs = opts.staleMs ?? 1e4;
+  const retryMs = opts.retryMs ?? 5;
+  const lockPath = `${target}.lock`;
+  const token = randomBytes4(8).toString("hex");
+  const deadline = Date.now() + timeoutMs;
+  let attempt = 0;
+  for (; ; ) {
+    try {
+      const fd = fs.openSync(lockPath, "wx");
+      try {
+        fs.writeSync(fd, JSON.stringify({ pid: process.pid, token, at: Date.now() }));
+      } finally {
+        fs.closeSync(fd);
+      }
+      break;
+    } catch (e) {
+      const code = e.code;
+      if (code === "ENOENT") {
+        fs.mkdirSync(path.dirname(lockPath), { recursive: true });
+        continue;
+      }
+      if (code === "EEXIST") {
+        tryReclaim(lockPath, staleMs);
+      } else if (!TRANSIENT_LOCK_ERRORS.has(String(code))) {
+        throw e;
+      }
+      if (Date.now() > deadline) throw new LockTimeoutError(target);
+      const backoff = Math.min(retryMs * 2 ** Math.min(attempt++, 4), 50);
+      sleepMs(backoff + Math.floor(Math.random() * retryMs));
+    }
+  }
+  try {
+    return fn();
+  } finally {
+    const cur = readLock(lockPath);
+    if (cur?.token === token) {
+      try {
+        fs.unlinkSync(lockPath);
+      } catch {
+      }
+    }
+  }
+}
 
 // ../shared/src/policyGate.ts
 var DEFAULT_POLICY = {
@@ -39747,24 +40097,624 @@ var DEFAULT_POLICY = {
 };
 var AGENT_ROOT = (() => {
   try {
-    return path.resolve(path.dirname(fileURLToPath2(import.meta.url)), "..", "..");
+    return path2.resolve(path2.dirname(fileURLToPath2(import.meta.url)), "..", "..");
   } catch {
     return process.cwd();
   }
 })();
 var lock2 = Promise.resolve();
 
+// ../shared/src/vcStatus.ts
+import fs2 from "node:fs";
+import path3 from "node:path";
+import { fileURLToPath as fileURLToPath3 } from "node:url";
+
 // ../../frontend/src/contracts/agentAuthStatus.ts
 var DEFAULT_STATUS_LIST_VALIDITY_DAYS = 30;
 var DEFAULT_STATUS_LIST_VALIDITY_SEC = DEFAULT_STATUS_LIST_VALIDITY_DAYS * 24 * 3600;
 var MAX_STATUS_LIST_VALIDITY_SEC = 90 * 24 * 3600;
+var MAX_STATUS_LIST_ENTRIES = 1e3;
+var STATUS_LIST_TYPES = {
+  AgentCredentialStatusList: [
+    { name: "issuer", type: "address" },
+    { name: "sequence", type: "uint256" },
+    { name: "issuedAt", type: "uint256" },
+    { name: "validUntil", type: "uint256" },
+    { name: "revokedBefore", type: "uint256" },
+    { name: "revoked", type: "bytes32[]" }
+  ]
+};
+var statusListDomain = authDomainV2;
+var BYTES32 = /^0x[0-9a-f]{64}$/;
+function isCanonicalRevokedIds(ids) {
+  if (!Array.isArray(ids)) return false;
+  for (let i = 0; i < ids.length; i++) {
+    if (typeof ids[i] !== "string" || !BYTES32.test(ids[i])) return false;
+    if (i > 0 && !(ids[i - 1] < ids[i])) return false;
+  }
+  return true;
+}
+function buildStatusListTypedValue(p) {
+  return {
+    issuer: p.issuer,
+    sequence: BigInt(p.sequence),
+    issuedAt: BigInt(p.issuedAt),
+    validUntil: BigInt(p.validUntil),
+    revokedBefore: BigInt(p.revokedBefore),
+    revoked: [...p.revoked]
+  };
+}
 
 // ../shared/src/vcStatus.ts
+var ZERO5 = "0x0000000000000000000000000000000000000000";
+var TYPES = STATUS_LIST_TYPES;
+var isSafeUint = (v) => typeof v === "number" && Number.isSafeInteger(v) && v >= 0;
 var REVOKE_ALL_LEAD_SEC = MAX_CLOCK_SKEW_SEC + 1;
 var STATUS_LIST_EXPIRY_WARNING_SEC = 7 * 24 * 3600;
+function credentialJti(res) {
+  const id2 = res.version === 2 ? res.nonce : res.digest;
+  if (!id2 || !/^0x[0-9a-fA-F]{64}$/.test(id2)) return null;
+  return id2.toLowerCase();
+}
+function verifyStatusList(doc, opts = {}) {
+  const nowMs = opts.now ?? Date.now();
+  const bad = (reasonCode, reason) => ({ valid: false, reasonCode, reason });
+  try {
+    const d = doc;
+    if (!d || typeof d !== "object" || !Array.isArray(d.type) || !d.type.includes("AgentCredentialStatusList")) {
+      return bad("STATUS_LIST_MALFORMED", "\u4E0D\u662F AgentCredentialStatusList");
+    }
+    if (!d.proof?.proofValue || d.proof.eip712Domain?.version !== "2") {
+      return bad("STATUS_LIST_MALFORMED", "\u7F3A proof \u6216 eip712Domain");
+    }
+    const { sequence, issuedAt, validUntil, revokedBefore, revoked } = d;
+    if (![sequence, issuedAt, validUntil, revokedBefore].every(isSafeUint)) {
+      return bad("STATUS_LIST_MALFORMED", "sequence\uFF0FissuedAt\uFF0FvalidUntil\uFF0FrevokedBefore \u5FC5\u9808\u662F\u975E\u8CA0\u6574\u6578");
+    }
+    if (!isCanonicalRevokedIds(revoked)) {
+      return bad("STATUS_LIST_MALFORMED", "revoked \u5FC5\u9808\u662F\u5C0F\u5BEB bytes32\u3001\u56B4\u683C\u905E\u589E\u6392\u5E8F\uFF08\u4E0D\u53EF\u91CD\u8907\uFF09");
+    }
+    if (revoked.length > MAX_STATUS_LIST_ENTRIES) {
+      return bad("STATUS_LIST_TOO_LARGE", `\u64A4\u92B7\u9805\u76EE ${revoked.length} \u8D85\u904E\u4E0A\u9650 ${MAX_STATUS_LIST_ENTRIES}`);
+    }
+    const did = parseDidPkh(String(d.issuer));
+    if (did.chainId !== AUTH_VC_CHAIN_ID) {
+      return bad("STATUS_LIST_WRONG_CHAIN", `issuer DID \u7684 chainId(${did.chainId}) \u975E ${AUTH_VC_CHAIN_ID}`);
+    }
+    const issuer = did.address;
+    const vcAddr = String(d.proof.eip712Domain.verifyingContract);
+    if (!ethers_exports.isAddress(vcAddr)) return bad("STATUS_LIST_MALFORMED", "eip712Domain.verifyingContract \u4E0D\u662F\u5408\u6CD5\u5730\u5740");
+    const verifyingContract = ethers_exports.getAddress(vcAddr);
+    const fields = {
+      issuer,
+      sequence,
+      issuedAt,
+      validUntil,
+      revokedBefore,
+      revoked
+    };
+    const domain = statusListDomain(verifyingContract);
+    const value = buildStatusListTypedValue(fields);
+    const recovered = ethers_exports.verifyTypedData(domain, TYPES, value, d.proof.proofValue);
+    if (recovered === ZERO5 || ethers_exports.getAddress(recovered) !== issuer) {
+      return bad("STATUS_LIST_BAD_SIGNATURE", `\u7C3D\u7AE0\u8207 issuer \u4E0D\u7B26\uFF08\u9084\u539F\u51FA ${recovered}\uFF09`);
+    }
+    if (opts.expectedIssuer && ethers_exports.getAddress(opts.expectedIssuer) !== issuer) {
+      return bad("STATUS_LIST_WRONG_ISSUER", `\u6E05\u55AE\u7684\u7C3D\u767C\u8005(${issuer}) \u4E0D\u662F VC \u7684\u7C3D\u767C\u8005(${ethers_exports.getAddress(opts.expectedIssuer)})`);
+    }
+    if (opts.expectedVerifyingContract && ethers_exports.getAddress(opts.expectedVerifyingContract) !== verifyingContract) {
+      return bad("STATUS_LIST_WRONG_DOMAIN", `\u6E05\u55AE\u7D81\u5B9A\u7684 session manager(${verifyingContract}) \u4E0D\u662F\u672C\u9A57\u8B49\u7AEF\u4F7F\u7528\u7684`);
+    }
+    if (fields.validUntil <= fields.issuedAt || fields.revokedBefore > fields.issuedAt + REVOKE_ALL_LEAD_SEC) {
+      return bad("STATUS_LIST_MALFORMED", `validUntil \u5FC5\u9808\u665A\u65BC issuedAt\uFF0CrevokedBefore \u4E0D\u5F97\u665A\u65BC issuedAt + ${REVOKE_ALL_LEAD_SEC}`);
+    }
+    if (fields.validUntil - fields.issuedAt > MAX_STATUS_LIST_VALIDITY_SEC) {
+      return bad("STATUS_LIST_VALIDITY_TOO_LONG", `\u6E05\u55AE\u6709\u6548\u671F\u8D85\u904E ${MAX_STATUS_LIST_VALIDITY_SEC / 86400} \u5929`);
+    }
+    if (fields.issuedAt * 1e3 > nowMs + MAX_CLOCK_SKEW_SEC * 1e3) {
+      return bad("STATUS_LIST_ISSUED_IN_FUTURE", `\u6E05\u55AE issuedAt \u665A\u65BC\u73FE\u5728 ${MAX_CLOCK_SKEW_SEC} \u79D2\u4EE5\u4E0A`);
+    }
+    if (fields.validUntil * 1e3 <= nowMs) {
+      return bad("STATUS_LIST_EXPIRED", `\u6E05\u55AE\u5DF2\u65BC ${new Date(fields.validUntil * 1e3).toISOString()} \u904E\u671F\uFF0C\u8ACB\u7C3D\u767C\u8005\u91CD\u65B0\u7C3D\u7F72`);
+    }
+    const digest = ethers_exports.TypedDataEncoder.hash(domain, TYPES, value);
+    return { valid: true, list: { ...fields, verifyingContract, digest } };
+  } catch (err) {
+    return bad("STATUS_LIST_MALFORMED", err.message);
+  }
+}
+function isCredentialRevoked(res, view) {
+  const jti = credentialJti(res);
+  const set = view.revoked instanceof Set ? view.revoked : new Set(view.revoked);
+  if (jti && set.has(jti)) return true;
+  return Number(res.issuedAt ?? 0) < view.revokedBefore;
+}
+function stateKey(verifyingContract, issuer) {
+  return `${verifyingContract.toLowerCase()}|${issuer.toLowerCase()}`;
+}
+function merge(cur, list2, nowSec) {
+  if (!cur) {
+    return {
+      ok: true,
+      state: {
+        sequence: list2.sequence,
+        digest: list2.digest,
+        validUntil: list2.validUntil,
+        revokedBefore: list2.revokedBefore,
+        revoked: [...list2.revoked],
+        acceptedAt: nowSec
+      }
+    };
+  }
+  if (list2.sequence < cur.sequence) {
+    return {
+      ok: false,
+      reasonCode: "STATUS_LIST_REPLAYED",
+      message: `\u6536\u5230\u820A\u7248\u72C0\u614B\u6E05\u55AE\uFF08sequence ${list2.sequence} < \u5DF2\u63A5\u53D7\u7684 ${cur.sequence}\uFF09\uFF0C\u62D2\u7D55`
+    };
+  }
+  if (list2.sequence === cur.sequence) {
+    if (list2.digest !== cur.digest) {
+      return {
+        ok: false,
+        reasonCode: "STATUS_LIST_EQUIVOCATION",
+        message: `\u540C\u4E00\u500B sequence(${list2.sequence}) \u51FA\u73FE\u5169\u4EFD\u5167\u5BB9\u4E0D\u540C\u7684\u6E05\u55AE\uFF0C\u62D2\u7D55`
+      };
+    }
+    return { ok: true, state: cur };
+  }
+  return {
+    ok: true,
+    state: {
+      sequence: list2.sequence,
+      digest: list2.digest,
+      validUntil: list2.validUntil,
+      revokedBefore: Math.max(cur.revokedBefore, list2.revokedBefore),
+      revoked: [.../* @__PURE__ */ new Set([...cur.revoked, ...list2.revoked])].sort(),
+      acceptedAt: nowSec
+    }
+  };
+}
+function readStateFile(file) {
+  let raw2;
+  try {
+    raw2 = retryTransientSync(() => fs2.readFileSync(file, "utf8"));
+  } catch (e) {
+    if (isNotFound(e)) return { version: 1, issuers: {} };
+    throw e;
+  }
+  const s = JSON.parse(raw2);
+  if (s?.version !== 1 || !s.issuers || typeof s.issuers !== "object") throw new Error("vc status \u72C0\u614B\u6A94\u683C\u5F0F\u4E0D\u7B26");
+  for (const e of Object.values(s.issuers)) {
+    if (!isSafeUint(e?.sequence) || typeof e.digest !== "string" || !isSafeUint(e.revokedBefore) || !Array.isArray(e.revoked)) {
+      throw new Error("vc status \u7D00\u9304\u683C\u5F0F\u4E0D\u7B26");
+    }
+  }
+  return s;
+}
+function fileStatusStateStore(file, opts = {}) {
+  return {
+    get: (key) => readStateFile(file).issuers[key] ?? null,
+    accept: (key, list2, nowSec) => {
+      try {
+        return withFileLockSync(
+          file,
+          () => {
+            let s;
+            try {
+              s = readStateFile(file);
+            } catch {
+              return { ok: false, reasonCode: "STATUS_STATE_UNREADABLE", message: "VC \u72C0\u614B\u6A94\u7121\u6CD5\u8B80\u53D6\u6216\u683C\u5F0F\u4E0D\u7B26\uFF08fail-closed\uFF09" };
+            }
+            const cur = s.issuers[key];
+            const r = merge(cur, list2, nowSec);
+            if (!r.ok || r.state === cur) return r;
+            s.issuers[key] = r.state;
+            try {
+              fs2.mkdirSync(path3.dirname(file), { recursive: true });
+              const tmp = `${file}.${process.pid}.tmp`;
+              retryTransientSync(() => fs2.writeFileSync(tmp, JSON.stringify(s), "utf8"));
+              retryTransientSync(() => fs2.renameSync(tmp, file));
+            } catch {
+              return { ok: false, reasonCode: "STATUS_STATE_WRITE_FAILED", message: "VC \u72C0\u614B\u6A94\u7121\u6CD5\u5BEB\u5165\uFF08fail-closed\uFF09" };
+            }
+            return r;
+          },
+          { timeoutMs: opts.lockTimeoutMs }
+        );
+      } catch {
+        return { ok: false, reasonCode: "STATUS_STATE_LOCK_FAILED", message: "VC \u72C0\u614B\u6A94\u9396\u53D6\u5F97\u5931\u6557" };
+      }
+    }
+  };
+}
+var issuerFile = (issuer) => `${ethers_exports.getAddress(issuer).toLowerCase()}.json`;
+var STATUS_DIRECTORY_TYPE = "AgentCredentialStatusDirectory";
+var STATUS_DIRECTORY_MARKER = "index.json";
 var MAX_STATUS_RESPONSE_BYTES = 256 * 1024;
 var VC_STATUS_INIT_COMMAND = "npm run vc-status:init";
 var NOT_INITIALISED_HINT = `\u8ACB\u71DF\u904B\u65B9\u5728 agent/ \u76EE\u9304\u57F7\u884C \`${VC_STATUS_INIT_COMMAND}\`\uFF08\u53EA\u5728\u6301\u4E45\u5132\u5B58\u4E0A\u8DD1\u4E00\u6B21\uFF0C\u4E0D\u8981\u653E\u9032\u5BB9\u5668\u555F\u52D5\u8173\u672C\uFF09\u5EFA\u7ACB\u76EE\u9304\u6A19\u8A18\uFF0C\u6216\u4FEE\u6B63 VC_STATUS_DIR\uFF0FVC_STATUS_URL`;
+function markerOk(raw2) {
+  try {
+    return JSON.parse(raw2)?.type === STATUS_DIRECTORY_TYPE;
+  } catch {
+    return false;
+  }
+}
+function dirStatusSource(dir) {
+  return {
+    describe: `dir:${dir}`,
+    preflight: async () => {
+      try {
+        const marker = retryTransientSync(() => fs2.readFileSync(path3.join(dir, STATUS_DIRECTORY_MARKER), "utf8"));
+        if (!markerOk(marker)) return { ok: false, reason: `${path3.join(dir, STATUS_DIRECTORY_MARKER)} \u5167\u5BB9\u4E0D\u7B26\uFF1B${NOT_INITIALISED_HINT}` };
+        return { ok: true };
+      } catch (e) {
+        const why = isNotFound(e) ? "\u76EE\u9304\u6216 index.json \u76EE\u9304\u6A19\u8A18\u4E0D\u5B58\u5728" : `\u76EE\u9304\u6A19\u8A18\u8B80\u53D6\u5931\u6557\uFF08${e.code ?? "IO"}\uFF09`;
+        return { ok: false, reason: `\u72C0\u614B\u6E05\u55AE\u76EE\u9304 ${dir} \u672A\u521D\u59CB\u5316\uFF1A${why}\uFF1B${NOT_INITIALISED_HINT}` };
+      }
+    },
+    fetch: async (issuer) => {
+      let raw2;
+      try {
+        raw2 = retryTransientSync(() => fs2.readFileSync(path3.join(dir, issuerFile(issuer)), "utf8"));
+      } catch (e) {
+        if (!isNotFound(e)) {
+          return { kind: "unavailable", reason: `\u8B80\u53D6\u72C0\u614B\u6E05\u55AE\u5931\u6557\uFF1A${e.code ?? "IO"}` };
+        }
+        let marker;
+        try {
+          marker = retryTransientSync(() => fs2.readFileSync(path3.join(dir, STATUS_DIRECTORY_MARKER), "utf8"));
+        } catch (e2) {
+          const why = isNotFound(e2) ? "\u76EE\u9304\u6216 index.json \u76EE\u9304\u6A19\u8A18\u4E0D\u5B58\u5728" : `\u76EE\u9304\u6A19\u8A18\u8B80\u53D6\u5931\u6557\uFF08${e2.code ?? "IO"}\uFF09`;
+          return { kind: "unavailable", setup: true, reason: `\u72C0\u614B\u6E05\u55AE\u76EE\u9304\u672A\u521D\u59CB\u5316\uFF1A${why}\uFF1B${NOT_INITIALISED_HINT}` };
+        }
+        if (!markerOk(marker)) return { kind: "unavailable", setup: true, reason: `\u72C0\u614B\u6E05\u55AE\u76EE\u9304\u6A19\u8A18\u4E0D\u7B26\uFF1B${NOT_INITIALISED_HINT}` };
+        return { kind: "none" };
+      }
+      try {
+        return { kind: "list", doc: JSON.parse(raw2) };
+      } catch {
+        return { kind: "unavailable", reason: "\u72C0\u614B\u6E05\u55AE\u6A94\u4E0D\u662F\u5408\u6CD5 JSON" };
+      }
+    }
+  };
+}
+async function readCapped(r, maxBytes) {
+  const len = Number(r.headers?.get("content-length") ?? NaN);
+  if (Number.isFinite(len) && len > maxBytes) return null;
+  if (r.body && typeof r.body.getReader === "function") {
+    const reader = r.body.getReader();
+    const chunks = [];
+    let total = 0;
+    for (; ; ) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (!value) continue;
+      total += value.byteLength;
+      if (total > maxBytes) {
+        await reader.cancel().catch(() => {
+        });
+        return null;
+      }
+      chunks.push(value);
+    }
+    return Buffer.concat(chunks.map((c) => Buffer.from(c))).toString("utf8");
+  }
+  const t = await r.text();
+  return Buffer.byteLength(t, "utf8") > maxBytes ? null : t;
+}
+function httpStatusSource(baseUrl, opts = {}) {
+  const base2 = baseUrl.replace(/\/+$/, "");
+  if (!/^https?:\/\//i.test(base2)) throw new Error(`VC_STATUS_URL \u5FC5\u9808\u662F http(s) URL\uFF1A${baseUrl}`);
+  const doFetch = opts.fetchImpl ?? ((u, i) => fetch(u, i));
+  const timeoutMs = opts.timeoutMs ?? 3e3;
+  const maxBytes = opts.maxBytes ?? MAX_STATUS_RESPONSE_BYTES;
+  async function get(url) {
+    const ac = new AbortController();
+    let timer;
+    const timeout = new Promise((resolve2) => {
+      timer = setTimeout(() => {
+        ac.abort();
+        resolve2({ error: "\u903E\u6642" });
+      }, timeoutMs);
+    });
+    const attempt = (async () => {
+      try {
+        const r = await doFetch(url, { signal: ac.signal, headers: { accept: "application/json" }, redirect: "manual" });
+        if (r.redirected || r.status >= 300 && r.status < 400 || r.status === 0) {
+          return { error: `\u8F49\u5740\uFF08HTTP ${r.status}\uFF09\uFF0C\u4E0D\u8DDF\u96A8` };
+        }
+        const body = await readCapped(r, maxBytes);
+        if (body === null) return { error: `\u56DE\u61C9\u8D85\u904E ${maxBytes} \u4F4D\u5143\u7D44` };
+        return { status: r.status, body };
+      } catch (e) {
+        return { error: ac.signal.aborted ? "\u903E\u6642" : e.name || "network" };
+      }
+    })();
+    try {
+      return await Promise.race([attempt, timeout]);
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+  return {
+    describe: `http:${base2}`,
+    preflight: async () => {
+      const idx = await get(`${base2}/${STATUS_DIRECTORY_MARKER}`);
+      if ("error" in idx) return { ok: false, reason: `${base2}/${STATUS_DIRECTORY_MARKER} \u7121\u6CD5\u53D6\u5F97\uFF08${idx.error}\uFF09` };
+      if (idx.status !== 200 || !markerOk(idx.body)) {
+        return { ok: false, reason: `${base2}/${STATUS_DIRECTORY_MARKER} \u4E0D\u662F\u6E05\u55AE\u76EE\u9304\u6A19\u8A18\uFF08HTTP ${idx.status}\uFF09\uFF1B${NOT_INITIALISED_HINT}` };
+      }
+      return { ok: true };
+    },
+    fetch: async (issuer) => {
+      const r = await get(`${base2}/${issuerFile(issuer)}`);
+      if ("error" in r) return { kind: "unavailable", reason: `\u72C0\u614B\u6E05\u55AE\u7121\u6CD5\u53D6\u5F97\uFF08${r.error}\uFF09` };
+      if (r.status === 404) {
+        const idx = await get(`${base2}/${STATUS_DIRECTORY_MARKER}`);
+        if ("error" in idx) return { kind: "unavailable", reason: `\u72C0\u614B\u6E05\u55AE\u76EE\u9304\u6A19\u8A18\u7121\u6CD5\u53D6\u5F97\uFF08${idx.error}\uFF09` };
+        if (idx.status !== 200 || !markerOk(idx.body)) {
+          return { kind: "unavailable", setup: true, reason: `\u72C0\u614B\u6E05\u55AE\u76EE\u9304\u6A19\u8A18\u4E0D\u7B26\uFF08HTTP ${idx.status}\uFF09\uFF1B${NOT_INITIALISED_HINT}` };
+        }
+        return { kind: "none" };
+      }
+      if (r.status !== 200) return { kind: "unavailable", reason: `\u72C0\u614B\u6E05\u55AE HTTP ${r.status}\uFF08\u4E3B\u6A5F\u5C0D\u7F3A\u6A94\u5FC5\u9808\u76F4\u63A5\u56DE 404\uFF09` };
+      try {
+        return { kind: "list", doc: JSON.parse(r.body) };
+      } catch {
+        return { kind: "unavailable", reason: "\u72C0\u614B\u6E05\u55AE\u4E0D\u662F\u5408\u6CD5 JSON" };
+      }
+    }
+  };
+}
+function revokedByOf(res, view) {
+  const jti = credentialJti(res);
+  const set = view.revoked instanceof Set ? view.revoked : new Set(view.revoked);
+  return jti && set.has(jti) ? "jti" : "revokedBefore";
+}
+var REVOKE_ALL_REISSUE_WAIT_TEXT = "\u7D04 5\u201310 \u5206\u9418";
+function revokedMessage(res, view, seq) {
+  if (revokedByOf(res, view) === "revokedBefore") {
+    return `\u6388\u6B0A\u6191\u8B49\u5DF2\u88AB\u7C3D\u767C\u8005\u300C\u5168\u90E8\u64A4\u92B7\u300D\u6DB5\u84CB\uFF08\u6E05\u55AE sequence ${seq}\uFF0CrevokedBefore ${new Date(view.revokedBefore * 1e3).toISOString()}\uFF09\uFF1B\u5168\u90E8\u64A4\u92B7\u5F8C${REVOKE_ALL_REISSUE_WAIT_TEXT}\u5167\u91CD\u7C3D\u7684 VC \u4E5F\u6703\u88AB\u6DB5\u84CB\uFF0C\u8ACB\u7B49\u9019\u6BB5\u6642\u9593\u904E\u5F8C\u518D\u91CD\u7C3D`;
+  }
+  return `\u6388\u6B0A\u6191\u8B49\u5DF2\u88AB\u7C3D\u767C\u8005\u64A4\u92B7\uFF08\u6E05\u55AE sequence ${seq}\uFF09`;
+}
+var DEFAULT_STATUS_CACHE_MAX_AGE_SEC = 60;
+var MAX_STATUS_CACHE_MAX_AGE_SEC = 900;
+var STATUS_CACHE_MAX_ENTRIES = 1e3;
+function createVcStatusChecker(o) {
+  const now = o.now ?? (() => Date.now());
+  const maxAgeMs = Math.min(Math.max(0, Number.isFinite(o.cacheMaxAgeSec) ? Number(o.cacheMaxAgeSec) : DEFAULT_STATUS_CACHE_MAX_AGE_SEC), MAX_STATUS_CACHE_MAX_AGE_SEC) * 1e3;
+  const readPolicy = o.readPolicy ?? "allow";
+  const cache3 = /* @__PURE__ */ new Map();
+  const cacheGet = (key) => {
+    const e = cache3.get(key);
+    if (e !== void 0) {
+      cache3.delete(key);
+      cache3.set(key, e);
+    }
+    return e;
+  };
+  const cacheSet = (key, e) => {
+    cache3.delete(key);
+    cache3.set(key, e);
+    while (cache3.size > STATUS_CACHE_MAX_ENTRIES) cache3.delete(cache3.keys().next().value);
+  };
+  const inflight = /* @__PURE__ */ new Map();
+  const unknown = (action, reasonCode, message, extra = {}) => {
+    if (action === "read" && readPolicy === "allow") {
+      return {
+        ok: true,
+        status: "unknown",
+        reasonCode,
+        message,
+        ...extra,
+        warnings: [`VC \u72C0\u614B\u672A\u77E5\uFF08${reasonCode}\uFF09\uFF1A\u552F\u8B80\u52D5\u4F5C\u4F9D VC_STATUS_READ_POLICY=allow \u653E\u884C`]
+      };
+    }
+    return { ok: false, status: "unknown", reasonCode, message, ...extra };
+  };
+  async function load(key, issuer, vcAddr, nowMs) {
+    const f2 = await o.source.fetch(issuer);
+    if (f2.kind === "unavailable") {
+      return {
+        ok: false,
+        status: "unknown",
+        reasonCode: "STATUS_UNAVAILABLE",
+        message: `\u7121\u6CD5\u53D6\u5F97\u72C0\u614B\u6E05\u55AE\uFF1A${f2.reason}`,
+        ...f2.setup ? { setupRequired: true } : {}
+      };
+    }
+    if (f2.kind === "none") return { kind: "none", fetchedAt: nowMs };
+    const v = verifyStatusList(f2.doc, { now: nowMs, expectedIssuer: issuer, expectedVerifyingContract: vcAddr });
+    if (!v.valid) return { ok: false, status: "unknown", reasonCode: v.reasonCode, message: v.reason };
+    const a = o.store.accept(key, v.list, Math.floor(nowMs / 1e3));
+    if (!a.ok) return { ok: false, status: "unknown", reasonCode: a.reasonCode, message: a.message };
+    return { kind: "list", list: v.list, fetchedAt: nowMs };
+  }
+  return {
+    describe: o.source.describe,
+    clearCache: () => cache3.clear(),
+    async check(res, opts) {
+      const action = opts.action;
+      const nowMs = now();
+      const jti = credentialJti(res);
+      if (!res.issuer || !jti) {
+        return unknown(action, "STATUS_JTI_MISSING", "\u7121\u6CD5\u5F9E VC \u53D6\u5F97\u7C3D\u767C\u8005\u6216\u6191\u8B49 id\uFF08jti\uFF09");
+      }
+      const issuer = ethers_exports.getAddress(res.issuer);
+      const vcAddrRaw = opts.verifyingContract ?? res.verifyingContract ?? getSessionManagerAddress();
+      if (!ethers_exports.isAddress(vcAddrRaw) || vcAddrRaw.toLowerCase() === ZERO5) {
+        return unknown(action, "STATUS_UNAVAILABLE", "\u672A\u8A2D\u5B9A session manager \u4F4D\u5740\uFF0C\u7121\u6CD5\u5B9A\u4F4D\u72C0\u614B\u6E05\u55AE", { jti });
+      }
+      const vcAddr = ethers_exports.getAddress(vcAddrRaw);
+      const key = stateKey(vcAddr, issuer);
+      let known;
+      try {
+        known = o.store.get(key);
+      } catch {
+        return unknown(action, "STATUS_STATE_UNREADABLE", "VC \u72C0\u614B\u6A94\u7121\u6CD5\u8B80\u53D6\u6216\u683C\u5F0F\u4E0D\u7B26", { jti });
+      }
+      if (known && isCredentialRevoked(res, known)) {
+        return {
+          ok: false,
+          status: "revoked",
+          reasonCode: "VC_REVOKED",
+          message: revokedMessage(res, known, known.sequence),
+          jti,
+          listSequence: known.sequence,
+          revokedBy: revokedByOf(res, known)
+        };
+      }
+      let entry;
+      let fromCache = false;
+      for (let attempt = 0; attempt < 2; attempt++) {
+        entry = cacheGet(key);
+        fromCache = true;
+        if (!entry || maxAgeMs === 0 || nowMs - entry.fetchedAt > maxAgeMs || nowMs < entry.fetchedAt) {
+          fromCache = false;
+          let p = inflight.get(key);
+          if (!p) {
+            p = load(key, issuer, vcAddr, nowMs).finally(() => inflight.delete(key));
+            inflight.set(key, p);
+          }
+          let got;
+          try {
+            got = await p;
+          } catch (e) {
+            got = { ok: false, status: "unknown", reasonCode: "STATUS_UNAVAILABLE", message: `\u72C0\u614B\u6AA2\u67E5\u5931\u6557\uFF1A${e?.message ?? e}` };
+          }
+          if (!("kind" in got)) {
+            cache3.delete(key);
+            return unknown(action, got.reasonCode, got.message, { jti, ...got.setupRequired ? { setupRequired: true } : {} });
+          }
+          entry = got;
+          cacheSet(key, entry);
+        }
+        if (entry.kind !== "none") break;
+        let after;
+        try {
+          after = o.store.get(key);
+        } catch {
+          return unknown(action, "STATUS_STATE_UNREADABLE", "VC \u72C0\u614B\u6A94\u7121\u6CD5\u8B80\u53D6\u6216\u683C\u5F0F\u4E0D\u7B26", { jti });
+        }
+        if (!after) {
+          return { ok: true, status: "active", reasonCode: "STATUS_NO_LIST", message: "\u7C3D\u767C\u8005\u6C92\u6709\u767C\u4F48\u72C0\u614B\u6E05\u55AE\uFF08\u6C92\u6709\u64A4\u92B7\uFF09", jti, fromCache };
+        }
+        cache3.delete(key);
+        if (!fromCache) {
+          return unknown(action, "STATUS_LIST_WITHHELD", `\u4F86\u6E90\u6C92\u6709\u56DE\u50B3\u9019\u500B\u7C3D\u767C\u8005\u7684\u6E05\u55AE\uFF0C\u4F46\u672C\u9A57\u8B49\u7AEF\u5DF2\u63A5\u53D7\u904E sequence ${after.sequence}`, {
+            jti,
+            listSequence: after.sequence
+          });
+        }
+      }
+      if (!entry || entry.kind !== "list") {
+        return unknown(action, "STATUS_UNAVAILABLE", "\u7121\u6CD5\u53D6\u5F97\u72C0\u614B\u6E05\u55AE", { jti });
+      }
+      const list2 = entry.list;
+      if (list2.validUntil * 1e3 <= nowMs) {
+        cache3.delete(key);
+        return unknown(action, "STATUS_LIST_EXPIRED", `\u72C0\u614B\u6E05\u55AE\u5DF2\u65BC ${new Date(list2.validUntil * 1e3).toISOString()} \u904E\u671F\uFF0C\u8ACB\u7C3D\u767C\u8005\u91CD\u65B0\u7C3D\u7F72`, {
+          jti,
+          listSequence: list2.sequence
+        });
+      }
+      let merged;
+      try {
+        merged = o.store.get(key);
+      } catch {
+        return unknown(action, "STATUS_STATE_UNREADABLE", "VC \u72C0\u614B\u6A94\u7121\u6CD5\u8B80\u53D6\u6216\u683C\u5F0F\u4E0D\u7B26", { jti });
+      }
+      const view = merged ?? list2;
+      const seq = merged?.sequence ?? list2.sequence;
+      if (isCredentialRevoked(res, view) || isCredentialRevoked(res, list2)) {
+        const by = isCredentialRevoked(res, view) ? view : list2;
+        return {
+          ok: false,
+          status: "revoked",
+          reasonCode: "VC_REVOKED",
+          message: revokedMessage(res, by, seq),
+          jti,
+          listSequence: seq,
+          revokedBy: revokedByOf(res, by)
+        };
+      }
+      const warn = statusListExpiryWarning(list2.validUntil, nowMs);
+      return {
+        ok: true,
+        status: "active",
+        reasonCode: "STATUS_ACTIVE",
+        message: `\u72C0\u614B\u6E05\u55AE sequence ${seq}\uFF1A\u672A\u64A4\u92B7`,
+        jti,
+        listSequence: seq,
+        listValidUntil: list2.validUntil,
+        fromCache,
+        ...warn ? { warnings: [warn] } : {}
+      };
+    }
+  };
+}
+function statusListExpiryWarning(validUntilSec, nowMs) {
+  const left = validUntilSec * 1e3 - nowMs;
+  if (left > STATUS_LIST_EXPIRY_WARNING_SEC * 1e3) return null;
+  const hours = Math.max(0, Math.floor(left / 36e5));
+  return `VC \u72C0\u614B\u6E05\u55AE\u5C07\u65BC ${new Date(validUntilSec * 1e3).toISOString()} \u5230\u671F\uFF08\u7D04 ${hours} \u5C0F\u6642\u5F8C\uFF09\uFF1B\u5230\u671F\u5F8C\u6B64\u7C3D\u767C\u8005\u7684\u958B\u5009\u8207\u5E73\u5009\u90FD\u6703\u88AB\u62D2\uFF0C\u8ACB\u7C3D\u767C\u8005\u5728\u5230\u671F\u524D\u7E8C\u7C3D\uFF08\u540C\u5167\u5BB9\u3001sequence +1\uFF09`;
+}
+function agentStateDir() {
+  try {
+    return path3.resolve(path3.dirname(fileURLToPath3(import.meta.url)), "..", "..", ".state");
+  } catch {
+    return path3.resolve(".state");
+  }
+}
+function defaultStatusStatePath() {
+  return process.env.VC_STATUS_STATE_PATH?.trim() || path3.join(agentStateDir(), "vc-status-state.json");
+}
+function defaultStatusDir() {
+  return process.env.VC_STATUS_DIR?.trim() || path3.join(agentStateDir(), "vc-status");
+}
+function readPolicyFromEnv(env = process.env) {
+  const v = env.VC_STATUS_READ_POLICY?.trim().toLowerCase();
+  if (!v || v === "allow") return "allow";
+  if (v !== "deny") console.error(`::error::[vc-status] VC_STATUS_READ_POLICY=${v} \u7121\u6CD5\u8FA8\u8B58\uFF0C\u6539\u7528 deny`);
+  return "deny";
+}
+var memo = null;
+var injectedStore = null;
+function defaultVcStatusChecker() {
+  const url = process.env.VC_STATUS_URL?.trim() || "";
+  const dir = defaultStatusDir();
+  const statePath = defaultStatusStatePath();
+  const maxAgeRaw = process.env.VC_STATUS_CACHE_MAX_AGE_SEC?.trim();
+  const maxAge = maxAgeRaw ? Number(maxAgeRaw) : DEFAULT_STATUS_CACHE_MAX_AGE_SEC;
+  const readPolicy = readPolicyFromEnv();
+  const key = JSON.stringify([url, url ? "" : dir, injectedStore ? `inj:${injectedStore.id}` : statePath, maxAge, readPolicy]);
+  if (memo?.key === key) return memo.checker;
+  const source = url ? httpStatusSource(url) : dirStatusSource(dir);
+  const storeDesc = injectedStore ? `\u5171\u4EAB\u5132\u5B58\uFF08${injectedStore.describe}\uFF09` : `\u55AE\u6A5F\u6A94\u6848 ${statePath}\uFF08\u591A\u526F\u672C\u90E8\u7F72\u9808\u4EE5 setVcStatusStateStore \u6CE8\u5165\u5171\u4EAB\u5132\u5B58\uFF09`;
+  console.error(`[vc-status] \u64A4\u92B7\u72C0\u614B\u4F86\u6E90 ${source.describe}\uFF1B\u9A57\u8B49\u7AEF\u72C0\u614B ${storeDesc}`);
+  const checker = createVcStatusChecker({
+    source,
+    store: injectedStore?.store ?? fileStatusStateStore(statePath),
+    cacheMaxAgeSec: Number.isFinite(maxAge) ? maxAge : DEFAULT_STATUS_CACHE_MAX_AGE_SEC,
+    readPolicy
+  });
+  memo = { key, checker };
+  return checker;
+}
+async function checkCredentialStatus(res, opts) {
+  try {
+    return await defaultVcStatusChecker().check(res, opts);
+  } catch (e) {
+    const message = `VC \u72C0\u614B\u6AA2\u67E5\u7121\u6CD5\u57F7\u884C\uFF08\u8A2D\u5B9A\u6216\u5167\u90E8\u932F\u8AA4\uFF09\uFF1A${e?.message ?? e}`;
+    if (opts.action === "read" && readPolicyFromEnv() === "allow") {
+      return { ok: true, status: "unknown", reasonCode: "STATUS_UNAVAILABLE", message, warnings: [message] };
+    }
+    return { ok: false, status: "unknown", reasonCode: "STATUS_UNAVAILABLE", message };
+  }
+}
 
 // ../shared/src/redact.ts
 var SECRET_VALUE_ENV_KEYS = ["UPSTASH_REDIS_REST_TOKEN", "ETHERSCAN_API_KEY", "BASESCAN_API_KEY"];
@@ -39840,6 +40790,241 @@ function redactSecrets(text) {
   s = s.replace(/("?requestUrl"?\s*[:=]\s*\\?"?)[^"\s,}\\]+/g, "$1[redacted]");
   s = s.replace(/(\/v[23]\/)[A-Za-z0-9_-]{16,}/g, "$1[redacted]");
   return s;
+}
+
+// ../shared/src/delegation.ts
+var ZERO6 = "0x0000000000000000000000000000000000000000";
+var TYPES2 = DELEGATION_TYPES;
+var VP_TYPES = PRESENTATION_TYPES;
+function delegationCredentialHash(fields, chainId) {
+  return ethers_exports.TypedDataEncoder.hash(
+    delegationDomain(chainId, fields.sessionManager),
+    TYPES2,
+    buildDelegationTypedValue(fields)
+  ).toLowerCase();
+}
+var SESSION_VIEW_ABI = [
+  "function sessions(uint256) view returns (address user, address agent, uint256 maxMarginPerTrade, uint256 totalMarginBudget, uint256 spentMargin, uint256 maxLeverage, uint256 expiry, bool revoked)",
+  "function allowedAssets(uint256) view returns (bytes32[])"
+];
+var SESSION_ANCHOR_ABI = [
+  "function anchor(uint256 sessionId, bytes32 credentialHash)",
+  "function unanchor(uint256 sessionId, bytes32 credentialHash)",
+  "function isAnchored(uint256 sessionId, bytes32 credentialHash) view returns (bool)",
+  "function anchorStatus(uint256 sessionId, bytes32 credentialHash) view returns (bool recorded, bool sessionLive, address user, uint256 since)",
+  "function currentCredential(uint256 sessionId) view returns (bytes32)",
+  "function anchorCount(uint256 sessionId) view returns (uint256)",
+  "function sessionManager() view returns (address)",
+  "event CredentialAnchored(uint256 indexed sessionId, address indexed user, bytes32 indexed credentialHash, bytes32 previousHash, uint256 version)",
+  "event CredentialUnanchored(uint256 indexed sessionId, address indexed user, bytes32 indexed credentialHash)"
+];
+async function readOnchainSession(runner, sessionManager2, sessionId) {
+  const mgr = new ethers_exports.Contract(sessionManager2, SESSION_VIEW_ABI, runner);
+  const [s, assets] = await Promise.all([mgr.sessions(sessionId), mgr.allowedAssets(sessionId)]);
+  return {
+    user: ethers_exports.getAddress(String(s.user)),
+    agent: ethers_exports.getAddress(String(s.agent)),
+    maxMarginPerTrade: BigInt(s.maxMarginPerTrade),
+    totalMarginBudget: BigInt(s.totalMarginBudget),
+    maxLeverage: BigInt(s.maxLeverage),
+    expiry: BigInt(s.expiry),
+    revoked: Boolean(s.revoked),
+    allowedAssets: [...assets].map(String)
+  };
+}
+function acceptedDelegationChainIds(env = process.env) {
+  const raw2 = env.DELEGATION_VC_CHAIN_IDS?.trim();
+  if (raw2) {
+    const ids = raw2.split(",").map((s) => Number(s.trim())).filter((n2) => Number.isSafeInteger(n2) && n2 > 0);
+    if (ids.length) return ids;
+  }
+  return [.../* @__PURE__ */ new Set([AGENT_CHAIN_ID, AUTH_VC_CHAIN_ID])];
+}
+function verifyDelegationCredential(vc, opts = {}) {
+  const nowMs = opts.now ?? Date.now();
+  const bad = (reasonCode, reason, extra = {}) => ({
+    valid: false,
+    reasonCode,
+    reason,
+    version: 3,
+    ...extra
+  });
+  try {
+    if (!isDelegationCredential(vc)) return bad("VC_MALFORMED", "\u4E0D\u662F v3 AgentDelegationCredential");
+    if (!vc.proof?.proofValue || !/^0x[0-9a-fA-F]+$/.test(vc.proof.proofValue)) return bad("VC_MALFORMED", "\u7F3A\u5C11 proof.proofValue");
+    const { fields, chainId } = delegationFieldsFromCredential(vc);
+    const accepted = opts.acceptedChainIds ?? acceptedDelegationChainIds();
+    if (!accepted.includes(chainId)) {
+      return bad("VC_WRONG_CHAIN", `DID \u7684 chainId(${chainId}) \u4E0D\u5728\u672C\u9A57\u8B49\u7AEF\u63A5\u53D7\u7684\u93C8 [${accepted.join(", ")}]`);
+    }
+    const d = vc.proof.eip712?.domain;
+    if (!d || Number(d.chainId) !== chainId || String(d.verifyingContract).toLowerCase() !== fields.sessionManager.toLowerCase()) {
+      return bad("VC_MALFORMED", "proof.eip712.domain \u8207 DID \u7684\u93C8\u6216 credentialSubject.sessionManager \u4E0D\u4E00\u81F4");
+    }
+    const domain = delegationDomain(chainId, fields.sessionManager);
+    const value = buildDelegationTypedValue(fields);
+    const recovered = ethers_exports.verifyTypedData(domain, TYPES2, value, vc.proof.proofValue);
+    if (recovered === ZERO6 || ethers_exports.getAddress(recovered) !== ethers_exports.getAddress(fields.issuer)) {
+      return bad("VC_BAD_SIGNATURE", `\u7C3D\u7AE0\u8207 issuer \u4E0D\u7B26\uFF08recovered ${recovered}\uFF0Cissuer ${fields.issuer}\uFF09`);
+    }
+    const credentialHash = ethers_exports.TypedDataEncoder.hash(domain, TYPES2, value).toLowerCase();
+    const ok = {
+      chainId,
+      fields,
+      issuer: ethers_exports.getAddress(fields.issuer),
+      agent: ethers_exports.getAddress(fields.agent),
+      sessionId: fields.sessionId,
+      credentialHash
+    };
+    if (opts.expectedSessionManager && ethers_exports.getAddress(opts.expectedSessionManager) !== ethers_exports.getAddress(fields.sessionManager)) {
+      return bad(
+        "VC_WRONG_VERIFYING_CONTRACT",
+        `\u6191\u8B49\u7D81\u5B9A\u7684 session manager(${fields.sessionManager}) \u975E\u672C\u9A57\u8B49\u7AEF\u4F7F\u7528\u7684(${ethers_exports.getAddress(opts.expectedSessionManager)})`,
+        ok
+      );
+    }
+    if (String(vc.credentialStatus?.statusListIndex ?? "").toLowerCase() !== fields.nonce.toLowerCase()) {
+      return bad("VC_STATUS_POINTER_MISMATCH", "credentialStatus.statusListIndex \u5FC5\u9808\u7B49\u65BC credentialSubject.nonce\uFF08jti\uFF09", ok);
+    }
+    if (fields.validUntil > fields.sessionExpiry) {
+      return bad("VC_VALIDITY_EXCEEDS_SESSION", "validUntil \u665A\u65BC\u93C8\u4E0A session \u5230\u671F\u6642\u9593", ok);
+    }
+    const x = fields.x402;
+    if (!(x.periodSeconds > 0) || BigInt(x.maxPerPeriod) > BigInt(x.maxTotal) || x.endpoints.length === 0) {
+      return bad("VC_X402_ALLOWANCE_INVALID", "x402 \u984D\u5EA6\u4E0D\u5408\u6CD5\uFF08periodSeconds \u9808 > 0\u3001maxPerPeriod \u2264 maxTotal\u3001endpoints \u4E0D\u53EF\u70BA\u7A7A\uFF09", ok);
+    }
+    if (fields.validFrom * 1e3 > nowMs + MAX_CLOCK_SKEW_SEC * 1e3) {
+      return bad("VC_NOT_YET_VALID", `validFrom(${vc.validFrom}) \u5C1A\u672A\u5230`, ok);
+    }
+    if (fields.validUntil * 1e3 < nowMs) {
+      return bad("VC_EXPIRED", `credential expired (validUntil ${vc.validUntil})`, ok);
+    }
+    return { valid: true, version: 3, ...ok };
+  } catch (err) {
+    return bad("VC_MALFORMED", err.message);
+  }
+}
+function delegationAsVerifyResult(r) {
+  const f2 = r.fields;
+  return {
+    valid: r.valid,
+    version: 2,
+    issuer: r.issuer,
+    agent: r.agent,
+    sessionId: r.sessionId,
+    issuedAt: f2?.validFrom,
+    validUntil: f2?.validUntil,
+    nonce: f2?.nonce,
+    verifyingContract: f2 ? ethers_exports.getAddress(f2.sessionManager) : void 0,
+    digest: r.credentialHash,
+    caps: f2 ? {
+      maxMarginPerTrade: f2.maxMarginPerTrade,
+      totalBudget: f2.totalMarginBudget,
+      maxLeverage: f2.maxLeverage,
+      expiry: f2.sessionExpiry
+    } : void 0
+  };
+}
+function compareDelegationWithSession(f2, s, nowSec = Math.floor(Date.now() / 1e3)) {
+  if (ethers_exports.getAddress(s.user) !== ethers_exports.getAddress(f2.issuer))
+    return { code: "SESSION_USER_MISMATCH", message: `\u6191\u8B49\u7C3D\u767C\u8005(${f2.issuer}) \u4E0D\u662F\u93C8\u4E0A session.user(${s.user})` };
+  if (ethers_exports.getAddress(s.agent) !== ethers_exports.getAddress(f2.agent))
+    return { code: "SESSION_AGENT_MISMATCH", message: `\u6191\u8B49\u7684\u4EE3\u7406\u4EBA(${f2.agent}) \u4E0D\u662F\u93C8\u4E0A session.agent(${s.agent})` };
+  if (s.revoked) return { code: "SESSION_REVOKED", message: `\u93C8\u4E0A session #${f2.sessionId} \u5DF2\u64A4\u92B7` };
+  if (BigInt(nowSec) > s.expiry) return { code: "SESSION_EXPIRED", message: `\u93C8\u4E0A session #${f2.sessionId} \u5DF2\u5230\u671F` };
+  const diffs = [];
+  if (BigInt(f2.maxMarginPerTrade) !== s.maxMarginPerTrade) diffs.push(`maxMarginPerTrade ${f2.maxMarginPerTrade}\u2260${s.maxMarginPerTrade}`);
+  if (BigInt(f2.totalMarginBudget) !== s.totalMarginBudget) diffs.push(`totalMarginBudget ${f2.totalMarginBudget}\u2260${s.totalMarginBudget}`);
+  if (BigInt(f2.maxLeverage) !== s.maxLeverage) diffs.push(`maxLeverage ${f2.maxLeverage}\u2260${s.maxLeverage}`);
+  if (BigInt(f2.sessionExpiry) !== s.expiry) diffs.push(`expiry ${f2.sessionExpiry}\u2260${s.expiry}`);
+  if (diffs.length) return { code: "SESSION_TERMS_MISMATCH", message: `\u6191\u8B49\u984D\u5EA6\u8207\u93C8\u4E0A session \u4E0D\u4E00\u81F4\uFF1A${diffs.join("\uFF1B")}` };
+  const a = canonicalAssets(f2.allowedAssets);
+  const b2 = canonicalAssets(s.allowedAssets);
+  if (a.length !== b2.length || a.some((x, i) => x !== b2[i]))
+    return { code: "SESSION_ASSETS_MISMATCH", message: "\u6191\u8B49\u7684\u8CC7\u7522\u767D\u540D\u55AE\u8207\u93C8\u4E0A allowedAssets \u4E0D\u4E00\u81F4" };
+  return null;
+}
+function paymentAuthorizationOf(header) {
+  if (!header) return null;
+  try {
+    const j = JSON.parse(Buffer.from(header, "base64").toString("utf8"));
+    const a = j?.payload?.authorization;
+    if (!a) return null;
+    const from16 = String(a.from ?? "");
+    const to = String(a.to ?? "");
+    const nonce = String(a.nonce ?? "");
+    if (!ethers_exports.isAddress(from16) || !ethers_exports.isAddress(to) || !/^0x[0-9a-fA-F]{64}$/.test(nonce)) return null;
+    const value = BigInt(String(a.value ?? ""));
+    const validBefore = BigInt(String(a.validBefore ?? "0"));
+    if (value < 0n) return null;
+    return { from: ethers_exports.getAddress(from16), to: ethers_exports.getAddress(to), value, nonce: nonce.toLowerCase(), validBefore };
+  } catch {
+    return null;
+  }
+}
+var KYA_PRESENTATION_MAX_SKEW_SEC = 120;
+function verifyX402Presentation(headerValue, req, opts = {}) {
+  const fail = (reasonCode, reason, extra = {}) => ({
+    ok: false,
+    reasonCode,
+    reason,
+    ...extra
+  });
+  let vp;
+  try {
+    if (headerValue.length > 16384) return fail("KYA_PRESENTATION_MALFORMED", "presentation \u592A\u5927\uFF08> 16 KB\uFF09");
+    vp = decodeHeaderJson(headerValue);
+  } catch {
+    return fail("KYA_PRESENTATION_MALFORMED", "X-Agent-Presentation \u4E0D\u662F base64url JSON");
+  }
+  try {
+    if (!Array.isArray(vp?.type) || !vp.type.includes("VerifiablePresentation"))
+      return fail("KYA_PRESENTATION_MALFORMED", "\u4E0D\u662F VerifiablePresentation");
+    const vcs = vp.verifiableCredential;
+    if (!Array.isArray(vcs) || vcs.length !== 1 || !isDelegationCredential(vcs[0]))
+      return fail("KYA_PRESENTATION_MALFORMED", "presentation \u5FC5\u9808\u6070\u597D\u5305\u542B\u4E00\u5F35 v3 AgentDelegationCredential");
+    const credential = vcs[0];
+    const { fields, chainId } = delegationFieldsFromCredential(credential);
+    const m = /^did:pkh:eip155:(\d+):(0x[0-9a-fA-F]{40})$/.exec(String(vp.holder ?? ""));
+    if (!m || Number(m[1]) !== chainId) return fail("KYA_PRESENTATION_MALFORMED", "holder \u5FC5\u9808\u662F\u8207\u6191\u8B49\u540C\u93C8\u7684 did:pkh");
+    const holder = ethers_exports.getAddress(m[2]);
+    const pr = vp.proof;
+    const created = Math.floor(Date.parse(String(pr?.created ?? "")) / 1e3);
+    if (!Number.isFinite(created) || !/^0x[0-9a-fA-F]{64}$/.test(String(pr?.challenge ?? "")))
+      return fail("KYA_PRESENTATION_MALFORMED", "proof.created\uFF0Fproof.challenge \u4E0D\u5408\u6CD5");
+    const domainStr = String(pr.domain ?? "");
+    const sp = domainStr.indexOf(" ");
+    const method = domainStr.slice(0, sp).toUpperCase();
+    const path4 = domainStr.slice(sp + 1);
+    const credentialHash = delegationCredentialHash(fields, chainId);
+    const vpFields = {
+      holder,
+      credentialHash,
+      method,
+      path: path4,
+      paymentNonce: String(pr.challenge).toLowerCase(),
+      payer: ethers_exports.isAddress(String(pr.payer ?? "")) ? ethers_exports.getAddress(String(pr.payer)) : ZERO6,
+      created
+    };
+    const recovered = ethers_exports.verifyTypedData(presentationDomain(chainId), VP_TYPES, buildPresentationTypedValue(vpFields), String(pr.proofValue ?? ""));
+    if (recovered === ZERO6 || ethers_exports.getAddress(recovered) !== holder)
+      return fail("KYA_PRESENTATION_BAD_SIGNATURE", `presentation \u7C3D\u7AE0\u4E0D\u662F holder \u7C3D\u7684\uFF08recovered ${recovered}\uFF09`);
+    const nowSec = Math.floor((opts.now ?? Date.now()) / 1e3);
+    const skew = opts.maxSkewSec ?? KYA_PRESENTATION_MAX_SKEW_SEC;
+    if (Math.abs(nowSec - created) > skew)
+      return fail("KYA_PRESENTATION_STALE", `presentation \u6642\u9593 ${pr.created} \u8207\u4F3A\u670D\u5668\u6642\u9593\u76F8\u5DEE\u8D85\u904E ${skew} \u79D2`);
+    if (method !== req.method.toUpperCase() || path4 !== req.path)
+      return fail("KYA_PRESENTATION_WRONG_REQUEST", `presentation \u7D81\u5B9A ${domainStr}\uFF0C\u672C\u8ACB\u6C42\u662F ${req.method.toUpperCase()} ${req.path}`);
+    if (vpFields.paymentNonce !== req.payment.nonce.toLowerCase() || vpFields.payer !== req.payment.from)
+      return fail("KYA_PRESENTATION_WRONG_PAYMENT", "presentation \u7D81\u5B9A\u7684\u4ED8\u6B3E\uFF08nonce\uFF0Fpayer\uFF09\u4E0D\u662F\u672C\u8ACB\u6C42\u7684\u4ED8\u6B3E");
+    if (holder !== ethers_exports.getAddress(fields.agent))
+      return fail("KYA_HOLDER_NOT_SUBJECT", `presentation \u7C3D\u8005(${holder}) \u4E0D\u662F\u6191\u8B49\u4E3B\u9AD4(${fields.agent})`);
+    if (req.payment.from !== holder)
+      return fail("KYA_PAYER_NOT_SUBJECT", `x402 \u4ED8\u6B3E\u4EBA(${req.payment.from}) \u4E0D\u662F\u6191\u8B49\u4E3B\u9AD4\uFF0Fpresentation \u7C3D\u8005(${holder})`);
+    return { ok: true, credential, holder };
+  } catch (err) {
+    return fail("KYA_PRESENTATION_MALFORMED", err.message);
+  }
 }
 
 // ../shared/src/write.ts
@@ -40039,26 +41224,26 @@ var throwNestingLimitExceeded = () => {
 };
 
 // ../node_modules/hono/dist/utils/url.js
-var splitPath = (path2) => {
-  const paths = path2.split("/");
+var splitPath = (path4) => {
+  const paths = path4.split("/");
   if (paths[0] === "") paths.shift();
   return paths;
 };
 var splitRoutingPath = (routePath) => {
-  const { groups, path: path2 } = extractGroupsFromPath(routePath);
-  const paths = splitPath(path2);
+  const { groups, path: path4 } = extractGroupsFromPath(routePath);
+  const paths = splitPath(path4);
   return replaceGroupMarks(paths, groups);
 };
-var extractGroupsFromPath = (path2) => {
+var extractGroupsFromPath = (path4) => {
   const groups = [];
-  path2 = path2.replace(/\{[^}]+\}/g, (match2, index2) => {
+  path4 = path4.replace(/\{[^}]+\}/g, (match2, index2) => {
     const mark = `@${index2}`;
     groups.push([mark, match2]);
     return mark;
   });
   return {
     groups,
-    path: path2
+    path: path4
   };
 };
 var replaceGroupMarks = (paths, groups) => {
@@ -40121,8 +41306,8 @@ var getPath = (request) => {
       const queryIndex = url.indexOf("?", i);
       const hashIndex = url.indexOf("#", i);
       const end = queryIndex === -1 ? hashIndex === -1 ? void 0 : hashIndex : hashIndex === -1 ? queryIndex : Math.min(queryIndex, hashIndex);
-      const path2 = url.slice(start, end);
-      return tryDecodeURI(path2.includes("%25") ? path2.replace(/%25/g, "%2525") : path2);
+      const path4 = url.slice(start, end);
+      return tryDecodeURI(path4.includes("%25") ? path4.replace(/%25/g, "%2525") : path4);
     } else if (charCode === 63 || charCode === 35) break;
   }
   return url.slice(start, i);
@@ -40135,9 +41320,9 @@ var mergePath = (base2, sub, ...rest) => {
   if (rest.length) sub = mergePath(sub, ...rest);
   return `${base2?.[0] === "/" ? "" : "/"}${base2}${sub === "/" ? "" : `${base2?.at(-1) === "/" ? "" : "/"}${sub?.[0] === "/" ? sub.slice(1) : sub}`}`;
 };
-var checkOptionalParameter = (path2) => {
-  if (path2.charCodeAt(path2.length - 1) !== 63 || !path2.includes(":")) return null;
-  const segments = path2.split("/");
+var checkOptionalParameter = (path4) => {
+  if (path4.charCodeAt(path4.length - 1) !== 63 || !path4.includes(":")) return null;
+  const segments = path4.split("/");
   const results = [];
   let basePath = "";
   segments.forEach((segment) => {
@@ -40243,9 +41428,9 @@ var HonoRequest = class {
   */
   path;
   bodyCache = {};
-  constructor(request, path2 = "/", matchResult = [[]]) {
+  constructor(request, path4 = "/", matchResult = [[]]) {
     this.raw = request;
-    this.path = path2;
+    this.path = path4;
     this.#matchResult = matchResult;
   }
   param(key) {
@@ -40975,8 +42160,8 @@ var Hono = class Hono2 {
         return this;
       };
     });
-    this.on = (method, path2, ...handlers) => {
-      for (const p of [path2].flat()) {
+    this.on = (method, path4, ...handlers) => {
+      for (const p of [path4].flat()) {
         this.#path = p;
         for (const m of [method].flat()) {
           const methodName = m.toUpperCase();
@@ -41030,8 +42215,8 @@ var Hono = class Hono2 {
   * app.route("/api", app2) // GET /api/user
   * ```
   */
-  route(path2, app2) {
-    const subApp = this.basePath(path2);
+  route(path4, app2) {
+    const subApp = this.basePath(path4);
     app2.routes.map((r) => {
       let handler2;
       if (app2.errorHandler === errorHandler) handler2 = r.handler;
@@ -41056,9 +42241,9 @@ var Hono = class Hono2 {
   * const api = new Hono().basePath('/api')
   * ```
   */
-  basePath(path2) {
+  basePath(path4) {
     const subApp = this.#clone();
-    subApp._basePath = mergePath(this._basePath, path2);
+    subApp._basePath = mergePath(this._basePath, path4);
     return subApp;
   }
   /**
@@ -41132,7 +42317,7 @@ var Hono = class Hono2 {
   * })
   * ```
   */
-  mount(path2, applicationHandler, options) {
+  mount(path4, applicationHandler, options) {
     let replaceRequest;
     let optionHandler;
     if (options) {
@@ -41155,7 +42340,7 @@ var Hono = class Hono2 {
       return [c.env, executionContext];
     };
     replaceRequest ||= (() => {
-      const mergedPath = mergePath(this._basePath, path2);
+      const mergedPath = mergePath(this._basePath, path4);
       const pathPrefixLength = mergedPath === "/" ? 0 : mergedPath.length;
       return (request) => {
         const url = new URL(request.url);
@@ -41168,18 +42353,18 @@ var Hono = class Hono2 {
       if (res) return res;
       await next();
     };
-    this.#addRoute("ALL", mergePath(path2, "*"), handler2);
+    this.#addRoute("ALL", mergePath(path4, "*"), handler2);
     return this;
   }
-  #addRoute(method, path2, handler2, baseRoutePath) {
-    path2 = mergePath(this._basePath, path2);
+  #addRoute(method, path4, handler2, baseRoutePath) {
+    path4 = mergePath(this._basePath, path4);
     const r = {
       basePath: baseRoutePath !== void 0 ? mergePath(this._basePath, baseRoutePath) : this._basePath,
-      path: path2,
+      path: path4,
       method,
       handler: handler2
     };
-    this.router.add(method, path2, [handler2, r]);
+    this.router.add(method, path4, [handler2, r]);
     this.routes.push(r);
   }
   #handleError(err, c) {
@@ -41188,10 +42373,10 @@ var Hono = class Hono2 {
   }
   #dispatch(request, executionCtx, env, method) {
     if (method === "HEAD") return (async () => new Response(null, await this.#dispatch(request, executionCtx, env, "GET")))();
-    const path2 = this.getPath(request, { env });
-    const matchResult = this.router.match(method, path2);
+    const path4 = this.getPath(request, { env });
+    const matchResult = this.router.match(method, path4);
     const c = new Context(request, {
-      path: path2,
+      path: path4,
       matchResult,
       env,
       executionCtx,
@@ -41279,19 +42464,19 @@ var createNullObject = () => /* @__PURE__ */ Object.create(null);
 
 // ../node_modules/hono/dist/router/reg-exp-router/matcher.js
 var emptyParam = [];
-function match(method, path2) {
+function match(method, path4) {
   const matchers2 = this.buildAllMatchers();
-  const match2 = ((method2, path3) => {
+  const match2 = ((method2, path5) => {
     const matcher = matchers2[method2] || matchers2["ALL"];
-    const staticMatch = matcher[2][path3];
+    const staticMatch = matcher[2][path5];
     if (staticMatch) return staticMatch;
-    const match3 = path3.match(matcher[0]);
+    const match3 = path5.match(matcher[0]);
     if (!match3) return [[], emptyParam];
     const index2 = match3.indexOf("", 1);
     return [matcher[1][index2], match3];
   });
   this.match = match2;
-  return match2(method, path2);
+  return match2(method, path4);
 }
 
 // ../node_modules/hono/dist/router/reg-exp-router/node.js
@@ -41381,14 +42566,14 @@ var Trie = class {
   #root = new Node();
   #index = 0;
   paths = createNullObject();
-  insert(path2, isStatic) {
+  insert(path4, isStatic) {
     if (isStatic) {
-      this.#root.insert(path2.split(""), 0, [], this.#context, true);
+      this.#root.insert(path4.split(""), 0, [], this.#context, true);
       return;
     }
     const paramAssoc = [];
     const groups = [];
-    let markedPath = path2;
+    let markedPath = path4;
     for (let i = 0; ; ) {
       let replaced = false;
       markedPath = markedPath.replace(/\{[^}]+\}/g, (m) => {
@@ -41409,7 +42594,7 @@ var Trie = class {
       }
     }
     this.#root.insert(tokens, this.#index, paramAssoc, this.#context, false);
-    this.paths[path2] = [this.#index++, paramAssoc];
+    this.paths[path4] = [this.#index++, paramAssoc];
   }
   buildRegExp() {
     let regexp = this.#root.buildRegExpStr();
@@ -41442,11 +42627,11 @@ var Trie = class {
 
 // ../node_modules/hono/dist/router/reg-exp-router/router.js
 var wildcardRegExpCache = createNullObject();
-function buildWildcardRegExp(path2) {
-  return wildcardRegExpCache[path2] ??= new RegExp(`^${path2.replace(/\/:[^/{}]+(?:\{\[\^\/]\+})?(?=[/{]|$)|\/?\*$|([.\\+*[^\]$()?{}|])/g, (match2, metaChar) => metaChar ? `\\${metaChar}` : match2 === "/*" ? TAIL_WILDCARD_REG_EXP_STR : match2 === "*" ? ".*" : `/:${LABEL_REG_EXP_STR}`)}$`);
+function buildWildcardRegExp(path4) {
+  return wildcardRegExpCache[path4] ??= new RegExp(`^${path4.replace(/\/:[^/{}]+(?:\{\[\^\/]\+})?(?=[/{]|$)|\/?\*$|([.\\+*[^\]$()?{}|])/g, (match2, metaChar) => metaChar ? `\\${metaChar}` : match2 === "/*" ? TAIL_WILDCARD_REG_EXP_STR : match2 === "*" ? ".*" : `/:${LABEL_REG_EXP_STR}`)}$`);
 }
-function findMiddleware(middleware, path2) {
-  for (const k of Object.keys(middleware).sort((a, b2) => b2.length - a.length)) if (buildWildcardRegExp(k).test(path2)) return [...middleware[k]];
+function findMiddleware(middleware, path4) {
+  for (const k of Object.keys(middleware).sort((a, b2) => b2.length - a.length)) if (buildWildcardRegExp(k).test(path4)) return [...middleware[k]];
 }
 var RegExpRouter = class {
   name = "RegExpRouter";
@@ -41458,14 +42643,14 @@ var RegExpRouter = class {
     this.#routes = { ["ALL"]: createNullObject() };
     this.#tries = { ["ALL"]: new Trie() };
   }
-  #insertPath(method, path2) {
+  #insertPath(method, path4) {
     try {
-      this.#tries[method].insert(path2, !/\*|\/:/.test(path2));
+      this.#tries[method].insert(path4, !/\*|\/:/.test(path4));
     } catch (e) {
-      throw e === PATH_ERROR ? new UnsupportedPathError(path2) : e;
+      throw e === PATH_ERROR ? new UnsupportedPathError(path4) : e;
     }
   }
-  add(method, path2, handler2) {
+  add(method, path4, handler2) {
     const middleware = this.#middleware;
     const routes = this.#routes;
     if (!middleware) throw new Error(MESSAGE_MATCHER_IS_ALREADY_BUILT);
@@ -41479,24 +42664,24 @@ var RegExpRouter = class {
         }
       }
     }
-    if (path2 === "/*") path2 = "*";
+    if (path4 === "/*") path4 = "*";
     const methods = method === "ALL" ? Object.keys(middleware) : [method];
-    if (/\*$/.test(path2)) {
-      const re = buildWildcardRegExp(path2);
-      for (const m of methods) if (!middleware[m][path2]) {
-        this.#insertPath(m, path2);
-        middleware[m][path2] = findMiddleware(middleware[m], path2) || findMiddleware(middleware["ALL"], path2) || [];
+    if (/\*$/.test(path4)) {
+      const re = buildWildcardRegExp(path4);
+      for (const m of methods) if (!middleware[m][path4]) {
+        this.#insertPath(m, path4);
+        middleware[m][path4] = findMiddleware(middleware[m], path4) || findMiddleware(middleware["ALL"], path4) || [];
       }
-      for (const handlerMap of [middleware, routes]) for (const m of methods) for (const p in handlerMap[m]) re.test(p) && handlerMap[m][p].push([handler2, path2]);
+      for (const handlerMap of [middleware, routes]) for (const m of methods) for (const p in handlerMap[m]) re.test(p) && handlerMap[m][p].push([handler2, path4]);
       return;
     }
-    const paths = checkOptionalParameter(path2) || [path2];
-    for (const path3 of paths) for (const m of methods) {
-      if (!routes[m][path3]) {
-        this.#insertPath(m, path3);
-        routes[m][path3] = findMiddleware(middleware[m], path3) || findMiddleware(middleware["ALL"], path3) || [];
+    const paths = checkOptionalParameter(path4) || [path4];
+    for (const path5 of paths) for (const m of methods) {
+      if (!routes[m][path5]) {
+        this.#insertPath(m, path5);
+        routes[m][path5] = findMiddleware(middleware[m], path5) || findMiddleware(middleware["ALL"], path5) || [];
       }
-      routes[m][path3].push([handler2, path3]);
+      routes[m][path5].push([handler2, path5]);
     }
   }
   match = match;
@@ -41514,11 +42699,11 @@ var RegExpRouter = class {
     const staticMap = createNullObject();
     const handlerData = [];
     const [regexp, indexReplacementMap, paramReplacementMap] = trie.buildRegExp();
-    for (const r of [middleware, routes]) for (const path2 in r) {
-      const handlers = r[path2];
-      const pathData = trie.paths[path2];
+    for (const r of [middleware, routes]) for (const path4 in r) {
+      const handlers = r[path4];
+      const pathData = trie.paths[path4];
       if (!pathData) {
-        staticMap[path2] = [handlers.map(([h]) => [h, createNullObject()]), emptyParam];
+        staticMap[path4] = [handlers.map(([h]) => [h, createNullObject()]), emptyParam];
         continue;
       }
       handlerData[pathData[0]] = handlers.map(([h, handlerPath]) => [h, trie.paths[handlerPath][1].reduceRight((map, [key], i) => {
@@ -41542,15 +42727,15 @@ var SmartRouter = class {
   constructor(init2) {
     this.#routers = init2.routers;
   }
-  add(method, path2, handler2) {
+  add(method, path4, handler2) {
     if (!this.#routes) throw new Error(MESSAGE_MATCHER_IS_ALREADY_BUILT);
     this.#routes.push([
       method,
-      path2,
+      path4,
       handler2
     ]);
   }
-  match(method, path2) {
+  match(method, path4) {
     if (!this.#routes) throw new Error("Fatal error");
     const routers = this.#routers;
     const routes = this.#routes;
@@ -41561,7 +42746,7 @@ var SmartRouter = class {
       const router = routers[i];
       try {
         for (let i2 = 0, len2 = routes.length; i2 < len2; i2++) router.add(...routes[i2]);
-        res = router.match(method, path2);
+        res = router.match(method, path4);
       } catch (e) {
         if (e instanceof UnsupportedPathError) continue;
         throw e;
@@ -41590,9 +42775,9 @@ var Node3 = class Node4 {
   #patterns = [];
   #pattern;
   #params = emptyParams;
-  insert(method, path2, handler2) {
+  insert(method, path4, handler2) {
     let curNode = this;
-    const parts = splitRoutingPath(path2);
+    const parts = splitRoutingPath(path4);
     const possibleKeys = /* @__PURE__ */ new Set();
     let i = 0;
     for (const p of parts) {
@@ -41628,11 +42813,11 @@ var Node3 = class Node4 {
       }
     }
   }
-  search(method, path2) {
+  search(method, path4) {
     const handlerSets = [];
     this.#params = emptyParams;
     let curNodes = [this];
-    const parts = splitPath(path2);
+    const parts = splitPath(path4);
     const curNodesQueue = [];
     const len = parts.length;
     let partOffsets = null;
@@ -41668,13 +42853,13 @@ var Node3 = class Node4 {
           if (matcher !== true) {
             if (!partOffsets) {
               partOffsets = [];
-              let offset = path2[0] === "/" ? 1 : 0;
+              let offset = path4[0] === "/" ? 1 : 0;
               for (let p = 0; p < len; p++) {
                 partOffsets[p] = offset;
                 offset += parts[p].length + 1;
               }
             }
-            const restPathString = path2.slice(partOffsets[i]);
+            const restPathString = path4.slice(partOffsets[i]);
             const m = matcher.exec(restPathString);
             if (m) {
               params[name] = m[0];
@@ -41715,11 +42900,11 @@ var Node3 = class Node4 {
 var TrieRouter = class {
   name = "TrieRouter";
   #node = new Node3();
-  add(method, path2, handler2) {
-    for (const result of checkOptionalParameter(path2) || [path2]) this.#node.insert(method, result, handler2);
+  add(method, path4, handler2) {
+    for (const result of checkOptionalParameter(path4) || [path4]) this.#node.insert(method, result, handler2);
   }
-  match(method, path2) {
-    return this.#node.search(method, path2);
+  match(method, path4) {
+    return this.#node.search(method, path4);
   }
 };
 
@@ -46770,7 +47955,7 @@ function createHasher3(hashCons) {
   hashC.create = () => hashCons();
   return hashC;
 }
-function randomBytes5(bytesLength = 32) {
+function randomBytes6(bytesLength = 32) {
   if (crypto5 && typeof crypto5.getRandomValues === "function") {
     return crypto5.getRandomValues(new Uint8Array(bytesLength));
   }
@@ -49870,7 +51055,7 @@ function weierstrass3(curveDef) {
   function prepSig(msgHash, privateKey, opts = defaultSigOpts) {
     if (["recovered", "canonical"].some((k) => k in opts))
       throw new Error("sign() legacy options not supported");
-    const { hash: hash4, randomBytes: randomBytes6 } = CURVE;
+    const { hash: hash4, randomBytes: randomBytes7 } = CURVE;
     let { lowS, prehash, extraEntropy: ent } = opts;
     if (lowS == null)
       lowS = true;
@@ -49882,7 +51067,7 @@ function weierstrass3(curveDef) {
     const d = normPrivateKeyToScalar(privateKey);
     const seedArgs = [int2octets(d), int2octets(h1int)];
     if (ent != null && ent !== false) {
-      const e = ent === true ? randomBytes6(Fp2.BYTES) : ent;
+      const e = ent === true ? randomBytes7(Fp2.BYTES) : ent;
       seedArgs.push(ensureBytes3("extraEntropy", e));
     }
     const seed = concatBytes6(...seedArgs);
@@ -49986,7 +51171,7 @@ function getHash3(hash4) {
   return {
     hash: hash4,
     hmac: (key, ...msgs) => hmac3(hash4, key, concatBytes7(...msgs)),
-    randomBytes: randomBytes5
+    randomBytes: randomBytes6
   };
 }
 function createCurve3(curveDef, defHash) {
@@ -54966,8 +56151,8 @@ function getErrorMap() {
 
 // ../node_modules/zod/v3/helpers/parseUtil.js
 var makeIssue = (params) => {
-  const { data: data4, path: path2, errorMaps, issueData } = params;
-  const fullPath = [...path2, ...issueData.path || []];
+  const { data: data4, path: path4, errorMaps, issueData } = params;
+  const fullPath = [...path4, ...issueData.path || []];
   const fullIssue = {
     ...issueData,
     path: fullPath
@@ -55083,11 +56268,11 @@ var errorUtil;
 
 // ../node_modules/zod/v3/types.js
 var ParseInputLazyPath = class {
-  constructor(parent, value, path2, key) {
+  constructor(parent, value, path4, key) {
     this._cachedPath = [];
     this.parent = parent;
     this.data = value;
-    this._path = path2;
+    this._path = path4;
     this._key = key;
   }
   get path() {
@@ -59308,24 +60493,24 @@ function computeRoutePatterns(routes) {
     ])
   );
   return Object.entries(normalizedRoutes).map(([pattern, routeConfig]) => {
-    const [verb, path2] = pattern.includes(" ") ? pattern.split(/\s+/) : ["*", pattern];
-    if (!path2) {
+    const [verb, path4] = pattern.includes(" ") ? pattern.split(/\s+/) : ["*", pattern];
+    if (!path4) {
       throw new Error(`Invalid route pattern: ${pattern}`);
     }
     return {
       verb: verb.toUpperCase(),
       pattern: new RegExp(
-        `^${path2.replace(/[$()+.?^{|}]/g, "\\$&").replace(/\*/g, ".*?").replace(/\[([^\]]+)\]/g, "[^/]+").replace(/\//g, "\\/")}$`,
+        `^${path4.replace(/[$()+.?^{|}]/g, "\\$&").replace(/\*/g, ".*?").replace(/\[([^\]]+)\]/g, "[^/]+").replace(/\//g, "\\/")}$`,
         "i"
       ),
       config: routeConfig
     };
   });
 }
-function findMatchingRoute(routePatterns, path2, method) {
+function findMatchingRoute(routePatterns, path4, method) {
   let normalizedPath;
   try {
-    const pathWithoutQuery = path2.split(/[?#]/)[0];
+    const pathWithoutQuery = path4.split(/[?#]/)[0];
     const decodedPath = decodeURIComponent(pathWithoutQuery);
     normalizedPath = decodedPath.replace(/\\/g, "/").replace(/\/+/g, "/").replace(/(.+?)\/+$/, "$1");
   } catch {
@@ -60126,12 +61311,12 @@ function deriveIdempotencyKey(paymentResponseHeader, paymentHeader) {
   return void 0;
 }
 function deriveIdempotencyKeyV2(paymentResponseHeader, paymentPayload) {
-  const isAddr = (v) => typeof v === "string" && /^0x[0-9a-fA-F]{40}$/.test(v);
+  const isAddr2 = (v) => typeof v === "string" && /^0x[0-9a-fA-F]{40}$/.test(v);
   const settle3 = decodeBase64Json(paymentResponseHeader);
   const auth = paymentPayload?.payload?.authorization;
   const tx = settle3?.transaction;
   if (typeof tx === "string" && /^0x[0-9a-fA-F]{64}$/.test(tx)) return `tx:${tx.toLowerCase()}`;
-  if (isAddr(auth?.from) && typeof auth?.nonce === "string" && auth.nonce) {
+  if (isAddr2(auth?.from) && typeof auth?.nonce === "string" && auth.nonce) {
     return `auth:${auth.from.toLowerCase()}:${auth.nonce.toLowerCase()}`;
   }
   return void 0;
@@ -60619,9 +61804,9 @@ function assertAdditiveSettlementExtra(extra, enrichment, callerLabel) {
 function mergeAdditiveSettlementExtra(extra, enrichment) {
   return mergeAdditiveRecord(extra, enrichment);
 }
-function assertAdditiveRecord(target, enrichment, callerLabel, path2) {
+function assertAdditiveRecord(target, enrichment, callerLabel, path4) {
   for (const [key, enrichmentValue] of Object.entries(enrichment)) {
-    const nextPath = `${path2}["${key}"]`;
+    const nextPath = `${path4}["${key}"]`;
     if (!Object.prototype.hasOwnProperty.call(target, key)) continue;
     const targetValue = target[key];
     if (isPlainRecord(targetValue) && isPlainRecord(enrichmentValue)) {
@@ -61046,7 +62231,7 @@ var HTTPFacilitatorClient = class {
    * @param path - The path to create authentication headers for (e.g., "verify", "settle", "supported")
    * @returns An object containing the authentication headers for the specified path
    */
-  async createAuthHeaders(path2) {
+  async createAuthHeaders(path4) {
     if (!this._createAuthHeaders) {
       return { headers: {} };
     }
@@ -61061,7 +62246,7 @@ var HTTPFacilitatorClient = class {
         'createAuthHeaders must return an object keyed by facilitator path, e.g. { verify: { Authorization: "..." }, settle: { ... }, supported: { ... } }, but received a flat headers object. See https://github.com/x402-foundation/x402/issues/2762'
       );
     }
-    const headersForPath = authHeaders[path2];
+    const headersForPath = authHeaders[path4];
     return {
       headers: isHeaderObject(headersForPath) ? headersForPath : {}
     };
@@ -62678,8 +63863,8 @@ var x402HTTPResourceServer = class {
   async processHTTPRequest(context, paywallConfig) {
     const method = context.method || context.adapter.getMethod();
     context = { ...context, method };
-    const { adapter, path: path2 } = context;
-    const routeMatch = this.getRouteConfig(path2, method, context.decodedPath);
+    const { adapter, path: path4 } = context;
+    const routeMatch = this.getRouteConfig(path4, method, context.decodedPath);
     if (!routeMatch) {
       return { type: "no-payment-required" };
     }
@@ -63252,7 +64437,7 @@ var x402HTTPResourceServer = class {
    * @param decodedPath - Framework decoded routing view, if distinct from path
    * @returns Route configuration and pattern, or undefined if no match
    */
-  getRouteConfig(path2, method, decodedPath) {
+  getRouteConfig(path4, method, decodedPath) {
     const upperMethod = method.toUpperCase();
     const findMatch = (candidate) => {
       const matchingRoute = this.compiledRoutes.find(
@@ -63261,11 +64446,11 @@ var x402HTTPResourceServer = class {
       if (!matchingRoute) return void 0;
       return { config: matchingRoute.config, pattern: matchingRoute.pattern };
     };
-    const match2 = findMatch(this.normalizePath(path2));
+    const match2 = findMatch(this.normalizePath(path4));
     if (match2 !== void 0) {
       return match2;
     }
-    if (decodedPath !== void 0 && decodedPath !== path2) {
+    if (decodedPath !== void 0 && decodedPath !== path4) {
       return findMatch(this.normalizeDecodedPath(decodedPath));
     }
     return void 0;
@@ -63355,9 +64540,9 @@ var x402HTTPResourceServer = class {
    * @returns Parsed pattern with verb and regex
    */
   parseRoutePattern(pattern) {
-    const [verb, path2] = pattern.includes(" ") ? pattern.split(/\s+/) : ["*", pattern];
-    const trailingWildcard = path2.endsWith("/*");
-    const pathForRegex = trailingWildcard ? path2.slice(0, -2) : path2;
+    const [verb, path4] = pattern.includes(" ") ? pattern.split(/\s+/) : ["*", pattern];
+    const trailingWildcard = path4.endsWith("/*");
+    const pathForRegex = trailingWildcard ? path4.slice(0, -2) : path4;
     let regexBody = pathForRegex.replace(/\\/g, "\\\\").replace(/[$()+.?^{|}]/g, "\\$&").replace(/\*/g, ".*?").replace(/\[([^\]]+)\]/g, "[^/]+").replace(/:([a-zA-Z_][a-zA-Z0-9_]*)/g, "[^/]+").replace(/\//g, "\\/");
     if (trailingWildcard) {
       regexBody += "(?:/.*?)?";
@@ -63367,7 +64552,7 @@ var x402HTTPResourceServer = class {
       // "s" (dotAll): without it, "." can't match LF/CR/U+2028/U+2029, so a wildcard segment containing one fails to match.
       "is"
     );
-    return { verb: verb.toUpperCase(), regex, path: path2 };
+    return { verb: verb.toUpperCase(), regex, path: path4 };
   }
   /**
    * Normalize path for matching
@@ -63375,8 +64560,8 @@ var x402HTTPResourceServer = class {
    * @param path - Raw path from request
    * @returns Normalized path
    */
-  normalizePath(path2) {
-    const pathWithoutQuery = path2.split(/[?#]/)[0];
+  normalizePath(path4) {
+    const pathWithoutQuery = path4.split(/[?#]/)[0];
     const normalized = pathWithoutQuery.split("/").map((segment) => {
       let decoded;
       try {
@@ -63394,8 +64579,8 @@ var x402HTTPResourceServer = class {
    * @param path - Framework-decoded path
    * @returns Normalized path
    */
-  normalizeDecodedPath(path2) {
-    const pathWithoutQuery = path2.split(/[?#]/)[0];
+  normalizeDecodedPath(path4) {
+    const pathWithoutQuery = path4.split(/[?#]/)[0];
     return pathWithoutQuery.replace(/\/+/g, "/").replace(/(.+?)\/+$/, "$1") || "/";
   }
   /**
@@ -64346,6 +65531,7 @@ function createX402V2(opts) {
         });
       };
       let settle3;
+      opts.onSettleStart?.(c);
       try {
         settle3 = await httpServer.processSettlement(paymentPayload, paymentRequirements, declaredExtensions, {
           request: context,
@@ -65134,6 +66320,385 @@ async function getBenchmarks(rawDate) {
   };
 }
 
+// src/kya.ts
+var isAddr = (v) => !!v && ethers_exports.isAddress(v) && v.toLowerCase() !== "0x0000000000000000000000000000000000000000";
+function resolveKyaConfig(env = process.env) {
+  const rawMode = env.X402_KYA_MODE?.trim().toLowerCase() || "off";
+  const mode = rawMode === "off" ? "off" : rawMode === "on" || rawMode === "required" ? "on" : "invalid";
+  if (mode === "invalid") console.error(`::error::[kya] X402_KYA_MODE=${rawMode} \u7121\u6CD5\u8FA8\u8B58\uFF08\u53EA\u63A5\u53D7 on\uFF0Foff\uFF09\u2192 \u4ED8\u8CBB\u7AEF\u9EDE\u4E00\u5F8B 503`);
+  const rawAnchor = env.X402_KYA_ANCHOR?.trim().toLowerCase() || "required";
+  const anchor = rawAnchor === "optional" || rawAnchor === "off" ? rawAnchor : "required";
+  const skew = Number(env.X402_KYA_MAX_SKEW_SEC ?? "120");
+  return {
+    mode,
+    anchor,
+    sessionManager: isAddr(env.SESSION_MANAGER_ADDRESS?.trim()) ? ethers_exports.getAddress(env.SESSION_MANAGER_ADDRESS.trim()) : null,
+    anchorAddress: isAddr(env.SESSION_ANCHOR_ADDRESS?.trim()) ? ethers_exports.getAddress(env.SESSION_ANCHOR_ADDRESS.trim()) : null,
+    acceptedChainIds: acceptedDelegationChainIds(env),
+    maxSkewSec: Number.isFinite(skew) && skew > 0 ? Math.min(skew, 600) : 120
+  };
+}
+function providerKyaChainReader(provider3) {
+  return {
+    chainId: async () => {
+      const p = provider3;
+      if (typeof p.getNetwork !== "function") throw new Error("KYA \u7684\u93C8\u4E0A\u8B80\u53D6\u4F86\u6E90\u6C92\u6709 getNetwork()");
+      return Number((await p.getNetwork()).chainId);
+    },
+    session: (mgr, id2) => readOnchainSession(provider3, mgr, id2),
+    anchorSessionManager: async (anchor) => String(await new ethers_exports.Contract(anchor, SESSION_ANCHOR_ABI, provider3).sessionManager()),
+    isAnchored: async (anchor, id2, h) => Boolean(await new ethers_exports.Contract(anchor, SESSION_ANCHOR_ABI, provider3).isAnchored(id2, h))
+  };
+}
+var KYA_SPEND_PREFIX = "x402:kya:spend:";
+var KYA_MAX_TTL_SEC = 400 * 86400;
+var KYA_MAX_ATOMIC = 2n ** 53n - 1n;
+var KYA_VP_PREFIX = "x402:kya:vp:";
+var periodIndex = (nowSec, periodSeconds) => Math.floor(nowSec / Math.max(1, periodSeconds));
+var kyaTotalKey = (h) => `${KYA_SPEND_PREFIX}${h.toLowerCase()}:total`;
+var kyaPeriodKey = (h, periodSeconds, nowSec) => `${KYA_SPEND_PREFIX}${h.toLowerCase()}:p${periodSeconds}:${periodIndex(nowSec, periodSeconds)}`;
+var KYA_RESERVE_SCRIPT = `-- pepelab:kya_reserve
+local a = tonumber(ARGV[1])
+local mt = tonumber(ARGV[2])
+local mp = tonumber(ARGV[3])
+local pt = tonumber(ARGV[4])
+local tt = tonumber(ARGV[5])
+if not (a and mt and mp and pt and tt) or a < 0 or pt < 1 or tt < 1 or pt > ${KYA_MAX_TTL_SEC} or tt > ${KYA_MAX_TTL_SEC} then
+  return redis.error_reply('kya_reserve: bad arguments')
+end
+local t = tonumber(redis.call('GET', KEYS[1]) or '0')
+local p = tonumber(redis.call('GET', KEYS[2]) or '0')
+if t + a > mt then return {0, string.format('%.0f', t), string.format('%.0f', p), 'total'} end
+if p + a > mp then return {0, string.format('%.0f', t), string.format('%.0f', p), 'period'} end
+redis.call('INCRBY', KEYS[1], a)
+redis.call('EXPIRE', KEYS[1], tt)
+redis.call('INCRBY', KEYS[2], a)
+redis.call('EXPIRE', KEYS[2], pt)
+return {1, string.format('%.0f', t + a), string.format('%.0f', p + a), 'ok'}`;
+var KYA_RELEASE_SCRIPT = `-- pepelab:kya_release
+local a = tonumber(ARGV[1])
+for i = 1, 2 do
+  local v = tonumber(redis.call('GET', KEYS[i]) or '0')
+  if v > 0 then
+    local n = v - a
+    if n < 0 then n = 0 end
+    redis.call('SET', KEYS[i], tostring(n), 'KEEPTTL')
+  end
+end
+return 1`;
+function upstashCreds() {
+  const url = process.env.UPSTASH_REDIS_REST_URL?.trim();
+  const token = process.env.UPSTASH_REDIS_REST_TOKEN?.trim();
+  return url && token ? { url, token } : null;
+}
+async function upstash(cmd) {
+  const c = upstashCreds();
+  if (!c) throw new Error("KYA \u82B1\u8CBB\u5E33\u9700\u8981 UPSTASH_REDIS_REST_URL / UPSTASH_REDIS_REST_TOKEN");
+  const res = await fetch(c.url, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${c.token}`, "Content-Type": "application/json" },
+    body: JSON.stringify(cmd)
+  });
+  const body = await res.json();
+  if (!res.ok || body.error) throw new Error(`Upstash ${cmd[0]} \u5931\u6557\uFF1A${body.error ?? res.statusText}`);
+  return body.result;
+}
+function upstashKyaSpendStore() {
+  return {
+    describe: "upstash",
+    async reserve(h, amount, l, nowSec) {
+      const periodTtl = Math.min(KYA_MAX_TTL_SEC, Math.max(60, l.periodSeconds * 2));
+      const r = await upstash([
+        "EVAL",
+        KYA_RESERVE_SCRIPT,
+        2,
+        kyaTotalKey(h),
+        kyaPeriodKey(h, l.periodSeconds, nowSec),
+        amount.toString(),
+        l.maxTotal.toString(),
+        l.maxPerPeriod.toString(),
+        periodTtl,
+        Math.min(KYA_MAX_TTL_SEC, Math.max(60, l.totalTtlSec))
+      ]);
+      const total = BigInt(r[1]);
+      const period = BigInt(r[2]);
+      return Number(r[0]) === 1 ? { ok: true, total, period } : { ok: false, which: r[3] === "period" ? "period" : "total", total, period };
+    },
+    async release(h, amount, l, nowSec) {
+      await upstash(["EVAL", KYA_RELEASE_SCRIPT, 2, kyaTotalKey(h), kyaPeriodKey(h, l.periodSeconds, nowSec), amount.toString()]);
+    },
+    async claimPresentation(payer, nonce, ttlSec) {
+      const r = await upstash(["SET", `${KYA_VP_PREFIX}${payer.toLowerCase()}:${nonce.toLowerCase()}`, "1", "NX", "EX", ttlSec]);
+      return r === "OK";
+    },
+    async read(h, periodSeconds, nowSec) {
+      const [t, p] = await Promise.all([
+        upstash(["GET", kyaTotalKey(h)]),
+        upstash(["GET", kyaPeriodKey(h, periodSeconds, nowSec)])
+      ]);
+      return { total: BigInt(t ?? "0"), period: BigInt(p ?? "0") };
+    }
+  };
+}
+function memoryKyaSpendStore() {
+  const m = /* @__PURE__ */ new Map();
+  const seen = /* @__PURE__ */ new Set();
+  return {
+    describe: "memory",
+    async reserve(h, amount, l, nowSec) {
+      const tk = kyaTotalKey(h);
+      const pk = kyaPeriodKey(h, l.periodSeconds, nowSec);
+      const t = m.get(tk) ?? 0n;
+      const p = m.get(pk) ?? 0n;
+      if (t + amount > l.maxTotal) return { ok: false, which: "total", total: t, period: p };
+      if (p + amount > l.maxPerPeriod) return { ok: false, which: "period", total: t, period: p };
+      m.set(tk, t + amount);
+      m.set(pk, p + amount);
+      return { ok: true, total: t + amount, period: p + amount };
+    },
+    async release(h, amount, l, nowSec) {
+      for (const k of [kyaTotalKey(h), kyaPeriodKey(h, l.periodSeconds, nowSec)]) {
+        const v = m.get(k) ?? 0n;
+        m.set(k, v > amount ? v - amount : 0n);
+      }
+    },
+    async claimPresentation(payer, nonce) {
+      const k = `${payer.toLowerCase()}:${nonce.toLowerCase()}`;
+      if (seen.has(k)) return false;
+      seen.add(k);
+      return true;
+    },
+    async read(h, periodSeconds, nowSec) {
+      return { total: m.get(kyaTotalKey(h)) ?? 0n, period: m.get(kyaPeriodKey(h, periodSeconds, nowSec)) ?? 0n };
+    }
+  };
+}
+var NOTE_UNPAID = "\u672A\u6263\u6B3E\uFF1A\u4ED8\u6B3E\u6388\u6B0A\u6C92\u6709\u9001\u7D66 facilitator\u3002";
+function createKyaGate(o) {
+  const cfg = o.config;
+  const now = o.now ?? (() => Date.now());
+  const statusCheck = o.statusCheck ?? ((res, vc) => checkCredentialStatus(res, { action: "write", verifyingContract: vc }));
+  const deny = (status, error, message, extra = {}) => ({
+    ok: false,
+    status,
+    body: { ok: false, error, message, kya: true, ...extra, note: NOTE_UNPAID }
+  });
+  const release = async (hold) => {
+    try {
+      await o.spend.release(hold.credentialHash, hold.amount, hold.limits, hold.reservedAtSec);
+    } catch (e) {
+      console.error(`::error::[kya] \u9000\u56DE\u9810\u7559\u5931\u6557\uFF08${hold.credentialHash}\uFF0C${hold.amount}\uFF09\uFF1A`, e);
+    }
+  };
+  let chainIdOk = null;
+  let anchorManagerOk = false;
+  return {
+    config: cfg,
+    async authorize(c, paymentHeader) {
+      if (cfg.mode === "invalid") {
+        return deny(503, "kya_misconfigured", "X402_KYA_MODE \u7684\u503C\u7121\u6CD5\u8FA8\u8B58\uFF08\u53EA\u63A5\u53D7 on\uFF0Foff\uFF09\uFF0C\u4ED8\u8CBB\u7AEF\u9EDE\u66AB\u505C\u670D\u52D9\u3002");
+      }
+      if (!cfg.sessionManager) {
+        return deny(503, "kya_misconfigured", "X402_KYA_MODE=on \u4F46\u672A\u8A2D\u5B9A SESSION_MANAGER_ADDRESS\uFF0C\u7121\u6CD5\u9A57\u8B49\u59D4\u8A17\u6191\u8B49\u3002");
+      }
+      if (cfg.anchor === "required" && !cfg.anchorAddress) {
+        return deny(503, "kya_misconfigured", "X402_KYA_ANCHOR=required \u4F46\u672A\u8A2D\u5B9A SESSION_ANCHOR_ADDRESS\u3002");
+      }
+      const vpHeader = c.req.header(AGENT_PRESENTATION_HEADER);
+      if (!vpHeader) {
+        return deny(403, "kya_presentation_required", `\u672C\u670D\u52D9\u8981\u6C42\u4EE3\u7406\u4EBA\u51FA\u793A\u59D4\u8A17\u6191\u8B49\uFF1A\u4ED8\u6B3E\u6642\u8ACB\u4E00\u4F75\u5E36 ${AGENT_PRESENTATION_HEADER}\uFF08v3 AgentDelegationCredential \u7684 Verifiable Presentation\uFF09\u3002`);
+      }
+      const payment = paymentAuthorizationOf(paymentHeader);
+      if (!payment) return deny(400, "kya_payment_unreadable", "\u4ED8\u6B3E header \u89E3\u4E0D\u51FA EIP-3009 authorization\uFF08KYA \u9700\u8981\u4ED8\u6B3E\u4EBA\u8207 nonce\uFF09\u3002");
+      const nowMs = now();
+      const nowSec = Math.floor(nowMs / 1e3);
+      const vp = verifyX402Presentation(vpHeader, { method: c.req.method, path: c.req.path, payment }, { now: nowMs, maxSkewSec: cfg.maxSkewSec });
+      if (!vp.ok) return deny(403, "kya_presentation_invalid", vp.reason ?? "presentation \u9A57\u8B49\u5931\u6557", { reasonCode: vp.reasonCode });
+      const r3 = verifyDelegationCredential(vp.credential, {
+        now: nowMs,
+        expectedSessionManager: cfg.sessionManager,
+        acceptedChainIds: cfg.acceptedChainIds
+      });
+      if (!r3.valid) return deny(403, "kya_credential_invalid", r3.reason ?? "\u59D4\u8A17\u6191\u8B49\u9A57\u8B49\u5931\u6557", { reasonCode: r3.reasonCode });
+      const f2 = r3.fields;
+      const hash4 = r3.credentialHash;
+      if (chainIdOk === null) {
+        let id2;
+        try {
+          id2 = await o.chain.chainId();
+        } catch (e) {
+          console.error("[kya] \u8B80\u53D6 chainId \u5931\u6557\uFF1A", e);
+          return deny(503, "kya_chain_unavailable", "\u7121\u6CD5\u78BA\u8A8D\u93C8\u4E0A\u8B80\u53D6\u4F86\u6E90\u7684 chainId\uFF0C\u4E0D\u767C\u51FA\u4ED8\u6B3E\u3002");
+        }
+        if (!cfg.acceptedChainIds.includes(id2)) {
+          console.error(`::error::[kya] \u8B80\u53D6\u7AEF RPC \u7684 chainId ${id2} \u4E0D\u5728 DELEGATION_VC_CHAIN_IDS [${cfg.acceptedChainIds.join(", ")}]`);
+          return deny(503, "kya_misconfigured", "KYA \u7684\u93C8\u4E0A\u8B80\u53D6\u4F86\u6E90\u8207\u63A5\u53D7\u7684\u93C8\u8A2D\u5B9A\u4E0D\u4E00\u81F4\uFF0C\u4ED8\u8CBB\u7AEF\u9EDE\u66AB\u505C\u670D\u52D9\u3002");
+        }
+        chainIdOk = id2;
+      }
+      if (r3.chainId !== chainIdOk) {
+        return deny(403, "kya_credential_invalid", `\u59D4\u8A17\u6191\u8B49\u7C3D\u7D66 chainId ${r3.chainId}\uFF0C\u672C\u670D\u52D9\u8B80\u53D6\u7684\u662F chainId ${chainIdOk}\u3002`, {
+          reasonCode: "VC_WRONG_CHAIN",
+          credentialHash: hash4
+        });
+      }
+      if (f2.x402.periodSeconds * 2 > KYA_MAX_TTL_SEC || f2.validUntil - nowSec + 86400 > KYA_MAX_TTL_SEC || BigInt(f2.x402.maxTotal) > KYA_MAX_ATOMIC) {
+        return deny(403, "kya_credential_invalid", "\u59D4\u8A17\u6191\u8B49\u7684 x402 \u984D\u5EA6\u3001\u671F\u9593\u6216\u6548\u671F\u8D85\u51FA\u672C\u670D\u52D9\u652F\u63F4\u7684\u7BC4\u570D\uFF0C\u8ACB\u91CD\u65B0\u7C3D\u767C\u8F03\u77ED\u6548\u671F\u7684\u6191\u8B49\u3002", {
+          reasonCode: "KYA_ALLOWANCE_OUT_OF_RANGE",
+          credentialHash: hash4
+        });
+      }
+      const endpoint = matchX402Endpoint(f2.x402.endpoints, c.req.method, c.req.path);
+      if (!endpoint) {
+        return deny(403, "kya_endpoint_not_allowed", `\u59D4\u8A17\u6191\u8B49\u6C92\u6709\u6388\u6B0A\u4EE3\u7406\u4EBA\u4ED8\u8CBB\u547C\u53EB ${c.req.method} ${c.req.path}\uFF08\u5141\u8A31\uFF1A${f2.x402.endpoints.join("\u3001")}\uFF09\u3002`, {
+          credentialHash: hash4
+        });
+      }
+      let st;
+      try {
+        st = await statusCheck(delegationAsVerifyResult(r3), cfg.sessionManager);
+      } catch (e) {
+        st = { ok: false, status: "unknown", reasonCode: "STATUS_UNAVAILABLE", message: e.message };
+      }
+      if (!st.ok) {
+        console.error(`[kya] \u64A4\u92B7\u6AA2\u67E5\u672A\u901A\u904E\uFF08${hash4}\uFF0C${st.reasonCode}\uFF09\uFF1A${st.message}`);
+        return st.status === "revoked" ? deny(403, "kya_credential_revoked", "\u59D4\u8A17\u6191\u8B49\u5DF2\u88AB\u7C3D\u767C\u8005\u64A4\u92B7\u3002", { credentialHash: hash4, statusReason: st.reasonCode }) : deny(503, "kya_status_unverified", "\u7121\u6CD5\u78BA\u8A8D\u59D4\u8A17\u6191\u8B49\u7684\u64A4\u92B7\u72C0\u614B\uFF08fail-closed\uFF09\uFF0C\u4E0D\u767C\u51FA\u4ED8\u6B3E\u3002", { credentialHash: hash4, statusReason: st.reasonCode });
+      }
+      let onchain;
+      try {
+        onchain = await o.chain.session(cfg.sessionManager, f2.sessionId);
+      } catch (e) {
+        console.error("[kya] \u8B80\u53D6\u93C8\u4E0A session \u5931\u6557\uFF1A", e);
+        return deny(503, "kya_chain_unavailable", "\u7121\u6CD5\u8B80\u53D6\u93C8\u4E0A session\uFF08RPC \u66AB\u6642\u7121\u6CD5\u4F7F\u7528\uFF09\uFF0C\u4E0D\u767C\u51FA\u4ED8\u6B3E\u3002");
+      }
+      const mm = compareDelegationWithSession(f2, onchain, nowSec);
+      if (mm) return deny(403, "kya_session_mismatch", mm.message, { reasonCode: mm.code, credentialHash: hash4 });
+      if (cfg.anchor !== "off" && cfg.anchorAddress) {
+        if (!anchorManagerOk) {
+          let bound;
+          try {
+            bound = await o.chain.anchorSessionManager(cfg.anchorAddress);
+          } catch (e) {
+            console.error("[kya] \u8B80\u53D6\u9328\u5B9A\u5408\u7D04\u7684 sessionManager \u5931\u6557\uFF1A", e);
+            return deny(503, "kya_chain_unavailable", "\u7121\u6CD5\u8B80\u53D6 SessionCredentialAnchor\uFF0C\u4E0D\u767C\u51FA\u4ED8\u6B3E\u3002");
+          }
+          if (!ethers_exports.isAddress(bound) || ethers_exports.getAddress(bound) !== cfg.sessionManager) {
+            console.error(`::error::[kya] SESSION_ANCHOR_ADDRESS \u7D81\u5B9A\u7684 manager ${bound} \u2260 SESSION_MANAGER_ADDRESS ${cfg.sessionManager}`);
+            return deny(503, "kya_misconfigured", "SessionCredentialAnchor \u7D81\u5B9A\u7684 session manager \u8207\u672C\u670D\u52D9\u8A2D\u5B9A\u4E0D\u7B26\uFF0C\u4ED8\u8CBB\u7AEF\u9EDE\u66AB\u505C\u670D\u52D9\u3002");
+          }
+          anchorManagerOk = true;
+        }
+        let anchored;
+        try {
+          anchored = await o.chain.isAnchored(cfg.anchorAddress, f2.sessionId, hash4);
+        } catch (e) {
+          console.error("[kya] \u8B80\u53D6\u9328\u5B9A\u5931\u6557\uFF1A", e);
+          if (cfg.anchor === "required") return deny(503, "kya_chain_unavailable", "\u7121\u6CD5\u8B80\u53D6 SessionCredentialAnchor\uFF0C\u4E0D\u767C\u51FA\u4ED8\u6B3E\u3002");
+          anchored = false;
+        }
+        if (!anchored && cfg.anchor === "required") {
+          return deny(403, "kya_not_anchored", `\u59D4\u8A17\u6191\u8B49\u6C92\u6709\u88AB session #${f2.sessionId} \u7684\u4F7F\u7528\u8005\u9328\u5B9A\u5728\u93C8\u4E0A\uFF08\u6216\u5DF2\u88AB\u65B0\u6191\u8B49\u53D6\u4EE3\uFF09\u3002`, {
+            credentialHash: hash4
+          });
+        }
+      }
+      let first;
+      try {
+        first = await o.spend.claimPresentation(payment.from, payment.nonce, Math.max(600, cfg.maxSkewSec * 2));
+      } catch (e) {
+        console.error("[kya] \u82B1\u8CBB\u5E33\u7121\u6CD5\u4F7F\u7528\uFF1A", e);
+        return deny(503, "kya_ledger_unavailable", "KYA \u82B1\u8CBB\u5E33\u66AB\u6642\u7121\u6CD5\u4F7F\u7528\uFF08fail-closed\uFF09\uFF0C\u4E0D\u767C\u51FA\u4ED8\u6B3E\u3002");
+      }
+      if (!first) return deny(409, "kya_presentation_replayed", "\u9019\u7B46\u4ED8\u6B3E\u6388\u6B0A\u5DF2\u7D93\u51FA\u793A\u904E presentation\uFF08\u91CD\u653E\uFF09\u3002");
+      const limits = {
+        maxPerPeriod: BigInt(f2.x402.maxPerPeriod),
+        periodSeconds: f2.x402.periodSeconds,
+        maxTotal: BigInt(f2.x402.maxTotal),
+        totalTtlSec: Math.max(60, f2.validUntil - nowSec + 86400)
+      };
+      let r;
+      try {
+        r = await o.spend.reserve(hash4, payment.value, limits, nowSec);
+      } catch (e) {
+        console.error("[kya] \u82B1\u8CBB\u5E33\u7121\u6CD5\u4F7F\u7528\uFF1A", e);
+        return deny(503, "kya_ledger_unavailable", "KYA \u82B1\u8CBB\u5E33\u66AB\u6642\u7121\u6CD5\u4F7F\u7528\uFF08fail-closed\uFF09\uFF0C\u4E0D\u767C\u51FA\u4ED8\u6B3E\u3002");
+      }
+      if (!r.ok) {
+        const cap = r.which === "total" ? limits.maxTotal : limits.maxPerPeriod;
+        const used = r.which === "total" ? r.total : r.period;
+        return deny(
+          403,
+          "kya_spend_limit_exceeded",
+          `\u8D85\u904E\u59D4\u8A17\u6191\u8B49\u7684 x402 ${r.which === "total" ? "\u7E3D\u984D" : "\u6BCF\u671F\u9593"}\u4E0A\u9650\uFF1A\u5DF2\u82B1 ${formatUsdcAtomic(used)}\uFF0C\u672C\u7B46 ${formatUsdcAtomic(payment.value)}\uFF0C\u4E0A\u9650 ${formatUsdcAtomic(cap)} USDC\u3002`,
+          {
+            credentialHash: hash4,
+            limit: r.which,
+            spentAtomic: used.toString(),
+            requestAtomic: payment.value.toString(),
+            capAtomic: cap.toString()
+          }
+        );
+      }
+      return {
+        ok: true,
+        hold: {
+          credentialHash: hash4,
+          amount: payment.value,
+          limits,
+          reservedAtSec: nowSec,
+          spentTotal: r.total,
+          spentPeriod: r.period,
+          sessionId: f2.sessionId,
+          agent: payment.from
+        }
+      };
+    },
+    async finalize(hold, res, protocol) {
+      const settled = await settlementOutcome(res, protocol);
+      if (settled === "failed") {
+        await release(hold);
+        return {};
+      }
+      return {
+        [AGENT_KYA_SPEND_HEADER]: `total=${hold.spentTotal};period=${hold.spentPeriod};maxTotal=${hold.limits.maxTotal};maxPerPeriod=${hold.limits.maxPerPeriod};hash=${hold.credentialHash}`
+      };
+    },
+    async abandon(hold, settleAttempted) {
+      if (!settleAttempted) return release(hold);
+      console.error(`::error::[kya] \u4ED8\u8CBB\u7246\u5728\u7D50\u7B97\u9014\u4E2D\u4E1F\u51FA\u4F8B\u5916\uFF0C\u7D50\u679C\u4E0D\u660E \u2192 \u4FDD\u7559\u9810\u7559\uFF08${hold.credentialHash}\uFF0C${hold.amount}\uFF09`);
+    },
+    spendOf(credentialHash, periodSeconds) {
+      return o.spend.read(credentialHash, periodSeconds, Math.floor(now() / 1e3));
+    }
+  };
+}
+async function settlementOutcome(res, protocol) {
+  const h = res.headers.get(protocol === "v2" ? "PAYMENT-RESPONSE" : "X-PAYMENT-RESPONSE");
+  if (h) {
+    try {
+      const j = JSON.parse(Buffer.from(h, "base64").toString("utf8"));
+      if (j?.success === true) return "settled";
+      if (j?.errorReason === "settlement_pending") return "unknown";
+    } catch {
+      return "unknown";
+    }
+  }
+  if (res.status === 429 || res.status === 502 || res.status === 504) {
+    const body = await res.clone().json().catch(() => null);
+    if (protocol === "v2") {
+      if (body?.phase === "verify" || body?.phase === "supported") return "failed";
+      if (body?.phase === "settle") return "unknown";
+      return res.status === 429 ? "failed" : "unknown";
+    }
+    if (body?.error === "facilitator_unavailable" || body?.error === "facilitator_rate_limited") return "failed";
+    return res.status === 429 ? "failed" : "unknown";
+  }
+  return "failed";
+}
+var KYA_ADVERTISE_HEADERS = {
+  [AGENT_KYA_HEADER]: `required; header=${AGENT_PRESENTATION_HEADER}; credential=AgentDelegationCredential; spec=https://pepelab.xyz/credentials/agent-delegation/v3`
+};
+
 // src/referencePrices.ts
 var yahoo = (ticker, role = "keeper-primary") => ({ provider: "yahoo", ticker, role });
 var nasdaq = (ticker, nasdaqClass) => ({
@@ -65428,7 +66993,7 @@ function providerReader(provider3) {
     }
   };
 }
-var ZERO5 = "0x0000000000000000000000000000000000000000";
+var ZERO7 = "0x0000000000000000000000000000000000000000";
 var MAX_UINT256 = (1n << 256n) - 1n;
 var CALL_TIMEOUT_MS = 8e3;
 var CONCURRENCY = 6;
@@ -65506,7 +67071,7 @@ function limiter(n2) {
     next();
   });
 }
-var isSet = (a) => !!a && a.toLowerCase() !== ZERO5;
+var isSet = (a) => !!a && a.toLowerCase() !== ZERO7;
 var fmt18 = (v) => Number(ethers_exports.formatUnits(v, 18));
 var fmt8 = (v) => Number(ethers_exports.formatUnits(v, 8));
 async function buildExposureReport(reader, t, nowMs = Date.now(), opts = {}) {
@@ -65806,23 +67371,44 @@ function clientIp(c) {
 }
 var FREE_RATE_WINDOW_MS = Number(process.env.FREE_RATE_WINDOW_MS ?? "60000");
 var FREE_RATE_MAX = Number(process.env.FREE_RATE_MAX ?? "60");
-var freeHits = /* @__PURE__ */ new Map();
-function freeRateLimited(ip) {
-  const now = Date.now();
-  const e = freeHits.get(ip);
-  if (!e || now >= e.resetAt) {
-    freeHits.set(ip, { count: 1, resetAt: now + FREE_RATE_WINDOW_MS });
-    if (freeHits.size > 5e3) {
-      for (const [k, v] of freeHits) if (now >= v.resetAt) freeHits.delete(k);
+function windowLimiter(max, windowMs, clock = Date.now) {
+  const hits = /* @__PURE__ */ new Map();
+  const retryAfter = (e, now) => Math.ceil((e.resetAt - now) / 1e3);
+  return {
+    hit(ip) {
+      const now = clock();
+      const e = hits.get(ip);
+      if (!e || now >= e.resetAt) {
+        const resetAt = now + windowMs;
+        hits.set(ip, { count: 1, resetAt });
+        if (hits.size > 5e3) {
+          for (const [k, v] of hits) if (now >= v.resetAt) hits.delete(k);
+        }
+        return { limited: false, retryAfterSec: 0, token: resetAt };
+      }
+      e.count += 1;
+      if (e.count > max) return { limited: true, retryAfterSec: retryAfter(e, now), token: e.resetAt };
+      return { limited: false, retryAfterSec: 0, token: e.resetAt };
+    },
+    unhit(ip, token) {
+      const e = hits.get(ip);
+      if (e && e.resetAt === token && e.count > 0) e.count -= 1;
     }
-    return { limited: false, retryAfterSec: 0 };
-  }
-  e.count += 1;
-  if (e.count > FREE_RATE_MAX) {
-    return { limited: true, retryAfterSec: Math.ceil((e.resetAt - now) / 1e3) };
-  }
-  return { limited: false, retryAfterSec: 0 };
+  };
 }
+var freeLimiter = windowLimiter(FREE_RATE_MAX, FREE_RATE_WINDOW_MS);
+var freeRateLimited = (ip) => freeLimiter.hit(ip);
+function positiveIntEnv(name, fallback) {
+  const raw2 = process.env[name]?.trim();
+  if (!raw2) return fallback;
+  const n2 = Number(raw2);
+  if (Number.isSafeInteger(n2) && n2 > 0) return n2;
+  console.error(`::error::[kya] ${name}=${raw2} \u4E0D\u662F\u6B63\u6574\u6578\uFF0C\u6539\u7528\u9810\u8A2D ${fallback}`);
+  return fallback;
+}
+var KYA_FAIL_WINDOW_MS = positiveIntEnv("KYA_FAIL_WINDOW_MS", 6e4);
+var KYA_FAIL_MAX = positiveIntEnv("KYA_FAIL_MAX", 20);
+var kyaFailLimiter = windowLimiter(KYA_FAIL_MAX, KYA_FAIL_WINDOW_MS);
 var CORS_ALLOWED_ORIGINS = (process.env.CORS_ALLOWED_ORIGINS ?? "http://localhost:5173,http://localhost:4173,https://pepelab-onchain-cfd-djot.vercel.app").split(",").map((s) => s.trim().replace(/\/$/, "")).filter(Boolean);
 var FACILITATOR_RETRY_AFTER_SEC = 5;
 function classifyFacilitatorFailure(message) {
@@ -65929,6 +67515,19 @@ async function isRegisteredOnchain(trader) {
   registryCache.set(key, { at: Date.now(), registered });
   return registered;
 }
+function kyaFromEnv(defaultProvider) {
+  const config3 = resolveKyaConfig();
+  if (config3.mode === "off") return null;
+  const rpc = process.env.KYA_RPC_URL?.trim();
+  const chainProvider = rpc ? new ethers_exports.JsonRpcProvider(rpc, void 0, { batchMaxCount: 1 }) : defaultProvider;
+  const spend = process.env.X402_KYA_SPEND_STORE?.trim().toLowerCase() === "memory" ? memoryKyaSpendStore() : upstashKyaSpendStore();
+  if (config3.mode === "on") {
+    console.error(
+      `[kya] X402_KYA_MODE=on\uFF1A\u4ED8\u8CBB\u7AEF\u9EDE\u8981\u6C42 X-Agent-Presentation\uFF08v3 \u59D4\u8A17\u6191\u8B49\uFF09\uFF1B\u9328\u5B9A ${config3.anchor}\uFF1Bsession manager ${config3.sessionManager ?? "\uFF08\u672A\u8A2D\u5B9A\u2192\u4ED8\u8CBB\u7AEF\u9EDE 503\uFF09"}\uFF1B\u82B1\u8CBB\u5E33 ${spend.describe}`
+    );
+  }
+  return createKyaGate({ config: config3, chain: providerKyaChainReader(chainProvider), spend });
+}
 function exposureTargets() {
   return {
     chainId: AGENT_CHAIN_ID,
@@ -65943,17 +67542,17 @@ function exposureTargets() {
 function normalizeRequestPath(req) {
   const url = req.url;
   const start = url.indexOf("/", url.indexOf("://") + 3);
-  let path2 = start === -1 ? "/" : url.slice(start);
-  path2 = path2.split(/[?#]/)[0] ?? "/";
+  let path4 = start === -1 ? "/" : url.slice(start);
+  path4 = path4.split(/[?#]/)[0] ?? "/";
   try {
-    path2 = decodeURIComponent(path2);
+    path4 = decodeURIComponent(path4);
   } catch {
     return INVALID_PATH;
   }
-  if (path2.includes("%")) return INVALID_PATH;
-  path2 = path2.replace(/\\/g, "/").replace(/\/{2,}/g, "/");
-  if (path2.length > 1) path2 = path2.replace(/\/+$/, "");
-  return path2.replace(/^\/([^/]+)/, (_m, seg) => `/${seg.toLowerCase()}`) || "/";
+  if (path4.includes("%")) return INVALID_PATH;
+  path4 = path4.replace(/\\/g, "/").replace(/\/{2,}/g, "/");
+  if (path4.length > 1) path4 = path4.replace(/\/+$/, "");
+  return path4.replace(/^\/([^/]+)/, (_m, seg) => `/${seg.toLowerCase()}`) || "/";
 }
 var INVALID_PATH = "/__invalid_path__";
 var PAID_HANDLER_PATHS = [/^\/signals\/[^/]+$/, /^\/oracle\/[^/]+$/];
@@ -65998,6 +67597,7 @@ function createApp(opts = {}) {
   const x402Protocol = opts.x402Protocol ?? X402_PROTOCOL;
   let x402v2 = null;
   let x402v2SetupError = null;
+  const settleStarted = /* @__PURE__ */ new WeakSet();
   if (x402Protocol !== "v1") {
     try {
       x402v2 = createX402V2({
@@ -66017,6 +67617,9 @@ function createApp(opts = {}) {
         unknownRecordContext: (c) => ({
           ledgerEntry: c.get("ledgerEntry") ?? null
         }),
+        onSettleStart: (c) => {
+          settleStarted.add(c.req.raw);
+        },
         onSettlementUnknown: async (record) => {
           if (await recordUnknownSettlement(record) === "overflow") {
             console.error("[x402v2] settlement_unknown list full: record persisted to x402:settlement:unknown:manual (reason overflow)");
@@ -66032,6 +67635,7 @@ function createApp(opts = {}) {
     }
   }
   const codeReader = opts.payoutCodeReader ?? provider2;
+  const kya = opts.kya !== void 0 ? opts.kya : kyaFromEnv(provider2);
   const checkPayTo = () => assessPayoutAddress(codeReader, payTo, { requireEoa: true });
   const openCors = cors({ origin: "*", allowMethods: ["GET", "POST", "OPTIONS"] });
   const frontendOnlyCors = cors({ origin: CORS_ALLOWED_ORIGINS, allowMethods: ["GET", "OPTIONS"] });
@@ -66190,6 +67794,19 @@ function createApp(opts = {}) {
       );
     } catch (err) {
       return c.json({ ok: false, error: internalError("reference-prices", err) }, 503);
+    }
+  });
+  app2.get("/kya/spend/:hash", async (c) => {
+    if (!kya) return c.json({ ok: false, error: "kya_disabled", message: "\u672C\u670D\u52D9\u672A\u555F\u7528 x402 KYA\uFF08X402_KYA_MODE=off\uFF09\u3002" }, 404);
+    const hash4 = c.req.param("hash").toLowerCase();
+    if (!/^0x[0-9a-f]{64}$/.test(hash4)) return c.json({ ok: false, error: "bad_hash" }, 400);
+    const period = Number(c.req.query("period") ?? "86400");
+    if (!Number.isSafeInteger(period) || period <= 0) return c.json({ ok: false, error: "bad_period" }, 400);
+    try {
+      const s = await kya.spendOf(hash4, period);
+      return c.json({ ok: true, credentialHash: hash4, periodSeconds: period, totalAtomic: s.total.toString(), periodAtomic: s.period.toString() });
+    } catch (err) {
+      return c.json({ ok: false, error: internalError("kya_spend", err) }, 503);
     }
   });
   const exposure = createExposureService(opts.exposureReader ?? providerReader(provider2), exposureTargets());
@@ -66479,10 +68096,79 @@ function createApp(opts = {}) {
           503
         );
       }
+      if (kya?.config.mode === "invalid") {
+        return c.json(
+          {
+            ok: false,
+            error: "kya_misconfigured",
+            message: "X402_KYA_MODE \u8A2D\u5B9A\u932F\u8AA4\uFF08\u898B\u4F3A\u670D\u5668\u555F\u52D5 log\uFF09\uFF0C\u4ED8\u8CBB\u7AEF\u9EDE\u66AB\u505C\u670D\u52D9\u3002",
+            note: "\u672A\u6263\u6B3E\uFF1A\u6C92\u6709\u767C\u51FA\u4ED8\u6B3E\u8981\u6C42\u3002"
+          },
+          503
+        );
+      }
       const blocked = await payToGuard(c, async () => {
       });
       if (blocked) return blocked;
     }
+    let kyaHold = null;
+    let kyaProto = "v1";
+    if (paidRoute && kya) {
+      const v2Hdr = c.req.header("PAYMENT-SIGNATURE");
+      const v1Hdr = c.req.header("X-PAYMENT");
+      const useV2 = x402v2 !== null && (x402Protocol === "v2" || Boolean(v2Hdr) && !v1Hdr);
+      const pay = useV2 ? v2Hdr : x402Protocol === "v2" ? void 0 : v1Hdr;
+      const ambiguous = x402Protocol === "both" && x402v2 !== null && Boolean(v2Hdr) && Boolean(v1Hdr);
+      if (pay && !ambiguous) {
+        const ip = clientIp(c);
+        const throttled = kyaFailLimiter.hit(ip);
+        if (throttled.limited) {
+          kyaFailLimiter.unhit(ip, throttled.token);
+          return c.json(
+            {
+              ok: false,
+              error: "kya_rate_limited",
+              message: `\u59D4\u8A17\u6191\u8B49\u9A57\u8B49\u5931\u6557\u6B21\u6578\u904E\u591A\uFF0C\u8ACB ${throttled.retryAfterSec}s \u5F8C\u518D\u8A66\u3002`,
+              note: "\u672A\u6263\u6B3E\uFF1A\u4ED8\u6B3E\u6388\u6B0A\u6C92\u6709\u9001\u7D66 facilitator\u3002"
+            },
+            429,
+            { "Retry-After": String(throttled.retryAfterSec) }
+          );
+        }
+        let d;
+        try {
+          d = await kya.authorize(c, pay);
+        } catch (err) {
+          kyaFailLimiter.unhit(ip, throttled.token);
+          throw err;
+        }
+        if (d.ok || d.status === 503) kyaFailLimiter.unhit(ip, throttled.token);
+        if (!d.ok) return c.json(d.body, d.status);
+        kyaHold = d.hold;
+        kyaProto = useV2 ? "v2" : "v1";
+      }
+    }
+    let out;
+    try {
+      out = await dispatchPaywall(c, next, paidRoute);
+    } catch (err) {
+      if (kya && kyaHold) {
+        const settleAttempted = kyaProto === "v2" ? settleStarted.has(c.req.raw) : Boolean(c.res?.headers.get("X-PAYMENT-RESPONSE"));
+        await kya.abandon(kyaHold, settleAttempted);
+      }
+      throw err;
+    }
+    if (!kya || !paidRoute) return out;
+    const res = out ?? c.res;
+    const extra = kyaHold ? await kya.finalize(kyaHold, res, kyaProto) : res.status === 402 ? KYA_ADVERTISE_HEADERS : {};
+    if (Object.keys(extra).length === 0) return out;
+    const withKya = new Response(res.body, res);
+    for (const [k, v] of Object.entries(extra)) withKya.headers.set(k, v);
+    if (out) return withKya;
+    c.res = void 0;
+    c.res = withKya;
+  });
+  const dispatchPaywall = async (c, next, paidRoute) => {
     if (!x402v2) return runV1(c, next);
     if (x402Protocol === "v2") return runV2(c, next);
     const hasV2 = Boolean(c.req.header("PAYMENT-SIGNATURE"));
@@ -66512,7 +68198,7 @@ function createApp(opts = {}) {
         c.res = res;
       }
     }
-  });
+  };
   app2.get("/signals/:trader", async (c) => {
     const trader = c.req.param("trader");
     try {

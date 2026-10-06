@@ -1,7 +1,7 @@
 {
   "name": "@pepelab/sdk",
   "version": "0.1.0",
-  "description": "PepeFi integration SDK for institutional clients: read client, unsigned transaction builders, typed signal-api client, VC v2 helpers.",
+  "description": "PepeFi integration SDK for institutional clients: read client, unsigned transaction builders, typed signal-api client, VC v2 helpers, VC v3 delegation + x402 KYA helpers.",
   "type": "module",
   "private": true,
   "license": "SEE LICENSE IN LICENSE",
@@ -12,7 +12,8 @@
     "./write": "./src/write.ts",
     "./signal-api": "./src/signalApi.ts",
     "./vc": "./src/vc.ts",
-    "./vc-status": "./src/vcStatus.ts"
+    "./vc-status": "./src/vcStatus.ts",
+    "./delegation": "./src/delegation.ts"
   },
   "engines": {
     "node": ">=20"

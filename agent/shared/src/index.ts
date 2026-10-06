@@ -18,3 +18,4 @@ export * from "./signingGuard.ts";
 export * from "./vcNonce.ts";
 export * from "./vcStatus.ts";
 export * from "./fileLock.ts";
+export * from "./delegation.ts";
