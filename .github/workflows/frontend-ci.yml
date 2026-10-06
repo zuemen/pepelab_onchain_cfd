@@ -19,6 +19,8 @@ on:
       - 'agent/keeper/market.ts'
       - 'agent/keeper/operator.ts'
       - 'agent/keeper/marketMode.ts'
+      # /rwa 的價格來源一致性測試（src/lib/pepefi/rwaProfile.keeper.test.ts）直接載入 keeper 的 feeds.ts。
+      - 'agent/keeper/feeds.ts'
       - '.github/workflows/frontend-ci.yml'
   pull_request:
     paths:
@@ -32,6 +34,8 @@ on:
       - 'agent/keeper/market.ts'
       - 'agent/keeper/operator.ts'
       - 'agent/keeper/marketMode.ts'
+      # /rwa 的價格來源一致性測試（src/lib/pepefi/rwaProfile.keeper.test.ts）直接載入 keeper 的 feeds.ts。
+      - 'agent/keeper/feeds.ts'
       - '.github/workflows/frontend-ci.yml'
   workflow_dispatch:
 

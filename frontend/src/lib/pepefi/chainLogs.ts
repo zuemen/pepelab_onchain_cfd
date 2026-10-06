@@ -37,9 +37,9 @@ export const DEFAULT_AVG_BLOCK_TIME = 12
 /**
  * 預設回看 24 小時。這是「近期動向」需要的範圍，不是完整鏈史。
  *
- * 2026-09-29 以前是 7 天——但實測公開節點的 getLogs 上限只有 1,000 塊（見
- * MEASURED_GETLOGS_MAX_BLOCKS），7 天在 Base Sepolia 是 302,400 塊 = 378 段序列
- * 請求，不可行。24 小時 = 43,200 塊 = 54 段，落在 MAX_CHUNKS 之內。
+ * 2026-09-29 以前是 7 天——但公開節點的 getLogs 範圍上限只有數百到一千塊（見
+ * MEASURED_GETLOGS_MAX_BLOCKS），7 天在 Base Sepolia 是 302,400 塊，分段數不可行。
+ * 24 小時 = 43,200 塊 = 108 段（CHUNK_SIZE 400），落在 MAX_CHUNKS 之內。
  */
 export const DEFAULT_SCAN_WINDOW_SEC = 24 * 3600
 
@@ -56,24 +56,32 @@ export const DEFAULT_SCAN_WINDOW_SEC = 24 * 3600
  * 舊值 CHUNK_SIZE = 9,900（以及 HistoryPage 自己的 1,800、各處註解寫的「2000 塊
  * 上限」）在這個節點上**每一段都會被拒**——之前的分段掃描在公開節點上實際上是
  * 全數失敗，而多數呼叫端把失敗吞成「沒有資料」。
+ *
+ * 2026-10-06 重新實測（同一節點，curl 直接發 eth_getLogs，toBlock = 最新塊 − 10，
+ * 約 47,752,500）：上限**降為 500**。501 塊（toBlock − fromBlock = 500）成功，502 塊
+ * 失敗，錯誤 -32614 "eth_getLogs is limited to a 500 range"。原本 800 塊一段在這個
+ * 節點上每一段都被拒。節點會再調整，所以除了把預設段長降下來，scanChunks 也會在
+ * 收到這類「範圍太大」的錯誤時把那一段對半切開重試（isRangeLimitError）。
  */
-export const MEASURED_GETLOGS_MAX_BLOCKS = 1_001
+export const MEASURED_GETLOGS_MAX_BLOCKS = 501
 
 /**
  * 單次 getLogs 的塊數（閉區間含頭尾）。取實測上限的約八成，給不同 RPC 後端或
  * 節點日後調整留餘裕。改這個值之前請重新實測，並更新上面的常數與日期。
+ * 個別呼叫可用 ChunkScanOptions.chunkSize 覆寫；節點上限再往下調時，
+ * 「範圍太大」的錯誤會自動對半切開重試，不必等這個常數更新。
  */
-export const CHUNK_SIZE = 800
+export const CHUNK_SIZE = 400
 
 /**
  * 一次掃描最多切幾段。就算視窗算出來很大，也不讓頁面送出上百次 RPC；
  * 超過就從尾端截斷（保留最新的區塊，那才是使用者在看的東西）。
  *
- * 以 CHUNK_SIZE = 800 計，60 段 = 48,000 塊 ≈ Base Sepolia 上 26.7 小時，
- * 足以涵蓋 DEFAULT_SCAN_WINDOW_SEC（24 小時）。
+ * 以 CHUNK_SIZE = 400 計，110 段 = 44,000 塊 ≈ Base Sepolia 上 24.4 小時，
+ * 足以涵蓋 DEFAULT_SCAN_WINDOW_SEC（24 小時）。總塊數與段長 800 時的 60 段相當。
  * 呼叫端以 describeScanWindow 把實際掃到的長度告訴使用者。
  */
-export const MAX_CHUNKS = 60
+export const MAX_CHUNKS = 110
 
 export function avgBlockTime(chainId: number | null | undefined): number {
   if (chainId === null || chainId === undefined) return DEFAULT_AVG_BLOCK_TIME
@@ -189,6 +197,11 @@ export interface ChunkScanOptions {
   /** 中止訊號。每一段開始前（含重試前）檢查；中止時整個掃描以 ChunkScanAbortedError 結束。 */
   signal?: AbortSignal
   /**
+   * 每段的塊數（閉區間，預設 CHUNK_SIZE）。不同 RPC 的上限不同時由呼叫端覆寫；
+   * 不論設多少，遇到「範圍太大」的錯誤都會對半切開重試。
+   */
+  chunkSize?: number
+  /**
    * 單次 getLogs 最久等多久（預設 CHUNK_TIMEOUT_MS）。逾時算這一次失敗，照常重試；重試完
    * 仍逾時就算失敗段。沒有這個上限時，一個不回應的節點（公開 RPC 偶爾會，anvil fork
    * 轉送上游時也會）會讓整個掃描永遠不結束——歷史紀錄頁的「載入中…」就一直掛著。
@@ -218,7 +231,7 @@ function withChunkTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
 }
 
 /** 每段查詢以外的選項（給 getLogsChunked / queryLogsChunked 這種位置參數介面用）。 */
-export type ChunkRunOptions = Pick<ChunkScanOptions, 'retries' | 'retryDelayMs' | 'concurrency' | 'signal' | 'timeoutMs'>
+export type ChunkRunOptions = Pick<ChunkScanOptions, 'retries' | 'retryDelayMs' | 'concurrency' | 'signal' | 'timeoutMs' | 'chunkSize'>
 
 /** UI 呼叫端統一的重試次數。 */
 export const UI_RETRIES = 2
@@ -242,6 +255,70 @@ export const isChunkScanAborted = (e: unknown): boolean => e instanceof ChunkSca
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms))
 
+/**
+ * 節點以「區塊範圍太大」拒絕這次 getLogs。各家措辭不同，常見的有：
+ *   - "eth_getLogs is limited to a 500 range"（Base 公開節點，code -32614）
+ *   - "block range is too large" / "block range too wide"
+ *   - "exceed maximum block range" / "query exceeds max block range 2000"
+ *   - "range exceeds limit"
+ * Base 公開節點拒絕時的 HTTP 狀態是 **413 Payload Too Large**（body 仍是上面那個 JSON-RPC
+ * 錯誤），所以 ethers 可能只給出「server response 413」——413 也視為範圍太大（getLogs 的
+ * 413 只會是請求或回應太大，對半切開一樣是對的處置）。
+ * ethers 會把原始錯誤包在 error / info.error / info.responseBody 裡，所以把整串訊息都看過一遍。
+ */
+export function isRangeLimitError(e: unknown): boolean {
+  const parts: string[] = []
+  const visit = (x: unknown, depth: number) => {
+    if (!x || depth > 4) return
+    if (typeof x === 'string') { parts.push(x); return }
+    if (typeof x !== 'object') return
+    const o = x as Record<string, unknown>
+    for (const k of ['message', 'shortMessage', 'body', 'responseBody']) if (typeof o[k] === 'string') parts.push(o[k] as string)
+    if (o.code === -32614) parts.push('limited to a range')
+    if (o.status === 413 || o.responseStatus === 413 || o.responseStatus === '413 Payload Too Large') parts.push('payload too large')
+    visit(o.error, depth + 1)
+    visit(o.info, depth + 1)
+    visit(o.response, depth + 1)
+  }
+  visit(e, 0)
+  const text = parts.join(' ').toLowerCase()
+  return (
+    /limited to a [\d,]+ ?(block )?range/.test(text) ||
+    text.includes('limited to a range') ||
+    /block range[^.]{0,40}(too large|too wide|exceed|limit)/.test(text) ||
+    /exceed(s|ed)?[^.]{0,30}(max(imum)?|limit)[^.]{0,20}(block )?range/.test(text) ||
+    /range (exceeds|is too large|too large)/.test(text) ||
+    /payload too large|\b413\b/.test(text)
+  )
+}
+
+/** 範圍太大時最多對半切幾層（800 → 400 → … → 1，10 層足以切到單塊）。 */
+const MAX_SPLIT_DEPTH = 10
+
+/**
+ * 抓一段；節點回「範圍太大」就對半切開分別再抓、依區塊順序串接。
+ * 其他錯誤照常丟出，由外層的重試與失敗計數處理。
+ */
+async function fetchRangeAdaptive<T>(
+  from: number,
+  to: number,
+  fetchRange: (from: number, to: number) => Promise<T[]>,
+  timeoutMs: number,
+  checkAbort: () => void,
+  depth = 0,
+): Promise<T[]> {
+  try {
+    return await withChunkTimeout(fetchRange(from, to), timeoutMs)
+  } catch (e) {
+    if (to <= from || depth >= MAX_SPLIT_DEPTH || !isRangeLimitError(e)) throw e
+    checkAbort()
+    const mid = from + Math.floor((to - from) / 2)
+    const left = await fetchRangeAdaptive(from, mid, fetchRange, timeoutMs, checkAbort, depth + 1)
+    const right = await fetchRangeAdaptive(mid + 1, to, fetchRange, timeoutMs, checkAbort, depth + 1)
+    return [...left, ...right]
+  }
+}
+
 async function scanChunks<T>(
   fromBlock: number,
   toBlock: number,
@@ -249,7 +326,7 @@ async function scanChunks<T>(
   tag: string,
   opts: ChunkScanOptions,
 ): Promise<ChunkScanResult<T>> {
-  const ranges = chunkRanges(fromBlock, toBlock)
+  const ranges = chunkRanges(fromBlock, toBlock, opts.chunkSize ?? CHUNK_SIZE)
   const perRange: T[][] = new Array(ranges.length)
   const retries = Math.max(0, opts.retries ?? 0)
   const baseDelay = opts.retryDelayMs ?? 400
@@ -277,7 +354,7 @@ async function scanChunks<T>(
           checkAbort()
         }
         try {
-          perRange[i] = await withChunkTimeout(fetchRange(from, to), timeoutMs)
+          perRange[i] = await fetchRangeAdaptive(from, to, fetchRange, timeoutMs, checkAbort)
           ok = true
         } catch (e) {
           lastErr = e

@@ -70,5 +70,9 @@ export const paths = {
     sessions: '/sessions',
     agentMonitor: '/agent-monitor',
     pepe:    '/pepe',
+    // RWA 透明度三頁（docs/RWA_TRANSPARENCY.md）
+    rwa: '/rwa',
+    oracle: '/oracle',
+    solvency: '/solvency',
   },
 };

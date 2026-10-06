@@ -28,6 +28,7 @@ import {
   type DeferredTopicFilterLike,
 } from 'src/lib/pepefi/chainLogs'
 import { resolveTxHashes } from 'src/lib/pepefi/positionTxLookup'
+import { historyBodyState } from 'src/lib/pepefi/historyBodyState'
 
 import Box from '@mui/material/Box';
 import Container from '@mui/material/Container';
@@ -927,6 +928,13 @@ export default function HistoryPage() {
   // ── Filtering ─────────────────────────────────────────────────────────────
   const allowed = FILTER_TYPES[filterKey]
   const visible  = allowed ? events.filter(e => allowed.includes(e.type)) : events
+  const bodyState = historyBodyState({
+    loading,
+    scanning,
+    eventCount: events.length,
+    visibleCount: visible.length,
+    hasError: !!error,
+  })
 
   // ── Render ────────────────────────────────────────────────────────────────
   return (
@@ -1020,16 +1028,16 @@ export default function HistoryPage() {
       {(tab === 'all' || wallet.isConnected) && (
         <Card>
           {/* Cached rows stay on screen while refreshing — only a cold load blanks out. */}
-          {loading && events.length === 0 ? (
+          {bodyState === 'skeleton' ? (
             <TableSkeleton rows={5} cols={6} />
-          ) : visible.length === 0 && error ? (
+          ) : bodyState === 'readFailed' ? (
             // 讀取失敗（或不完整）時的空白不是「沒有活動」——不能套用空狀態文案。
             <EmptyState
               icon="⚠️"
               title={t.history.readFailed.title}
               description={t.history.readFailed.description}
             />
-          ) : visible.length === 0 ? (
+          ) : bodyState === 'empty' ? (
             <EmptyState
               icon="📜"
               title={t.history.empty.title}

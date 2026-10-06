@@ -53,6 +53,8 @@ export const NOT_PINNED: Readonly<Record<string, string>> = {
   VITE_FIREBASE_STORAGE_BUCKET: '範本第三方登入設定',
   VITE_SUPABASE_ANON_KEY: '範本第三方登入設定',
   VITE_SUPABASE_URL: '範本第三方登入設定',
+  VITE_VC_KYC_REGISTRY:
+    'VC 准入登錄位址（docs/SSI_RWA_ACCESS.md）；只在 vcKycRegistry.ts 的函式內讀取，單元測試以參數注入位址，不讀 env',
 };
 
 export const pinnedEnv = (): Record<string, string> =>

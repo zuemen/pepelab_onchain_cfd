@@ -3,6 +3,7 @@ import type { Catalog } from '../zh-TW';
 import { esg } from './esg';
 import { kyc } from './kyc';
 import { nav } from './nav';
+import { rwa } from './rwa';
 import { copy } from './copy';
 import { x402 } from './x402';
 import { pepe } from './pepe';
@@ -26,6 +27,7 @@ import { exchange } from './exchange';
 import { terminal } from './terminal';
 import { portfolio } from './portfolio';
 import { freshness } from './freshness';
+import { investorVc } from './investorVc';
 import { marketplace } from './marketplace';
 import { traderProfile } from './traderProfile';
 import { pepeStageSkins } from './pepeStageSkins';
@@ -75,6 +77,8 @@ const en: Catalog = {
   traderProfile,
   traderDashboard,
   legacy,
+  rwa,
+  investorVc,
 };
 
 export default en;
