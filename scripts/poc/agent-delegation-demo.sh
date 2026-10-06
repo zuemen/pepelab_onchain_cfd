@@ -35,18 +35,19 @@ done
 echo "▶ 部署合約到本機 anvil（$RPC，chainId 31337）…（第一次要編譯，約數分鐘）"
 cd "$ROOT/contracts"
 # 只編譯這兩支部署腳本與它們依賴的合約：其餘 script／test 跳過（via_ir 全量編譯很慢、很吃記憶體）。
+# --offline：本機 PoC 不需要網路；斷網時 forge 會卡在對外查詢。
 SKIP=(--skip test)
 for f in script/*.s.sol; do
   b="$(basename "$f")"
   case "$b" in Deploy.s.sol|DeploySessionCredentialAnchor.s.sol) ;; *) SKIP+=(--skip "$b") ;; esac
 done
-"$FORGE" script script/Deploy.s.sol "${SKIP[@]}" --rpc-url "$RPC" --unlocked --sender "$DEPLOYER" --broadcast --silent >/dev/null
+"$FORGE" script script/Deploy.s.sol --offline "${SKIP[@]}" --rpc-url "$RPC" --unlocked --sender "$DEPLOYER" --broadcast --silent >/dev/null
 BROADCAST="$ROOT/contracts/broadcast/Deploy.s.sol/31337/run-latest.json"
 addr() { node -e "const j=require(process.argv[1]);const t=j.transactions.find(x=>x.transactionType==='CREATE'&&x.contractName===process.argv[2]);if(!t)process.exit(1);console.log(t.contractAddress)" "$BROADCAST" "$1"; }
 MANAGER="$(addr AgentSessionManager)"; EXCHANGE="$(addr PerpetualExchange)"; USDC="$(addr MockUSDC)"
 
 SESSION_MANAGER_ADDR="$MANAGER" "$FORGE" script script/DeploySessionCredentialAnchor.s.sol \
-  --rpc-url "$RPC" --unlocked --sender "$DEPLOYER" --broadcast --silent >/dev/null
+  --offline "${SKIP[@]}" --rpc-url "$RPC" --unlocked --sender "$DEPLOYER" --broadcast --silent >/dev/null
 ANCHOR="$(node -e "const j=require(process.argv[1]);console.log(j.transactions.find(x=>x.contractName==='SessionCredentialAnchor').contractAddress)" \
   "$ROOT/contracts/broadcast/DeploySessionCredentialAnchor.s.sol/31337/run-latest.json")"
 

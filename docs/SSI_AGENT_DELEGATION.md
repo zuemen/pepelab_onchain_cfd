@@ -222,9 +222,12 @@ bash scripts/poc/agent-delegation-demo.sh
 6. 沒出示憑證的付費呼叫 → 403，付款未送出
 7. 出示 VP 呼叫兩次 → 200，花費累計 0.02
 8. 第三次 → 403 `kya_spend_limit_exceeded`，沒有結算
-9. 代理人在額度內下單成功；150 USDC 被憑證閘門拒絕；繞過閘門直接上鏈也被合約拒絕
+9. 代理人在額度內下單成功；150 USDC 被憑證閘門拒絕；繞過閘門直接上鏈也被合約拒絕（前端 `addresses.ts` 的 anvil 位址與本次部署相同時走 `openPositionForSession` 寫入路徑；不同時改用同一組 shared 驗證函式＋直接送交易，腳本會印出用的是哪一種）
 10. 使用者 `revokeSession` ＋ 簽狀態清單撤銷 jti → `isAnchored` 變 false
 11. 撤銷後 VP 被拒、下單被拒
+
+2026-10-06 本機實測：13/13 項符合預期（session #0、錨定、2 次付費 200、第 3 次 403 `kya_spend_limit_exceeded`、
+額度內開倉成功、超額被拒、撤銷後 VP 403 `kya_credential_revoked`、下單 `VC_REVOKED`）。
 
 **哪一段是模擬**：x402 facilitator（本機假 facilitator，會驗 EIP-3009 簽章但不上鏈結算、沒有任何錢移動）、
 Upstash（本機假 Upstash，Lua 語意相同）、`/signals` 的訊號內容（固定資料）。其餘——合約、session、錨定、下單、撤銷、
