@@ -198,6 +198,7 @@ SUBMITTER_PRIVATE_KEY=… npm run issuer -- submit --vc vc.json --rpc http://127
 |---|---|
 | 本機 anvil（PoC） | `bash scripts/poc/rwa-ssi-demo.sh`（見 §10） |
 | 本地 Besu | `bash besu/scripts/deploy.sh` 之後 `VC_KYC_ISSUER=0x… bash besu/scripts/deploy-vc-kyc.sh`；位址寫到 `besu/deployments/<chainId>.vc-kyc.json`。要「所有市場都要 KYC」就設 `VC_KYC_RWA_ASSETS=sBTC,sETH,sAAPL,sTSLA` |
+| Base Sepolia（由擁有者執行） | `VC_KYC_ISSUER=… VC_KYC_CHAIN_ID=84532 forge script script/DeployVCKycRegistry.s.sol:DeployVCKycRegistry --rpc-url https://sepolia.base.org --account pepelab-rwa-deployer --sender <該 keystore 的地址>`，先不加 `--broadcast` 做 dry-run，確認後再加。這把 keystore 不是現行 exchange 的 owner，接線（`setKycRegistry`／`setRwaAsset`）只會印出來，要由 owner／timelock 送 |
 | 其他鏈 | `VC_KYC_ISSUER=… VC_KYC_CHAIN_ID=<chainId> forge script script/DeployVCKycRegistry.s.sol:DeployVCKycRegistry --rpc-url … --account <keystore> --sender <地址> --broadcast` |
 
 `DeployVCKycRegistry.s.sol` 的防呆：broadcaster、owner、發證者若是已知外洩地址（`agent/shared/src/payoutSafety.ts` 的 `COMPROMISED_ADDRESSES`）一律拒絕；
@@ -251,6 +252,8 @@ EthereumEip712Signature2021 <https://w3c-ccg.github.io/ethereum-eip712-signature
 ```bash
 bash scripts/poc/rwa-ssi-demo.sh          # 預設 port 8547；POC_PORT=… 可改
 ```
+
+多個工作共用一台低記憶體主機時，整支腳本放進同一個共用鎖呼叫裡（anvil 在腳本內啟動、結束時由 trap 關閉，不會跨出鎖的範圍）。
 
 腳本做的事：起 anvil（port 已被佔用就停，不碰別人的節點）→ `Deploy.s.sol` 部署整套 → `DeployVCKycRegistry.s.sol`
 部署並接線（印出每筆交易 hash）→ `agent/issuer/poc.ts` 依序：

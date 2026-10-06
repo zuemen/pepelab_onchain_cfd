@@ -30,6 +30,13 @@ interface IOwnedExchange {
 ///           VC_KYC_ISSUER=0x… VC_KYC_CHAIN_ID=<chainId> \
 ///           forge script script/DeployVCKycRegistry.s.sol:DeployVCKycRegistry \
 ///             --rpc-url <rpc> --account <keystore 名稱> --sender <地址> --broadcast
+///         Base Sepolia（keystore pepelab-rwa-deployer；先 dry-run，不加 --broadcast）：
+///           VC_KYC_ISSUER=0x… VC_KYC_CHAIN_ID=84532 \
+///           forge script script/DeployVCKycRegistry.s.sol:DeployVCKycRegistry \
+///             --rpc-url https://sepolia.base.org --account pepelab-rwa-deployer \
+///             --sender 0xF52D1a91B93bFF40C7D36Cb7f898833c16a049eE [--broadcast]
+///           這把新 keystore 不是現行 exchange 的 owner，所以即使設了 VC_KYC_WIRE_EXCHANGE=true
+///           也只會印出 owner（timelock）要送的 setKycRegistry／setRwaAsset，不會嘗試送出。
 ///         本機 anvil（PoC）：scripts/poc/rwa-ssi-demo.sh；Besu：besu/scripts/deploy-vc-kyc.sh。
 ///
 ///         環境變數：
