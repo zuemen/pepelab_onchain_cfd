@@ -1,5 +1,5 @@
 {
-  "digest": "6998357ec0cf88b2",
+  "digest": "dffe52bb4b38c8b4",
   "files": {
     "agent/shared/src/abis.ts": "872c3136604d6584",
     "agent/shared/src/addresses.ts": "a6cb279048c58a4b",
@@ -23,7 +23,7 @@
     "agent/shared/src/verification.ts": "c7823c4dc411e59a",
     "agent/shared/src/write.ts": "60d89b708d5c7308",
     "agent/shared/src/x402Client.ts": "5da0cba5d9e429ee",
-    "agent/signal-api/src/app.ts": "dcb3f5b31fe9310e",
+    "agent/signal-api/src/app.ts": "8f7b6a885a0b836d",
     "agent/signal-api/src/benchmarks.ts": "bac063beeb2f0f45",
     "agent/signal-api/src/candles.ts": "1fd61b7585fca322",
     "agent/signal-api/src/exposure.ts": "dffd7355ac1e0842",

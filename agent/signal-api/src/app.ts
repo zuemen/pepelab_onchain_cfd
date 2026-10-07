@@ -633,6 +633,15 @@ function internalError(where: string, err: unknown): string {
   return `${where}_unavailable`;
 }
 
+/**
+ * 付費牆回傳值是不是一個回應。不用 `instanceof Response`：@hono/node-server 會把全域 Response
+ * 換成自己的子類別，原生 Response（例如直接回傳 fetch() 的結果）用 instanceof 會判成 false，
+ * 402 就被吞掉。Hono Context 的 `status` 是函式，Response 的是數字，以此區分。
+ */
+function isResponse(x: unknown): x is Response {
+  return typeof x === "object" && x !== null && typeof (x as { status?: unknown }).status === "number" && "headers" in x;
+}
+
 export function createApp(opts: CreateAppOptions = {}): Hono<{ Variables: AppVariables }> {
   const app = new Hono<{ Variables: AppVariables }>({ getPath: normalizeRequestPath });
   checkPayoutDenylistEnv();
@@ -1327,9 +1336,9 @@ export function createApp(opts: CreateAppOptions = {}): Hono<{ Variables: AppVar
       if (!f) throw err;
       return c.json(f.body, f.status, f.headers);
     }
-    // x402-hono 對「不是付費路由」的請求回傳的不是 Response（是 next() 的回傳值）；
+    // x402-hono 對「不是付費路由」的請求回傳的不是 Response（是 next() 回傳的 Hono Context）；
     // 原樣塞回 c.res 會讓 Hono 讀 headers 時丟 RangeError，未註冊的路徑因此回 500 而不是 404。
-    if (res instanceof Response) c.res = res;
+    if (isResponse(res)) c.res = res;
     // facilitator 以 200 + isValid:false 回報限流（CDP 的 `rate_limit_exceeded`
     // 就是這個形狀）時，x402-hono 會把 invalidReason 原樣塞進 402 的 error。
     // 402 對 x402 client 的意思是「請付款」，會讓它對一個根本沒問題的簽章重簽重送。
@@ -1358,7 +1367,7 @@ export function createApp(opts: CreateAppOptions = {}): Hono<{ Variables: AppVar
    */
   const runV2 = async (c: Context<{ Variables: AppVariables }>, next: Next) => {
     const res = await x402v2!.handle(c, next);
-    if (res instanceof Response) c.res = res;
+    if (isResponse(res)) c.res = res;
     c.res = await applyLedgerRecording(c.get("ledgerEntry"), c.res, c.req.header("PAYMENT-SIGNATURE"), "v2");
   };
 
