@@ -37,9 +37,9 @@
     "liquidationPenaltyBps": 2000,
     "markPremiumCapBps": 0,
     "vaultFeeShareBps": 0,
-    "deployVault": true,
-    "vaultRedeemFeeBps": 30,
-    "vaultMinReserveRatioBps": 11000,
+    "deployVault": false,
+    "vaultRedeemFeeBps": null,
+    "vaultMinReserveRatioBps": null,
     "kycRegistry": "vc"
   },
   "assets": {

@@ -55,7 +55,7 @@ was not, the reason is given rather than glossed over.
 | 31 | Equities, ETFs and gold can be opened against the last close while their market is closed | **Open on the live exchange** (2026-10-02) — the keeper refreshes `updatedAt` through closures so exits keep working; the ReduceOnly switch that stops opens needs the not-yet-deployed exchange. Keeper side fixed in source (w36) |
 | 32 | Agent authorization VCs are revoked through an issuer-signed, off-chain status list; the list host is trusted to say whether an issuer *has* a list | **Mitigated in source** (2026-10-02, ADR-016) — writes fail closed; a verifier that never saw an issuer's list can be told "no list" with no time bound; an expired list blocks that issuer's opens and closes; on-chain registry is follow-up |
 | 33 | The tokenized vault has no market-hours gate: closed-market assets mint and redeem at the last close | **Open** (2026-10-07) — the exchange's ReduceOnly does not reach the vault; mitigation today is PAUSER_ROLE pausing the vault |
-| 34 | The tokenized vault has no KYC gate, and its tokens are freely transferable | **Open** (2026-10-07) — `rwa-poc` sets `deployVault: true`, so the PoC's KYC gate on the exchange can be bypassed through the vault |
+| 34 | The tokenized vault has no KYC gate, and its tokens are freely transferable | **Open in the vault; avoided in the RWA PoC** (2026-10-07) — `rwa-poc` now sets `deployVault: false`, so the PoC has no vault to bypass the exchange's KYC gate through |
 | 35 | Borrow fee is integer bps per hour: the smallest non-zero rate is 87.6%/yr on the borrowed amount | **Open** (2026-10-07) — no benchmark rate, no long/short asymmetry, no dividend adjustment; changing the unit needs an exchange redeploy |
 | 36 | The delegation VC binds only agents that run this repo's code; the chain does not check it | **By design, partly mitigated** (2026-10-07) — opens now also require the on-chain anchor when configured; a stolen agent key is stopped only by `revokeSession` |
 | 37 | After the keeper refuses a gap, closes and liquidations run at the pre-gap price, then everything freezes | **Open** (2026-10-07) — no automatic recovery path; the vault is not covered by the keeper's protection at all |
@@ -1443,12 +1443,14 @@ but the vault's `mint` has no KYC check, and `SyntheticAssetV2` is a plain
 ERC-20 (`contracts/src/v2/SyntheticAssetV2.sol`): any wallet can mint sAAPL and
 transfer it to anyone. The front end's mint page has no gate either.
 
-This matters for the RWA PoC: `deploy/tenants/rwa-poc.json` sets
-`"deployVault": true`, so a wallet without a qualified-investor credential that
-is refused on the exchange can take the same synthetic exposure through the
-vault. `docs/RWA_ALIGNMENT.md` §4.3 ④ already recommends `deployVault: false`.
-Deciding between that and keeping the vault (the `/solvency` page reads it) is
-the owner's call before the S3 deployment.
+This mattered for the RWA PoC: with `"deployVault": true` a wallet without a
+qualified-investor credential that is refused on the exchange could take the
+same synthetic exposure through the vault. On 2026-10-07 `deploy/tenants/rwa-poc.json`
+was switched to `"deployVault": false` (with the two vault parameters `null`, as
+the schema requires), following `docs/RWA_ALIGNMENT.md` §4.3 ④. It also takes
+#33 (closed-market mint/redeem) out of the PoC. The cost: the PoC's `/solvency`
+page shows the exchange's insurance fund and loss waterfall, but no vault reserve
+ratio. The platform deployment and the vault code are unchanged.
 
 ## 35. Borrow fee granularity (added 2026-10-07)
 
