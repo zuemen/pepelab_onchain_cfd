@@ -66,13 +66,13 @@ async function openTerminalAsset(ctx, symbol) {
   await collapseBanner(ctx);
   await waitForLoaded(ctx);
   // 市場選擇列的按鈕文字是「🔒 sAAPL」加上「● 休市」徽章，用自己的文字節點比對
-  const ok = await ctx.page.evaluate((sym) => {
+  const ok = await ctx.page.waitForFunction((sym) => {
     for (const el of document.querySelectorAll('div')) {
       const own = Array.from(el.childNodes).filter((n) => n.nodeType === 3).map((n) => n.textContent.trim()).join('').replace('🔒', '').trim();
       if (own === sym && getComputedStyle(el).cursor === 'pointer') { el.click(); return true; }
     }
     return false;
-  }, symbol);
+  }, symbol, { timeout: 45_000, polling: 500 }).then(() => true, () => false);
   ctx.assert(ok, `市場選擇列找不到 ${symbol}`);
   await ctx.pause(2500);
 }
