@@ -2,7 +2,7 @@ import type { WalletAPI } from 'src/hooks/useWallet'
 import type { VerifiedInvestorCredential } from 'src/contracts/investorCredential'
 
 import { Contract } from 'ethers'
-import { useState, useEffect, useCallback } from 'react'
+import { useRef, useState, useEffect, useCallback } from 'react'
 
 import Box from '@mui/material/Box'
 import Card from '@mui/material/Card'
@@ -14,6 +14,7 @@ import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
 
 import { t, interpolate } from 'src/locales'
+import { pollUntil } from 'src/lib/pepefi/pollUntil'
 import { useVcKycRegistry } from 'src/hooks/useVcKycRegistry'
 import { credentialTypeName, VC_KYC_REGISTRY_ABI } from 'src/contracts/investorCredential'
 import {
@@ -86,6 +87,10 @@ export function InvestorCredentialPanel({ wallet, registryAddress }: Props) {
   useEffect(() => {
     readMine()
   }, [readMine])
+
+  // 卸載或換錢包時，送出後的輪詢停止。
+  const pollGen = useRef(0)
+  useEffect(() => () => { pollGen.current += 1 }, [wallet.address, wallet.provider])
 
   if (!registry) {
     return (
@@ -191,11 +196,10 @@ export function InvestorCredentialPanel({ wallet, registryAddress }: Props) {
       setTxHash(tx.hash)
       await tx.wait()
       // 公開節點負載平衡：receipt 之後的下一次讀取可能落在還沒同步的節點，讀到舊狀態（未登記）。
-      // 讀到資格生效為止（最多約 20 秒），再重新驗證；交易 hash 保留在畫面上。
-      for (let i = 0; i < 10; i++) {
-        if ((await readMine()) === true) break
-        await new Promise((r) => setTimeout(r, 2000))
-      }
+      // 讀到資格生效為止（最多約 20 秒），再重新驗證；交易 hash 保留在畫面上。卸載或換錢包就停。
+      const gen = pollGen.current
+      const res = await pollUntil(async () => (await readMine()) === true, { cancelled: () => pollGen.current !== gen })
+      if (res === 'cancelled') return
       await verify()
       setTxHash(tx.hash)
     } catch (e) {
