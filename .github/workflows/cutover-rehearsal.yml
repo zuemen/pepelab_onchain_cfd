@@ -1,0 +1,84 @@
+name: Cutover rehearsal (Base Sepolia fork, no keys)
+
+# docs/OWNER_ACTIONS.md 第 5 步的部署腳本，對 Base Sepolia **實況**的 fork 跑一遍。什麼都不廣播到真實鏈。
+#
+# 為什麼存在：
+#   - contracts/test/fork/*.t.sol 只有帶 --fork-url 才會跑，contracts-ci 不帶，所以一律 skip——
+#     原始碼改了之後「還能不能照 runbook 部署到現在的鏈上狀態」沒有人驗證，直到擁有者動手那天。
+#   - fork 測試是在測試行程裡呼叫腳本；scripts/cutover-rehearsal.mjs 改在 anvil fork 上以真的
+#     交易依序執行每一支腳本（含 timelock 排程→等待→執行），把腳本之間的位址交接也一起演練。
+#
+# 安全邊界：permissions 只有 contents: read；不綁 environment、不引用任何 secret；部署者與各角色
+# 由 anvil 假冒（--auto-impersonate），沒有任何私鑰。只連公開唯讀 RPC 與 127.0.0.1 的 anvil。
+on:
+  push:
+    branches: ['claude/**']
+    paths:
+      - 'contracts/src/**'
+      - 'contracts/script/**'
+      - 'contracts/test/fork/**'
+      - 'scripts/cutover-rehearsal.mjs'
+      - '.github/workflows/cutover-rehearsal.yml'
+  schedule:
+    - cron: '41 4 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cutover-rehearsal-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  fork-tests:
+    name: fork tests against live Base Sepolia
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          submodules: recursive
+
+      # 與 contracts-ci.yml 同一個版本。
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@908c540300062bd5a7e473851cdb4282204cee09 # v1.9.1
+        with:
+          version: v1.8.0
+
+      # sepolia.base.org 會拒絕 runner 上的 forge（scripts/verify-dedicated-tenants.mjs 的 PUBLIC_RPC 註解），
+      # 所以先用 publicnode。block.chainid 不是 84532 時 fork 測試會 skip，這裡要求四支都真的跑了。
+      - name: forge test test/fork against a live fork
+        working-directory: contracts
+        env:
+          FORK_RPC: https://base-sepolia-rpc.publicnode.com
+        run: |
+          set -o pipefail
+          forge test --match-path 'test/fork/*.t.sol' --fork-url "$FORK_RPC" -vv 2>&1 | tee ../fork-tests.log
+          if grep -q '\[SKIP' ../fork-tests.log; then
+            echo "::error::a fork test was skipped - it did not run against Base Sepolia"
+            exit 1
+          fi
+
+  rehearsal:
+    name: cutover rehearsal on an anvil fork
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          submodules: recursive
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '20'
+
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@908c540300062bd5a7e473851cdb4282204cee09 # v1.9.1
+        with:
+          version: v1.8.0
+
+      - name: Rehearse OWNER_ACTIONS step 5 on a fork
+        run: node scripts/cutover-rehearsal.mjs
