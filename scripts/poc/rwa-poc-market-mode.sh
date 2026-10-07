@@ -24,7 +24,7 @@ MODE="${2:-}"
 [[ "$TENANT" =~ ^[a-z][a-z0-9-]{1,30}$ ]] || { echo "✖ POC_TENANT 不是租戶 id" >&2; exit 2; }
 [[ "$ACCOUNT" =~ ^[A-Za-z0-9._-]+$ ]] || { echo "✖ POC_MODE_ACCOUNT 格式不對" >&2; exit 2; }
 [[ "$RPC" =~ ^https?:// ]] || { echo "✖ KEEPER_RPC_URL 必須是 http(s) 網址" >&2; exit 2; }
-for c in cast node; do command -v "$c" >/dev/null || { echo "✖ 找不到 $c（Foundry 在 ~/.foundry/bin）" >&2; exit 1; }; done
+for c in cast node; do command -v "$c" >/dev/null || { echo "✖ 找不到 ${c}（Foundry 在 ~/.foundry/bin）" >&2; exit 1; }; done
 # 外部指令在乾淨環境裡跑：只帶 PATH 與 HOME（cast 從 ~/.foundry 讀 keystore）。
 clean() { env -i PATH="$PATH" HOME="$HOME" "$@"; }
 PASSWORD_FILE="$HOME/.foundry/$ACCOUNT.password"
@@ -42,16 +42,16 @@ while IFS='=' read -r k v; do
   esac
 done <<< "$ENV_LINES"
 [[ "$EX" =~ ^0x[0-9a-fA-F]{40}$ ]] || { echo "✖ load-env 沒有給 EXCHANGE" >&2; exit 1; }
-[[ " $SYMBOLS " == *" $SYM "* ]] || { echo "✖ $SYM 不是 $TENANT 註冊的資產（$SYMBOLS）" >&2; exit 1; }
+[[ " $SYMBOLS " == *" $SYM "* ]] || { echo "✖ $SYM 不是 $TENANT 註冊的資產（${SYMBOLS}）" >&2; exit 1; }
 
 CHAIN_ID="$(clean cast chain-id --rpc-url "$RPC")"
-[[ "$CHAIN_ID" == "84532" ]] || { echo "✖ RPC 指向 chainId $CHAIN_ID，不是 Base Sepolia（84532）" >&2; exit 1; }
+[[ "$CHAIN_ID" == "84532" ]] || { echo "✖ RPC 指向 chainId ${CHAIN_ID}，不是 Base Sepolia（84532）" >&2; exit 1; }
 
 FROM="$(clean cast wallet address --account "$ACCOUNT" --password-file "$PASSWORD_FILE")"
 AID="$(clean cast keccak "$SYM")"
 NAMES=(Active ReduceOnly Halted)
 CUR="$(clean cast call "$EX" "assetMode(bytes32)(uint8)" "$AID" --rpc-url "$RPC")"
-echo "exchange $EX  $SYM 目前 ${NAMES[$CUR]:-$CUR} → 要切成 ${NAMES[$MODE]}（簽署者 $FROM）"
+echo "exchange $EX  $SYM 目前 ${NAMES[$CUR]:-$CUR} → 要切成 ${NAMES[$MODE]}（簽署者 ${FROM}）"
 if [[ "$CUR" == "$MODE" ]]; then echo "已經是 ${NAMES[$MODE]}，不送交易"; exit 0; fi
 
 echo "── 模擬（cast call --from）──"

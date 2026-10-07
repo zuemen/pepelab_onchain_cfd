@@ -37,7 +37,7 @@ done
 [[ "$INTERVAL" =~ ^[0-9]+$ ]] && (( INTERVAL >= 15 )) || { echo "✖ POC_KEEPER_INTERVAL 必須是 ≥ 15 的整數秒" >&2; exit 2; }
 [[ "$RPC" =~ ^https?:// ]] || { echo "✖ KEEPER_RPC_URL 必須是 http(s) 網址" >&2; exit 2; }
 
-for c in cast node npx; do command -v "$c" >/dev/null || { echo "✖ 找不到 $c（Foundry 在 ~/.foundry/bin）" >&2; exit 1; }; done
+for c in cast node npx; do command -v "$c" >/dev/null || { echo "✖ 找不到 ${c}（Foundry 在 ~/.foundry/bin）" >&2; exit 1; }; done
 [[ -d "$REPO_ROOT/agent/node_modules" ]] || { echo "✖ 請先在 agent/ 執行 npm ci" >&2; exit 1; }
 
 # 外部指令（load-env、cast）也在乾淨環境裡跑：只帶 PATH 與 HOME（cast 從 ~/.foundry 讀 keystore）。
@@ -72,24 +72,24 @@ done <<< "$ENV_LINES"
   || { echo "✖ load-env 少了必要的鍵" >&2; exit 1; }
 
 CHAIN_ID="$(clean cast chain-id --rpc-url "$RPC")"
-[[ "$CHAIN_ID" == "84532" ]] || { echo "✖ KEEPER_RPC_URL 指向 chainId $CHAIN_ID，不是 Base Sepolia（84532）" >&2; exit 1; }
+[[ "$CHAIN_ID" == "84532" ]] || { echo "✖ KEEPER_RPC_URL 指向 chainId ${CHAIN_ID}，不是 Base Sepolia（84532）" >&2; exit 1; }
 
 # 2. 參考來源：設定的值必須等於 oracle 鏈上的 referenceSource()（與租戶 workflow 相同的檢查）。
 ZERO=0x0000000000000000000000000000000000000000
 if [[ "$L_KIND" == "guarded" ]]; then
   WANT="$(echo "${L_RELAY:-$ZERO}" | tr '[:upper:]' '[:lower:]')"
   GOT="$(clean cast call "$L_ORACLE" "referenceSource()(address)" --rpc-url "$RPC" | tr '[:upper:]' '[:lower:]')"
-  [[ "$WANT" == "$GOT" ]] || { echo "✖ oracle 的 referenceSource() 是 $GOT，設定預期 $WANT" >&2; exit 1; }
+  [[ "$WANT" == "$GOT" ]] || { echo "✖ oracle 的 referenceSource() 是 ${GOT}，設定預期 $WANT" >&2; exit 1; }
 fi
 
 # 3. keystore 推出的地址必須是設定的 roles.keeper（只印地址）。
 ADDR="$(clean cast wallet address --account "$ACCOUNT" --password-file "$PASSWORD_FILE")"
 if [[ "$(echo "$ADDR" | tr '[:upper:]' '[:lower:]')" != "$(echo "$L_EXPECTED" | tr '[:upper:]' '[:lower:]')" ]]; then
-  echo "✖ keystore $ACCOUNT 的地址 $ADDR 不是 $TENANT 的 roles.keeper（$L_EXPECTED）。不送任何交易。" >&2
+  echo "✖ keystore $ACCOUNT 的地址 $ADDR 不是 $TENANT 的 roles.keeper（${L_EXPECTED}）。不送任何交易。" >&2
   exit 1
 fi
 BAL="$(clean cast balance "$ADDR" --rpc-url "$RPC" --ether)"
-echo "keeper $ADDR 餘額 $BAL ETH；oracle $L_ORACLE；exchange $L_EXCHANGE；marketOperator=$( (( MARKET_OPERATOR )) && echo on || echo off)"
+echo "keeper $ADDR 餘額 $BAL ETH；oracle ${L_ORACLE}；exchange ${L_EXCHANGE}；marketOperator=$( (( MARKET_OPERATOR )) && echo on || echo off)"
 
 cd "$REPO_ROOT/agent"
 
