@@ -1,6 +1,8 @@
 # Compiler files
 cache/
 out/
+# 租戶部署當時的 commit 的編譯產物（scripts/verify-dedicated-tenants.mjs）
+out-deployed/
 
 # Broadcast logs
 #

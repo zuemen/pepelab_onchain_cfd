@@ -16,11 +16,21 @@
 // check-tenant-deploy.mjs 已保證這樣的租戶有 status=deployed 的 deploy/tenants/<id>.json 與
 // <id>.deployed.json；這裡再確認一次，缺了就失敗。
 //
+// 比對的原始碼：VerifyTenant 要求鏈上 runtime code 與「一份 build」逐 byte 相同。租戶部署之後
+// contracts/src 若又改過（例如修了 GuardedOracle），拿目前的 build 比一定不同——這不是租戶被動過，
+// 只是原始碼比鏈上新，而那是 docs/RELEASE_STATUS.md 該標示的事。所以這裡先從 DeployTenant 的
+// broadcast（contracts/broadcast/tenants/<id>/DeployTenant.s.sol/<chainId>/run-*.json）找出
+// 「建立了部署紀錄裡每一個位址」的那次部署與它的 commit；該 commit 必須在 HEAD 的歷史裡。
+// 從那之後 contracts/ 的原始碼沒變就照舊用 out/；變了就在暫時的 git worktree 編出那個 commit，
+// 放在 contracts/out-deployed/<id>/，VerifyTenant 以 TENANT_ARTIFACTS_DIR 改跟那份比對。
+// 找不到這樣的 broadcast 就照舊跟目前的 build 比（不會比以前寬鬆）。
+//
 // 用法：node scripts/verify-dedicated-tenants.mjs            # CI
 //       node scripts/verify-dedicated-tenants.mjs --list     # 只列出會驗證的租戶
 
 import { spawn, spawnSync } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
@@ -67,7 +77,12 @@ function runForge(root, t) {
   return new Promise((resolve) => {
     const child = spawn("forge", ["script", "script/VerifyTenant.s.sol:VerifyTenant", "--fork-url", t.rpc, "-vv"], {
       cwd: join(root, "contracts"),
-      env: { ...process.env, TENANT: t.id, TENANT_LOG_CHUNK_BLOCKS: String(t.logChunk) },
+      env: {
+        ...process.env,
+        TENANT: t.id,
+        TENANT_LOG_CHUNK_BLOCKS: String(t.logChunk),
+        ...(t.artifactsDir ? { TENANT_ARTIFACTS_DIR: t.artifactsDir } : {}),
+      },
       stdio: ["ignore", "pipe", "pipe"],
     });
     let stderr = "";
@@ -112,6 +127,89 @@ export function plan(root) {
   });
 }
 
+/** 會改變編譯結果的路徑：從部署的 commit 到 HEAD 這些都沒變，目前的 out/ 就等於部署當時的 build。 */
+export const BUILD_INPUTS = ["contracts/src", "contracts/lib", "contracts/foundry.toml", "contracts/remappings.txt"];
+
+/**
+ * 這個租戶是從哪個 commit 部署的：DeployTenant broadcast 裡，建立了部署紀錄每一個位址
+ * （contracts＋tokens，含合約內部 CREATE 的 additionalContracts）的那幾次 run 的 commit。
+ * 沒有 broadcast、或沒有一次 run 涵蓋全部位址 → { commit: null, reason }（照舊比對目前的 build）。
+ * 涵蓋全部位址的 run 卻記了兩個不同的 commit → 丟錯（說不清楚是哪份原始碼）。
+ */
+export function deploySource(root, id, chainId) {
+  const dir = join(root, "contracts/broadcast/tenants", id, "DeployTenant.s.sol", String(chainId));
+  if (!existsSync(dir)) return { commit: null, reason: `沒有 ${id} 的 DeployTenant broadcast` };
+  const rec = JSON.parse(readFileSync(join(root, "deploy/tenants", `${id}.deployed.json`), "utf8"));
+  const want = [...Object.values(rec.contracts ?? {}), ...Object.values(rec.tokens ?? {})].map((a) => String(a).toLowerCase());
+  if (!want.length) return { commit: null, reason: `${id}.deployed.json 沒有任何位址` };
+  const commits = new Set();
+  for (const f of readdirSync(dir).filter((n) => /^run-\d+\.json$/.test(n)).sort()) {
+    const run = JSON.parse(readFileSync(join(dir, f), "utf8"));
+    const created = new Set();
+    for (const tx of run.transactions ?? []) {
+      if (/^CREATE/.test(tx.transactionType ?? "") && tx.contractAddress) created.add(tx.contractAddress.toLowerCase());
+      for (const c of tx.additionalContracts ?? []) if (c.address) created.add(c.address.toLowerCase());
+    }
+    if (want.every((a) => created.has(a)) && typeof run.commit === "string" && /^[0-9a-f]{7,40}$/.test(run.commit)) {
+      commits.add(run.commit);
+    }
+  }
+  if (commits.size > 1) throw new Error(`${id}：建立部署紀錄全部位址的 DeployTenant broadcast 記了不同的 commit（${[...commits].join("、")}）`);
+  if (!commits.size) return { commit: null, reason: `${id} 的 DeployTenant broadcast 沒有一次涵蓋部署紀錄的全部位址` };
+  return { commit: [...commits][0], reason: null };
+}
+
+function git(root, args) {
+  return spawnSync("git", args, { cwd: root, encoding: "utf8" });
+}
+
+/** 在暫時的 worktree 編出 sha，產物放 contracts/out-deployed/<id>/；回傳相對 contracts/ 的路徑。 */
+function buildAt(root, id, sha, log) {
+  const rel = `out-deployed/${id}/`;
+  const out = join(root, "contracts", rel);
+  rmSync(out, { recursive: true, force: true });
+  mkdirSync(out, { recursive: true });
+  const wt = join(mkdtempSync(join(tmpdir(), `tenant-src-${id}-`)), "src");
+  const add = git(root, ["worktree", "add", "--detach", wt, sha]);
+  if (add.status !== 0) throw new Error(`git worktree add ${sha} 失敗：${(add.stderr || "").trim()}`);
+  try {
+    log(`編譯 ${id} 部署當時的原始碼（${sha.slice(0, 10)}）→ contracts/${rel}`);
+    // 只要合約與部署腳本的產物（ERC1967Proxy 由腳本引入）；測試不編，省時間。
+    const b = spawnSync("forge", ["build", "--skip", "test", "--out", out], { cwd: join(wt, "contracts"), stdio: "inherit", timeout: 15 * 60 * 1000 });
+    if (b.status !== 0) throw new Error(`forge build（${sha.slice(0, 10)}）失敗（exit ${b.status ?? b.error?.message}）`);
+  } finally {
+    git(root, ["worktree", "remove", "--force", wt]);
+  }
+  return rel;
+}
+
+/**
+ * 決定 VerifyTenant 要比對的 build。回傳相對 contracts/ 的產物目錄；null＝目前的 out/。
+ * 部署的 commit 不在 HEAD 的歷史裡（或 clone 太淺解析不到）→ 丟錯：沒辦法說那是本 repo 審過的原始碼。
+ */
+export function prepareArtifacts(root, t, log = console.log, build = buildAt) {
+  const { commit, reason } = deploySource(root, t.id, t.chainId);
+  if (!commit) {
+    log(`${t.id}：${reason}，跟目前的 build 比對`);
+    return null;
+  }
+  const rev = git(root, ["rev-parse", "--verify", "--quiet", `${commit}^{commit}`]);
+  const sha = rev.status === 0 ? rev.stdout.trim() : "";
+  if (!sha) throw new Error(`部署的 commit ${commit} 解析不到（checkout 要 fetch-depth: 0）`);
+  if (git(root, ["merge-base", "--is-ancestor", sha, "HEAD"]).status !== 0) {
+    throw new Error(`部署的 commit ${commit} 不在 HEAD 的歷史裡`);
+  }
+  const diff = git(root, ["diff", "--quiet", sha, "HEAD", "--", ...BUILD_INPUTS]);
+  if (diff.status === 0) {
+    log(`${t.id}：由 ${commit} 部署；之後 contracts/ 原始碼沒變，跟目前的 build 比對`);
+    return null;
+  }
+  if (diff.status !== 1) throw new Error(`git diff ${commit} HEAD 失敗：${(diff.stderr || "").trim()}`);
+  const changed = git(root, ["diff", "--name-only", sha, "HEAD", "--", ...BUILD_INPUTS]).stdout.trim().split("\n").filter(Boolean);
+  log(`${t.id}：由 ${commit} 部署；之後改過 ${changed.length} 個編譯輸入（${changed.slice(0, 5).join("、")}${changed.length > 5 ? "…" : ""}），跟部署當時的 build 比對（原始碼比鏈上新的元件見 docs/RELEASE_STATUS.md）`);
+  return build(root, t.id, sha, log);
+}
+
 /** 用 cast 探測（與 forge 同一套 HTTP 客戶端；node fetch 通、forge 被擋的情況才探得到）。 */
 async function rpcChainId(rpc) {
   const r = spawnSync("cast", ["chain-id", "--rpc-url", rpc], { encoding: "utf8", timeout: 30_000 });
@@ -123,14 +221,22 @@ async function rpcChainId(rpc) {
  * @param {object} p
  * @param {(t: {id:string, chainId:number, rpc:string}) => number} [p.runVerify]  測試用；預設跑 forge
  * @param {(rpc: string) => Promise<number>} [p.chainIdOf]                         測試用；預設打 RPC
+ * @param {(root: string, t: object, log: Function) => string|null} [p.artifactsFor] 測試用；預設 prepareArtifacts
  * @returns {Promise<string[]>} 問題清單（空＝全部通過）
  */
-export async function verifyAll({ root, log = console.log, runVerify, chainIdOf = rpcChainId }) {
+export async function verifyAll({ root, log = console.log, runVerify, chainIdOf = rpcChainId, artifactsFor = prepareArtifacts }) {
   const targets = plan(root);
   log(`專屬租戶 ${targets.length} 個${targets.length ? `：${targets.map((t) => t.id).join("、")}` : "——沒有要驗證的鏈上部署"}`);
   const run = runVerify ?? ((t) => runForge(root, t));
   const problems = [];
   for (const t of targets) {
+    let artifactsDir;
+    try {
+      artifactsDir = await artifactsFor(root, t, log);
+    } catch (e) {
+      problems.push(`${t.id}：${e.message}`);
+      continue;
+    }
     const failures = [];
     let verdict = null; // "pass" | 真的驗證失敗的訊息
     for (const { url, logChunk } of t.rpcs) {
@@ -146,7 +252,7 @@ export async function verifyAll({ root, log = console.log, runVerify, chainIdOf 
         continue;
       }
       log(`=== VerifyTenant ${t.id}（chain ${t.chainId}，${url}）===`);
-      const raw = await run({ ...t, rpc: url, logChunk });
+      const raw = await run({ ...t, rpc: url, logChunk, artifactsDir });
       const { status, stderr = "" } = typeof raw === "number" ? { status: raw } : raw;
       if (status === 0) {
         verdict = "pass";

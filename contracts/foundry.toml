@@ -27,6 +27,9 @@ fs_permissions = [
     # VerifyTenant 比對鏈上 runtime bytecode 時，從編譯產物讀 immutable／library 的位置
     # （deployedBytecode.immutableReferences／linkReferences）。只讀、只限 out/。
     { access = "read", path = "./out" },
+    # 租戶部署之後 contracts/src 又改過時，verify-dedicated-tenants.mjs 把部署當時的 commit
+    # 編到 out-deployed/<id>/，VerifyTenant 改跟那份比對（TENANT_ARTIFACTS_DIR）。同樣只讀。
+    { access = "read", path = "./out-deployed" },
 ]
 
 # See more config options https://github.com/foundry-rs/foundry/blob/master/crates/config/README.md#all-options

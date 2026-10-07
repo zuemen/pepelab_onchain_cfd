@@ -283,9 +283,13 @@ TENANT=<id> TENANT_RECORD=cache/tenants/<id>.deployed.json TENANT_PRIVILEGE_SCAN
   immutable（依 `immutableReferences`；同一個 immutable 的每個位置必須是同一個值，值另由 getter 讀回驗證；沒有
   getter 的金庫 UUPS `__self` 與 token `assetId` 直接釘值）、library 位址（依 `linkReferences`；該位址的 code 再對
   library 的編譯產物比對）、結尾的 CBOR metadata（原始碼文字的雜湊，只改註解就會變；這一段不會被執行，不同時只印
-  NOTE）。帶有多餘函式、改過一個 byte、換過 library 的合約都會失敗。限制：比對基準是執行當下這份 repo 的編譯
-  產物——日後 `contracts/src` 改了程式碼，已部署的租戶會驗證失敗（要重新部署或另釘版本）；`foundry.toml` 沒有釘
-  solc 版本，編譯器版本不同時是失敗，不是放行；
+  NOTE）。帶有多餘函式、改過一個 byte、換過 library 的合約都會失敗。比對基準：直接跑 `forge script` 時是執行當下這份 repo 的
+  `out/`；CI（`scripts/verify-dedicated-tenants.mjs`）改用**部署當時的原始碼**——從 `contracts/broadcast/tenants/<id>/DeployTenant.s.sol/<chainId>/run-*.json`
+  找出建立了部署紀錄每一個位址的那次 run 與它記的 commit（必須在 HEAD 的歷史裡），之後 `contracts/src`、`lib`、
+  `foundry.toml`、`remappings.txt` 有改動時，在暫時的 git worktree 編出那個 commit 到 `contracts/out-deployed/<id>/`，
+  以 `TENANT_ARTIFACTS_DIR` 讓 VerifyTenant 跟那份比對。原始碼比鏈上新是 `docs/RELEASE_STATUS.md`「原始碼較新」的事，
+  不是租戶被動過；找不到這樣的 broadcast 就照舊跟目前的 build 比。`foundry.toml` 沒有釘 solc 版本，編譯器版本不同時
+  是失敗，不是放行；
 - **proxy**：每一顆合約都檢查 ERC-1967 的 implementation／admin／beacon 三個 slot。金庫 proxy 的 implementation
   等於紀錄裡的實作、admin 與 beacon 是零（UUPS）；其他合約三個 slot 都必須是零。admin 事後升級到別的實作就會失敗；
 - **角色持有者等於預期集合**（PR #228 複審 C4）：合約不是 Enumerable，所以分兩輪。
