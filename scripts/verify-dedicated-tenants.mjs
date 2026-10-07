@@ -60,7 +60,7 @@ export const RPC_UNUSABLE = [
 ];
 
 /** 單一節點跑 VerifyTenant 的上限（job 是 30 分鐘；卡住的節點要留時間給下一個）。 */
-export const FORGE_TIMEOUT_MS = 12 * 60 * 1000;
+export const FORGE_TIMEOUT_MS = 8 * 60 * 1000;
 
 /** 邊跑邊印（CI log 即時），同時收集 stderr 判斷是不是節點問題。 */
 function runForge(root, t) {
@@ -75,15 +75,17 @@ function runForge(root, t) {
     const timer = setTimeout(() => {
       timedOut = true;
       child.kill("SIGTERM");
+      setTimeout(() => child.kill("SIGKILL"), 10_000).unref();
     }, FORGE_TIMEOUT_MS);
     child.stdout.on("data", (d) => process.stdout.write(d));
     child.stderr.on("data", (d) => {
       process.stderr.write(d);
-      if (stderr.length < 1_000_000) stderr += d;
+      stderr = (stderr + d).slice(-1_000_000); // 留尾端：最後的「Error:」那行才是判斷依據
     });
     child.on("error", (e) => {
       clearTimeout(timer);
-      resolve({ status: null, stderr: `error sending request: ${e.message}` });
+      // forge 本身跑不起來（例如 ENOENT）不是節點問題：當成驗證失敗，不去試下一個節點。
+      resolve({ status: null, stderr: `forge 無法執行：${e.message}` });
     });
     child.on("close", (code) => {
       clearTimeout(timer);

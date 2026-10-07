@@ -97,7 +97,7 @@ test("forge 途中被節點拒絕（401、getLogs 被拒）→ 換下一個；�
     root: dir,
     log: quiet,
     chainIdOf: async () => 84532,
-        // 回歸：stdout 的 Logs 會含「oracle rate limit is on」之類的檢查名稱；只看 stderr，真的失敗不能被當成節點問題。
+      // 回歸：stdout 的 Logs 會含「oracle rate limit is on」之類的檢查名稱；只看 stderr，真的失敗不能被當成節點問題。
     runVerify: (t) => (
       tries.push(t.rpc),
       {
