@@ -3,6 +3,7 @@ pragma solidity ^0.8.20;
 
 import "forge-std/Test.sol";
 import "../src/AggregatorOracleAdapter.sol";
+import "../src/v2/GuardedOracle.sol";
 
 /// @dev Configurable oracle source: can serve a price, report itself stale,
 ///      revert, or return zero — the four states _probe has to survive.
@@ -78,18 +79,65 @@ contract AggregatorOracleAdapterTest is Test {
     ///      `closePosition` and `liquidatePosition`, which read the very same
     ///      `getPrice` — so during the volatility that makes two feeds disagree,
     ///      nobody could reduce risk and no liquidator could act. A 10% spread
-    ///      is now *degraded*: the price is still served (so risk can be cut),
+    ///      is now *degraded*: a price is still served (so risk can be cut),
     ///      and the divergence is surfaced through isStale/isDegraded.
+    ///      2026-10-07: the served price is the midpoint with the OLDER
+    ///      timestamp, not the fresher quote (see the next test for why).
     function test_softDisagreementServesDegradedPriceInsteadOfBlocking() public {
         a.set(ID, 100_000e8, 1_000);
         b.set(ID, 110_000e8, 2_000);      // 1000 bps apart, soft bound is 100
 
         (uint256 p, uint256 t) = agg.getPrice(ID);
-        assertEq(p, 110_000e8, "fresher quote is still served");
-        assertEq(t, 2_000);
+        assertEq(p, 105_000e8, "midpoint is served, not either feed");
+        assertEq(t, 1_000, "with the older of the two timestamps");
 
         assertTrue(agg.isDegraded(ID), "and it is flagged as degraded");
         assertTrue(agg.isStale(ID),    "monitoring readers see it too");
+    }
+
+    /// @dev The reason for the midpoint: with "fresher wins", a faulty feed
+    ///      only had to post last to set the price anywhere inside the halt
+    ///      band. Now posting later moves nothing, and the served value stays
+    ///      within half the spread of the honest feed.
+    function test_degradedPriceIsNotWonByPostingLast() public {
+        a.set(ID, 100_000e8, 1_000);           // honest
+        b.set(ID, 119_000e8, 2_000);           // faulty, 19% high, newer
+        (uint256 p1, ) = agg.getPrice(ID);
+        b.set(ID, 119_000e8, 9_000);           // re-posts with an even newer time
+        (uint256 p2, uint256 t2) = agg.getPrice(ID);
+        assertEq(p1, 109_500e8);
+        assertEq(p2, p1, "a newer timestamp does not move the degraded price");
+        assertEq(t2, 1_000);
+        assertLe(p2 - 100_000e8, (119_000e8 - 100_000e8) / 2, "within half the spread of the honest feed");
+    }
+
+    /// @dev End to end: the aggregator as GuardedOracle's reference while its
+    ///      feeds disagree. It reports isStale, so its agreement cannot lift
+    ///      GuardedOracle's step cap — a keeper post that matches the degraded
+    ///      number but jumps 19% is refused. Once the feeds agree again, the
+    ///      same reference confirms a real gap in one post.
+    function test_degradedAggregatorCannotConfirmGuardedOraclePost() public {
+        GuardedOracle g = new GuardedOracle(address(this));
+        g.grantRole(g.KEEPER_ROLE(), address(this));
+        g.addAsset(ID, 100_000e8);
+        g.setReferenceSource(address(agg));
+
+        vm.warp(10_000);
+        a.set(ID, 100_000e8, block.timestamp);
+        b.set(ID, 119_000e8, block.timestamp); // 19% apart: degraded, midpoint 109_500
+        assertTrue(agg.isDegraded(ID));
+        vm.expectRevert(
+            abi.encodeWithSelector(GuardedOracle.DeviationTooLarge.selector, ID, 119_000e8, 100_000e8)
+        );
+        g.updatePrice(ID, 119_000e8);          // within 10% of the 109_500 midpoint, 19% from last
+
+        // Feeds agree on a real 15% gap → healthy reference → confirmed in one post.
+        b.set(ID, 115_000e8, block.timestamp);
+        a.set(ID, 115_000e8, block.timestamp);
+        assertFalse(agg.isStale(ID));
+        g.updatePrice(ID, 115_000e8);
+        (uint256 gp, ) = g.getPrice(ID);
+        assertEq(gp, 115_000e8);
     }
 
     /// @dev Past the hard bound the two numbers are not noise: one feed is

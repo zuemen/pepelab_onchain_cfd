@@ -7,6 +7,13 @@ interface IPriceSource {
     function getPrice(bytes32 assetId) external view returns (uint256 price, uint256 updatedAt);
 }
 
+/// @dev The staleness probe every PepeLab source exposes (MockOracle, the
+///      Chainlink / Pyth adapters, AggregatorOracleAdapter — whose `isStale` is
+///      also true while its two feeds disagree).
+interface IPriceSourceHealth {
+    function isStale(bytes32 assetId) external view returns (bool);
+}
+
 /// @notice Price oracle that removes the single-key failure mode of MockOracle.
 ///
 ///         MockOracle.updatePrice is `onlyOwner`, so one compromised key can set
@@ -329,10 +336,12 @@ contract GuardedOracle is AccessControl {
         //     cap alone applies (an outage must not freeze the platform).
         bool refConfirms;
         if (referenceSource != address(0)) {
-            (bool ok, uint256 refPrice) = _reference(assetId);
+            (bool ok, uint256 refPrice, bool healthy) = _reference(assetId);
             if (ok) {
                 if (!_deviationExceeded(refPrice, newPrice, maxDeviationBps)) {
-                    refConfirms = true;
+                    // Agreement lifts the caps only when the reference vouches
+                    // for its own number; otherwise the step cap still applies.
+                    refConfirms = healthy;
                 } else if (!_convergesTowards(old, newPrice, refPrice)) {
                     emit PriceRejected(assetId, newPrice, refPrice, "reference");
                     revert ReferenceDisagrees(assetId, newPrice, refPrice);
@@ -692,14 +701,29 @@ contract GuardedOracle is AccessControl {
         h.expiresAt = 0;
     }
 
-    function _reference(bytes32 assetId) internal view returns (bool ok, uint256 price) {
+    /// @return ok      the reference answered with a non-zero price
+    /// @return price   that price
+    /// @return healthy the reference also vouches for it: `isStale` answered
+    ///                 false. A stale or degraded reference (an aggregator
+    ///                 whose two feeds disagree reports `isStale` true), or one
+    ///                 that cannot say, may still REJECT a post that disagrees
+    ///                 with it, but may not CONFIRM one — a confirmation lifts
+    ///                 the step and window caps, and that needs a number the
+    ///                 reference itself stands behind.
+    function _reference(bytes32 assetId) internal view returns (bool ok, uint256 price, bool healthy) {
         try IPriceSource(referenceSource).getPrice(assetId) returns (uint256 p, uint256) {
-            if (p == 0) return (false, 0);
-            return (true, p);
+            if (p == 0) return (false, 0, false);
+            ok = true;
+            price = p;
         } catch {
             // Reference unavailable is not a reason to block price updates —
             // that would let an outage freeze the platform.
-            return (false, 0);
+            return (false, 0, false);
+        }
+        try IPriceSourceHealth(referenceSource).isStale(assetId) returns (bool stale) {
+            healthy = !stale;
+        } catch {
+            healthy = false;
         }
     }
 
