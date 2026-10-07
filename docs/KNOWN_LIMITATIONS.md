@@ -54,6 +54,12 @@ was not, the reason is given rather than glossed over.
 | 30 | Daily check-in still transfers PEPE on the deployed PepeIncentives, against the #101 decision | **Fixed in source** (2026-10-01, issue #169) — check-ins credit non-transferable achievement points; **not deployed**, the live contract is unchanged |
 | 31 | Equities, ETFs and gold can be opened against the last close while their market is closed | **Open on the live exchange** (2026-10-02) — the keeper refreshes `updatedAt` through closures so exits keep working; the ReduceOnly switch that stops opens needs the not-yet-deployed exchange. Keeper side fixed in source (w36) |
 | 32 | Agent authorization VCs are revoked through an issuer-signed, off-chain status list; the list host is trusted to say whether an issuer *has* a list | **Mitigated in source** (2026-10-02, ADR-016) — writes fail closed; a verifier that never saw an issuer's list can be told "no list" with no time bound; an expired list blocks that issuer's opens and closes; on-chain registry is follow-up |
+| 33 | The tokenized vault has no market-hours gate: closed-market assets mint and redeem at the last close | **Open** (2026-10-07) — the exchange's ReduceOnly does not reach the vault; mitigation today is PAUSER_ROLE pausing the vault |
+| 34 | The tokenized vault has no KYC gate, and its tokens are freely transferable | **Open** (2026-10-07) — `rwa-poc` sets `deployVault: true`, so the PoC's KYC gate on the exchange can be bypassed through the vault |
+| 35 | Borrow fee is integer bps per hour: the smallest non-zero rate is 87.6%/yr on the borrowed amount | **Open** (2026-10-07) — no benchmark rate, no long/short asymmetry, no dividend adjustment; changing the unit needs an exchange redeploy |
+| 36 | The delegation VC binds only agents that run this repo's code; the chain does not check it | **By design, partly mitigated** (2026-10-07) — opens now also require the on-chain anchor when configured; a stolen agent key is stopped only by `revokeSession` |
+| 37 | After the keeper refuses a gap, closes and liquidations run at the pre-gap price, then everything freezes | **Open** (2026-10-07) — no automatic recovery path; the vault is not covered by the keeper's protection at all |
+| 38 | `PythOracleAdapter` reads `getPriceUnsafe`, and nothing in the repo ever calls `updatePriceFeeds` | **Open** (2026-10-07) — Pyth is a pull oracle; un-pulled feeds go stale, so the Pyth leg of the aggregator is effectively down |
 
 ---
 
@@ -1411,6 +1417,90 @@ signed in the 5–10 minutes after it are also revoked; users should wait that l
 before re-issuing (the Telegram bot says so when it refuses). Before the first open
 or close after upgrading, run `npm run vc-status:init` once on persistent storage
 (never from a container entrypoint), or every write is refused.
+
+
+## 33. Tokenized vault: no market-hours gate (added 2026-10-07)
+
+`AssetVaultV2_4`/`V2_5` `mint` (`contracts/src/v2/AssetVaultV2_5.sol:822`) and
+`redeem` (`:875`) price at the oracle quote and know nothing about market
+sessions. The keeper refreshes `updatedAt` through closures (#31), so on a
+weekend the Friday close still reads as fresh. Anyone who learns news after the
+close can mint (good news) or redeem (bad news) at the stale price; the vault is
+the counterparty to every long, so the gap is its loss. Round-trip cost is only
+the mint fee plus the 0.30% redeem fee.
+
+The keeper's market-mode switch (`agent/keeper/operator.ts`) only drives the
+exchange; for the vault it only calls `observeReserve` (`agent/keeper/run.ts`).
+Setting `assetCap` to 0 stops mints but not redeems. The only lever that covers
+both today is `pause()` (PAUSER_ROLE), which also stops every other asset.
+A fix needs a vault-side session state (a `marketOperator`-style role that can
+close an asset to both mint and redeem), i.e. a vault upgrade.
+
+## 34. Tokenized vault: no KYC, transferable tokens (added 2026-10-07)
+
+The exchange gates RWA opens on `kyc.isVerified` (`PerpetualExchange.sol:1769`),
+but the vault's `mint` has no KYC check, and `SyntheticAssetV2` is a plain
+ERC-20 (`contracts/src/v2/SyntheticAssetV2.sol`): any wallet can mint sAAPL and
+transfer it to anyone. The front end's mint page has no gate either.
+
+This matters for the RWA PoC: `deploy/tenants/rwa-poc.json` sets
+`"deployVault": true`, so a wallet without a qualified-investor credential that
+is refused on the exchange can take the same synthetic exposure through the
+vault. `docs/RWA_ALIGNMENT.md` §4.3 ④ already recommends `deployVault: false`.
+Deciding between that and keeping the vault (the `/solvency` page reads it) is
+the owner's call before the S3 deployment.
+
+## 35. Borrow fee granularity (added 2026-10-07)
+
+`_borrowFee` (`PerpetualExchange.sol:1948`) charges
+`borrowed × borrowFeeBpsPerHour × whole hours / 10000`, and the rate is an
+integer frozen at open from `CarbonTiers` (`contracts/src/CarbonTiers.sol:98`,
+`:102`, `:106`: 1, 4 and 10 bps/hour). One bp per hour is 87.6% a year on the
+borrowed amount — at 5x that is about 70% of notional a year; the Mid tier
+(4 bps/h at 2x) is about 175% of notional a year. Equity CFD financing is
+usually a benchmark rate plus a spread (single-digit percent a year), longs pay
+and shorts receive, and dividends are adjusted; none of that can be expressed:
+the smallest non-zero rate is already 87.6%. Funding does not compensate either,
+because it accrues only when both sides have open interest (`:1463`) and an
+RWA book is mostly one-sided. Changing the unit (for example to an annual rate
+in bps) needs a new exchange, which has 0 B left under its size budget.
+
+## 36. The delegation VC is self-policing (added 2026-10-07)
+
+`AgentSessionManager.openPositionForSession`
+(`contracts/src/AgentSessionManager.sol:209`) checks only the on-chain session:
+caps, expiry, revocation, asset list. Signature, revocation list, nonce, policy
+gate and (since 2026-10-07) the `SessionCredentialAnchor` check all run inside
+the agent's own process (`agent/shared/src/write.ts`). An agent running this code
+honours a revoked or unanchored credential; an attacker holding the agent key
+calls the contract directly and is bounded only by the session's caps. The hard
+stop is `revokeSession`. Enforcing the anchor on chain would need a session
+manager that reads it.
+
+## 37. Gap refused by the keeper: no recovery path (added 2026-10-07)
+
+When the keeper refuses a move beyond its breaker (`agent/keeper/core.ts`
+`guardDeviation`, or GuardedOracle's step cap), `protectAsset`
+(`agent/keeper/protect.ts:43`) can only switch the exchange to ReduceOnly.
+Closes and liquidations then run at the **pre-gap** price until the oracle's
+`maxPriceAge` passes (GuardedOracle default 1 hour,
+`contracts/src/v2/GuardedOracle.sol:113`) — a loser can exit at the old price —
+and after that every close and liquidation reverts `StalePrice` until someone
+posts manually, while bad debt keeps growing. The keeper does not touch the vault
+at all, so vault redeems keep using the old price during the first window.
+Single-stock earnings gaps beyond 10% (the PoC's `oracleMaxDeviationBps`) happen
+several times a year per name, so this is an operational path, not an edge case.
+There is no "halt, then reopen at a verified price" flow (see ADR-013).
+
+## 38. Pyth adapter is never pulled (added 2026-10-07)
+
+`PythOracleAdapter` reads `pyth.getPriceUnsafe` (`contracts/src/PythOracleAdapter.sol:103`)
+and rejects quotes older than `staleThreshold`. Pyth is a pull oracle: a price is
+on chain only after someone calls `updatePriceFeeds` with signed data from Hermes.
+Nothing in this repo does that (the adapter's header comment mentions an
+off-chain keeper that does not exist), so on a chain where nobody else pulls the
+feed the Pyth leg reads stale and the aggregator's cross-check never runs.
+ADR-013 is the plan to make the keeper relay signed updates.
 
 ## Frontend
 
