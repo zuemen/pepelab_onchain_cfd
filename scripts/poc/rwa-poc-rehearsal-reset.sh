@@ -21,6 +21,8 @@ EX=$(c PerpetualExchange); REG=$(c KYCRegistry); MGR=$(c AgentSessionManager)
 INV=$(cast wallet address --account pepelab-rwa-investor --password-file "$HOME/.foundry/pepelab-rwa-investor.password")
 X402_ROOT="${X402_ROOT:-$ROOT/../s6}"
 if [ -n "${KEEP_SESSIONS:-}" ]; then
+  # 是「要保留的 session id 清單」（空白分隔），不是門檻數字。
+  [[ "$KEEP_SESSIONS" =~ ^[0-9]+([[:space:]]+[0-9]+)*$ ]] || { echo "✖ KEEP_SESSIONS 要寫成以空白分隔的 session id，例如 \"0 1\"（收到：${KEEP_SESSIONS}）" >&2; exit 1; }
   KEEP=" $KEEP_SESSIONS "
 else
   KEEP=" $(cat "$X402_ROOT"/agent/.state/rwa-poc/x402/*.json 2>/dev/null | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{const ids=[];for(const m of s.matchAll(/"sessionId":\s*(\d+)/g))ids.push(m[1]);console.log([...new Set(ids)].join(" "))})') "

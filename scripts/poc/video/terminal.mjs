@@ -11,7 +11,8 @@ import { spawn } from 'node:child_process';
 
 import { BASESCAN_TX } from './overlay.mjs';
 
-const TX_RE = /\btx (0x[0-9a-fA-F]{64})\b/g;
+// 收三種寫法：`tx 0x…`（rwa-poc-tx.sh）、`tx=0x…`（x402 RESULT 行）、`…/tx/0x…`（BaseScan 連結）。
+const TX_RE = /(?:\btx[ =]|\/tx\/)(0x[0-9a-fA-F]{64})\b/g;
 
 const HTML = `<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><title>PepeLab PoC — 終端機</title>
 <style>
