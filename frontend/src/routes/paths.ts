@@ -68,6 +68,7 @@ export const paths = {
     adminKyc: '/admin/kyc',
     rewards: '/rewards',
     sessions: '/sessions',
+    credentials: '/credentials',
     agentMonitor: '/agent-monitor',
     pepe:    '/pepe',
     // RWA 透明度三頁（docs/RWA_TRANSPARENCY.md）

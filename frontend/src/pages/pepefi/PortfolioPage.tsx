@@ -8,7 +8,9 @@ import {
 } from 'recharts';
 
 import { useESG } from 'src/hooks/useESG';
+import { paths } from 'src/routes/paths';
 import { useContracts } from 'src/hooks/useContracts';
+import { kycActionMode, useVcKycRegistry } from 'src/hooks/useVcKycRegistry';
 import { useLivePrices } from 'src/hooks/useLivePrices';
 
 import { usePepefiWallet } from 'src/layouts/pepefi';
@@ -230,6 +232,9 @@ export default function PortfolioPage() {
   const navigate = useNavigate();
   const { mode } = useMode();
   const contracts  = useContracts(wallet.provider, wallet.signer, wallet.chainId);
+  // 交易所的 KYC 登錄是 VC 登錄（專屬租戶 schema v4 的 kycRegistry=vc）時，「去取得資格」走憑證頁。
+  const vcKyc = useVcKycRegistry(wallet.chainId, wallet.provider);
+  const kycAction = kycActionMode(vcKyc, contracts ? String(contracts.kycRegistry.target) : null);
   const livePrices = useLivePrices();
   const { data: esg } = useESG(contracts?.esgRegistry ?? null);
   // 代幣化資產持倉——RWA 配置環的另一半來源，見 RwaAllocation 的 props 註解。
@@ -709,7 +714,14 @@ export default function PortfolioPage() {
       {/* KYC 是 RwaAllocation 剛講的「四大類都能配置」背後那道閘門——緊接在它
           後面，讓「這個平台讓你配什麼」和「我現在能不能配」連在一起讀。常駐
           卡片，不是撞到閘門才出現的 Modal：見 KYCStatusCard.tsx 頂部註解。 */}
-      <KYCStatusCard kycRegistry={contracts?.kycRegistry ?? null} userAddress={wallet.address ?? null} />
+      <KYCStatusCard
+        kycRegistry={contracts?.kycRegistry ?? null}
+        userAddress={wallet.address ?? null}
+        credentialsHref={kycAction === 'credentials' ? paths.pepefi.credentials : null}
+        vcChecking={kycAction === 'checking'}
+        vcUnknown={kycAction === 'unknown'}
+        onVcRetry={vcKyc.retry}
+      />
 
       <QuickActions mode={mode} />
       </>

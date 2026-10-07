@@ -4,6 +4,8 @@ import { useMemo, useState, useEffect, useCallback } from 'react'
 
 import Box from '@mui/material/Box'
 
+import { paths } from 'src/routes/paths'
+
 import { useKYC } from 'src/hooks/useKYC'
 import { useCandles } from 'src/hooks/useCandles'
 import { useContracts } from 'src/hooks/useContracts'
@@ -15,6 +17,8 @@ import { useLivePricesWithMeta } from 'src/hooks/useLivePrices'
 import { useTerminalLayout } from 'src/hooks/useTerminalLayout'
 import { useMarketActivity } from 'src/hooks/useMarketActivity'
 import { useAssetTradingParams } from 'src/hooks/useAssetTradingParams'
+import { kycActionMode, useVcKycRegistry } from 'src/hooks/useVcKycRegistry'
+import { kycGateApplies, useOnchainRwaFlags } from 'src/hooks/useOnchainRwa'
 import { POSITION_STALE_MS, useTerminalAccount } from 'src/hooks/useTerminalAccount'
 
 import { t } from 'src/locales'
@@ -76,7 +80,13 @@ export function TerminalView() {
     maxLeverage: staticParams.maxLeverage,
     tradingFeeBps: staticParams.tradingFeeBps,
   })
-  const kycBlocked = (meta?.regulated ?? false) && !kycOk
+  // 鏈上 rwaAsset 旗標也算：專屬租戶可在部署時追加 RWA（例如 sGOLD），靜態表不知道。
+  const onchainRwa = useOnchainRwaFlags(contracts?.exchange, [selAsset])
+  const kycBlocked = kycGateApplies(meta?.regulated, onchainRwa[selAsset]) && !kycOk
+  // 交易所的 KYC 登錄是 VC 登錄時，提示改指向憑證頁（VC 登錄沒有 submitKYC）。
+  const vcKyc = useVcKycRegistry(wallet.chainId, wallet.provider)
+  const kycAction = kycActionMode(vcKyc, contracts ? String(contracts.kycRegistry.target) : null)
+  const kycCredentialsHref = kycAction === 'credentials' ? paths.pepefi.credentials : null
 
   // 指數價超過合約的 maxPriceAge 時，開倉／平倉／清算在鏈上都會 revert
   // StalePrice。讓按鈕在送出之前就停用，而不是讓使用者付 gas 去撞牆。
@@ -263,6 +273,9 @@ export function TerminalView() {
             kycBlocked={kycBlocked}
             kycUnknown={kycUnknown}
             kycPending={kycPending}
+            kycCredentialsHref={kycCredentialsHref}
+            kycVcAction={wallet.address ? kycAction : undefined}
+            onKycVcRetry={vcKyc.retry}
             staleNotice={staleNoticeFor(selAsset)}
             marketStatus={selStatus}
             tradingParams={tradingParams}
