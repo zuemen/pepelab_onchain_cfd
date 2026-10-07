@@ -127,7 +127,7 @@ contract AggregatorOracleTest is Test {
     function test_getPrice_softDeviation_servesDegraded() public {
         pyth.setPrice(PYTH_ID, int64(uint64(2_782e8)), -8);   // ~5% above
         (uint256 price, ) = agg.getPrice(XAU);
-        assertEq(price, 2_650e8, "tie on timestamp resolves to source A");
+        assertEq(price, (2_650e8 + 2_782e8) / 2, "degraded: midpoint of the two feeds");
         assertTrue(agg.isDegraded(XAU));
         assertTrue(agg.isStale(XAU));
     }

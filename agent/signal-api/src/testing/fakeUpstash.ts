@@ -85,6 +85,8 @@ export async function startFakeUpstash(): Promise<FakeUpstash> {
       }
       case "GET":
         return ok(strings.get(k) ?? null);
+      case "MGET":
+        return ok(args.slice(1).map((key) => strings.get(String(key)) ?? null));
       case "SET": {
         const opts = args.slice(3).map((a) => String(a).toUpperCase());
         if (opts.includes("NX") && strings.has(k)) return ok(null);
@@ -136,13 +138,16 @@ export async function startFakeUpstash(): Promise<FakeUpstash> {
           if ([a0, mt, mp, pt, tt].some((x) => !Number.isFinite(x)) || a0 < 0 || pt < 1 || tt < 1 || pt > maxTtl || tt > maxTtl) {
             return void res.writeHead(400).end(JSON.stringify({ error: "ERR kya_reserve: bad arguments" }));
           }
+          // KEYS[0] 是總額；KEYS[1..] 是時間窗的各格（由舊到新，最後一格是目前這格）。
           const t = Number(strings.get(KEYS[0]) ?? "0");
-          const p = Number(strings.get(KEYS[1]) ?? "0");
+          const slots = KEYS.slice(1);
+          const p = slots.reduce((acc, k) => acc + Number(strings.get(k) ?? "0"), 0);
           const a = Number(ARGV[0]);
           if (t + a > Number(ARGV[1])) return ok([0, String(t), String(p), "total"]);
           if (p + a > Number(ARGV[2])) return ok([0, String(t), String(p), "period"]);
           strings.set(KEYS[0], String(t + a));
-          strings.set(KEYS[1], String(p + a));
+          const cur = slots[slots.length - 1]!;
+          strings.set(cur, String(Number(strings.get(cur) ?? "0") + a));
           return ok([1, String(t + a), String(p + a), "ok"]);
         }
         if (script.startsWith("-- pepelab:kya_release")) {

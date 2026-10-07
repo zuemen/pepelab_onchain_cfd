@@ -21,6 +21,7 @@ import { ExactEvmScheme } from "@x402/evm/exact/client";
 import { startMockFacilitator } from "./testing/mockFacilitator.ts";
 import { startFakeUpstash } from "./testing/fakeUpstash.ts";
 import { startRpcStub } from "./testing/rpcStub.ts";
+import { freshOracleReader } from "./testing/freshOracle.ts";
 
 const facilitator = await startMockFacilitator();
 const upstash = await startFakeUpstash();
@@ -107,6 +108,9 @@ const seams = {
   payoutCodeReader: { getCode: async () => "0x" },
   isRegisteredTrader: async () => true,
   signalReader: async (trader: string) => ({ trader, note: "mock signal (kya.test)" }),
+  oracleFreshnessReader: freshOracleReader,
+  // 這些測試模擬 Vercel：平台覆寫 x-forwarded-for，每個 header 值代表一個用戶端。
+  trustProxyHeaders: true,
 };
 const appOn = createApp({ ...seams, x402Protocol: "both", kya });
 const appOff = createApp({ ...seams, x402Protocol: "both", kya: null });
@@ -528,6 +532,33 @@ const vpBig = async (pay: string, path = `/signals/${TRADER}`) =>
   lim.unhit("ip2", t2.token); // 同一視窗內正常退回
   assert.equal(lim.hit("ip2").limited, false);
   ok("每 IP 限流：unhit 帶視窗 token，只在同一個視窗內退回；跨視窗的舊請求不會扣掉新視窗的計數");
+}
+
+// 23) 每期間上限是滑動窗：在舊版固定窗的交界前後連花，不能拿到 2 倍
+//     （記憶體帳與 Upstash 帳逐步驗同一條時間線）
+{
+  const P = 3600;
+  const slot = P / 10;
+  const limits = { maxPerPeriod: 100n, periodSeconds: P, maxTotal: 1_000n, totalTtlSec: 86_400 };
+  const t0 = P * 1_000 - 1; // 舊版固定窗結束前 1 秒
+  for (const [label, store] of [["memory", memoryKyaSpendStore()], ["upstash", upstashKyaSpendStore()]] as const) {
+    const h = label === "memory" ? "0x" + "a1".repeat(32) : "0x" + "a2".repeat(32);
+    assert.equal((await store.reserve(h, 100n, limits, t0)).ok, true, `${label}：第一筆用滿上限`);
+    const burst = await store.reserve(h, 1n, limits, t0 + 1);
+    assert.equal(burst.ok, false, `${label}：舊版這裡進入新窗、可以再花 100`);
+    assert.equal(burst.ok === false && burst.which, "period");
+    assert.equal(burst.period, 100n);
+    assert.equal((await store.read(h, P, t0 + 1)).period, 100n, `${label}：read 回報的是時間窗內的花費`);
+    // 滿一個期間時仍算在內（保守：最多多算一格）；再過一格才釋出。
+    assert.equal((await store.reserve(h, 1n, limits, t0 + P)).ok, false, `${label}：剛滿一個期間仍算在窗內`);
+    const later = await store.reserve(h, 100n, limits, t0 + P + slot);
+    assert.equal(later.ok, true, `${label}：一個期間加一格之後可以再花滿`);
+    // 退回：以預留當下的時間找回同一格
+    await store.release(h, 100n, limits, t0 + P + slot);
+    assert.equal((await store.read(h, P, t0 + P + slot)).period, 0n, `${label}：退回後時間窗內歸零`);
+    assert.equal((await store.read(h, P, t0 + P + slot)).total, 100n, `${label}：總額只留第一筆`);
+  }
+  ok("每期間上限改為滑動窗：固定窗交界前後連花被擋（不再是 2 倍）；一個期間加一格後釋出；退回找回同一格");
 }
 
 await facilitator.close();

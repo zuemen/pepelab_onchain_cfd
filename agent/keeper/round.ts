@@ -4,7 +4,8 @@
 // 兩顆都不寫、8% 變動時兩顆都寫。run.ts 只負責把 ethers 合約接成這裡的介面。
 //
 // 兩顆 oracle 必須一致（審查 H1）：Base 的 GuardedOracle 沒有 referenceSource，每次
-// 寫入都受 maxDeviationBps 限制（向上 10%、向下 9.09%）。舊流程先寫 MockOracle 再
+// 寫入都受 maxDeviationBps 限制（master 版上下各 10%；舊部署版向下只到 9.09%，由寫入前
+// 的鏈上預檢擋下）。舊流程先寫 MockOracle 再
 // 鏡射，Guarded 拒絕時 Mock 已經寫了 → 交易所（讀 Mock）與金庫（讀 Guarded）看到
 // 兩個不同的價格。現在寫 Mock 之前先用 planMirror 確認 Guarded 會接受完整價格；
 // 不接受就兩顆都不寫（熔斷），由呼叫端的 onRefuse 做停單與告警（審查 H2）。
@@ -285,11 +286,10 @@ export async function runRound(ctx: RoundCtx): Promise<RoundResult> {
       log(`::warning::${symbol} 兩顆 oracle 不一致（Guarded ${fmt8(guardedState!.price8)} ≠ Mock ${fmt8(mockPrice8)}），本輪補寫`);
     }
 
-    // 有效熔斷門檻 = min(KEEPER_BREAKER_DEVIATION, Guarded 在這個方向的上限)。
+    // 有效熔斷門檻 = min(KEEPER_BREAKER_DEVIATION, Guarded 的單筆上限)。
     // 窄複審 2：只要有設定 Guarded 就一律套用，不看資產狀態 —— 門檻不能因任何狀態放寬。
-    const up = feed.value > current;
     const breaker = ctx.guarded
-      ? effectiveBreaker(ctx.breakerDeviation, ctx.guardedCap, up)
+      ? effectiveBreaker(ctx.breakerDeviation, ctx.guardedCap)
       : ctx.breakerDeviation;
 
     // A-5：價格熔斷。偏離超過有效門檻時才去湊第二個獨立來源（正常路徑不多打請求）。

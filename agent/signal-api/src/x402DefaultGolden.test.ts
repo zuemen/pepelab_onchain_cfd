@@ -18,6 +18,7 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
 import { startRpcStub } from "./testing/rpcStub.ts";
+import { freshOracleReader } from "./testing/freshOracle.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const rpc = await startRpcStub();
@@ -75,6 +76,7 @@ async function capture(protocol: string | undefined): Promise<Captured[]> {
     payTo: PAYTO_EOA,
     payoutCodeReader: { getCode: async () => "0x" },
     isRegisteredTrader: async () => true,
+    oracleFreshnessReader: freshOracleReader,
   });
   const out: Captured[] = [];
   for (const cse of CASES) {

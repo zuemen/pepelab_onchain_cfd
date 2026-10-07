@@ -42989,6 +42989,21 @@ var cors = (options) => {
   };
 };
 
+// ../node_modules/@hono/node-server/dist/conninfo.mjs
+var getConnInfo = (c) => {
+  const bindings = c.env.server ? c.env.server : c.env;
+  const address = bindings.incoming.socket.remoteAddress;
+  const port = bindings.incoming.socket.remotePort;
+  const family = bindings.incoming.socket.remoteFamily;
+  return {
+    remote: {
+      address,
+      port,
+      addressType: family === "IPv4" ? "IPv4" : family === "IPv6" ? "IPv6" : void 0
+    }
+  };
+};
+
 // ../node_modules/viem/_esm/utils/getAction.js
 function getAction(client, actionFn, name) {
   const action_implicit = client[actionFn.name];
@@ -66354,9 +66369,17 @@ var KYA_SPEND_PREFIX = "x402:kya:spend:";
 var KYA_MAX_TTL_SEC = 400 * 86400;
 var KYA_MAX_ATOMIC = 2n ** 53n - 1n;
 var KYA_VP_PREFIX = "x402:kya:vp:";
-var periodIndex = (nowSec, periodSeconds) => Math.floor(nowSec / Math.max(1, periodSeconds));
 var kyaTotalKey = (h) => `${KYA_SPEND_PREFIX}${h.toLowerCase()}:total`;
-var kyaPeriodKey = (h, periodSeconds, nowSec) => `${KYA_SPEND_PREFIX}${h.toLowerCase()}:p${periodSeconds}:${periodIndex(nowSec, periodSeconds)}`;
+var KYA_PERIOD_SLOTS = 10;
+var kyaSlotSeconds = (periodSeconds) => Math.max(1, Math.ceil(periodSeconds / KYA_PERIOD_SLOTS));
+var kyaSlotKey = (h, periodSeconds, nowSec) => `${KYA_SPEND_PREFIX}${h.toLowerCase()}:p${periodSeconds}:s${Math.floor(nowSec / kyaSlotSeconds(periodSeconds))}`;
+var kyaWindowKeys = (h, periodSeconds, nowSec) => {
+  const slot = kyaSlotSeconds(periodSeconds);
+  return Array.from(
+    { length: KYA_PERIOD_SLOTS + 1 },
+    (_, i) => kyaSlotKey(h, periodSeconds, nowSec - (KYA_PERIOD_SLOTS - i) * slot)
+  );
+};
 var KYA_RESERVE_SCRIPT = `-- pepelab:kya_reserve
 local a = tonumber(ARGV[1])
 local mt = tonumber(ARGV[2])
@@ -66367,13 +66390,16 @@ if not (a and mt and mp and pt and tt) or a < 0 or pt < 1 or tt < 1 or pt > ${KY
   return redis.error_reply('kya_reserve: bad arguments')
 end
 local t = tonumber(redis.call('GET', KEYS[1]) or '0')
-local p = tonumber(redis.call('GET', KEYS[2]) or '0')
+local p = 0
+for i = 2, #KEYS do
+  p = p + tonumber(redis.call('GET', KEYS[i]) or '0')
+end
 if t + a > mt then return {0, string.format('%.0f', t), string.format('%.0f', p), 'total'} end
 if p + a > mp then return {0, string.format('%.0f', t), string.format('%.0f', p), 'period'} end
 redis.call('INCRBY', KEYS[1], a)
 redis.call('EXPIRE', KEYS[1], tt)
-redis.call('INCRBY', KEYS[2], a)
-redis.call('EXPIRE', KEYS[2], pt)
+redis.call('INCRBY', KEYS[#KEYS], a)
+redis.call('EXPIRE', KEYS[#KEYS], pt)
 return {1, string.format('%.0f', t + a), string.format('%.0f', p + a), 'ok'}`;
 var KYA_RELEASE_SCRIPT = `-- pepelab:kya_release
 local a = tonumber(ARGV[1])
@@ -66408,12 +66434,13 @@ function upstashKyaSpendStore() {
     describe: "upstash",
     async reserve(h, amount, l, nowSec) {
       const periodTtl = Math.min(KYA_MAX_TTL_SEC, Math.max(60, l.periodSeconds * 2));
+      const win = kyaWindowKeys(h, l.periodSeconds, nowSec);
       const r = await upstash([
         "EVAL",
         KYA_RESERVE_SCRIPT,
-        2,
+        1 + win.length,
         kyaTotalKey(h),
-        kyaPeriodKey(h, l.periodSeconds, nowSec),
+        ...win,
         amount.toString(),
         l.maxTotal.toString(),
         l.maxPerPeriod.toString(),
@@ -66425,18 +66452,18 @@ function upstashKyaSpendStore() {
       return Number(r[0]) === 1 ? { ok: true, total, period } : { ok: false, which: r[3] === "period" ? "period" : "total", total, period };
     },
     async release(h, amount, l, nowSec) {
-      await upstash(["EVAL", KYA_RELEASE_SCRIPT, 2, kyaTotalKey(h), kyaPeriodKey(h, l.periodSeconds, nowSec), amount.toString()]);
+      await upstash(["EVAL", KYA_RELEASE_SCRIPT, 2, kyaTotalKey(h), kyaSlotKey(h, l.periodSeconds, nowSec), amount.toString()]);
     },
     async claimPresentation(payer, nonce, ttlSec) {
       const r = await upstash(["SET", `${KYA_VP_PREFIX}${payer.toLowerCase()}:${nonce.toLowerCase()}`, "1", "NX", "EX", ttlSec]);
       return r === "OK";
     },
     async read(h, periodSeconds, nowSec) {
-      const [t, p] = await Promise.all([
+      const [t, slots] = await Promise.all([
         upstash(["GET", kyaTotalKey(h)]),
-        upstash(["GET", kyaPeriodKey(h, periodSeconds, nowSec)])
+        upstash(["MGET", ...kyaWindowKeys(h, periodSeconds, nowSec)])
       ]);
-      return { total: BigInt(t ?? "0"), period: BigInt(p ?? "0") };
+      return { total: BigInt(t ?? "0"), period: slots.reduce((acc, v) => acc + BigInt(v ?? "0"), 0n) };
     }
   };
 }
@@ -66447,17 +66474,18 @@ function memoryKyaSpendStore() {
     describe: "memory",
     async reserve(h, amount, l, nowSec) {
       const tk = kyaTotalKey(h);
-      const pk = kyaPeriodKey(h, l.periodSeconds, nowSec);
+      const win = kyaWindowKeys(h, l.periodSeconds, nowSec);
+      const ck = win[win.length - 1];
       const t = m.get(tk) ?? 0n;
-      const p = m.get(pk) ?? 0n;
+      const p = win.reduce((acc, k) => acc + (m.get(k) ?? 0n), 0n);
       if (t + amount > l.maxTotal) return { ok: false, which: "total", total: t, period: p };
       if (p + amount > l.maxPerPeriod) return { ok: false, which: "period", total: t, period: p };
       m.set(tk, t + amount);
-      m.set(pk, p + amount);
+      m.set(ck, (m.get(ck) ?? 0n) + amount);
       return { ok: true, total: t + amount, period: p + amount };
     },
     async release(h, amount, l, nowSec) {
-      for (const k of [kyaTotalKey(h), kyaPeriodKey(h, l.periodSeconds, nowSec)]) {
+      for (const k of [kyaTotalKey(h), kyaSlotKey(h, l.periodSeconds, nowSec)]) {
         const v = m.get(k) ?? 0n;
         m.set(k, v > amount ? v - amount : 0n);
       }
@@ -66469,7 +66497,10 @@ function memoryKyaSpendStore() {
       return true;
     },
     async read(h, periodSeconds, nowSec) {
-      return { total: m.get(kyaTotalKey(h)) ?? 0n, period: m.get(kyaPeriodKey(h, periodSeconds, nowSec)) ?? 0n };
+      return {
+        total: m.get(kyaTotalKey(h)) ?? 0n,
+        period: kyaWindowKeys(h, periodSeconds, nowSec).reduce((acc, k) => acc + (m.get(k) ?? 0n), 0n)
+      };
     }
   };
 }
@@ -67366,8 +67397,20 @@ function pruneIpMap(map, ttlMs, cap = 5e3) {
     }
   }
 }
-function clientIp(c) {
-  return c.req.header("x-forwarded-for")?.split(",")[0]?.trim() || c.req.header("x-real-ip") || "unknown";
+function trustProxyFromEnv(env = process.env) {
+  return Boolean(env.VERCEL?.trim()) || env.SIGNAL_API_TRUST_PROXY?.trim() === "1";
+}
+function clientIp(c, trustProxy) {
+  if (trustProxy) {
+    const fwd = c.req.header("x-forwarded-for")?.split(",")[0]?.trim() || c.req.header("x-real-ip")?.trim();
+    if (fwd) return fwd;
+  }
+  try {
+    const addr = getConnInfo(c).remote.address;
+    if (addr) return addr;
+  } catch {
+  }
+  return "unknown";
 }
 var FREE_RATE_WINDOW_MS = Number(process.env.FREE_RATE_WINDOW_MS ?? "60000");
 var FREE_RATE_MAX = Number(process.env.FREE_RATE_MAX ?? "60");
@@ -67594,6 +67637,8 @@ function createApp(opts = {}) {
     }
   });
   const payTo = opts.payTo ?? PAY_TO;
+  const trustProxy = opts.trustProxyHeaders ?? trustProxyFromEnv();
+  const ipOf = (c) => clientIp(c, trustProxy);
   const x402Protocol = opts.x402Protocol ?? X402_PROTOCOL;
   let x402v2 = null;
   let x402v2SetupError = null;
@@ -67674,7 +67719,7 @@ function createApp(opts = {}) {
     const p = c.req.path;
     if (p === "/healthz") return next();
     if (p.startsWith("/oracle/") || p.startsWith("/signals/")) return next();
-    const { limited, retryAfterSec } = freeRateLimited(clientIp(c));
+    const { limited, retryAfterSec } = freeRateLimited(ipOf(c));
     if (limited) {
       return c.json(
         { ok: false, error: `rate limited \u2014 \u6BCF ${FREE_RATE_WINDOW_MS / 1e3}s \u4E0A\u9650 ${FREE_RATE_MAX} \u6B21\uFF0C\u8ACB ${retryAfterSec}s \u5F8C\u518D\u8A66` },
@@ -67861,7 +67906,7 @@ function createApp(opts = {}) {
     }
   });
   app2.post("/demo/buy-signal", async (c) => {
-    const ip = clientIp(c);
+    const ip = ipOf(c);
     const now = Date.now();
     pruneIpMap(lastBuyByIp, Math.max(DEMO_COOLDOWN_MS * 10, 6e5));
     const last = lastBuyByIp.get(ip) ?? 0;
@@ -68021,34 +68066,50 @@ function createApp(opts = {}) {
     }
     return next();
   });
+  const readOracleFreshness = opts.oracleFreshnessReader ?? (async (assetId) => {
+    const [[, updatedAt], maxPriceAge] = await Promise.all([
+      contracts2.oracle.getPrice(assetId),
+      contracts2.perp.maxPriceAge()
+    ]);
+    return { updatedAtSec: Number(updatedAt), maxPriceAgeSec: Number(maxPriceAge) };
+  });
   app2.use("/oracle/*", async (c, next) => {
     const asset = c.req.path.split("/")[2];
     if (!asset) return next();
+    let freshness;
     try {
-      const assetId = assetIdOf(asset);
-      const [[, updatedAt], maxPriceAge] = await Promise.all([
-        contracts2.oracle.getPrice(assetId),
-        contracts2.perp.maxPriceAge()
-      ]);
-      const tf = classifyTradeFreshness({
-        updatedAtSec: Number(updatedAt),
-        nowSec: Math.floor(Date.now() / 1e3),
-        maxPriceAgeSec: Number(maxPriceAge)
-      });
-      if (!tf.fresh) {
-        return c.json(
-          {
-            ok: false,
-            error: "price_stale",
-            message: `${asset} \u7684\u93C8\u4E0A\u50F9\u683C\u5DF2 ${Math.round(tf.ageSec / 3600)} \u5C0F\u6642\u672A\u66F4\u65B0\uFF0C\u8D85\u904E\u4EA4\u6613\u6240\u7684 maxPriceAge\uFF08${tf.maxPriceAgeSec} \u79D2\uFF09\u3002\u6B64\u6642\u958B\u5009\u6703 revert StalePrice\uFF0C\u6545\u4E0D\u8CA9\u552E\u9019\u4EFD\u5FEB\u7167\u3002`,
-            asset,
-            ageSec: tf.ageSec,
-            maxPriceAgeSec: tf.maxPriceAgeSec
-          },
-          503
-        );
-      }
-    } catch {
+      freshness = await readOracleFreshness(assetIdOf(asset));
+    } catch (err) {
+      console.error(`[oracle-freshness] ${asset} \u8B80\u53D6\u5931\u6557\uFF1A`, err);
+      return c.json(
+        {
+          ok: false,
+          error: "price_unverified",
+          message: `\u7121\u6CD5\u78BA\u8A8D ${asset} \u7684\u93C8\u4E0A\u50F9\u683C\u662F\u5426\u65B0\u9BAE\uFF08RPC \u66AB\u6642\u7121\u6CD5\u4F7F\u7528\uFF09\u3002`,
+          asset,
+          note: "\u672A\u4ED8\u6B3E\uFF1A\u7121\u6CD5\u78BA\u8A8D\u5C31\u4E0D\u767C\u51FA\u4ED8\u6B3E\u8981\u6C42\uFF08x402 \u7121\u9000\u8CBB\u6A5F\u5236\uFF09\u3002"
+        },
+        503,
+        { "Retry-After": "60" }
+      );
+    }
+    const tf = classifyTradeFreshness({
+      updatedAtSec: freshness.updatedAtSec,
+      nowSec: Math.floor(Date.now() / 1e3),
+      maxPriceAgeSec: freshness.maxPriceAgeSec
+    });
+    if (!tf.fresh) {
+      return c.json(
+        {
+          ok: false,
+          error: "price_stale",
+          message: `${asset} \u7684\u93C8\u4E0A\u50F9\u683C\u5DF2 ${Math.round(tf.ageSec / 3600)} \u5C0F\u6642\u672A\u66F4\u65B0\uFF0C\u8D85\u904E\u4EA4\u6613\u6240\u7684 maxPriceAge\uFF08${tf.maxPriceAgeSec} \u79D2\uFF09\u3002\u6B64\u6642\u958B\u5009\u6703 revert StalePrice\uFF0C\u6545\u4E0D\u8CA9\u552E\u9019\u4EFD\u5FEB\u7167\u3002`,
+          asset,
+          ageSec: tf.ageSec,
+          maxPriceAgeSec: tf.maxPriceAgeSec
+        },
+        503
+      );
     }
     return next();
   });
@@ -68120,7 +68181,7 @@ function createApp(opts = {}) {
       const pay = useV2 ? v2Hdr : x402Protocol === "v2" ? void 0 : v1Hdr;
       const ambiguous = x402Protocol === "both" && x402v2 !== null && Boolean(v2Hdr) && Boolean(v1Hdr);
       if (pay && !ambiguous) {
-        const ip = clientIp(c);
+        const ip = ipOf(c);
         const throttled = kyaFailLimiter.hit(ip);
         if (throttled.limited) {
           kyaFailLimiter.unhit(ip, throttled.token);

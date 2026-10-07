@@ -141,10 +141,29 @@ export const KYA_MAX_TTL_SEC = 400 * 86_400;
 /** 憑證上限的最大值（atomic USDC）：Lua number 能精確表示的整數範圍內。 */
 export const KYA_MAX_ATOMIC = 2n ** 53n - 1n;
 export const KYA_VP_PREFIX = "x402:kya:vp:";
-const periodIndex = (nowSec: number, periodSeconds: number) => Math.floor(nowSec / Math.max(1, periodSeconds));
 export const kyaTotalKey = (h: string) => `${KYA_SPEND_PREFIX}${h.toLowerCase()}:total`;
-export const kyaPeriodKey = (h: string, periodSeconds: number, nowSec: number) =>
-  `${KYA_SPEND_PREFIX}${h.toLowerCase()}:p${periodSeconds}:${periodIndex(nowSec, periodSeconds)}`;
+
+/**
+ * 每期間上限是「任何長度為 periodSeconds 的時間窗」內的上限，不是日曆對齊的固定窗。
+ *
+ * 舊版以 floor(now / period) 切固定窗：在窗口交界前後幾秒內可以連花兩個 maxPerPeriod（2 倍）。
+ * 現在把期間切成 KYA_PERIOD_SLOTS 格，預留時加總「目前這格與前 KYA_PERIOD_SLOTS 格」
+ * （共 KYA_PERIOD_SLOTS+1 格，涵蓋的時間 ≥ 一整個期間）。被加總的格子一定蓋住結尾在現在的
+ * 那個時間窗，所以任何時間窗內的花費都不會超過上限；代價是保守：最多一格（期間的 1/10）
+ * 的花費會被多算一段時間。
+ */
+export const KYA_PERIOD_SLOTS = 10;
+export const kyaSlotSeconds = (periodSeconds: number) => Math.max(1, Math.ceil(periodSeconds / KYA_PERIOD_SLOTS));
+/** 某時間點所在那一格的 key（預留寫這格；退回也以預留當下的時間找回同一格）。 */
+export const kyaSlotKey = (h: string, periodSeconds: number, nowSec: number) =>
+  `${KYA_SPEND_PREFIX}${h.toLowerCase()}:p${periodSeconds}:s${Math.floor(nowSec / kyaSlotSeconds(periodSeconds))}`;
+/** 要加總的格子，由舊到新；最後一個是目前這格。 */
+export const kyaWindowKeys = (h: string, periodSeconds: number, nowSec: number): string[] => {
+  const slot = kyaSlotSeconds(periodSeconds);
+  return Array.from({ length: KYA_PERIOD_SLOTS + 1 }, (_, i) =>
+    kyaSlotKey(h, periodSeconds, nowSec - (KYA_PERIOD_SLOTS - i) * slot),
+  );
+};
 
 // 檢查與遞增在同一支 Lua 裡（Upstash 單執行緒執行 EVAL）：並行請求不會一起越過上限。
 // 金額是 atomic USDC（6 位小數），Lua number 精確到 2^53；閘門拒收上限超過 KYA_MAX_ATOMIC 的憑證。
@@ -159,13 +178,16 @@ if not (a and mt and mp and pt and tt) or a < 0 or pt < 1 or tt < 1 or pt > ${KY
   return redis.error_reply('kya_reserve: bad arguments')
 end
 local t = tonumber(redis.call('GET', KEYS[1]) or '0')
-local p = tonumber(redis.call('GET', KEYS[2]) or '0')
+local p = 0
+for i = 2, #KEYS do
+  p = p + tonumber(redis.call('GET', KEYS[i]) or '0')
+end
 if t + a > mt then return {0, string.format('%.0f', t), string.format('%.0f', p), 'total'} end
 if p + a > mp then return {0, string.format('%.0f', t), string.format('%.0f', p), 'period'} end
 redis.call('INCRBY', KEYS[1], a)
 redis.call('EXPIRE', KEYS[1], tt)
-redis.call('INCRBY', KEYS[2], a)
-redis.call('EXPIRE', KEYS[2], pt)
+redis.call('INCRBY', KEYS[#KEYS], a)
+redis.call('EXPIRE', KEYS[#KEYS], pt)
 return {1, string.format('%.0f', t + a), string.format('%.0f', p + a), 'ok'}`;
 
 export const KYA_RELEASE_SCRIPT = `-- pepelab:kya_release
@@ -206,8 +228,9 @@ export function upstashKyaSpendStore(): KyaSpendStore {
     async reserve(h, amount, l, nowSec) {
       // 閘門已拒收超出範圍的憑證；這裡再夾一次，讓腳本的參數檢查永遠不會在寫入途中失敗。
       const periodTtl = Math.min(KYA_MAX_TTL_SEC, Math.max(60, l.periodSeconds * 2));
+      const win = kyaWindowKeys(h, l.periodSeconds, nowSec);
       const r = await upstash<[number, string, string, string]>([
-        "EVAL", KYA_RESERVE_SCRIPT, 2, kyaTotalKey(h), kyaPeriodKey(h, l.periodSeconds, nowSec),
+        "EVAL", KYA_RESERVE_SCRIPT, 1 + win.length, kyaTotalKey(h), ...win,
         amount.toString(), l.maxTotal.toString(), l.maxPerPeriod.toString(), periodTtl, Math.min(KYA_MAX_TTL_SEC, Math.max(60, l.totalTtlSec)),
       ]);
       const total = BigInt(r[1]);
@@ -215,18 +238,18 @@ export function upstashKyaSpendStore(): KyaSpendStore {
       return Number(r[0]) === 1 ? { ok: true, total, period } : { ok: false, which: r[3] === "period" ? "period" : "total", total, period };
     },
     async release(h, amount, l, nowSec) {
-      await upstash(["EVAL", KYA_RELEASE_SCRIPT, 2, kyaTotalKey(h), kyaPeriodKey(h, l.periodSeconds, nowSec), amount.toString()]);
+      await upstash(["EVAL", KYA_RELEASE_SCRIPT, 2, kyaTotalKey(h), kyaSlotKey(h, l.periodSeconds, nowSec), amount.toString()]);
     },
     async claimPresentation(payer, nonce, ttlSec) {
       const r = await upstash<string | null>(["SET", `${KYA_VP_PREFIX}${payer.toLowerCase()}:${nonce.toLowerCase()}`, "1", "NX", "EX", ttlSec]);
       return r === "OK";
     },
     async read(h, periodSeconds, nowSec) {
-      const [t, p] = await Promise.all([
+      const [t, slots] = await Promise.all([
         upstash<string | null>(["GET", kyaTotalKey(h)]),
-        upstash<string | null>(["GET", kyaPeriodKey(h, periodSeconds, nowSec)]),
+        upstash<(string | null)[]>(["MGET", ...kyaWindowKeys(h, periodSeconds, nowSec)]),
       ]);
-      return { total: BigInt(t ?? "0"), period: BigInt(p ?? "0") };
+      return { total: BigInt(t ?? "0"), period: slots.reduce((acc, v) => acc + BigInt(v ?? "0"), 0n) };
     },
   };
 }
@@ -239,17 +262,18 @@ export function memoryKyaSpendStore(): KyaSpendStore {
     describe: "memory",
     async reserve(h, amount, l, nowSec) {
       const tk = kyaTotalKey(h);
-      const pk = kyaPeriodKey(h, l.periodSeconds, nowSec);
+      const win = kyaWindowKeys(h, l.periodSeconds, nowSec);
+      const ck = win[win.length - 1]!;
       const t = m.get(tk) ?? 0n;
-      const p = m.get(pk) ?? 0n;
+      const p = win.reduce((acc, k) => acc + (m.get(k) ?? 0n), 0n);
       if (t + amount > l.maxTotal) return { ok: false, which: "total", total: t, period: p };
       if (p + amount > l.maxPerPeriod) return { ok: false, which: "period", total: t, period: p };
       m.set(tk, t + amount);
-      m.set(pk, p + amount);
+      m.set(ck, (m.get(ck) ?? 0n) + amount);
       return { ok: true, total: t + amount, period: p + amount };
     },
     async release(h, amount, l, nowSec) {
-      for (const k of [kyaTotalKey(h), kyaPeriodKey(h, l.periodSeconds, nowSec)]) {
+      for (const k of [kyaTotalKey(h), kyaSlotKey(h, l.periodSeconds, nowSec)]) {
         const v = m.get(k) ?? 0n;
         m.set(k, v > amount ? v - amount : 0n);
       }
@@ -261,7 +285,10 @@ export function memoryKyaSpendStore(): KyaSpendStore {
       return true;
     },
     async read(h, periodSeconds, nowSec) {
-      return { total: m.get(kyaTotalKey(h)) ?? 0n, period: m.get(kyaPeriodKey(h, periodSeconds, nowSec)) ?? 0n };
+      return {
+        total: m.get(kyaTotalKey(h)) ?? 0n,
+        period: kyaWindowKeys(h, periodSeconds, nowSec).reduce((acc, k) => acc + (m.get(k) ?? 0n), 0n),
+      };
     },
   };
 }

@@ -53,6 +53,12 @@ contract CutoverGovernanceForkTest is Test {
             (bool ok, ) = mock.call(abi.encodeWithSignature("updatePrice(bytes32,uint256)", id, p));
             require(ok, "keeper heartbeat failed");
         }
+        // On a Base Sepolia fork, a pranked call from an address with no ETH
+        // reverted with 0 gas before reaching the target (forge 1.8.0, CI run
+        // 37573968977: every failing caller had balance 0, the funded keeper's
+        // calls in the same tests went through). Fund every pranked address.
+        vm.deal(guardian, 1 ether);
+        vm.deal(safe, 1 ether);
     }
 
     function _cutover() internal returns (Cutover130Base.Deployed130 memory d) {

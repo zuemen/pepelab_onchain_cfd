@@ -9,14 +9,27 @@ import "../../src/MockOracle.sol";
 contract RefSource {
     mapping(bytes32 => uint256) public p;
     bool public broken;
+    bool public stale;
 
     function set(bytes32 id, uint256 v) external { p[id] = v; }
     function setBroken(bool b) external { broken = b; }
+    function setStale(bool s) external { stale = s; }
 
     function getPrice(bytes32 id) external view returns (uint256, uint256) {
         require(!broken, "ref down");
         return (p[id], block.timestamp);
     }
+
+    /// @dev Every production source exposes isStale; GuardedOracle only lets a
+    ///      reference that answers false confirm (lift the caps on) a post.
+    function isStale(bytes32) external view returns (bool) { return stale; }
+}
+
+/// @dev A reference with a price but no `isStale` probe.
+contract NoHealthRef {
+    mapping(bytes32 => uint256) public p;
+    function set(bytes32 id, uint256 v) external { p[id] = v; }
+    function getPrice(bytes32 id) external view returns (uint256, uint256) { return (p[id], block.timestamp); }
 }
 
 /// @notice GuardedOracle exists to bound the single-key risk in MockOracle,
@@ -150,6 +163,58 @@ contract GuardedOracleTest is Test {
         oracle.updatePrice(ID, 105_000e8);  // falls through to the deviation cap
         (uint256 p, ) = oracle.getPrice(ID);
         assertEq(p, 105_000e8);
+    }
+
+    /// @dev A healthy reference that agrees confirms a real gap in one post
+    ///      (the step cap is lifted) — the baseline the next two tests narrow.
+    function test_healthyReferenceConfirmsGapPastStepCap() public {
+        oracle.setReferenceSource(address(ref));
+        ref.set(ID, 70_000e8);              // −30%, beyond the 10% step cap
+        vm.prank(keeper);
+        oracle.updatePrice(ID, 70_000e8);
+        (uint256 p, ) = oracle.getPrice(ID);
+        assertEq(p, 70_000e8);
+    }
+
+    /// @dev A reference that reports itself stale (an aggregator whose feeds
+    ///      disagree does) does not vouch for its number, so its agreement must
+    ///      not lift the step cap: otherwise one faulty feed behind the
+    ///      aggregator could walk GuardedOracle anywhere in a single post.
+    function test_staleReferenceCannotConfirmPastStepCap() public {
+        oracle.setReferenceSource(address(ref));
+        ref.set(ID, 70_000e8);
+        ref.setStale(true);
+        vm.prank(keeper);
+        vm.expectRevert(
+            abi.encodeWithSelector(GuardedOracle.DeviationTooLarge.selector, ID, 70_000e8, 100_000e8)
+        );
+        oracle.updatePrice(ID, 70_000e8);
+    }
+
+    /// @dev ...but a stale reference keeps its power to REJECT: a post that
+    ///      disagrees with it is still refused unless it converges.
+    function test_staleReferenceStillRejectsDisagreeingPost() public {
+        oracle.setReferenceSource(address(ref));
+        ref.set(ID, 90_000e8);
+        ref.setStale(true);
+        vm.prank(keeper);
+        vm.expectRevert(
+            abi.encodeWithSelector(GuardedOracle.ReferenceDisagrees.selector, ID, 108_000e8, 90_000e8)
+        );
+        oracle.updatePrice(ID, 108_000e8);
+    }
+
+    /// @dev A reference that cannot say whether it is healthy (no isStale)
+    ///      is treated like a stale one: it rejects, it never confirms.
+    function test_referenceWithoutHealthProbeCannotConfirm() public {
+        NoHealthRef bare = new NoHealthRef();
+        bare.set(ID, 70_000e8);
+        oracle.setReferenceSource(address(bare));
+        vm.prank(keeper);
+        vm.expectRevert(
+            abi.encodeWithSelector(GuardedOracle.DeviationTooLarge.selector, ID, 70_000e8, 100_000e8)
+        );
+        oracle.updatePrice(ID, 70_000e8);
     }
 
     // ── guardian ─────────────────────────────────────────────────────────────

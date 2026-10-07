@@ -119,6 +119,17 @@ Schema 單一來源：`frontend/src/contracts/agentDelegation.ts`（純函式、
 
 撤銷 session 之後：`isAnchored` 立即為 false（不需要另一筆交易），`currentCredential` 保留供稽核。
 
+**誰會讀錨定**（2026-10-07 起兩處）：
+
+- signal-api 的 x402 KYA（第 4 節，`X402_KYA_ANCHOR`）。
+- 代理人的寫入路徑（`agent/shared/src/write.ts` → `delegation.ts` 的 `checkDelegationAnchor`）：代理人的環境有設
+  `SESSION_ANCHOR_ADDRESS` 時，**開倉**要求 `isAnchored(sessionId, credentialHash)`；錨定合約綁的 manager 不是代理人用的那一顆、
+  位址打錯、或讀不到，一律拒絕開倉（fail-closed）。**平倉**不看錨定：使用者解除錨定是為了停掉代理人，不能反過來把部位鎖住。
+  沒設 `SESSION_ANCHOR_ADDRESS` 時不檢查（與之前相同）。
+
+這兩處都只約束「跑這份程式的代理人」。代理人金鑰外洩時，攻擊者可以直接呼叫 `AgentSessionManager.openPositionForSession`，
+鏈上只檢查 session 的額度與白名單，不看憑證或錨定——硬性停止要用 `revokeSession`。
+
 ## 4. x402 KYA（signal-api）
 
 `agent/signal-api/src/kya.ts`，接在 `app.ts` 付費牆分流之前，v1（`X-PAYMENT`）與 v2（`PAYMENT-SIGNATURE`）都適用。
@@ -212,7 +223,10 @@ DID，內含一張 v3 憑證；`proof` 用 `EthereumEip712Signature2021`、`proo
 
 - 花費累計以 signal-api 收到並結算的請求為準；同一張憑證拿去其他賣方，其他賣方必須自己記帳（或共用帳本）。
   鏈上沒有 x402 花費的強制點——代理人端的簽章守門（`X402_MAX_TOTAL_SPEND_USDC`）是另一道獨立上限。
-- 每期間上限用固定視窗（`floor(now/period)`），跨視窗邊界最多可花到 2 倍單期上限。
+- 每期間上限是滑動窗（2026-10-07 起；之前用固定視窗 `floor(now/period)`，跨視窗邊界最多可花到 2 倍）：期間切成 10 格，
+  預留時加總目前這格與前 10 格（`agent/signal-api/src/kya.ts` 的 `kyaWindowKeys`），任何長度為 `periodSeconds` 的時間窗內
+  都不會超過 `maxPerPeriod`。代價是保守：一筆花費最多會多算一格（期間的 1/10）才釋出。改版當下舊格式的 key 不會被讀到，
+  已在進行中的期間花費會被重新起算一次。
 - 撤銷生效延遲：狀態清單受 `VC_STATUS_CACHE_MAX_AGE_SEC`（≤ 900 秒）影響；要立即生效用鏈上 `revokeSession`（KYA 與寫入路徑都即時讀鏈）。
 - 狀態清單 domain 綁 84532（沿用 ADR-016）：在 anvil 上 MetaMask 會拒簽清單（鏈不符），本機 PoC 用腳本錢包簽。
 - `X402_KYA_SPEND_STORE=memory` 只在單一 process 有效；Vercel 多實例必須用 Upstash。撤銷的 sticky 狀態與「清單被扣住」

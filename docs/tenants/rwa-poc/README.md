@@ -112,3 +112,4 @@ S3 上線當下那次 `VerifyTenant` 是加 `TENANT_PRIVILEGE_SCAN_REQUIRED=true
 - **合約未經外部稽核**：`VCKycRegistry`、`SessionCredentialAnchor` 是新合約，只經過 repo 內的對抗式審查與測試。
 - **前端小限制**：終端機資產列的鎖頭圖示只看靜態表，sGOLD 不顯示鎖頭，但下單面板仍會擋（[`FRONTEND.md`](FRONTEND.md)）。
 - **金庫代幣可轉讓**：本租戶 `deployVault: true`，AssetVaultV2 的合成代幣是一般 ERC-20（[`docs/RWA_ALIGNMENT.md`](../../RWA_ALIGNMENT.md) C4）。
+- **金庫繞過 KYC 與休市**：金庫的 `mint` 不查合格投資人憑證，也不看休市，交易所擋下的錢包可以改從金庫鑄出同樣的合成曝險，週末也能用週五收盤價鑄贖（[`docs/KNOWN_LIMITATIONS.md`](../../KNOWN_LIMITATIONS.md) #33、#34）。示範不用金庫時，可由 `guardian` 暫停金庫；下次部署 PoC 建議改成 `deployVault: false`。

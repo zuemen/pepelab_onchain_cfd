@@ -1,0 +1,73 @@
+name: Release status refresh (read-only)
+
+# 以唯讀 RPC 重新產生 docs/release-status.json 與 docs/RELEASE_STATUS.md，**不提交**任何東西。
+#
+# 為什麼存在：Consistency 的 release-status job 是離線的；元件原始碼改了之後，報告必須以唯讀
+# RPC 重跑（docs/OWNER_ACTIONS.md 第 7 步），而沒有能連公開 RPC 的機器（例如網路受限的雲端
+# 開發環境）就無法完成。這支在 GitHub 代管的 runner 上做同一件事：forge build → 唯讀查鏈 →
+# 把兩份檔案以 gzip＋base64 印在 log 的 BEGIN/END 標記之間，由開發者解碼後提交。
+#
+# 安全邊界：permissions 只有 contents: read；不綁 environment、不引用任何 secret、不送交易
+# （腳本只允許 eth_chainId／eth_blockNumber／eth_getCode／eth_getStorageAt／eth_call，見
+# scripts/check-deployment-status.mjs 的 makeRpc）。RPC 用 ops/release-status/components.json
+# 裡的公開端點。
+on:
+  push:
+    # 只在工作分支、而且動到會改變報告的檔案時跑；master 由維護者手動觸發。
+    branches: ['claude/**']
+    paths:
+      - 'contracts/src/**'
+      - 'frontend/src/contracts/**'
+      - 'ops/release-status/**'
+      - 'scripts/check-deployment-status.mjs'
+      - '.github/workflows/release-status-refresh.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-status-refresh-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  refresh:
+    name: regenerate release status (read-only RPC)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      # 「已合併」欄來自 git log --first-parent，需要完整歷史。
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          submodules: recursive
+          fetch-depth: 0
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '20'
+
+      # 與 contracts-ci 同一個版本：比對用的編譯產物必須與 CI 編出來的相同。
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@908c540300062bd5a7e473851cdb4282204cee09 # v1.9.1
+        with:
+          version: v1.8.0
+
+      - name: Build contracts
+        working-directory: contracts
+        run: forge build
+
+      - name: Regenerate report (read-only RPC)
+        run: node scripts/check-deployment-status.mjs
+
+      - name: Offline consistency check of the regenerated report
+        run: node scripts/check-deployment-status.mjs --offline
+
+      - name: Print report (gzip + base64)
+        run: |
+          echo "sha256:"
+          sha256sum docs/release-status.json docs/RELEASE_STATUS.md
+          echo "-----BEGIN RELEASE STATUS-----"
+          tar -czf - docs/release-status.json docs/RELEASE_STATUS.md | base64 -w 120
+          echo "-----END RELEASE STATUS-----"
+          git diff --stat -- docs/release-status.json docs/RELEASE_STATUS.md

@@ -1,6 +1,6 @@
 {
  "$comment": "由 node scripts/check-deployment-status.mjs 產生（唯讀 RPC），不要手改；docs/RELEASE_STATUS.md 是這份 JSON 的渲染結果。",
- "generatedAt": "2026-10-04",
+ "generatedAt": "2026-10-07",
  "compiler": "0.8.36",
  "denylistSize": 1,
  "chains": {
@@ -8,7 +8,7 @@
    "name": "Base Sepolia",
    "role": "正式測試網（交易、agent session、x402 都在這條鏈）",
    "rpc": "https://sepolia.base.org",
-   "block": 47661267,
+   "block": 47788376,
    "components": [
     {
      "id": "PerpetualExchange",
@@ -95,11 +95,11 @@
      "id": "GuardedOracle",
      "label": "強化 oracle（多 keeper、偏離上限）",
      "merged": {
-      "pr": 219,
-      "commit": "7edbf32",
-      "date": "2026-10-02"
+      "pr": null,
+      "commit": "f6c6548",
+      "date": "2026-10-07"
      },
-     "sourceDigest": "48fa2c84684f3a99",
+     "sourceDigest": "fa62b027fb377e1e",
      "addresses": [
       {
        "key": "GuardedOracle",
@@ -107,7 +107,7 @@
       }
      ],
      "status": "behind",
-     "detail": "與原始碼現行版不一致：長度不同（鏈上 3742 B，原始碼 8072 B）",
+     "detail": "與原始碼現行版不一致：長度不同（鏈上 3742 B，原始碼 8457 B）",
      "leaked": [],
      "reads": [
       {
@@ -264,19 +264,19 @@
      "id": "AgentSessionManager",
      "label": "agent session（自主交易授權）",
      "merged": {
-      "pr": 198,
-      "commit": "264f1d4",
-      "date": "2026-09-30"
+      "pr": null,
+      "commit": "8d5199c",
+      "date": "2026-10-07"
      },
-     "sourceDigest": "f86c6fb6fee2f9a5",
+     "sourceDigest": "4b8e2ce30503f238",
      "addresses": [
       {
        "key": "AgentSessionManager",
        "address": "0xdF9C1E53523568709f65Afe3C4AD2E6a6D99d14B"
       }
      ],
-     "status": "equal",
-     "detail": "程式碼一致；只有 CBOR metadata（原始碼文字雜湊）不同",
+     "status": "behind",
+     "detail": "與原始碼現行版不一致：長度不同（鏈上 3798 B，原始碼 3803 B）",
      "leaked": [],
      "reads": [],
      "snapshot": "absent",
@@ -286,7 +286,7 @@
       "evidence": [],
       "note": "只有部署腳本建立的 session #0，沒有 agent 實際下單的 tx 紀錄（docs/VERIFICATION_REPORT.md D 項待貼）"
      },
-     "matched": "AgentSessionManager.sol:AgentSessionManager"
+     "matched": null
     },
     {
      "id": "TraderStake",
@@ -1067,11 +1067,11 @@
      "id": "AggregatorOracle",
      "label": "Chainlink＋Pyth 聚合 oracle（展示用，keeper 的參考來源）",
      "merged": {
-      "pr": 7,
-      "commit": "a795e9f",
-      "date": "2026-08-07"
+      "pr": null,
+      "commit": "f6c6548",
+      "date": "2026-10-07"
      },
-     "sourceDigest": "042f4ab203437961",
+     "sourceDigest": "e890861913737254",
      "addresses": [
       {
        "key": "AggregatorOracle",
@@ -1079,7 +1079,7 @@
       }
      ],
      "status": "behind",
-     "detail": "與原始碼現行版不一致：長度不同（鏈上 1700 B，原始碼 2643 B）",
+     "detail": "與原始碼現行版不一致：長度不同（鏈上 1700 B，原始碼 2765 B）",
      "leaked": [
       {
        "what": "owner()",
@@ -1106,11 +1106,11 @@
      "id": "ChainlinkAdapter",
      "label": "Chainlink 轉接",
      "merged": {
-      "pr": 7,
-      "commit": "a795e9f",
-      "date": "2026-08-07"
+      "pr": null,
+      "commit": "d729e20",
+      "date": "2026-10-07"
      },
-     "sourceDigest": "ff9233ea73cf7b2f",
+     "sourceDigest": "62f172d3bcb2675b",
      "addresses": [
       {
        "key": "ChainlinkAdapter",
@@ -1118,7 +1118,7 @@
       }
      ],
      "status": "behind",
-     "detail": "與原始碼現行版不一致：長度不同（鏈上 1419 B，原始碼 1906 B）",
+     "detail": "與原始碼現行版不一致：長度不同（鏈上 1419 B，原始碼 2863 B）",
      "leaked": [
       {
        "what": "owner()",
@@ -1282,7 +1282,7 @@
    "name": "Sepolia",
    "role": "legacy 展示鏈（不是產品路徑；合約未做金鑰輪替）",
    "rpc": "https://ethereum-sepolia-rpc.publicnode.com",
-   "block": 11840223,
+   "block": 11860403,
    "components": [
     {
      "id": "PerpetualExchange",
@@ -1373,11 +1373,11 @@
      "id": "GuardedOracle",
      "label": "強化 oracle（多 keeper、偏離上限）",
      "merged": {
-      "pr": 219,
-      "commit": "7edbf32",
-      "date": "2026-10-02"
+      "pr": null,
+      "commit": "f6c6548",
+      "date": "2026-10-07"
      },
-     "sourceDigest": "48fa2c84684f3a99",
+     "sourceDigest": "fa62b027fb377e1e",
      "addresses": [
       {
        "key": "GuardedOracle",
@@ -1385,7 +1385,7 @@
       }
      ],
      "status": "behind",
-     "detail": "與原始碼現行版不一致：長度不同（鏈上 3620 B，原始碼 8072 B）",
+     "detail": "與原始碼現行版不一致：長度不同（鏈上 3620 B，原始碼 8457 B）",
      "leaked": [
       {
        "what": "DEFAULT_ADMIN_ROLE",
@@ -2435,11 +2435,11 @@
    "id": "signal-api",
    "label": "x402 付費 API（Vercel）",
    "merged": {
-    "pr": 243,
-    "commit": "e85cecb",
-    "date": "2026-10-04"
+    "pr": null,
+    "commit": "290a408",
+    "date": "2026-10-07"
    },
-   "sourceDigest": "4eaad70ef5d1a6e7",
+   "sourceDigest": "6406f3050732b650",
    "deployed": "已部署：Vercel 分支網域（agent/sdk/src/signalApi.ts 的 SIGNAL_API_TESTNET_URL）；健康與付費端點狀態由 scripts/post-deploy-smoke.mjs 檢查",
    "acceptance": {
     "status": "部分驗收",
@@ -2455,11 +2455,11 @@
    "id": "keeper",
    "label": "寫價 keeper（GitHub Actions 排程）",
    "merged": {
-    "pr": 242,
-    "commit": "fea908d",
-    "date": "2026-10-04"
+    "pr": null,
+    "commit": "9ce1b75",
+    "date": "2026-10-07"
    },
-   "sourceDigest": "422c784ea75b609a",
+   "sourceDigest": "623dfbc31b50cb04",
    "deployed": "已上線：master 上的 base-sepolia-keeper.yml 排程；最近寫價時間由 scripts/post-deploy-smoke.mjs 讀鏈上 oracle",
    "acceptance": {
     "status": "未驗收",

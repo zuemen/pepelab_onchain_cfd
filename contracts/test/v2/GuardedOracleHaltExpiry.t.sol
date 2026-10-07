@@ -13,6 +13,7 @@ contract HaltRefSource {
     mapping(bytes32 => uint256) public px;
     function set(bytes32 id, uint256 p) external { px[id] = p; }
     function getPrice(bytes32 id) external view returns (uint256, uint256) { return (px[id], block.timestamp); }
+    function isStale(bytes32) external pure returns (bool) { return false; }
 }
 
 /// @notice GuardedOracle guardian halts are bounded: a guardian freeze or

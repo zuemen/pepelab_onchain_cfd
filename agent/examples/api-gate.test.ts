@@ -17,10 +17,12 @@ process.env.FREE_RATE_WINDOW_MS = "60000";
 process.env.CORS_ALLOWED_ORIGINS = "http://localhost:5173";
 
 const { createApp } = await import("../signal-api/src/app.ts");
+const { freshOracleReader } = await import("../signal-api/src/testing/freshOracle.ts");
 
 async function main() {
   // P0：payTo 守門在 402 前檢查收款地址；這裡給安全 EOA + 假 getCode（無 code），不打 RPC。
   const app = createApp({
+    trustProxyHeaders: true, // 模擬 Vercel：平台覆寫 x-forwarded-for，每個值代表一個用戶端
     payTo: "0x4444444444444444444444444444444444444444",
     payoutCodeReader: { getCode: async () => "0x" },
     // 只有 0x5555… 是「已註冊 trader」；0x6666… 讓 registry 查詢失敗。
@@ -28,6 +30,7 @@ async function main() {
       if (t.toLowerCase() === "0x" + "66".repeat(20)) throw new Error("rpc down (fake)");
       return t.toLowerCase() === "0x" + "55".repeat(20);
     },
+    oracleFreshnessReader: freshOracleReader,
   });
   const get = (path: string, headers: Record<string, string> = {}) =>
     app.fetch(new Request("http://localhost" + path, { headers }));
@@ -84,11 +87,39 @@ async function main() {
     console.log("✓ /signals/<合法地址> → 402（付費牆仍在）");
   }
   {
-    // sBTC 合法。stale 閘門在讀不到鏈上價格時會放行（RPC 連不上 → 交給下游），
-    // 因此這裡預期的是付費牆的 402。
+    // sBTC 合法、鏈上價格新鮮 → 付費牆的 402。
     const res = await get("/oracle/sBTC");
     assert.equal(res.status, 402, `合法資產應回 402，實得 ${res.status}`);
     console.log("✓ /oracle/sBTC → 402（付費牆仍在）");
+  }
+  {
+    // 新鮮度讀不到（RPC 失敗）→ 503、不發 402（fail-closed）。以前這裡放行，照樣收費賣出
+    // 一份沒檢查過新鮮度的價格。
+    const down = createApp({
+      payTo: "0x4444444444444444444444444444444444444444",
+      payoutCodeReader: { getCode: async () => "0x" },
+      oracleFreshnessReader: async () => {
+        throw new Error("rpc down (fake)");
+      },
+    });
+    const res = await down.fetch(new Request("http://localhost/oracle/sBTC"));
+    assert.equal(res.status, 503, `新鮮度讀不到應回 503，實得 ${res.status}`);
+    const body = (await res.json()) as { error?: string; accepts?: unknown };
+    assert.equal(body.error, "price_unverified");
+    assert.equal(body.accepts, undefined, "不可附上付款要求");
+    console.log("✓ /oracle/sBTC 新鮮度讀不到 → 503 price_unverified（未發出 402）");
+  }
+  {
+    // 讀得到、但超過交易所 maxPriceAge → 503 price_stale（既有行為，補上測試）。
+    const stale = createApp({
+      payTo: "0x4444444444444444444444444444444444444444",
+      payoutCodeReader: { getCode: async () => "0x" },
+      oracleFreshnessReader: async () => ({ updatedAtSec: Math.floor(Date.now() / 1000) - 7 * 3600, maxPriceAgeSec: 21_600 }),
+    });
+    const res = await stale.fetch(new Request("http://localhost/oracle/sBTC"));
+    assert.equal(res.status, 503, `過期價格應回 503，實得 ${res.status}`);
+    assert.equal(((await res.json()) as { error?: string }).error, "price_stale");
+    console.log("✓ /oracle/sBTC 價格超過 maxPriceAge → 503 price_stale");
   }
 
   // ── liveness 不受節流影響 ────────────────────────────────────────────────
@@ -111,6 +142,29 @@ async function main() {
     const other = await get("/candles/sBTC", { "x-forwarded-for": "8.8.8.8" });
     assert.notEqual(other.status, 429);
     console.log(`✓ 免費端點 per-IP 節流生效（8 次中 ${limited} 次 429，其他 IP 不受影響）`);
+  }
+
+  // ── 不在 Vercel 後面（本機／PoC 直接對外）：客戶端自填的 x-forwarded-for 不能拿來換 IP ──────
+  {
+    const { trustProxyFromEnv } = await import("../signal-api/src/app.ts");
+    assert.equal(trustProxyFromEnv({}), false, "預設不信任");
+    assert.equal(trustProxyFromEnv({ VERCEL: "1" }), true, "Vercel 會覆寫 header");
+    assert.equal(trustProxyFromEnv({ SIGNAL_API_TRUST_PROXY: "1" }), true);
+    assert.equal(trustProxyFromEnv({ SIGNAL_API_TRUST_PROXY: "true" }), false, "只接受 1");
+    const direct = createApp({
+      trustProxyHeaders: false,
+      payTo: "0x4444444444444444444444444444444444444444",
+      payoutCodeReader: { getCode: async () => "0x" },
+    });
+    let limited = 0;
+    for (let i = 0; i < 8; i++) {
+      const r = await direct.fetch(
+        new Request("http://localhost/candles/sBTC", { headers: { "x-forwarded-for": `203.0.113.${i}` } }),
+      );
+      if (r.status === 429) limited++;
+    }
+    assert.ok(limited > 0, "每個請求偽造不同的 x-forwarded-for，仍然算同一個用戶端、照樣被節流");
+    console.log(`✓ 不信任代理時，偽造的 x-forwarded-for 繞不過節流（8 次中 ${limited} 次 429）`);
   }
 
   // ── /demo/* 的 origin 白名單 ────────────────────────────────────────────

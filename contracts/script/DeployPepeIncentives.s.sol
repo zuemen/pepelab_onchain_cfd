@@ -7,11 +7,10 @@ import "../src/PepeIncentives.sol";
 
 /// @notice Deploy PepeIncentives and print the address.
 ///
+///   The deployer is the broadcasting account (`msg.sender`): use a Foundry keystore with
+///   `--account <name> --sender <address>`; no private key is read by the script.
+///
 ///   Required env vars:
-///     PRIVATE_KEY          deployer private key, 0x-prefixed (vm.envUint reads a bare hex string as decimal
-///                          and fails). Read in-script, so a keystore (--account) cannot be used yet: set it
-///                          only in the current shell with `read -rs PRIVATE_KEY && export PRIVATE_KEY`,
-///                          then `unset PRIVATE_KEY` (docs/OWNER_ACTIONS.md step 5).
 ///     PEPE_TOKEN           deployed PepeToken address
 ///     PERPETUAL_EXCHANGE   deployed PerpetualExchange address
 ///     COPY_TRACKER         deployed CopyTracker address
@@ -19,9 +18,9 @@ import "../src/PepeIncentives.sol";
 ///
 ///   Usage:
 ///     forge script script/DeployPepeIncentives.s.sol \
-///       --rpc-url https://sepolia.base.org \
+///       --rpc-url https://sepolia.base.org --account <keystore name> --sender <deployer> \
 ///       --broadcast --slow -v
-///     (Base Sepolia. No --private-key on the command line: the script reads PRIVATE_KEY itself.)
+///     (Base Sepolia. Simulate first: same line with --fork-url instead of --rpc-url, no --account/--broadcast.)
 ///
 ///   After deployment:
 ///     1. Update frontend/src/contracts/addresses.ts -> PepeIncentives
@@ -31,16 +30,23 @@ import "../src/PepeIncentives.sol";
 ///          cast send $PEPE_TOKEN "transfer(address,uint256)" $PEPE_INCENTIVES 100000000000000000000000 \
 ///            --rpc-url https://sepolia.base.org --account <keystore name>
 contract DeployPepeIncentives is Script {
-    function run() external {
-        uint256 deployerPk  = vm.envUint("PRIVATE_KEY");
+    address public broadcasterOverride;   // test hook, see Redeploy130Hardened
+    function setBroadcasterOverride(address a) external { broadcasterOverride = a; }
+
+    function run() external returns (PepeIncentives incentives) {
+        address deployer    = broadcasterOverride != address(0) ? broadcasterOverride : msg.sender;
         address pepeToken   = vm.envAddress("PEPE_TOKEN");
         address exchange    = vm.envAddress("PERPETUAL_EXCHANGE");
         address copyTracker = vm.envAddress("COPY_TRACKER");
         address esgRegistry = vm.envAddress("ESG_REGISTRY");
 
-        vm.startBroadcast(deployerPk);
+        require(pepeToken.code.length > 0, "PEPE_TOKEN has no code");
+        require(exchange.code.length > 0, "PERPETUAL_EXCHANGE has no code");
+        require(copyTracker.code.length > 0, "COPY_TRACKER has no code");
 
-        PepeIncentives incentives = new PepeIncentives(pepeToken, exchange, copyTracker, esgRegistry);
+        vm.startBroadcast(deployer);
+
+        incentives = new PepeIncentives(pepeToken, exchange, copyTracker, esgRegistry);
 
         vm.stopBroadcast();
 

@@ -112,10 +112,19 @@ contract DeployTenantForkTest is TenantFixture {
         assertEq(b.exCodeHash, a.exCodeHash, "live exchange code changed");
     }
 
+    /// @dev On a Base Sepolia fork, a pranked call from an address with no ETH
+    ///      reverted with 0 gas before reaching the target (forge 1.8.0, CI run
+    ///      37573968977). Fund every tenant role this suite pranks.
+    function _funded(Spec memory s) internal returns (Spec memory) {
+        address[5] memory roles = [s.admin, s.risk, s.guardian, s.keeper, s.treasury];
+        for (uint256 i; i < roles.length; i++) vm.deal(roles[i], 1 ether);
+        return s;
+    }
+
     function test_fork_tenantDeploysBesideLivePlatform_andSharesOnlyTokenAndSeed() public {
         LiveSnapshot memory before = _snapshot();
 
-        Spec memory s = _spec("fork-bank", USDC, LIVE_ORACLE);
+        Spec memory s = _funded(_spec("fork-bank", USDC, LIVE_ORACLE));
         DeployTenant script = _deployTenant(s, deployer);   // runs _verifyTenant at the end
         TenantBase.TenantDeployed memory d = script.lastDeployed();
         PerpetualExchange ex = PerpetualExchange(d.exchange);
@@ -182,8 +191,8 @@ contract DeployTenantForkTest is TenantFixture {
     /// @dev The same source seeds two tenants; they still share nothing.
     function test_fork_twoTenantsOnTheSameSharedLayer() public {
         LiveSnapshot memory before = _snapshot();
-        Spec memory a = _spec("fork-bank-a", USDC, LIVE_ORACLE);
-        Spec memory b = _spec("fork-bank-b", USDC, LIVE_ORACLE);
+        Spec memory a = _funded(_spec("fork-bank-a", USDC, LIVE_ORACLE));
+        Spec memory b = _funded(_spec("fork-bank-b", USDC, LIVE_ORACLE));
         b.deployVault = false;
         b.assets = "\"sBTC\",\"sETH\",\"sGOLD\"";
         TenantBase.TenantDeployed memory da = _deployTenant(a, deployer).lastDeployed();

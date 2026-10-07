@@ -324,5 +324,46 @@ const signer = (w: ethers.Wallet | ethers.HDNodeWallet) => (d: any, t: any, v: a
   ok("kyaFetch：未付款的請求不附；帶 X-PAYMENT 的重送自動附上綁定該付款的 presentation；只送給 allowedOrigins");
 }
 
+// 寫入路徑的錨定閘門：解除錨定之後，（誠實的）代理人就不能再開倉；平倉不受影響
+{
+  const { anchorAddressFromEnv, checkDelegationAnchor } = shared;
+  const ANCHOR = ethers.getAddress("0x" + "a7".repeat(20));
+  const { credentialHash } = await issue();
+  const anchored = new Set<string>([credentialHash]);
+  const reader = {
+    sessionManager: async () => MGR,
+    isAnchored: async (a: string, id: number, h: string) => a === ANCHOR && id === 7 && anchored.has(h),
+  };
+  const base = { anchor: ANCHOR as string | null | { error: string }, sessionManager: MGR, sessionId: 7, credentialHash, reader };
+
+  assert.equal(anchorAddressFromEnv({}), null, "沒設 → 不檢查");
+  assert.equal(anchorAddressFromEnv({ SESSION_ANCHOR_ADDRESS: ANCHOR.toLowerCase() }), ANCHOR);
+  assert.ok(typeof anchorAddressFromEnv({ SESSION_ANCHOR_ADDRESS: "0x1234" }) === "object", "打錯字不能變成「不檢查」");
+  assert.ok(typeof anchorAddressFromEnv({ SESSION_ANCHOR_ADDRESS: "0x" + "00".repeat(20) }) === "object");
+
+  assert.equal(await checkDelegationAnchor({ ...base, anchor: null, action: "open" }), null, "未設定錨定 → 行為與以前相同");
+  assert.equal(await checkDelegationAnchor({ ...base, action: "open" }), null, "已錨定 → 可以開倉");
+
+  anchored.clear(); // 使用者 unanchor（或錨定了新憑證，舊的被取代）
+  assert.equal((await checkDelegationAnchor({ ...base, action: "open" }))?.code, "VC_NOT_ANCHORED");
+  assert.equal(await checkDelegationAnchor({ ...base, action: "close" }), null, "平倉不受錨定影響（不把使用者鎖在部位裡）");
+
+  assert.equal(
+    (await checkDelegationAnchor({ ...base, anchor: { error: "bad" }, action: "open" }))?.code,
+    "ANCHOR_MISCONFIGURED",
+  );
+  assert.equal(
+    (await checkDelegationAnchor({ ...base, action: "open", reader: { ...reader, sessionManager: async () => stranger.address } }))?.code,
+    "ANCHOR_MISCONFIGURED",
+    "錨定合約綁的是別的 session manager → 拒絕",
+  );
+  assert.equal(
+    (await checkDelegationAnchor({ ...base, action: "open", reader: { ...reader, isAnchored: async () => { throw new Error("rpc down"); } } }))?.code,
+    "ANCHOR_UNAVAILABLE",
+    "讀不到 → 拒絕開倉（fail-closed）",
+  );
+  ok("寫入路徑錨定閘門：已錨定才可開倉、解除錨定即拒絕；平倉不受影響；設定錯誤或讀不到一律拒絕開倉");
+}
+
 fs.rmSync(TMP, { recursive: true, force: true });
 console.log(`\n✅ delegation-v3.test.ts 全過（${n} 組）`);

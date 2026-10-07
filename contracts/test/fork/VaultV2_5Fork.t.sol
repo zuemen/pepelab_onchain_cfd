@@ -23,6 +23,11 @@ contract VaultV2_5ForkTest is Test {
 
     function setUp() public {
         if (block.chainid != 84532) vm.skip(true, "needs --fork-url https://sepolia.base.org");
+        // On a Base Sepolia fork, a pranked call from an address with no ETH
+        // reverted with 0 gas before reaching the target (forge 1.8.0, CI run
+        // 37573968977: every failing caller had balance 0, the funded keeper's
+        // calls in the same tests went through). Fund every pranked address.
+        vm.deal(user, 1 ether);
     }
 
     function _heartbeat(AssetVaultV2_5 v) internal {

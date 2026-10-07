@@ -4,7 +4,8 @@
 //   cd agent && npx tsx signal-api/scripts/x402-protocol-smoke.ts
 //
 // 完全離線：facilitator 是本機假的（testing/mockFacilitator.ts），RPC 是本機假節點
-// （testing/rpcStub.ts，eth_getCode 一律回 "0x"，讓收款地址守門把 PAY_TO 當成 EOA）。
+// （testing/rpcStub.ts，eth_getCode 一律回 "0x"，讓收款地址守門把 PAY_TO 當成 EOA；
+// /oracle 的新鮮度閘門讀到的是剛寫入的價格，否則它會 fail-closed 回 503）。
 // **不帶任何付款 header、不簽任何東西、不連外網**。子行程以 PID 結束，不以映像名稱殺行程。
 //
 // 檢查的事：
@@ -32,7 +33,7 @@ const PAY_TO = "0x4444444444444444444444444444444444444444";
 const STARTUP_TIMEOUT_MS = Number(process.env.SMOKE_STARTUP_TIMEOUT_MS ?? "300000");
 
 const facilitator = await startMockFacilitator();
-const rpc = await startRpcStub({ everyAddressIsEoa: true });
+const rpc = await startRpcStub({ everyAddressIsEoa: true, freshOraclePrices: true });
 
 async function freePort(): Promise<number> {
   return new Promise((ok, fail) => {

@@ -22,6 +22,7 @@ import { ExactEvmScheme } from "@x402/evm/exact/client";
 import { startMockFacilitator } from "./testing/mockFacilitator.ts";
 import { startFakeUpstash } from "./testing/fakeUpstash.ts";
 import { startRpcStub } from "./testing/rpcStub.ts";
+import { freshOracleReader } from "./testing/freshOracle.ts";
 
 const facilitator = await startMockFacilitator();
 const upstash = await startFakeUpstash();
@@ -87,6 +88,7 @@ function makeApp(protocol: "v1" | "v2" | "both", over: Partial<Parameters<typeof
     payTo: PAYTO,
     payoutCodeReader: { getCode: async () => "0x" },
     isRegisteredTrader: async () => true,
+    oracleFreshnessReader: freshOracleReader,
     x402Protocol: protocol,
     signalReader: async (trader) => {
       signalReads += 1;

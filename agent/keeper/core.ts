@@ -125,7 +125,7 @@ export function parseRatioEnv(
 
 /**
  * KEEPER_BREAKER_DEVIATION 的合理範圍：(0, 0.2]（複審 Low）。實際使用時還會再被
- * GuardedOracle 的上限壓低（effectiveBreaker，+10% / −9.09%）。
+ * GuardedOracle 的上限壓低（effectiveBreaker，cap=1000 時 ±10%）。
  */
 export const BREAKER_RANGE = [0, 0.2] as const;
 /** KEEPER_DEVIATION（觸發寫入的最小偏離）：(0, 0.1]。 */
@@ -274,15 +274,17 @@ export function guardDeviation(a: {
 }
 
 /**
- * 有效熔斷門檻 = min(breaker, GuardedOracle 在這個方向的上限)（審查 H1）。
- * Guarded 以「兩者中較小值」為分母：向上容許 cap/10000，向下只容許 cap/(10000+cap)
- * （cap=1000 → +10% / −9.09%）。cap=0 代表 Guarded 不限制。
+ * 有效熔斷門檻 = min(breaker, GuardedOracle 的單筆上限)（審查 H1）。
+ * Guarded（master）以「舊價」為分母，上下方向一樣容許 cap/10000（cap=1000 → ±10%）。
+ * cap=0 代表 Guarded 不限制。
+ *
+ * 舊版部署的 Guarded 以「兩者中較小值」為分母，向下只容許 cap/(10000+cap)（−9.09%）。
+ * 這裡不再遷就它：落在 −9.09%～−10% 之間的寫入，由 round.ts 寫 Guarded 前的鏈上預檢
+ * （updatePrice.staticCall）決定——舊合約預檢 revert → 兩顆都不寫，與以前同樣 fail-closed。
  */
-export function effectiveBreaker(breaker: number, maxDeviationBps: bigint, up: boolean): number {
+export function effectiveBreaker(breaker: number, maxDeviationBps: bigint): number {
   if (maxDeviationBps <= 0n) return breaker;
-  const cap = Number(maxDeviationBps);
-  const guardedLimit = up ? cap / 10_000 : cap / (10_000 + cap);
-  return Math.min(breaker, guardedLimit);
+  return Math.min(breaker, Number(maxDeviationBps) / 10_000);
 }
 
 export type MirrorPlan =
@@ -373,11 +375,12 @@ export function runVerdict(c: RunCounters, maxDegradedRatio: number): { exitCode
 }
 
 /**
- * GuardedOracle.updatePrice 會用 `(hi-lo)*10000 > bps*lo` 判斷是否超出上限。
- * 注意分母是「兩者中較小的那個」，所以上下方向的容許幅度並不對稱：
- *   向上：new <= current * (1 + bps/10000)
- *   向下：new >= current * 10000 / (10000 + bps)
- * 這個函式必須與合約完全同義，否則 keeper 會送出注定被拒絕的交易。
+ * 與 master 的 GuardedOracle._deviationExceeded 同義：`|new-old|*10000 > bps*old` 即拒絕。
+ * 分母是舊價，上下方向對稱：|new − current| ≤ current × bps/10000。
+ *
+ * 舊版部署的 Guarded（分母取兩者中較小值）向下比這裡嚴：−9.09%～−10% 這裡回 true、
+ * 舊合約會拒。round.ts 寫 Guarded 之前一律先跑鏈上預檢，所以那種情況不會送出交易，
+ * 而是記為拒寫（fail-closed）。
  */
 export function deviationAccepted(
   current8: bigint,
@@ -385,9 +388,8 @@ export function deviationAccepted(
   maxDeviationBps: bigint,
 ): boolean {
   if (maxDeviationBps === 0n || current8 === 0n) return true;
-  const hi = next8 > current8 ? next8 : current8;
-  const lo = next8 > current8 ? current8 : next8;
-  return (hi - lo) * 10_000n <= maxDeviationBps * lo;
+  const diff = next8 > current8 ? next8 - current8 : current8 - next8;
+  return diff * 10_000n <= maxDeviationBps * current8;
 }
 
 // stepTowards（分段逼近 GuardedOracle）已於 2026-09-29 移除：它會把明知不是最佳

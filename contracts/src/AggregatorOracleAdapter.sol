@@ -34,8 +34,9 @@ interface IFailClosedSource {
 ///                - within `maxDeviationBps` → agreement, serve the fresher
 ///                  quote;
 ///                - beyond `maxDeviationBps` but within `haltDeviationBps` →
-///                  **degraded**: still serve the fresher quote, and report it
-///                  through `isDegraded` / `isStale`;
+///                  **degraded**: serve the MIDPOINT of the two quotes with the
+///                  OLDER timestamp, and report it through `isDegraded` /
+///                  `isStale`;
 ///                - beyond `haltDeviationBps` → fail closed with
 ///                  `PriceDeviationTooHigh`.
 ///           3. If no source is usable, `getPrice` reverts `NoLiveSource`.
@@ -78,6 +79,16 @@ interface IFailClosedSource {
 ///         the vault ratio checks that already read `isStale`. A spread beyond
 ///         `haltDeviationBps` (default 20%) is not noise — one feed is
 ///         compromised or broken — and there the fail-closed revert is kept.
+///
+///         2026-10-07 — degraded mode no longer trusts the fresher source.
+///         Serving "whichever quote is newer" meant a single faulty or
+///         compromised source only had to post last to set the price anywhere
+///         inside the 20% band, and through GuardedOracle's `referenceSource`
+///         that price would even confirm keeper posts past their step cap.
+///         When the two disagree, neither is known to be right, so the served
+///         value is the midpoint: at most half the spread from the honest feed,
+///         and no timestamp race moves it. The timestamp is the older of the
+///         two, so consumers' staleness checks stay conservative.
 contract AggregatorOracleAdapter is Ownable {
     IOracleSource public immutable sourceA;
     IOracleSource public immutable sourceB;
@@ -145,8 +156,13 @@ contract AggregatorOracleAdapter is Ownable {
             if (_deviationExceeded(pA, pB, haltDeviationBps)) {
                 revert PriceDeviationTooHigh(assetId, pA, pB);
             }
-            // Agreed, or degraded-but-usable: take the fresher quote either way.
-            return tA >= tB ? (pA, tA) : (pB, tB);
+            // Agreed: take the fresher quote.
+            if (!_deviationExceeded(pA, pB, maxDeviationBps)) {
+                return tA >= tB ? (pA, tA) : (pB, tB);
+            }
+            // Degraded: neither quote is known to be right. Serve a value no
+            // single source controls, stamped with the older of the two times.
+            return (pA / 2 + pB / 2 + (pA % 2 + pB % 2) / 2, tA < tB ? tA : tB);
         }
 
         if (okA || okB) {

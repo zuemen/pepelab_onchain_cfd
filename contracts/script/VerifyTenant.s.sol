@@ -181,6 +181,18 @@ abstract contract TenantBase is Script {
     ///      `deployedBytecode.immutableReferences` / `linkReferences`.
     string internal constant ARTIFACTS_DIR = "out/";
 
+    /// @dev The build the runtime code is compared against. Default: this
+    ///      checkout's `out/`. `scripts/verify-dedicated-tenants.mjs` sets
+    ///      `TENANT_ARTIFACTS_DIR=out-deployed/<id>/` when `contracts/src` has
+    ///      changed since the commit the tenant was deployed from: it builds
+    ///      that commit there, so a tenant is checked against the source it
+    ///      was deployed from, not against later edits (whether the source has
+    ///      moved past the chain is `docs/RELEASE_STATUS.md`'s job). Read
+    ///      access is granted to `out/` and `out-deployed/` only.
+    function _artifactsDir() internal view returns (string memory) {
+        return vm.envOr("TENANT_ARTIFACTS_DIR", string(ARTIFACTS_DIR));
+    }
+
     /// @dev ESGRegistryV2's constructor value. DeployTenant does not change it.
     uint256 internal constant ESG_MAX_ATTESTATION_AGE = 180 days;
 
@@ -1154,7 +1166,7 @@ abstract contract TenantBase is Script {
         bool pin,
         bytes32 pinned
     ) internal view {
-        string memory art = vm.readFile(string.concat(ARTIFACTS_DIR, file, "/", name, ".json"));
+        string memory art = vm.readFile(string.concat(_artifactsDir(), file, "/", name, ".json"));
         bytes memory hexWant = bytes(vm.parseJsonString(art, ".deployedBytecode.object"));
         bytes memory got = target.code;
         string memory fail = string.concat("verify tenant failed: ", label, " runtime code differs from this repository's build of ", name);

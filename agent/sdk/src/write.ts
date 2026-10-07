@@ -204,7 +204,11 @@ export function buildCreateSessionWithAssets(a: Addrs, p: CreateSessionParams): 
   ]);
 }
 
-/** setSessionAssets —— 同樣拒絕空陣列（空陣列 = 清除限制）。 */
+/**
+ * setSessionAssets —— 同樣拒絕空陣列。現行部署的 AgentSessionManager 把空陣列當成「清除限制
+ * （全部資產都允許）」；master 原始碼已改為 revert EmptyAssetList，但舊部署仍會接受，所以 SDK
+ * 這一層的拒絕要保留。
+ */
 export function buildSetSessionAssets(a: Addrs, p: { sessionId: bigint | number; allowedAssets: readonly string[] }): UnsignedTx {
   const assets = assetList("setSessionAssets", p.allowedAssets);
   return build(sessionManagerOf(a), AGENT_SESSION_MANAGER_ABI as Abi, "setSessionAssets", [uint("sessionId", p.sessionId), assets]);

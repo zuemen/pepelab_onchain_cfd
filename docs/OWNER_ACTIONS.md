@@ -7,8 +7,8 @@
 > 這是公開文件：不含任何私鑰或聯絡方式；已知外洩的舊部署者地址一律寫成縮寫 `0xE80A…Eb93`
 > （完整清單在 `agent/shared/src/payoutSafety.ts` 的 `COMPROMISED_ADDRESSES`）。需要金鑰的指令
 > 一律用 Foundry keystore（`cast wallet import <名稱> --interactive` 建立一次，之後 `--account <名稱>`）或 `--interactive`，
-> 私鑰不出現在指令列、不寫進檔案或 shell history。少數腳本在腳本內讀 `PRIVATE_KEY`、無法改用 keystore，
-> 第 5 步逐一標出並寫明最小化做法（列為後續改寫項目）。GitHub／Cloudflare 上的金鑰只放 secret。
+> 私鑰不出現在指令列、不寫進檔案或 shell history。本文件用到的部署腳本都已改成以 `msg.sender` 部署，
+> 可以用 keystore（`DeployPepeIncentives`、`DeployAMM` 於 2026-10-07 改寫，見第 5 步）。GitHub／Cloudflare 上的金鑰只放 secret。
 >
 > 本文件的「Base Sepolia」一律指 chainId 84532，公開 RPC `https://sepolia.base.org`；「Sepolia」指 Ethereum 測試網
 > （chainId 11155111）。部署與驗證指令都直接寫出 Base Sepolia 的 RPC，不用 `$SEPOLIA_RPC_URL` 這類容易混淆的變數名。
@@ -21,7 +21,7 @@
 | 2 | 部署 keeper-trigger 與 monitoring 兩個 Worker | Cloudflare | 1.5–2 小時 | Worker Logs、`gh api …/actions/runs` |
 | 3 | 凍結舊部署上外洩地址的權限 | 本機 forge（Base 先、Sepolia 後） | 2–3 小時 | `ops/freeze-legacy/readback.mjs`、`post-deploy-smoke.mjs` |
 | 4 | 換 PAY_TO、重部署 x402 FeeRouter（沿用舊 x402 保險金庫，先斷開再存種子） | 本機 forge／cast＋Vercel＋GitHub variables | 1.5–2 小時 | `cast call … platformTreasury()`、`post-deploy-smoke.mjs` |
-| 5 | 完整 cutover：#130、GuardedOracle、AssetVaultV2 升級 V2_5、InsuranceVault＋平台 FeeRouter＋CopyTracker（腳本已備；**前提：#130 完成＋timelock 或明確選擇不移交**）、PepeIncentives、PepeAMM | 本機 forge（先 dispatch keeper） | 不含阻塞項 6–8 小時；阻塞項解除後另 2–3 小時，加 timelock 48 小時等待與 2 天緩衝 | `Verify130`、`post-deploy-smoke.mjs` |
+| 5 | 完整 cutover：#130、GuardedOracle、AssetVaultV2 升級 V2_5、InsuranceVault＋平台 FeeRouter＋CopyTracker（腳本已備；**前提：#130 完成＋timelock 或明確選擇不移交**）、PepeIncentives、PepeAMM、SessionCredentialAnchor（平台首次部署） | 本機 forge（先 dispatch keeper；先跑 cutover 演練） | 不含阻塞項 6–8 小時；阻塞項解除後另 2–3 小時，加 timelock 48 小時等待與 2 天緩衝 | `Verify130`、`post-deploy-smoke.mjs` |
 | 6 | 每台 agent 主機 `npm run vc-status:init` | 各 agent 主機 | 每台 5 分 | `agent/.state/vc-status/index.json` 存在 |
 | 7 | 重跑發布狀態與 smoke test，確認「原始碼較新」變成「鏈上＝原始碼」 | 本機 | 45–60 分（含 `forge build`） | `check-deployment-status.mjs --offline`、`post-deploy-smoke.mjs` |
 
@@ -331,7 +331,7 @@ node scripts/post-deploy-smoke.mjs   # X402FeeRouter.platformTreasury() 與 sign
 
 ---
 
-## 第 5 步：完整 cutover（#130、新 GuardedOracle、AssetVaultV2 升級 V2_5、InsuranceVault＋平台 FeeRouter＋CopyTracker、PepeIncentives、PepeAMM）
+## 第 5 步：完整 cutover（#130、新 GuardedOracle、AssetVaultV2 升級 V2_5、InsuranceVault＋平台 FeeRouter＋CopyTracker、PepeIncentives、PepeAMM、SessionCredentialAnchor）
 
 **為什麼：** 交易引擎、保險金庫份額定價、oracle 速率限制與凍結期限、V2 金庫的安全修正（C12–C16、M1）、PepeIncentives、
 PepeAMM 的修正都只存在於原始碼；平台 FeeRouter 的 `platformTreasury` 仍是外洩地址（immutable）。
@@ -358,18 +358,21 @@ PepeAMM 的修正都只存在於原始碼；平台 FeeRouter 的 `platformTreasu
   # exchange 讀的 oracle 與 V2 金庫讀的 oracle：「最近一次寫價」都必須晚於 dispatch，而且 11 檔都不超過 6 小時
   ```
 
-**私鑰處理：**
-- `Redeploy130Hardened`、`RedeployGuardedOracle`、`UpgradeVaultToV2_5` 以 `msg.sender` 當部署者，可以直接用 keystore：
-  `--account $ACCOUNT --sender $DEPLOYER`。`DEPLOY_130_CUTOVER.md` 的指令也已改成這個寫法。
-- `DeployPepeIncentives`、`DeployAMM` 在腳本內讀 `vm.envUint("PRIVATE_KEY")`，**目前無法改用 keystore**。在改寫之前
-  （後續待辦：改成 `vm.startBroadcast()` 讓 `--account` 生效），把風險壓到最小：
-  ```bash
-  read -rs PRIVATE_KEY && export PRIVATE_KEY   # 不回顯、不進 history；貼上時要含 0x 前綴（vm.envUint 會把不帶 0x 的
-                                               # 十六進位字串當十進位解析而失敗）；不要寫在指令列或任何檔案裡
-  forge script …                               # 下面第 5、6 項的指令，本身不帶 --private-key
-  unset PRIVATE_KEY                            # 用完立刻清掉
-  ```
-  只在這一個 shell 設定；跑完就關掉這個終端機。
+**私鑰處理：** 第 5 步的每一支腳本都以 `msg.sender` 當部署者，一律用 keystore：
+`--account $ACCOUNT --sender $DEPLOYER`（`DeployAMM` 的 `--sender` 要是 MockUSDC 的 owner）。
+`DeployPepeIncentives`、`DeployAMM` 原本在腳本內讀 `vm.envUint("PRIVATE_KEY")`，2026-10-07 已改成 `vm.startBroadcast()`
+（測試 `contracts/test/DeployPepeScripts.t.sol`），不再需要 `export PRIVATE_KEY`。
+
+**事前演練（不需要金鑰）：** `.github/workflows/cutover-rehearsal.yml` 在 GitHub runner 上對 Base Sepolia 實況跑兩件事——
+`contracts/test/fork/*.t.sol`（四支都必須真的跑、不可 skip），以及 `scripts/cutover-rehearsal.mjs`：在 anvil fork 上以假冒的部署者
+依序**真的送交易**跑完下面第 1–7 項與治理移交（timelock 排程→等待→執行），每一步讀回核對，結果寫在該 run 的 Summary。
+廣播當天先在 Actions 頁面手動跑一次（Run workflow），全綠、而且 Summary 列出的「真實阻擋項」都已處理，再開始。
+演練用的 guardian、treasury、timelock 角色是空白地址，**不是**要填的值。
+
+2026-10-07 的結果（runs 37571938413、37573968977，fork 區塊 47789827／47790425 起）：12 步全部通過、fork 上 10 次 broadcast；
+舊 exchange 沒有未平倉（§5.1 不阻擋）；部署者已有 ≥1 枚 MockUSDC 可當保險金庫種子；PepeAMM 的 MockUSDC owner 就是部署者。
+演練抓到並已修正：`DeployAMM` 固定種子偏離 oracle 14.7%（改為依 oracle 計算）、`RedeployGuardedOracle` 沒帶 `KEEPER_HEARTBEAT`
+（實際值 900）、四支 fork 測試以零餘額地址 prank 而失敗（測試改為先 `vm.deal`，修正後 7 項全過）。
 
 **操作（依序）：**
 
@@ -387,7 +390,8 @@ PepeAMM 的修正都只存在於原始碼；平台 FeeRouter 的 `platformTreasu
      `STRATEGY_REGISTRY_NEW`、`GUARDIAN`（與 broadcast 印出的值相同）。
 2. **新 GuardedOracle**：`DEPLOY_130_CUTOVER.md` §10，`script/RedeployGuardedOracle.s.sol`。
    - 先跑 fork 測試：`forge test --match-path test/fork/RedeployGuardedOracleFork.t.sol --fork-url $RPC -vv`。
-   - 環境變數：`KEEPER`、`GUARDIAN`、`KEEPER_HEARTBEAT`（keeper 實際值，秒）、`ORACLE_MAX_PRICE_AGE`（預設 21600，必須 ≥
+   - 環境變數：`KEEPER`、`GUARDIAN`、`KEEPER_HEARTBEAT`（keeper 實際值，秒；`base-sepolia-keeper.yml` 沒有覆寫，
+     是 `agent/keeper/run.ts` 的預設 900。不帶時腳本不核對、只印警告）、`ORACLE_MAX_PRICE_AGE`（預設 21600，必須 ≥
      `KEEPER_HEARTBEAT` ＋ `KEEPER_SCHEDULE_SLACK`）、`WINDOW_SECONDS`／`WINDOW_DEVIATION_BPS`（預設 1h／2500）；
      `OLD_GUARDED_ORACLE`、`VAULT_PROXY`、`EXCHANGE_NEW` 有預設值時核對一次。
    - broadcast：`forge script script/RedeployGuardedOracle.s.sol:RedeployGuardedOracle --rpc-url $RPC --account $ACCOUNT --sender $DEPLOYER --broadcast --slow -vv`
@@ -484,16 +488,35 @@ PepeAMM 的修正都只存在於原始碼；平台 FeeRouter 的 `platformTreasu
      `platformEarnings()` = 0.06 MockUSDC（測試幣）。本項完成前定期讀這個值；明顯增加時優先推動 #130 與 timelock（腳本本身已不是瓶頸）。
 5. **PepeIncentives**：`contracts/script/DeployPepeIncentives.s.sol`。它的 `copyTracker` 是 immutable，**要綁第 4 項之後的最終
    CopyTracker**——第 4 項阻塞期間這一項也等；先部署就要在第 4 項之後再部署一次。
-   - 環境變數：`PRIVATE_KEY`（見上方「私鑰處理」）、`PEPE_TOKEN`（`addresses.ts` 的 PepeToken）、`PERPETUAL_EXCHANGE`（第 1 項的新
+   - 環境變數：`PEPE_TOKEN`（`addresses.ts` 的 PepeToken）、`PERPETUAL_EXCHANGE`（第 1 項的新
      exchange）、`COPY_TRACKER`（最終 CopyTracker）、`ESG_REGISTRY`（`addresses.ts` 的 ESGRegistry；現行部署填的是 0 位址，
      沿用就填 0 位址並保持監控規則 `pepe-incentives-wiring` 的預期值）。
-   - `forge script script/DeployPepeIncentives.s.sol --rpc-url $RPC --broadcast --slow -v`（不帶 `--private-key`；腳本自己讀環境變數）
+   - `forge script script/DeployPepeIncentives.s.sol --rpc-url $RPC --account $ACCOUNT --sender $DEPLOYER --broadcast --slow -v`
    - 部署後更新 `addresses.ts`、轉入獎勵池；新實例從空狀態開始，舊的連續簽到等資料不會帶過來（`KNOWN_LIMITATIONS.md`）。
 6. **PepeAMM**：`contracts/script/DeployAMM.s.sol`，簽署者必須是 MockUSDC 的 owner。
-   - 環境變數：`PRIVATE_KEY`（見上方）、`MOCK_USDC`、`MOCK_ORACLE`（都取 `addresses.ts` 的 Base Sepolia 值；oracle 若在第 1 項換了，
-     填 exchange 實際讀的那顆）、選用 `SEED_ETH`／`SEED_USDC`。
-   - `forge script script/DeployAMM.s.sol --rpc-url $RPC --broadcast --skip-simulation --slow -v`
+   - 環境變數：`MOCK_USDC`、`MOCK_ORACLE`（都取 `addresses.ts` 的 Base Sepolia 值；oracle 若在第 1 項換了，
+     填 exchange 實際讀的那顆）、選用 `SEED_ETH`／`SEED_USDC`。`SEED_USDC` 不帶（或 0）時以 oracle 的 sETH 現價計算，池子以 oracle
+     價格開盤；舊的固定預設 2300 在 2026-10-07 的演練裡偏離 oracle 14.7%（套利會吃掉種子）。腳本印出的 `deviation (bps)` 要在 500 以內。
+   - `forge script script/DeployAMM.s.sol --rpc-url $RPC --account $ACCOUNT --sender <MockUSDC owner> --broadcast --skip-simulation --slow -v`
    - 部署後更新 `addresses.ts`。
+7. **SessionCredentialAnchor（平台從未部署）**：`contracts/script/DeploySessionCredentialAnchor.s.sol`。它把 v3 代理人委託憑證
+   錨定在 session 上（[`SSI_AGENT_DELEGATION.md`](SSI_AGENT_DELEGATION.md) §3）；沒有它，平台的 `/sessions` 頁只能簽發、不能錨定，
+   x402 KYA 的 `X402_KYA_ANCHOR=required` 也無從滿足。`sessionManager` 是 immutable，**要綁第 1 項之後的新 AgentSessionManager**
+   （`SESSION_MANAGER_NEW`），所以排在第 1 項之後；合約沒有 admin、任何帳號都能部署。
+   - `SESSION_MANAGER_ADDR=<SESSION_MANAGER_NEW> forge script script/DeploySessionCredentialAnchor.s.sol --rpc-url $RPC --account $ACCOUNT --sender $DEPLOYER --broadcast --slow -v`
+   - 讀回：`cast call <anchor> "sessionManager()(address)" --rpc-url $RPC` 必須是 `SESSION_MANAGER_NEW`。
+   - 部署後：`frontend/src/contracts/sessionCredentialAnchor.ts` 的 `SESSION_ANCHOR_ADDRESS[84532]` 填入（走 PR）；
+     signal-api（Vercel）與各 agent 主機設 `SESSION_ANCHOR_ADDRESS`（`agent/.env.example`）。設了之後代理人開倉要求憑證已錨定。
+
+**選用、尚未決定：平台 KYC 改用 VC 准入（`VCKycRegistry`）。** 目前建議**維持現行 allowlist**，cutover 不做這一項：
+切換後，現在 allowlist 上的帳戶在拿到合格投資人 VC 之前都不能開 RWA 倉；平台也還沒有自己的發證者金鑰與狀態清單主機
+（[`SSI_RWA_ACCESS.md`](SSI_RWA_ACCESS.md)）。VC 准入目前由 rwa-poc 租戶示範。exchange 的 `kyc` 不是 immutable，日後隨時可換：
+1. `VC_KYC_ISSUER=<發證者> VC_KYC_CHAIN_ID=84532 VC_KYC_OWNER=<timelock> forge script script/DeployVCKycRegistry.s.sol:DeployVCKycRegistry --rpc-url $RPC --account $ACCOUNT --sender $DEPLOYER --broadcast`
+   （不設 `VC_KYC_WIRE_EXCHANGE`：移交後部署者不是 exchange owner）。
+2. 由 timelock 以**一個** `scheduleBatch` 排程 `registry.acceptOwnership()` 與 `exchange.setKycRegistry(registry)`，到期後 `executeBatch`。
+3. 前端 `frontend/src/contracts/vcKycRegistry.ts` 的 `VC_KYC_REGISTRY_BY_CHAIN[84532]` 填入（走 PR）。
+
+cutover 演練的第 12 步照這個順序實跑（只在 fork 上），確認可行。
 
 **完成後驗證（唯讀）：**
 

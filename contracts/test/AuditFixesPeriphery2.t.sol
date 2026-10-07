@@ -1003,6 +1003,7 @@ contract RefFeed {
     function getPrice(bytes32 id) external view returns (uint256, uint256) {
         return (p[id], block.timestamp);
     }
+    function isStale(bytes32) external pure returns (bool) { return false; }
 }
 
 contract AuditGuardedOracleDeadlockTest is Test {

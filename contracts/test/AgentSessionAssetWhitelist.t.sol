@@ -16,6 +16,9 @@ import "../src/MockOracle.sol";
 ///
 ///         Opt-in by design: a session with no list may trade anything, so
 ///         sessions created through the original createSession() are unaffected.
+///         The list itself can never be empty (EmptyAssetList): an empty list
+///         would read as "unrestricted", so a restricted session can only be
+///         narrowed or replaced, never silently widened to every asset.
 contract AgentSessionAssetWhitelistTest is Test {
     PerpetualExchange   exchange;
     AgentSessionManager manager;
@@ -81,10 +84,16 @@ contract AgentSessionAssetWhitelistTest is Test {
         manager.openPositionForSession(sid, AAPL, true, 100e18, 2, address(0));
     }
 
-    function test_emptyArrayIsUnrestricted() public {
-        uint256 sid = _restrictedSession(new bytes32[](0));
-        assertEq(manager.allowedAssetCount(sid), 0);
-        assertTrue(manager.isAssetAllowed(sid, AAPL));
+    /// @dev An empty list reads as "every asset", so asking for a restricted
+    ///      session with no assets must fail instead of quietly creating an
+    ///      unrestricted one. Unrestricted is `createSession`, explicitly.
+    function test_createWithEmptyListReverts() public {
+        vm.prank(alice);
+        vm.expectRevert(AgentSessionManager.EmptyAssetList.selector);
+        manager.createSessionWithAssets(
+            agent, 1_000e18, 3_000e18, 5, block.timestamp + 1 days, new bytes32[](0)
+        );
+        assertEq(manager.nextSessionId(), 0, "no session may be created");
     }
 
     // ── enforcement ──────────────────────────────────────────────────────────
@@ -167,13 +176,24 @@ contract AgentSessionAssetWhitelistTest is Test {
         assertEq(manager.allowedAssetCount(sid), 1);
     }
 
-    function test_ownerCanClearListBackToUnrestricted() public {
+    /// @dev "Clear the list" used to mean "allow every asset": a user trying to
+    ///      narrow an agent down to nothing handed it the whole market. Now it
+    ///      reverts and the existing restriction stays exactly as it was.
+    function test_setEmptyListRevertsAndKeepsRestriction() public {
         uint256 sid = _restrictedSession(_one(BTC));
         vm.prank(alice);
+        vm.expectRevert(AgentSessionManager.EmptyAssetList.selector);
         manager.setSessionAssets(sid, new bytes32[](0));
 
-        assertEq(manager.allowedAssetCount(sid), 0);
-        assertTrue(manager.isAssetAllowed(sid, AAPL));
+        assertEq(manager.allowedAssetCount(sid), 1);
+        assertTrue(manager.isAssetAllowed(sid, BTC));
+        assertFalse(manager.isAssetAllowed(sid, AAPL));
+
+        vm.prank(agent);
+        vm.expectRevert(
+            abi.encodeWithSelector(AgentSessionManager.AssetNotAllowed.selector, sid, AAPL)
+        );
+        manager.openPositionForSession(sid, AAPL, true, 100e18, 2, address(0));
     }
 
     /// @dev Narrowing mid-session must stop the agent immediately.

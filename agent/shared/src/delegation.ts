@@ -449,6 +449,88 @@ export function compareDelegationWithSession(
   return null;
 }
 
+// ── On-chain anchor (write path) ─────────────────────────────────────────────
+
+/**
+ * Where the write path finds SessionCredentialAnchor: env SESSION_ANCHOR_ADDRESS (the same
+ * variable signal-api's KYA uses). Unset → null (anchor not enforced). Set but not a valid
+ * non-zero address → `{ error }`: a typo must not silently switch the check off.
+ */
+export function anchorAddressFromEnv(env: NodeJS.ProcessEnv = process.env): string | null | { error: string } {
+  const raw = env.SESSION_ANCHOR_ADDRESS?.trim();
+  if (!raw) return null;
+  if (!ethers.isAddress(raw) || raw.toLowerCase() === ZERO) {
+    return { error: `SESSION_ANCHOR_ADDRESS=${raw} 不是合法的非零地址` };
+  }
+  return ethers.getAddress(raw);
+}
+
+export interface AnchorReader {
+  /** The AgentSessionManager the anchor contract is bound to. */
+  sessionManager(anchor: string): Promise<string>;
+  isAnchored(anchor: string, sessionId: number, credentialHash: string): Promise<boolean>;
+}
+
+export function contractAnchorReader(runner: ethers.ContractRunner): AnchorReader {
+  return {
+    sessionManager: async (anchor) => String(await new ethers.Contract(anchor, SESSION_ANCHOR_ABI, runner).sessionManager()),
+    isAnchored: async (anchor, id, h) => Boolean(await new ethers.Contract(anchor, SESSION_ANCHOR_ABI, runner).isAnchored(id, h)),
+  };
+}
+
+export type AnchorRejectCode = "VC_NOT_ANCHORED" | "ANCHOR_MISCONFIGURED" | "ANCHOR_UNAVAILABLE";
+
+/**
+ * Write-path anchor gate for v3 credentials. Without it, unanchoring a credential (the
+ * session user's public "I no longer stand behind this") stopped x402 KYA but not trading.
+ *
+ *   • anchor not configured → null (not enforced; behaviour as before).
+ *   • close → null: closing only reduces exposure, and a user who unanchors to stop their
+ *     agent must not have their positions trapped by it.
+ *   • open → the anchor must be bound to `sessionManager` and `isAnchored(sessionId, hash)`
+ *     must be true; a bad address, a wrong binding or an unreadable anchor all refuse
+ *     (fail-closed, like the status-list check).
+ *
+ * This only binds agents that run this code. A compromised agent key calls
+ * AgentSessionManager directly; the hard stop for that is `revokeSession`.
+ */
+export async function checkDelegationAnchor(p: {
+  anchor: string | null | { error: string };
+  sessionManager: string;
+  sessionId: number;
+  credentialHash: string;
+  action: "open" | "close";
+  reader: AnchorReader;
+}): Promise<{ code: AnchorRejectCode; message: string } | null> {
+  if (p.anchor === null || p.action === "close") return null;
+  if (typeof p.anchor !== "string") return { code: "ANCHOR_MISCONFIGURED", message: p.anchor.error };
+  let bound: string;
+  try {
+    bound = await p.reader.sessionManager(p.anchor);
+  } catch (err) {
+    return { code: "ANCHOR_UNAVAILABLE", message: `讀取 SessionCredentialAnchor 失敗：${(err as Error).message}` };
+  }
+  if (!ethers.isAddress(bound) || ethers.getAddress(bound) !== ethers.getAddress(p.sessionManager)) {
+    return {
+      code: "ANCHOR_MISCONFIGURED",
+      message: `SESSION_ANCHOR_ADDRESS 綁定的 session manager(${bound}) 不是本 agent 使用的(${ethers.getAddress(p.sessionManager)})`,
+    };
+  }
+  let anchored: boolean;
+  try {
+    anchored = await p.reader.isAnchored(p.anchor, p.sessionId, p.credentialHash);
+  } catch (err) {
+    return { code: "ANCHOR_UNAVAILABLE", message: `讀取錨定狀態失敗：${(err as Error).message}` };
+  }
+  if (!anchored) {
+    return {
+      code: "VC_NOT_ANCHORED",
+      message: `委託憑證沒有被 session #${p.sessionId} 的使用者錨定在鏈上（未錨定、已解除或被新憑證取代）`,
+    };
+  }
+  return null;
+}
+
 // ── Presentation (holder side) ───────────────────────────────────────────────
 
 /** Canonical request path, the same rules signal-api's router applies (decode, collapse `//`, strip trailing `/`, lowercase first segment). */
