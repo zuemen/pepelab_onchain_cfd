@@ -1,0 +1,16 @@
+{
+  "name": "pepelab-poc-video",
+  "private": true,
+  "description": "用 Playwright 錄製 RWA PoC 平台操作影片。獨立於 frontend（yarn）與 scripts/（檢查腳本），自己用 npm 管理。",
+  "license": "UNLICENSED",
+  "type": "module",
+  "scripts": {
+    "setup": "npm install && npx playwright install chromium",
+    "record": "node record.mjs",
+    "record:smoke": "node record.mjs --scenes scenes/smoke.mjs"
+  },
+  "dependencies": {
+    "ethers": "6.17.0",
+    "playwright": "1.63.0"
+  }
+}
