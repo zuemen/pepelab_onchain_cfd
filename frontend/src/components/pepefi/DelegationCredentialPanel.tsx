@@ -245,6 +245,15 @@ export function DelegationCredentialPanel({
       }
       const tx = (await anchor[kind](session.id, stored.credentialHash)) as { wait(): Promise<unknown>; hash: string }
       await tx.wait()
+      // 公開節點負載平衡：receipt 之後立刻讀可能拿到舊狀態，畫面會顯示「已被新憑證取代」。
+      // 讀到預期的錨定狀態為止（最多約 20 秒），再更新畫面。
+      const want = kind === 'anchor'
+      for (let i = 0; i < 10; i++) {
+        try {
+          if (Boolean(await anchor.isAnchored(session.id, stored.credentialHash)) === want) break
+        } catch { /* 下一輪再讀 */ }
+        await new Promise((r) => setTimeout(r, 2000))
+      }
       onStored(kind === 'anchor' ? { ...stored, anchoredTx: tx.hash } : { ...stored, anchoredTx: undefined })
       notify(kind === 'anchor' ? t.sessions.delegation.anchoredToast : t.sessions.delegation.unanchoredToast, true, tx.hash)
       await refresh()
