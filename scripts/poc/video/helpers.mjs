@@ -61,3 +61,26 @@ export async function waitForLoaded(ctx, { text = '讀取中', timeout = 30_000 
     ctx.log(`等待「${text}」消失逾時（${timeout}ms），繼續下一步`);
   }
 }
+
+/**
+ * 上傳檔案到 <input type="file">（例如 /credentials 的「上傳 VC 檔案」，input 是隱藏的）。
+ * 預設找 `accept` 含 json 的那一個。
+ */
+export async function uploadFile(ctx, filePath, { selector = 'input[type="file"][accept*="json"]' } = {}) {
+  await ctx.page.locator(selector).first().setInputFiles(filePath);
+  ctx.log(`已上傳 ${filePath}`);
+}
+
+/**
+ * 點一個會觸發瀏覽器下載的按鈕，把下載的檔案存到 saveTo（例如 /sessions 的委託憑證「下載」）。
+ * 回傳 saveTo。
+ */
+export async function downloadVia(ctx, selector, saveTo, { timeout = 30_000 } = {}) {
+  const [dl] = await Promise.all([
+    ctx.page.waitForEvent('download', { timeout }),
+    ctx.page.locator(selector).first().click(),
+  ]);
+  await dl.saveAs(saveTo);
+  ctx.log(`已下載 ${dl.suggestedFilename()} → ${saveTo}`);
+  return saveTo;
+}
