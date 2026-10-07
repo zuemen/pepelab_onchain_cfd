@@ -122,7 +122,8 @@ export async function createTerminal(context, { log, onTx }) {
       let output = '';
       const txHashes = [];
       const queue = [];
-      let buf = '';
+      // stdout 與 stderr 各自一個緩衝：交錯到達的片段不會被拼成同一行
+      const bufs = { out: '', err: '' };
       let pumping = Promise.resolve();
       const pump = () => {
         if (!queue.length) return;
@@ -130,9 +131,9 @@ export async function createTerminal(context, { log, onTx }) {
         pumping = pumping.then(() => call('addMany', items, 35));
       };
       const pumpTimer = setInterval(pump, 250);
-      const flush = (final) => {
-        const parts = buf.split('\n');
-        buf = final ? '' : parts.pop();
+      const flush = (which, final) => {
+        const parts = bufs[which].split('\n');
+        bufs[which] = final ? '' : parts.pop();
         for (const raw of parts) {
           const line = raw.replace(/\x1b\[[0-9;]*[A-Za-z]/g, '').replace(/\r/g, '');
           if (final && line === '') continue;
@@ -144,15 +145,16 @@ export async function createTerminal(context, { log, onTx }) {
           queue.push([kindOf(line), line]);
         }
       };
-      child.stdout.on('data', (d) => { buf += d; flush(false); });
-      child.stderr.on('data', (d) => { buf += d; flush(false); });
+      child.stdout.on('data', (d) => { bufs.out += d; flush('out', false); });
+      child.stderr.on('data', (d) => { bufs.err += d; flush('err', false); });
       const waitStart = Date.now();
       const code = await new Promise((resolve) => {
         const timer = setTimeout(() => { child.kill('SIGTERM'); }, o.timeout ?? 300_000);
         child.on('close', (c) => { clearTimeout(timer); resolve(c ?? 1); });
       });
       o.onWait?.({ label: o.waitLabel ?? '等待指令執行', start: waitStart, end: Date.now() });
-      flush(true);
+      flush('out', true);
+      flush('err', true);
       clearInterval(pumpTimer);
       pump();
       await pumping;
