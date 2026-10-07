@@ -14,7 +14,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { Contract } from 'ethers';
+import os from 'node:os';
+import { execFileSync } from 'node:child_process';
+import { Contract, ZeroAddress, keccak256, toUtf8Bytes } from 'ethers';
 
 import { clickAndWaitTx, downloadVia, smoothScroll, uploadFile, waitForLoaded, waitForText } from '../helpers.mjs';
 import { connectWallet } from './rwa-poc.mjs';
@@ -27,18 +29,31 @@ const POC_DIR = path.join(AGENT_DIR, '.state', 'poc');
 const VC_PATH = path.join(POC_DIR, 'investor-qi-vc.json');
 const DELEGATION_PATH = path.join(POC_DIR, 'delegation-v3.json');
 
+// 位址不寫死（repo 裡出現的完整位址都會被算成平台位址，check-addresses 會擋）：
+// 合約讀部署紀錄 deploy/tenants/rwa-poc.deployed.json，錨定合約讀 docs/tenants/rwa-poc/DEPLOYMENT.md，
+// 錢包位址由 keystore 推出（cast wallet address，只印地址）。
+const DEP = JSON.parse(fs.readFileSync(path.join(ROOT, 'deploy/tenants/rwa-poc.deployed.json'), 'utf8'));
+if (DEP.chainId !== 84532) throw new Error('rwa-poc 部署紀錄不是 Base Sepolia');
+const ANCHOR_ADDR = /^\| SessionCredentialAnchor \| `(0x[0-9a-fA-F]{40})`/m.exec(
+  fs.readFileSync(path.join(ROOT, 'docs/tenants/rwa-poc/DEPLOYMENT.md'), 'utf8'),
+)?.[1];
+if (!ANCHOR_ADDR) throw new Error('DEPLOYMENT.md 找不到 SessionCredentialAnchor 位址');
+const walletAddr = (name) =>
+  execFileSync('cast', ['wallet', 'address', '--account', `pepelab-rwa-${name}`, '--password-file', path.join(os.homedir(), '.foundry', `pepelab-rwa-${name}.password`)], {
+    env: { PATH: `${process.env.PATH}:${os.homedir()}/.foundry/bin`, HOME: os.homedir() },
+  }).toString().trim();
 const A = {
   R: 'https://sepolia.base.org',
-  EX: '0xbb7f8059ed5450889c745f5c1f458cb1290fa96b',
-  REG: '0x3869405c4641C72E5F01EaD9ced69139B4D830bD',
-  MGR: '0xa60a1dC20E1CBb0cBc869464E35AEBa6ff3acbdd',
-  ANCHOR: '0x80269C6FfEbce234d6b24979735D987C8e0e5fBD',
-  ISSUER: '0xf67bA3C2F6E710415F548C09b73808ba19b9cD83',
-  INV: '0xebAFE53877ad3B691664d8cb0b34874CE1240194',
-  AGENT: '0xB4e3C19D91B85e5ca22721CE3a7E127146322ef7',
-  GOLD: '0x12b611f69af3b5e84f9d2d8a8818b4ad7f2cf0b45274bc7c3b9616f67c7baa1a',
-  AAPL: '0xeed17252f75eebef59a2839f0991464677fec970326e35128ddaf7f3acfb7220',
-  ZERO: '0x0000000000000000000000000000000000000000',
+  EX: DEP.contracts.PerpetualExchange,
+  REG: DEP.contracts.KYCRegistry,
+  MGR: DEP.contracts.AgentSessionManager,
+  ANCHOR: ANCHOR_ADDR,
+  ISSUER: walletAddr('issuer'),
+  INV: walletAddr('investor'),
+  AGENT: walletAddr('agent'),
+  GOLD: keccak256(toUtf8Bytes('sGOLD')),
+  AAPL: keccak256(toUtf8Bytes('sAAPL')),
+  ZERO: ZeroAddress,
 };
 const ENV = { ...A, RWA_POC_RPC_URL: A.R, FEE: '100000000000000' };
 // 跨步驟的狀態（session id、代理人部位編號）也寫進檔案，方便以 --steps 只重跑後半段除錯。
@@ -191,7 +206,7 @@ ${ISSUER_ENV} npm run -s issuer -- issue --subject $INV --registry $REG --chain-
     // ── 第 5 景：建 session、簽發委託憑證 v3、錨定 ─────────────────────────────
     {
       caption: '第 5 景｜投資人為 AI 代理人建立有上限的 session：單筆 30、總預算 60、1 倍、24 小時、只限 sGOLD',
-      note: '代理人 0xB4e3…22ef7 用自己的 session key，投資人不交出主錢包',
+      note: '代理人用自己的 session key，投資人不交出主錢包',
       run: async (ctx) => {
         const { page } = ctx;
         await ctx.goto('/sessions');

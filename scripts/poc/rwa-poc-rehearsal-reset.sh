@@ -12,10 +12,11 @@ set -euo pipefail
 export PATH="$PATH:$HOME/.foundry/bin"
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 R="${RWA_POC_RPC_URL:-https://sepolia.base.org}"
-EX=0xbb7f8059ed5450889c745f5c1f458cb1290fa96b
-REG=0x3869405c4641C72E5F01EaD9ced69139B4D830bD
-MGR=0xa60a1dC20E1CBb0cBc869464E35AEBa6ff3acbdd
-INV=0xebAFE53877ad3B691664d8cb0b34874CE1240194
+# 位址不寫死（repo 裡出現的完整位址都會被算成平台位址）：合約讀部署紀錄，投資人由 keystore 推出。
+DEP="$ROOT/deploy/tenants/rwa-poc.deployed.json"
+c() { node -e 'const j=require(process.argv[1]);if(j.chainId!==84532)process.exit(1);console.log(j.contracts[process.argv[2]])' "$DEP" "$1"; }
+EX=$(c PerpetualExchange); REG=$(c KYCRegistry); MGR=$(c AgentSessionManager)
+INV=$(cast wallet address --account pepelab-rwa-investor --password-file "$HOME/.foundry/pepelab-rwa-investor.password")
 KEEP="${KEEP_SESSIONS:-2}"
 DRY=0; [ "${1:-}" = "--dry" ] && DRY=1
 TX="$ROOT/scripts/poc/rwa-poc-tx.sh"
