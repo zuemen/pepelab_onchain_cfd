@@ -29,9 +29,19 @@ bash scripts/poc/rwa-poc-x402.sh balance                    # 代理人 USDC
 bash scripts/poc/rwa-poc-x402.sh setup <label> <每期上限> <總額上限>   # 開 session＋簽發 v3＋錨定（atomic USDC）
 bash scripts/poc/rwa-poc-x402.sh call <label> novp|vp [次數]
 bash scripts/poc/rwa-poc-x402.sh pay                        # 一鍵案例 (c)：USDC ≥ 0.02 時帶 VP 付 3 次
+bash scripts/poc/rwa-poc-x402.sh status-list [label…]       # 投資人簽發並安裝狀態清單（帶 label＝撤銷那張憑證；不送鏈上交易）
 ```
 
-`server` 以 `env -i` 加上白名單變數啟動，殼層裡殘留的 `PRIVATE_KEY`、`X402_*` 等都進不去。它設定的變數如下：
+`server` 以 `env -i` 加上白名單變數啟動，殼層裡殘留的 `PRIVATE_KEY`、`X402_*` 等都進不去。白名單擋不住一件事：signal-api（`index.ts`、`settlement.ts`）和 `@pepelab/shared/autoload-env` 會用 dotenv 讀 `agent/.env`。所以腳本做了兩道防護：
+
+1. 偵測到 `agent/.env` 就拒絕啟動。請在沒有 `agent/.env` 的 checkout 執行，例如專用 worktree。
+2. 第二道：在 `env -i` 裡把敏感變數明確設好。dotenv 的 `override:false` 不會蓋過已存在的變數，包括空字串。
+   - 設成空字串：`FEE_SETTLEMENT_PRIVATE_KEY`、`VERIFIER_PRIVATE_KEY`、`AGENT_PRIVATE_KEY`、`PRIVATE_KEY`、`X402_PAYTO_ALLOWLIST`、`X402_FEE_ROUTER`、`X402_SETTLEMENT_TOKEN`、`UPSTASH_*`、`VC_STATUS_URL`、`DEMO_TRADER_ADDRESS`、`ORACLE_BENEFICIARY_ADDRESS`、`SIGNAL_API_PUBLIC_URL`、`SIGNAL_API_URL_ALLOWLIST`。
+   - 設成明確值：`X402_FACILITATOR_URL`、`X402_PROTOCOL`。這兩個在程式裡用 `??` 取預設，空字串會被當成真的值，所以不能留空。
+
+啟動前還會檢查 RPC 的 `cast chain-id` 是否為 84532。`setup`、`call`、`balance` 也會先檢查 `eth_chainId` 是否為 `0x14a34`。
+
+主要變數如下：
 
 | 變數 | 值 |
 |---|---|
@@ -43,9 +53,27 @@ bash scripts/poc/rwa-poc-x402.sh pay                        # 一鍵案例 (c)�
 | `X402_KYA_SPEND_STORE` | `memory`（本機沒有 Upstash） |
 | `VC_STATUS_DIR` | `agent/.state/rwa-poc/vc-status`（ADR-016 狀態清單目錄，第一次啟動時 `init`，已被 gitignore） |
 | `CORS_ALLOWED_ORIGINS` | `http://localhost:5173,http://localhost:4173` |
-| facilitator | 預設 `https://x402.org/facilitator`；協定預設 x402 v1 |
+| `X402_FACILITATOR_URL` / `X402_PROTOCOL` | `https://x402.org/facilitator` / `v1` |
 
-CORS 的情況：付費端點與 `/kya/spend` 回 `Access-Control-Allow-Origin: *`，前端 `http://localhost:5173` 可以直接讀。`/reference-prices` 只開放給白名單。
+CORS 的情況：付費端點與 `/kya/spend` 回 `Access-Control-Allow-Origin: *`。`/reference-prices` 只對白名單回 `Access-Control-Allow-Origin: http://localhost:5173`（已實測）。
+
+**監聽位址**：`index.ts` 沒有 hostname 設定，signal-api 會綁在所有網卡（`*:4021`）。同一個區網裡的機器也連得到。錄影時請在可信任的網路上，或用本機防火牆擋掉 4021 的對外連線。這裡沒有改 signal-api 核心程式碼。
+
+### 撤銷狀態清單
+
+目錄初始化時是空的。驗證端遇到沒有清單的簽發者會回 `STATUS_NO_LIST` 並放行。所以在發佈清單之前，憑證**不能**用狀態清單撤銷，只能靠鏈上 `revokeSession` 或 `unanchor`。
+
+2026-10-07 已經用 `status-list` 發佈了投資人的第一份清單：sequence 1，撤銷 0 張。這是離線簽章，沒有鏈上交易。
+
+之後要撤銷某張憑證（S7 示範撤銷）：
+
+```bash
+bash scripts/poc/rwa-poc-x402.sh status-list main
+```
+
+- 投資人會簽一份累積清單（sequence +1），由 `vc-status install` 驗簽並檢查 sequence 遞增、沒有少掉既有撤銷項，通過才安裝。
+- signal-api 的狀態快取最長 60 秒，所以撤銷最慢 60 秒內生效，之後回 `403 kya_credential_revoked`。
+- 要立即生效，用鏈上 `revokeSession` 或 `unanchor`。
 
 ## 3. 鏈上準備（2026-10-07，全部 status 1；每筆先 `staticCall` 模擬、通過才送）
 
@@ -82,7 +110,9 @@ HTTP 403  error=kya_spend_limit_exceeded
 超過委託憑證的 x402 總額上限：已花 0，本筆 0.01，上限 0.005 USDC。
 ```
 
-這筆在身分一致、憑證簽章、狀態清單、鏈上 session 逐欄比對、錨定全部通過之後，被花費檢查擋下。沒有送進 facilitator。
+這筆在身分一致、憑證簽章、狀態檢查、鏈上 session 逐欄比對、錨定全部通過之後，被花費檢查擋下，沒有送進 facilitator。
+
+首次實測時投資人還沒有狀態清單，狀態檢查是以 `STATUS_NO_LIST` 放行的。發佈 sequence 1 的空清單後重測，結果相同：(a)、(b) 一樣，(c) 一樣停在餘額不足。
 
 「累計超過」的版本是案例 (c) 的第 3 次呼叫：`main` 上限 0.02，前兩次各 0.01 結算之後，第 3 次預期回 `403 kya_spend_limit_exceeded`。
 
@@ -126,5 +156,6 @@ bash scripts/poc/rwa-poc-x402.sh pay
 ## 5. 錄影注意事項
 
 - signal-api 重啟後，memory 花費帳會歸零。`main` 憑證可以重錄，前兩次會再次真的扣款。
+- 同樣在 memory 裡的還有 KYA 的 VP 防重放集合 `(payer, payment nonce)`，重啟後也會清空。重送舊付款仍會被鏈上 EIP-3009 的 nonce 擋下，USDC 合約不接受同一個 nonce 兩次。
 - 公開 RPC 會限流，也可能讀到舊狀態。剛錨定完就呼叫，可能得到 `kya_not_anchored`，等幾秒再試即可。`setup` 已經等到 `isAnchored=true` 才結束。
 - presentation 的時間容忍是 ±120 秒，本機時鐘要準。

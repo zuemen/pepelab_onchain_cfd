@@ -10,6 +10,10 @@
 //       vp＝附 X-Agent-Presentation（kyaFetch），novp＝只付款不附憑證。印出 HTTP 狀態、錯誤碼、
 //       結算 tx hash（X-PAYMENT-RESPONSE）與 KYA 花費累計。
 //   tsx examples/rwa-poc-x402.ts balance
+//   tsx examples/rwa-poc-x402.ts status-list [要撤銷的 label…]
+//       投資人簽一份 ADR-016 狀態清單（累積：沿用目錄裡現有清單的撤銷項目，sequence +1），寫到
+//       agent/.state/rwa-poc/status-list-<sequence>.json；由 rwa-poc-x402.sh 接著以 `vc-status install` 驗證並安裝。
+//       不帶 label＝發佈一份空清單（之後撤銷才有「目前清單」可接續）。不送鏈上交易。
 //
 // 位址一律不寫死：session manager 讀 deploy/tenants/rwa-poc.deployed.json，錨定合約讀
 // docs/tenants/rwa-poc/DEPLOYMENT.md，錢包位址由 keystore 解出，USDC 用 @pepelab/shared 的官方 Base Sepolia USDC。
@@ -36,9 +40,16 @@ const {
   issueDelegationCredential, readOnchainSession, termsFromOnchain, kyaFetch, SESSION_ANCHOR_ABI,
   AGENT_KYA_SPEND_HEADER, formatUsdcAtomic, resolveX402MaxValue, assetIdOf, AGENT_SESSION_MANAGER_ABI,
   OFFICIAL_BASE_SEPOLIA_USDC, ADDRESSES, isCompromisedAddress,
+  issueStatusList, credentialJti, delegationAsVerifyResult, verifyDelegationCredential,
 } = shared as typeof shared & { OFFICIAL_BASE_SEPOLIA_USDC: string; isCompromisedAddress: (a: string) => boolean };
 
 const provider = new ethers.JsonRpcProvider(RPC, 84532, { batchMaxCount: 1, staticNetwork: true, cacheTimeout: -1 });
+
+/** staticNetwork 不會自己打 eth_chainId：送任何東西之前先確認 RPC 真的是 Base Sepolia。 */
+async function assertBaseSepolia() {
+  const id = String(await provider.send("eth_chainId", [])).toLowerCase();
+  if (id !== "0x14a34") throw new Error(`RPC ${RPC} 的 chainId 是 ${id}，不是 Base Sepolia（0x14a34）`);
+}
 
 // ── 位址（從部署紀錄讀）──────────────────────────────────────────────────────────
 function tenantAddresses(): { manager: string; anchor: string } {
@@ -187,6 +198,35 @@ async function call(label: string, mode: string, count: number) {
   }
 }
 
+async function statusList(revokeLabels: string[]) {
+  const { manager } = tenantAddresses();
+  const investor = await unlock("investor");
+  const dir = process.env.VC_STATUS_DIR?.trim();
+  if (!dir) throw new Error("缺 VC_STATUS_DIR（請用 rwa-poc-x402.sh status-list）");
+  const curPath = path.join(dir, `${investor.address.toLowerCase()}.json`);
+  const cur = fs.existsSync(curPath) ? JSON.parse(fs.readFileSync(curPath, "utf8")) : null;
+  const prevRevoked: string[] = cur?.revoked ?? [];
+  const jtis = revokeLabels.map((l) => {
+    if (!/^[a-z0-9-]{1,20}$/.test(l)) throw new Error(`label 格式不對：${l}`);
+    const saved = JSON.parse(fs.readFileSync(path.join(STATE, `${l}.json`), "utf8"));
+    const jti = credentialJti(delegationAsVerifyResult(verifyDelegationCredential(saved.credential)));
+    if (!jti) throw new Error(`${l} 的憑證算不出 jti`);
+    return jti;
+  });
+  const sequence = Number(cur?.sequence ?? 0) + 1;
+  const list = await issueStatusList({
+    issuer: investor,
+    sequence,
+    revoked: [...new Set([...prevRevoked, ...jtis])],
+    revokedBefore: cur?.revokedBefore ?? 0,
+    verifyingContract: manager,
+  });
+  const out = path.join(STATE, "..", `status-list-${sequence}.json`);
+  fs.writeFileSync(out, JSON.stringify(list, null, 2));
+  console.log(`投資人簽發狀態清單 sequence ${sequence}，撤銷 ${list.revoked.length} 張（新增：${revokeLabels.join(",") || "無"}）`);
+  console.log(`RESULT status-list path=${out}`);
+}
+
 async function balance() {
   const agent = await unlock("agent");
   const usdc = new ethers.Contract(OFFICIAL_BASE_SEPOLIA_USDC, ["function balanceOf(address) view returns (uint256)"], provider);
@@ -196,10 +236,16 @@ async function balance() {
 }
 
 const [cmd, ...rest] = process.argv.slice(2);
+if (cmd === "call" && rest[2] !== undefined && !/^[1-9]\d{0,1}$/.test(rest[2])) {
+  console.error(`次數必須是 1–99 的整數（收到 ${rest[2]}）`);
+  process.exit(2);
+}
+if (["setup", "call", "balance"].includes(cmd ?? "")) await assertBaseSepolia();
 if (cmd === "setup" && rest.length === 3 && /^\d+$/.test(rest[1]!) && /^\d+$/.test(rest[2]!)) await setup(rest[0]!, rest[1]!, rest[2]!);
 else if (cmd === "call" && rest.length >= 2 && ["vp", "novp"].includes(rest[1]!)) await call(rest[0]!, rest[1]!, Number(rest[2] ?? 1));
 else if (cmd === "balance") await balance();
+else if (cmd === "status-list") await statusList(rest);
 else {
-  console.error("用法：setup <label> <maxPerPeriod> <maxTotal> | call <label> <vp|novp> [次數] | balance");
+  console.error("用法：setup <label> <maxPerPeriod> <maxTotal> | call <label> <vp|novp> [次數] | balance | status-list [label…]");
   process.exit(2);
 }
