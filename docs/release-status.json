@@ -8,7 +8,7 @@
    "name": "Base Sepolia",
    "role": "正式測試網（交易、agent session、x402 都在這條鏈）",
    "rpc": "https://sepolia.base.org",
-   "block": 47787823,
+   "block": 47788376,
    "components": [
     {
      "id": "PerpetualExchange",
@@ -1282,7 +1282,7 @@
    "name": "Sepolia",
    "role": "legacy 展示鏈（不是產品路徑；合約未做金鑰輪替）",
    "rpc": "https://ethereum-sepolia-rpc.publicnode.com",
-   "block": 11860311,
+   "block": 11860403,
    "components": [
     {
      "id": "PerpetualExchange",
@@ -2456,10 +2456,10 @@
    "label": "寫價 keeper（GitHub Actions 排程）",
    "merged": {
     "pr": null,
-    "commit": "bca53f6",
+    "commit": "9ce1b75",
     "date": "2026-10-07"
    },
-   "sourceDigest": "42dab73caace03cd",
+   "sourceDigest": "623dfbc31b50cb04",
    "deployed": "已上線：master 上的 base-sepolia-keeper.yml 排程；最近寫價時間由 scripts/post-deploy-smoke.mjs 讀鏈上 oracle",
    "acceptance": {
     "status": "未驗收",
