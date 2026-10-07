@@ -34,8 +34,8 @@
 |---|---|---|
 | `deployer` | `0xF52D1a91B93bFF40C7D36Cb7f898833c16a049eE` | 部署整套合約；`DeployTenant` 結束時不留任何權限 |
 | `admin` | `0xC0f050fDeD9330169d3b6fD91D731799b26a7f00` | 租戶 `roles.admin`：所有合約的 owner／DEFAULT_ADMIN，兼 `roles.treasury`。這是測試網 EOA，部署時要設 `ALLOW_EOA_ADMIN=true` |
-| `risk` | `0x745637A4bEc417E3C5f32A9D2F9158E9D61878b7` | `roles.risk`（金庫 RISK_ROLE；本租戶 `deployVault: false`，沒有金庫） |
-| `guardian` | `0xbB7f5F528994AEFA79bb8Cb2F660D08c28A3Cf4F` | `roles.guardian`：oracle／exchange 的限時暫停（金庫 PAUSER 只在有金庫時適用；本租戶沒有） |
+| `risk` | `0x745637A4bEc417E3C5f32A9D2F9158E9D61878b7` | `roles.risk`（金庫 RISK_ROLE） |
+| `guardian` | `0xbB7f5F528994AEFA79bb8Cb2F660D08c28A3Cf4F` | `roles.guardian`：oracle／exchange 的限時暫停，以及金庫 PAUSER |
 | `keeper` | `0x5358cf4E0a1409F6B433Dd25Adf8c92bF0821ED8` | `roles.keeper`（推價），兼 `roles.marketOperator`（休市時切 ReduceOnly） |
 | `issuer` | `0xf67bA3C2F6E710415F548C09b73808ba19b9cD83` | 合格投資人 VC 的發證者（`VCKycRegistry.setIssuer`） |
 | `attestor` | `0x217d7A850770da61AD596D98b5334BC22E7D7f0B` | ESG 碳分級見證者（`ESGRegistryV2` 的 `ATTESTOR_ROLE`）。與 admin 同一控制人，也就是說見證者是 PoC 團隊自己 |

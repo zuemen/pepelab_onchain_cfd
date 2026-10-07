@@ -26,6 +26,7 @@ import { formatFundingInterval } from 'src/lib/pepefi/fundingInterval'
 import { SHOW_LEVERAGE, FIXED_LEVERAGE, PERPETUALS_AUTHORIZED } from 'src/lib/pepefi/featureFlags'
 
 import { Row } from '../Atoms'
+import { kycTicketNotice } from './kycNotice'
 import { C, panel, monoCss, labelCss } from '../terminal-theme'
 import { asTx, tryParse, type AssetId, type TerminalContracts } from '../types'
 
@@ -336,14 +337,7 @@ export function OrderTicket({
         <Box
           sx={{ ...monoCss, fontSize: 11.5, color: C.lime, ...panel, borderColor: C.line2, p: 1 }}
         >
-          {interpolate(
-            kycUnknown
-              ? t.terminal.ticket.kycUnknown
-              : kycPending
-                ? t.terminal.ticket.kycPending
-                : t.terminal.ticket.kycRequired,
-            { asset: meta?.symbol ?? '' },
-          )}
+          {kycTicketNotice(meta?.symbol ?? '', { unknown: !!kycUnknown, pending: !!kycPending, vcAction: kycVcAction })}
           {kycCredentialsHref && !kycPending && (
             <Box
               component={RouterLink}

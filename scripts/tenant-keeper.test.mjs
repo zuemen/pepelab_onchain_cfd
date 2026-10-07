@@ -112,8 +112,8 @@ test("反例：id 未登記（沒有部署登記，或登記是 kind=platform）
   const p = guards([gen("bank-x")], ["bank-a"]);
   some(p, /keeper-bank-x\.yml#keep：綁了 environment「keeper-bank-x」，但「bank-x」不是已登記的專屬租戶/);
   some(p, /keeper-bank-x\.yml：租戶 keeper workflow，但「bank-x」不是已登記的專屬租戶/);
-  // repo 現況：demo-bank 是 kind=platform，沒有任何專屬租戶。
-  assert.deepEqual(listDedicatedTenantIds(root), []);
+  // repo 現況：demo-bank 是 kind=platform，不是專屬租戶（rwa-poc 才是）。
+  assert.ok(!listDedicatedTenantIds(root).includes("demo-bank"));
   some(checkWorkflows([...REAL, gen("demo-bank")], YAML).problems, /「demo-bank」不是已登記的專屬租戶/);
 });
 

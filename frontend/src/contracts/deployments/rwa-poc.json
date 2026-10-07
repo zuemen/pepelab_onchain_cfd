@@ -1,6 +1,37 @@
 {
   "schemaVersion": 1,
   "tenant": "rwa-poc",
-  "kind": "platform",
-  "note": "RWA＋SSI PoC：專屬合約部署前的佔位登記（暫時連平台現行部署）。廣播並讀回驗證後，改由 check-tenant-deploy.mjs --print-frontend 產生的 dedicated 登記取代。"
+  "kind": "dedicated",
+  "chainId": 84532,
+  "oracleKind": "guarded",
+  "contracts": {
+    "SettlementToken": "0x69fd695Bc7C3aFdb35ABA35cD6890C506400b035",
+    "Oracle": "0x249A6CE5b467A4F44dC6378be313D681B2c4358a",
+    "ESGRegistryV2": "0x91CcbBBCEF651C2b1e57117a5b0dEcDE23dE572b",
+    "KYCRegistry": "0x3869405c4641C72E5F01EaD9ced69139B4D830bD",
+    "InsuranceVault": "0x792f0B2072CB3c65D618C50aE31c7802B8909035",
+    "FeeRouter": "0x622a4c0aFd20105c5Be28FA5e39D3808FFb065dF",
+    "TraderStake": "0x2a7bE6Faccb9B00337FF52712430C835cCED1034",
+    "PerpetualExchange": "0xbB7f8059eD5450889c745F5c1F458Cb1290FA96B",
+    "StrategyRegistry": "0x2a1a974Ba8eD424CD6Acf035A17A88c1816eEcE9",
+    "CopyTracker": "0x48e770D50e7c1Ac2F0C098A70B28BD5e641CdD0a",
+    "AgentSessionManager": "0xa60a1dC20E1CBb0cBc869464E35AEBa6ff3acbdd",
+    "AssetVaultV2": "0x9e77476BB4Fe36259E729628Cf4A38F54107720b"
+  },
+  "shared": [
+    "contracts.SettlementToken"
+  ],
+  "tokens": {
+    "sAAPL": "0x17792Ed0e52688cdFA5698fFc3a09531634B61af",
+    "sBOND": "0x631551d7695b16155CDbd5D9F8e394B65ca50620",
+    "sBTC": "0xFDE7fF38174c43c1b788f634113BEb7C32747cF6",
+    "sESGU": "0xE4981CAf202C43EA9Df9Bfc5fF059bDd7b5fDe7a",
+    "sETH": "0xD0FB912E3Fcc9BD9F1dc78a52007b88953670a34",
+    "sGOLD": "0xd00b097FeD3B82a7fD316F42dC42a188b8Ef6672",
+    "sGOOGL": "0x0bcEE6225BCA305881412Edc9FDaB17434F74e8a",
+    "sICLN": "0xBC2755B55462aF20Ae73AcaaBC30B6Bc5f5db2F5",
+    "sMSFT": "0x5D544Ee95a2A71Cb9D612238b9E1Fc83b01A2c7E",
+    "sNVDA": "0xdA3E3096198c587dd5ce1D3C96057A3CbEB37dc8",
+    "sTSLA": "0x79E05B58980EECd7096E6aCdf073439bA827a74a"
+  }
 }

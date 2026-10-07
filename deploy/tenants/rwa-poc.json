@@ -2,7 +2,7 @@
   "$comment": "RWA＋SSI 正式 PoC（Base Sepolia 測試網，平台團隊自營）。所有角色都是測試網 EOA，以加密 keystore 簽署（~/.foundry/keystores/pepelab-rwa-<角色>），secretsEnv 只是格式欄位、沒有使用。錢包與角色見 docs/tenants/rwa-poc/WALLETS.md。測試網 PoC 不收租戶費，所以收費模式定為 0／0。",
   "schemaVersion": 4,
   "tenantId": "rwa-poc",
-  "status": "ready",
+  "status": "deployed",
   "frontendTenant": "rwa-poc",
   "network": {
     "chainId": 84532
@@ -37,9 +37,9 @@
     "liquidationPenaltyBps": 2000,
     "markPremiumCapBps": 0,
     "vaultFeeShareBps": 0,
-    "deployVault": false,
-    "vaultRedeemFeeBps": null,
-    "vaultMinReserveRatioBps": null,
+    "deployVault": true,
+    "vaultRedeemFeeBps": 30,
+    "vaultMinReserveRatioBps": 11000,
     "kycRegistry": "vc"
   },
   "assets": {
