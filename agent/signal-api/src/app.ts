@@ -1327,7 +1327,9 @@ export function createApp(opts: CreateAppOptions = {}): Hono<{ Variables: AppVar
       if (!f) throw err;
       return c.json(f.body, f.status, f.headers);
     }
-    if (res) c.res = res;
+    // x402-hono 對「不是付費路由」的請求回傳的不是 Response（是 next() 的回傳值）；
+    // 原樣塞回 c.res 會讓 Hono 讀 headers 時丟 RangeError，未註冊的路徑因此回 500 而不是 404。
+    if (res instanceof Response) c.res = res;
     // facilitator 以 200 + isValid:false 回報限流（CDP 的 `rate_limit_exceeded`
     // 就是這個形狀）時，x402-hono 會把 invalidReason 原樣塞進 402 的 error。
     // 402 對 x402 client 的意思是「請付款」，會讓它對一個根本沒問題的簽章重簽重送。
@@ -1356,7 +1358,7 @@ export function createApp(opts: CreateAppOptions = {}): Hono<{ Variables: AppVar
    */
   const runV2 = async (c: Context<{ Variables: AppVariables }>, next: Next) => {
     const res = await x402v2!.handle(c, next);
-    if (res) c.res = res;
+    if (res instanceof Response) c.res = res;
     c.res = await applyLedgerRecording(c.get("ledgerEntry"), c.res, c.req.header("PAYMENT-SIGNATURE"), "v2");
   };
 
