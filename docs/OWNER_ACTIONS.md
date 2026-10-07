@@ -7,8 +7,8 @@
 > 這是公開文件：不含任何私鑰或聯絡方式；已知外洩的舊部署者地址一律寫成縮寫 `0xE80A…Eb93`
 > （完整清單在 `agent/shared/src/payoutSafety.ts` 的 `COMPROMISED_ADDRESSES`）。需要金鑰的指令
 > 一律用 Foundry keystore（`cast wallet import <名稱> --interactive` 建立一次，之後 `--account <名稱>`）或 `--interactive`，
-> 私鑰不出現在指令列、不寫進檔案或 shell history。少數腳本在腳本內讀 `PRIVATE_KEY`、無法改用 keystore，
-> 第 5 步逐一標出並寫明最小化做法（列為後續改寫項目）。GitHub／Cloudflare 上的金鑰只放 secret。
+> 私鑰不出現在指令列、不寫進檔案或 shell history。本文件用到的部署腳本都已改成以 `msg.sender` 部署，
+> 可以用 keystore（`DeployPepeIncentives`、`DeployAMM` 於 2026-10-07 改寫，見第 5 步）。GitHub／Cloudflare 上的金鑰只放 secret。
 >
 > 本文件的「Base Sepolia」一律指 chainId 84532，公開 RPC `https://sepolia.base.org`；「Sepolia」指 Ethereum 測試網
 > （chainId 11155111）。部署與驗證指令都直接寫出 Base Sepolia 的 RPC，不用 `$SEPOLIA_RPC_URL` 這類容易混淆的變數名。
@@ -358,18 +358,10 @@ PepeAMM 的修正都只存在於原始碼；平台 FeeRouter 的 `platformTreasu
   # exchange 讀的 oracle 與 V2 金庫讀的 oracle：「最近一次寫價」都必須晚於 dispatch，而且 11 檔都不超過 6 小時
   ```
 
-**私鑰處理：**
-- `Redeploy130Hardened`、`RedeployGuardedOracle`、`UpgradeVaultToV2_5` 以 `msg.sender` 當部署者，可以直接用 keystore：
-  `--account $ACCOUNT --sender $DEPLOYER`。`DEPLOY_130_CUTOVER.md` 的指令也已改成這個寫法。
-- `DeployPepeIncentives`、`DeployAMM` 在腳本內讀 `vm.envUint("PRIVATE_KEY")`，**目前無法改用 keystore**。在改寫之前
-  （後續待辦：改成 `vm.startBroadcast()` 讓 `--account` 生效），把風險壓到最小：
-  ```bash
-  read -rs PRIVATE_KEY && export PRIVATE_KEY   # 不回顯、不進 history；貼上時要含 0x 前綴（vm.envUint 會把不帶 0x 的
-                                               # 十六進位字串當十進位解析而失敗）；不要寫在指令列或任何檔案裡
-  forge script …                               # 下面第 5、6 項的指令，本身不帶 --private-key
-  unset PRIVATE_KEY                            # 用完立刻清掉
-  ```
-  只在這一個 shell 設定；跑完就關掉這個終端機。
+**私鑰處理：** 第 5 步的每一支腳本都以 `msg.sender` 當部署者，一律用 keystore：
+`--account $ACCOUNT --sender $DEPLOYER`（`DeployAMM` 的 `--sender` 要是 MockUSDC 的 owner）。
+`DeployPepeIncentives`、`DeployAMM` 原本在腳本內讀 `vm.envUint("PRIVATE_KEY")`，2026-10-07 已改成 `vm.startBroadcast()`
+（測試 `contracts/test/DeployPepeScripts.t.sol`），不再需要 `export PRIVATE_KEY`。
 
 **操作（依序）：**
 
@@ -484,15 +476,15 @@ PepeAMM 的修正都只存在於原始碼；平台 FeeRouter 的 `platformTreasu
      `platformEarnings()` = 0.06 MockUSDC（測試幣）。本項完成前定期讀這個值；明顯增加時優先推動 #130 與 timelock（腳本本身已不是瓶頸）。
 5. **PepeIncentives**：`contracts/script/DeployPepeIncentives.s.sol`。它的 `copyTracker` 是 immutable，**要綁第 4 項之後的最終
    CopyTracker**——第 4 項阻塞期間這一項也等；先部署就要在第 4 項之後再部署一次。
-   - 環境變數：`PRIVATE_KEY`（見上方「私鑰處理」）、`PEPE_TOKEN`（`addresses.ts` 的 PepeToken）、`PERPETUAL_EXCHANGE`（第 1 項的新
+   - 環境變數：`PEPE_TOKEN`（`addresses.ts` 的 PepeToken）、`PERPETUAL_EXCHANGE`（第 1 項的新
      exchange）、`COPY_TRACKER`（最終 CopyTracker）、`ESG_REGISTRY`（`addresses.ts` 的 ESGRegistry；現行部署填的是 0 位址，
      沿用就填 0 位址並保持監控規則 `pepe-incentives-wiring` 的預期值）。
-   - `forge script script/DeployPepeIncentives.s.sol --rpc-url $RPC --broadcast --slow -v`（不帶 `--private-key`；腳本自己讀環境變數）
+   - `forge script script/DeployPepeIncentives.s.sol --rpc-url $RPC --account $ACCOUNT --sender $DEPLOYER --broadcast --slow -v`
    - 部署後更新 `addresses.ts`、轉入獎勵池；新實例從空狀態開始，舊的連續簽到等資料不會帶過來（`KNOWN_LIMITATIONS.md`）。
 6. **PepeAMM**：`contracts/script/DeployAMM.s.sol`，簽署者必須是 MockUSDC 的 owner。
-   - 環境變數：`PRIVATE_KEY`（見上方）、`MOCK_USDC`、`MOCK_ORACLE`（都取 `addresses.ts` 的 Base Sepolia 值；oracle 若在第 1 項換了，
+   - 環境變數：`MOCK_USDC`、`MOCK_ORACLE`（都取 `addresses.ts` 的 Base Sepolia 值；oracle 若在第 1 項換了，
      填 exchange 實際讀的那顆）、選用 `SEED_ETH`／`SEED_USDC`。
-   - `forge script script/DeployAMM.s.sol --rpc-url $RPC --broadcast --skip-simulation --slow -v`
+   - `forge script script/DeployAMM.s.sol --rpc-url $RPC --account $ACCOUNT --sender <MockUSDC owner> --broadcast --skip-simulation --slow -v`
    - 部署後更新 `addresses.ts`。
 
 **完成後驗證（唯讀）：**

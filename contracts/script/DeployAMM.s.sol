@@ -10,11 +10,10 @@ import "../src/PepeAMM.sol";
 ///
 ///         Usage:
 ///   forge script script/DeployAMM.s.sol \
-///     --rpc-url https://sepolia.base.org \
+///     --rpc-url https://sepolia.base.org --account <keystore name> --sender <MockUSDC owner> \
 ///     --broadcast --skip-simulation --slow -v
-///   (Base Sepolia. PRIVATE_KEY is read in-script — 0x-prefixed, set only in the current shell with
-///   `read -rs PRIVATE_KEY && export PRIVATE_KEY`, `unset` afterwards; no --private-key on the command
-///   line. A keystore (--account) cannot be used until the script is rewritten; docs/OWNER_ACTIONS.md step 5.)
+///   (Base Sepolia. The signer is the broadcasting account (`msg.sender`), so a Foundry keystore
+///   works and no private key is read by the script; it must be the MockUSDC owner.)
 ///
 ///   Required env vars: MOCK_USDC, MOCK_ORACLE
 ///   Optional:          SEED_ETH (wei, default 1e18), SEED_USDC (18-dec, default 2300e18)
@@ -46,9 +45,11 @@ contract DeployAMM is Script {
     bytes32 constant ETH_ASSET_ID =
         0x83e22e1d95f2093dd401ec5cba75bcd950cd90282356f086011849e4fbaad8a9;
 
-    function run() external {
-        uint256 deployerPk = vm.envUint("PRIVATE_KEY");
-        address deployer   = vm.addr(deployerPk);
+    address public broadcasterOverride;   // test hook, see Redeploy130Hardened
+    function setBroadcasterOverride(address a) external { broadcasterOverride = a; }
+
+    function run() external returns (PepeAMM amm) {
+        address deployer   = broadcasterOverride != address(0) ? broadcasterOverride : msg.sender;
         address usdcAddr   = vm.envAddress("MOCK_USDC");
         address oracleAddr = vm.envAddress("MOCK_ORACLE");
 
@@ -60,7 +61,7 @@ contract DeployAMM is Script {
         // PA-3: fail with a sentence, not a selector.
         require(
             usdc.owner() == deployer,
-            "PRIVATE_KEY is not the MockUSDC owner - mint() became onlyOwner in PA-3"
+            "the broadcaster is not the MockUSDC owner - mint() became onlyOwner in PA-3"
         );
 
         // The opening price is the seed ratio. Say where it lands relative to
@@ -86,10 +87,10 @@ contract DeployAMM is Script {
             console.log("!!! Oracle has no sETH price. Swaps revert until a keeper posts one.");
         }
 
-        vm.startBroadcast(deployerPk);
+        vm.startBroadcast(deployer);
 
         // 1. Deploy PepeAMM
-        PepeAMM amm = new PepeAMM(usdcAddr, oracleAddr);
+        amm = new PepeAMM(usdcAddr, oracleAddr);
 
         // 2. Mint the seed mUSDC (onlyOwner since PA-3)
         usdc.mint(deployer, seedUsdc);
