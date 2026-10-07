@@ -14,22 +14,25 @@ function render({ step, total, caption, txHash, note }) {
     el = document.createElement('div');
     el.id = '__pepe_poc_caption';
     el.setAttribute('aria-hidden', 'true');
+    // 畫面底部置中的字幕條：不蓋頁首（錢包地址、網路徽章）與左側導覽
     Object.assign(el.style, {
       position: 'fixed',
-      top: '0',
-      left: '0',
-      // 不鋪滿整列：右上角留給頁首的錢包地址與網路徽章，觀眾要看得到「連的是誰」
-      maxWidth: '62vw',
-      borderBottomRightRadius: '14px',
+      bottom: '28px',
+      left: '50%',
+      transform: 'translateX(-50%)',
+      width: 'max-content',
+      maxWidth: '82vw',
+      borderRadius: '14px',
       zIndex: '2147483647',
       pointerEvents: 'none',
-      padding: '14px 28px',
-      background: 'rgba(12, 17, 29, 0.88)',
+      padding: '14px 30px',
+      background: 'rgba(12, 17, 29, 0.84)',
       color: '#fff',
       fontFamily: '"PingFang TC", "Noto Sans TC", "Microsoft JhengHei", system-ui, sans-serif',
-      boxShadow: '0 2px 12px rgba(0,0,0,0.35)',
+      boxShadow: '0 4px 18px rgba(0,0,0,0.45)',
+      border: '1px solid rgba(34, 197, 94, 0.55)',
       borderBottom: '3px solid #22c55e',
-      borderRight: '3px solid #22c55e',
+      textAlign: 'center',
       transition: 'opacity 200ms ease-out',
     });
     document.documentElement.appendChild(el);
@@ -37,7 +40,7 @@ function render({ step, total, caption, txHash, note }) {
   el.innerHTML = '';
 
   const row = document.createElement('div');
-  Object.assign(row.style, { display: 'flex', alignItems: 'center', gap: '16px' });
+  Object.assign(row.style, { display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '16px' });
 
   const badge = document.createElement('span');
   badge.textContent = total ? `步驟 ${step}/${total}` : `步驟 ${step}`;
@@ -48,7 +51,7 @@ function render({ step, total, caption, txHash, note }) {
 
   const text = document.createElement('span');
   text.textContent = caption;
-  Object.assign(text.style, { fontSize: '24px', fontWeight: '600', lineHeight: '1.35' });
+  Object.assign(text.style, { fontSize: '24px', fontWeight: '600', lineHeight: '1.35', textAlign: 'left' });
 
   row.append(badge, text);
   el.append(row);
@@ -56,7 +59,8 @@ function render({ step, total, caption, txHash, note }) {
   if (txHash || note) {
     const sub = document.createElement('div');
     Object.assign(sub.style, { marginTop: '6px', fontSize: '16px', color: '#bbf7d0', fontFamily: 'ui-monospace, Menlo, monospace', wordBreak: 'break-all' });
-    sub.textContent = txHash ? `tx ${txHash}  ·  https://sepolia.basescan.org/tx/${txHash}` : note;
+    sub.textContent = txHash ? `tx ${txHash}\nhttps://sepolia.basescan.org/tx/${txHash}` : note;
+    sub.style.whiteSpace = 'pre-line';
     el.append(sub);
   }
 }

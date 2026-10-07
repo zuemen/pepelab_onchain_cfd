@@ -9,7 +9,7 @@
 // Display strings come from t.sessions.delegation (locale catalogs).
 import type { Signer } from 'ethers'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useRef, useState, useEffect, useCallback } from 'react'
 import { Contract, formatUnits, getAddress } from 'ethers'
 
 import Box from '@mui/material/Box'
@@ -23,6 +23,7 @@ import LinearProgress from '@mui/material/LinearProgress'
 
 import { t, interpolate } from 'src/locales'
 import { MONO } from 'src/components/pepefi/brandKit'
+import { pollUntil } from 'src/lib/pepefi/pollUntil'
 import { prettyError } from 'src/lib/pepefi/errorMessages'
 import { SIGNAL_API_URL } from 'src/lib/pepefi/signalApi'
 import { useToast } from 'src/components/pepefi/ToastProvider'
@@ -173,6 +174,9 @@ export function DelegationCredentialPanel({
   const [showJson, setShowJson] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
   const anchorDeployed = isSessionAnchorDeployed(chainId)
+  // 卸載或換錢包／換 session 時，進行中的輪詢停止。
+  const pollGen = useRef(0)
+  useEffect(() => () => { pollGen.current += 1 }, [signer, session.id])
 
   // allowedAssets(id) is not in the page's session row; read it once.
   useEffect(() => {
@@ -245,6 +249,14 @@ export function DelegationCredentialPanel({
       }
       const tx = (await anchor[kind](session.id, stored.credentialHash)) as { wait(): Promise<unknown>; hash: string }
       await tx.wait()
+      // 公開節點負載平衡：receipt 之後立刻讀可能拿到舊狀態，畫面會顯示「已被新憑證取代」。
+      // 讀到預期的錨定狀態為止（最多約 20 秒）再更新畫面；卸載或換錢包就停（之後重開會從鏈上重讀）。
+      const want = kind === 'anchor'
+      const gen = pollGen.current
+      const res = await pollUntil(async () => Boolean(await anchor.isAnchored(session.id, stored.credentialHash)) === want, {
+        cancelled: () => pollGen.current !== gen,
+      })
+      if (res === 'cancelled') return
       onStored(kind === 'anchor' ? { ...stored, anchoredTx: tx.hash } : { ...stored, anchoredTx: undefined })
       notify(kind === 'anchor' ? t.sessions.delegation.anchoredToast : t.sessions.delegation.unanchoredToast, true, tx.hash)
       await refresh()

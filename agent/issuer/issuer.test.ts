@@ -23,7 +23,7 @@ import {
   verifyInvestorCredential,
   verifyInvestorStatusList,
 } from "./investorVc.ts";
-import { localProvider, parseArgs, runInit, runIssue, runRevoke, runVerify } from "./cli.ts";
+import { issuerWalletFromEnv, localProvider, parseArgs, runInit, runIssue, runRevoke, runVerify } from "./cli.ts";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const TMP = fs.mkdtempSync(path.join(os.tmpdir(), "pepe-investor-vc-"));
@@ -275,6 +275,63 @@ const vc = await issue();
   const res = await runVerify({ vc: a, registry: REGISTRY, chainId: CHAIN, statusDir: dir, statePath: path.join(TMP, "e2e-state.json") });
   assert.ok(res.signature.valid && res.status?.ok && res.onchain === null);
   ok("發證紀錄只有索引／id／雜湊／地址／時間，索引遞增；不支援的類型拒絕；verify 串起驗簽＋狀態");
+}
+
+// 8. 發證者金鑰來源：ISSUER_PRIVATE_KEY 或加密 keystore（測試內產生，不碰真的金鑰）
+{
+  const w = ethers.Wallet.createRandom();
+  const password = "test-only-" + ethers.hexlify(ethers.randomBytes(8));
+  const json = ethers.encryptKeystoreJsonSync({ address: w.address, privateKey: w.privateKey }, password, { scrypt: { N: 1 << 10 } });
+  const HOME = "/home/op";
+  const files: Record<string, string> = {
+    "/home/op/.foundry/keystores/pepelab-rwa-issuer": json,
+    "/home/op/.foundry/pepelab-rwa-issuer.password": password + "\n",
+    "/home/op/wrong.password": "nope\n",
+  };
+  const read = (p: string) => {
+    if (!(p in files)) throw new Error("ENOENT " + p);
+    return files[p];
+  };
+  const secrets = [password, w.privateKey, w.privateKey.slice(2), json];
+  const rejects = async (env: Record<string, string>, re: RegExp) => {
+    let msg = "";
+    try {
+      await issuerWalletFromEnv(env, HOME, read);
+    } catch (e) {
+      msg = (e as Error).message;
+    }
+    assert.ok(re.test(msg), `${msg} !~ ${re}`);
+    for (const s of [...secrets, ...Object.values(env).filter((v) => /^(0x)?[0-9a-f]{64}$/i.test(v))]) {
+      assert.ok(!msg.includes(s.replace(/^0x/i, "")), "錯誤訊息不得帶秘密");
+    }
+  };
+
+  // keystore 名稱（~/.foundry/keystores 下）＋~/ 密碼檔 → 地址相同
+  const fromKs = await issuerWalletFromEnv(
+    { ISSUER_KEYSTORE: "pepelab-rwa-issuer", ISSUER_KEYSTORE_PASSWORD_FILE: "~/.foundry/pepelab-rwa-issuer.password" },
+    HOME,
+    read,
+  );
+  assert.strictEqual(fromKs.address, w.address);
+  // 明文私鑰仍可用（原有行為）
+  assert.strictEqual((await issuerWalletFromEnv({ ISSUER_PRIVATE_KEY: w.privateKey }, HOME, read)).address, w.address);
+  // keystore 簽出的 VC 驗得過，issuer 是 keystore 的地址
+  const vcKs = await runIssue({ issuer: fromKs, subject: investor.address, registry: REGISTRY, chainId: CHAIN, nonce: 0n, dbPath: path.join(TMP, "ks-db.json") });
+  const vv = verifyInvestorCredential(vcKs, { expectedRegistry: REGISTRY, expectedChainId: CHAIN });
+  assert.ok(vv.valid && vv.issuer === w.address);
+
+  await rejects({}, /ISSUER_PRIVATE_KEY 未設或格式錯誤/);
+  await rejects({ ISSUER_PRIVATE_KEY: "0x1234" }, /ISSUER_PRIVATE_KEY 未設或格式錯誤/);
+  await rejects({ ISSUER_PRIVATE_KEY: w.privateKey, ISSUER_KEYSTORE: "pepelab-rwa-issuer", ISSUER_KEYSTORE_PASSWORD_FILE: "/pw" }, /只能設定一個/);
+  await rejects({ ISSUER_KEYSTORE: "pepelab-rwa-issuer" }, /必須同時設定 ISSUER_KEYSTORE_PASSWORD_FILE/);
+  await rejects({ ISSUER_KEYSTORE: w.privateKey, ISSUER_KEYSTORE_PASSWORD_FILE: "/pw" }, /ISSUER_KEYSTORE 看起來是私鑰/);
+  await rejects({ ISSUER_KEYSTORE: "k", ISSUER_KEYSTORE_PASSWORD_FILE: w.privateKey.slice(2) }, /ISSUER_KEYSTORE_PASSWORD_FILE 看起來是私鑰/);
+  await rejects({ ISSUER_KEYSTORE: "pepelab-rwa-issuer", ISSUER_KEYSTORE_PASSWORD_FILE: "/home/op/wrong.password" }, /issuer keystore 解密失敗/);
+  await rejects({ ISSUER_KEYSTORE: "missing", ISSUER_KEYSTORE_PASSWORD_FILE: "~/.foundry/pepelab-rwa-issuer.password" }, /讀不到 issuer keystore：/);
+  await rejects({ ISSUER_KEYSTORE: "pepelab-rwa-issuer", ISSUER_KEYSTORE_PASSWORD_FILE: "/none" }, /讀不到 issuer keystore 密碼檔/);
+  // KEEPER_* 不會被當成發證者金鑰
+  await rejects({ KEEPER_PRIVATE_KEY: w.privateKey }, /ISSUER_PRIVATE_KEY 未設或格式錯誤/);
+  ok("發證者金鑰：keystore 名稱解密後地址正確並可簽 VC；明文仍可用；互斥／缺密碼檔／私鑰誤填／密碼錯／缺檔都拒絕且不洩漏秘密");
 }
 
 fs.rmSync(TMP, { recursive: true, force: true });

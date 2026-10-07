@@ -100,6 +100,7 @@ export const terminal = {
     kycUnknown: '⚠ 無法確認 KYC 狀態（鏈上讀取失敗）。合規閘門採 fail-closed，{asset} 暫停交易。',
     kycPending: '⏳ {asset} 需 KYC：申請已送出，等待審核人員核准中，核准後自動解鎖',
     kycRequired: '🔒 {asset} 需 KYC，請至 Exchange 頁送出申請（送出後需審核）',
+    kycRequiredVc: '🔒 {asset} 是 RWA 市場，開倉需要有效的合格投資人資格（可驗證憑證登記上鏈）',
 
     riskNotice:
       '⚠️ 測試網：本平台為 oracle 計價永續，損益以 mark 價（含 OI 失衡）結算；極端單邊行情下帳面利潤可能因 ADL 自動減倉而調整；保證金為測試代幣。',

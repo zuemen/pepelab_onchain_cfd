@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 import { MONO } from 'src/components/pepefi/brandKit'
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { parseUnits, formatUnits, Wallet, getAddress } from 'ethers'
 
 import Box from '@mui/material/Box'
@@ -32,6 +32,7 @@ import { t, locale, interpolate } from 'src/locales'
 import { assetPolicy } from 'src/tenant'
 import { sessionAssetsForTenant } from 'src/tenant/assetPolicy'
 import { PERPETUALS_AUTHORIZED } from 'src/lib/pepefi/featureFlags'
+import { pollUntil } from 'src/lib/pepefi/pollUntil'
 import { prettyError } from 'src/lib/pepefi/errorMessages'
 import { agentDid, shortDid } from 'src/lib/pepefi/did'
 import { useToast } from 'src/components/pepefi/ToastProvider'
@@ -297,8 +298,8 @@ export default function SessionsPage() {
   }
 
   // ── Fetch this wallet's sessions ──────────────────────────────────────────
-  const fetchSessions = useCallback(async () => {
-    if (!manager || !wallet.address) return
+  const fetchSessions = useCallback(async ({ silent = false }: { silent?: boolean } = {}): Promise<SessionRow[] | null> => {
+    if (!manager || !wallet.address) return null
     setLoading(true)
     try {
       const next = Number(await manager.nextSessionId())
@@ -317,13 +318,20 @@ export default function SessionsPage() {
           maxLeverage: s[5], expiry: s[6], revoked: s[7],
         }
       })
-      setSessions(rows.filter((r): r is SessionRow => r !== null))
+      const mine = rows.filter((r): r is SessionRow => r !== null)
+      setSessions(mine)
+      return mine
     } catch (e) {
-      notify(prettyError(e), false)
+      if (!silent) notify(prettyError(e), false)
+      return null
     } finally {
       setLoading(false)
     }
   }, [manager, wallet.address])
+
+  // 卸載或換錢包／換鏈時，進行中的輪詢要停下來（不再更新畫面、不再開視窗）。
+  const pollGen = useRef(0)
+  useEffect(() => () => { pollGen.current += 1 }, [manager, wallet.address])
 
   useEffect(() => { void fetchSessions() }, [fetchSessions])
 
@@ -351,14 +359,27 @@ export default function SessionsPage() {
       const receipt = (await tx.wait()) as { logs?: { topics: string[]; data: string }[] } | null
       notify(t.sessions.create.done, true, tx.hash)
       setAgent('')
-      await fetchSessions()
-      // Next step of the SSI flow: issue + anchor the v3 delegation credential for the new session.
+      let created: number | null = null
       for (const log of receipt?.logs ?? []) {
         try {
           const ev = manager.interface.parseLog(log)
-          if (ev?.name === 'SessionCreated') { setDelegationFor(Number(ev.args[0])); break }
+          if (ev?.name === 'SessionCreated') { created = Number(ev.args[0]); break }
         } catch { /* not ours */ }
       }
+      // 公開節點是負載平衡的：剛拿到 receipt 的那一刻，下一次讀取可能落在還沒同步到這個區塊的節點，
+      // nextSessionId 還是舊的 → 新 session 不在列表裡 → 委託憑證視窗一片空白。讀到為止（最多約 20 秒）；
+      // 輪詢中讀取失敗不跳提示，全部失敗才以一般讀取再提示一次。
+      const gen = pollGen.current
+      let lastFailed = false
+      const res = await pollUntil(async () => {
+        const rows = await fetchSessions({ silent: true })
+        lastFailed = rows === null
+        return created === null || !!rows?.some(r => r.id === created)
+      }, { cancelled: () => pollGen.current !== gen })
+      if (res === 'cancelled') return
+      if (res === 'timeout' && lastFailed) await fetchSessions()
+      // Next step of the SSI flow: issue + anchor the v3 delegation credential for the new session.
+      if (created !== null) setDelegationFor(created)
     } catch (e) {
       notify(prettyError(e), false)
     } finally {

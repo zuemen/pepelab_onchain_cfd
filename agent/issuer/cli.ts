@@ -8,8 +8,13 @@
 //   npx tsx issuer/cli.ts verify   --vc vc.json [--registry 0x… --chain-id N] [--rpc URL]
 //   npx tsx issuer/cli.ts submit   --vc vc.json --rpc http://127.0.0.1:8545     （投資人／代送者送上鏈，只限本機鏈）
 //
-// 金鑰：發證者 ISSUER_PRIVATE_KEY、送出者 SUBMITTER_PRIVATE_KEY，只從環境變數讀（不收指令列參數，
-// 避免進 shell history）。正式環境發證金鑰應放 KMS（ADR-014），以 issueInvestorCredentialWithSigner 接上。
+// 金鑰：只從環境變數讀（不收指令列參數，避免進 shell history）。
+//   發證者（issue／revoke 簽狀態清單）：ISSUER_PRIVATE_KEY，或加密 keystore
+//     ISSUER_KEYSTORE（~/.foundry/keystores 下的名稱或路徑）＋ISSUER_KEYSTORE_PASSWORD_FILE，
+//     兩者互斥；規則與 keeper 相同（keeper/keySource.ts：拒絕疑似私鑰的值、錯誤訊息不帶秘密），
+//     私鑰只在這個行程的記憶體裡解開。
+//   送出者（submit，只限本機鏈）：SUBMITTER_PRIVATE_KEY。
+// 正式環境發證金鑰應放 KMS（ADR-014），以 issueInvestorCredentialWithSigner 接上。
 //
 // 鏈上動作的界線：`revoke` 預設**只印出交易資料**（to／data），由發證者的錢包或 KMS 送出；
 // 加 `--send` 時只允許 RPC 是 localhost／127.0.0.1，且 eth_chainId 必須等於 --chain-id。
@@ -18,6 +23,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { ethers } from "ethers";
+import { keySpecFromEnv, loadWalletFromSpec } from "../keeper/keySource.ts";
 import {
   STATUS_DIRECTORY_MARKER,
   STATUS_DIRECTORY_TYPE,
@@ -78,6 +84,20 @@ function walletFromEnv(name: string): ethers.Wallet {
   const pk = process.env[name];
   if (!pk) throw new Error(`請在環境變數 ${name} 提供金鑰（不接受指令列參數）`);
   return new ethers.Wallet(pk);
+}
+
+/**
+ * 發證者錢包：ISSUER_PRIVATE_KEY 或 ISSUER_KEYSTORE＋ISSUER_KEYSTORE_PASSWORD_FILE（互斥）。
+ * 錯誤訊息只帶環境變數名稱／keystore 路徑，不帶私鑰、密碼或 keystore 內容。
+ */
+export async function issuerWalletFromEnv(
+  env: Record<string, string | undefined> = process.env,
+  home?: string,
+  readFile?: (p: string) => string,
+): Promise<ethers.Wallet> {
+  const r = keySpecFromEnv(env, "ISSUER", home);
+  if ("error" in r) throw new Error(`${r.error}（發證者金鑰只讀環境變數，不接受指令列參數）`);
+  return loadWalletFromSpec(r.spec, "issuer", readFile);
 }
 
 /** 只允許本機 RPC，且 chainId 必須等於預期。回傳 provider。 */
@@ -271,7 +291,9 @@ const HELP = `合格投資人 VC 發證服務
   revoke (--vc vc.json | --hash 0x…) --registry 0x… --chain-id N [--dir DIR] [--rpc 本機URL --send]
   verify --vc vc.json [--registry 0x… --chain-id N] [--dir DIR | --status-url URL] [--state PATH] [--rpc URL]
   submit --vc vc.json --rpc 本機URL
-金鑰：ISSUER_PRIVATE_KEY（issue／revoke）、SUBMITTER_PRIVATE_KEY（submit），只讀環境變數。`;
+金鑰（只讀環境變數）：
+  issue／revoke：ISSUER_PRIVATE_KEY，或 ISSUER_KEYSTORE（keystore 名稱或路徑）＋ISSUER_KEYSTORE_PASSWORD_FILE
+  submit：SUBMITTER_PRIVATE_KEY`;
 
 async function main(argv: string[]) {
   const { cmd, args } = parseArgs(argv);
@@ -291,7 +313,7 @@ async function main(argv: string[]) {
         nonce = await reg.nonces(str(args, "subject"));
       } else throw new Error("請給 --nonce（等於鏈上 nonces(subject)）或本機 --rpc 讓 CLI 讀取");
       const vc = await runIssue({
-        issuer: walletFromEnv("ISSUER_PRIVATE_KEY"),
+        issuer: await issuerWalletFromEnv(),
         subject: str(args, "subject"),
         registry: str(args, "registry"),
         chainId,
@@ -312,7 +334,7 @@ async function main(argv: string[]) {
     case "revoke": {
       const chainId = Number(str(args, "chain-id"));
       const hash = typeof args.hash === "string" ? args.hash : credentialHashOf(readVc().id);
-      const issuer = walletFromEnv("ISSUER_PRIVATE_KEY");
+      const issuer = await issuerWalletFromEnv();
       const r = await runRevoke({ issuer, credentialHash: hash, registry: str(args, "registry"), chainId, statusDir: str(args, "dir", DEFAULT_STATUS_DIR) });
       console.log(`✓ 狀態清單已更新：sequence ${r.list.sequence}，撤銷 ${r.list.revoked.length} 筆 → ${r.listPath}`);
       if (args.send === true) {

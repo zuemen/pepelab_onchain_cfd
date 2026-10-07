@@ -92,6 +92,8 @@ export const terminal: Catalog['terminal'] = {
       '⏳ {asset} requires KYC: application submitted, awaiting reviewer approval — unlocks automatically once approved',
     kycRequired:
       '🔒 {asset} requires KYC — submit an application on the Exchange page (review required after submitting)',
+    kycRequiredVc:
+      '🔒 {asset} is an RWA market — opening a position requires a valid qualified-investor credential registered on-chain',
 
     riskNotice:
       '⚠️ Testnet: this platform is an oracle-priced perpetual — PnL settles at mark price (including OI imbalance); in extreme one-sided markets, paper profit may be adjusted by ADL auto-deleveraging; margin is a test token.',

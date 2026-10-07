@@ -14,6 +14,9 @@ export const errors = {
 
   contract: {
     // Selectors (0x + 4-byte hex)
+    // 公開節點常只回 revert data、ethers 不一定解得出名字：交易所的 RWA／休市閘門也以 selector 對應。
+    '0xbb723368': '此資產為 RWA 市場，需先完成 KYC 驗證才能交易',
+    '0x4f402872': '這個標的目前休市或暫停（鏈上模式「只能減倉」或「暫停」），不能開新倉；既有部位可以平倉',
     '0xbb90b0d9': '需要先批准 USDC 給 Swap Router，請點擊 Approve',
     '0xe450d38c': '您的 Web3 錢包 USDC 餘額不足，請先到【入金與兌換】頁面用水龍頭免費領取 USDC 測試幣 🚰',
     // Keyword matches (case-insensitive)
@@ -52,6 +55,7 @@ export const errors = {
     TierThresholdNotMet: '您的累計交易量（Notional Volume）未達到此等級的要求！',
     StalePrice: '鏈上價格已過期，keeper 尚未更新。請稍等幾分鐘再試，或聯絡管理員手動觸發 keeper',
     NotKycVerified: '此資產為 RWA 市場，需先完成 KYC 驗證才能交易',
+    AssetNotActive: '這個標的目前休市或暫停（鏈上模式「只能減倉」或「暫停」），不能開新倉；既有部位可以平倉',
     PositionIsHealthy: '此倉位保證金仍充足，不符合清算條件',
     FundingIntervalNotElapsed: 'Funding 結算間隔（8 小時）尚未到，無需手動結算',
     NotPositionAgent: '這個倉位是由另一個 agent session 開的，只有當初開倉的那個 agent 能代為平倉',
