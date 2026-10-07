@@ -97,6 +97,11 @@ contract AgentSessionManager is ReentrancyGuard {
     ///         not opened by this session.
     error PositionNotFromSession(uint256 sessionId, uint256 positionId);
     error ZeroLeverage();
+    /// @notice An allow-list call was given no assets. An empty list means
+    ///         "every asset" to `isAssetAllowed`, so accepting one here would
+    ///         silently widen a restricted session; use `createSession` for an
+    ///         unrestricted session instead.
+    error EmptyAssetList();
 
     // ── Constructor ──────────────────────────────────────────────────────────
 
@@ -150,8 +155,10 @@ contract AgentSessionManager is ReentrancyGuard {
     }
 
     /// @notice Same as createSession, but restricts the agent to `allowedAssets`.
-    /// @dev Pass an empty array for an unrestricted session (identical to
-    ///      createSession). The three existing caps bound how much an agent can
+    /// @dev `allowedAssets` must not be empty (`EmptyAssetList`): an empty list
+    ///      reads as "unrestricted", the opposite of what this call asks for. An
+    ///      unrestricted session is created with `createSession`, explicitly.
+    ///      The three existing caps bound how much an agent can
     ///      lose; this bounds what it can lose it on — a budgeted agent could
     ///      otherwise put the whole allowance into an asset the user never
     ///      intended to hold.
@@ -166,15 +173,16 @@ contract AgentSessionManager is ReentrancyGuard {
         sessionId = _createSession(
             agent, maxMarginPerTrade, totalMarginBudget, maxLeverage, expiry
         );
-        if (allowedAssets.length > 0) {
-            _setSessionAssets(sessionId, allowedAssets);
-        }
+        _setSessionAssets(sessionId, allowedAssets);
     }
 
     /// @notice Session owner sets or replaces the allow-list.
     /// @dev Only the user, never the agent — an agent that could widen its own
-    ///      permissions would make the list decorative. Passing an empty array
-    ///      clears the restriction.
+    ///      permissions would make the list decorative. An empty array reverts
+    ///      (`EmptyAssetList`) instead of clearing the restriction: "clear the
+    ///      list" read as "allow every asset", so a user narrowing an agent to
+    ///      nothing would have given it the whole market. To stop the agent,
+    ///      revoke the session.
     function setSessionAssets(uint256 sessionId, bytes32[] calldata assets) external {
         if (msg.sender != sessions[sessionId].user) revert NotSessionOwner();
         _setSessionAssets(sessionId, assets);
@@ -254,8 +262,9 @@ contract AgentSessionManager is ReentrancyGuard {
 
     /// @dev Replaces the list wholesale. The previous entries are cleared first
     ///      so a shorter list genuinely narrows permissions rather than leaving
-    ///      stale assets allowed.
+    ///      stale assets allowed. Never empty: see `EmptyAssetList`.
     function _setSessionAssets(uint256 sessionId, bytes32[] calldata assets) internal {
+        if (assets.length == 0) revert EmptyAssetList();
         bytes32[] storage prev = _assetList[sessionId];
         for (uint256 i = 0; i < prev.length; i++) {
             _assetAllowed[sessionId][prev[i]] = false;
