@@ -508,6 +508,16 @@ PepeAMM 的修正都只存在於原始碼；平台 FeeRouter 的 `platformTreasu
    - 部署後：`frontend/src/contracts/sessionCredentialAnchor.ts` 的 `SESSION_ANCHOR_ADDRESS[84532]` 填入（走 PR）；
      signal-api（Vercel）與各 agent 主機設 `SESSION_ANCHOR_ADDRESS`（`agent/.env.example`）。設了之後代理人開倉要求憑證已錨定。
 
+**選用、尚未決定：平台 KYC 改用 VC 准入（`VCKycRegistry`）。** 目前建議**維持現行 allowlist**，cutover 不做這一項：
+切換後，現在 allowlist 上的帳戶在拿到合格投資人 VC 之前都不能開 RWA 倉；平台也還沒有自己的發證者金鑰與狀態清單主機
+（[`SSI_RWA_ACCESS.md`](SSI_RWA_ACCESS.md)）。VC 准入目前由 rwa-poc 租戶示範。exchange 的 `kyc` 不是 immutable，日後隨時可換：
+1. `VC_KYC_ISSUER=<發證者> VC_KYC_CHAIN_ID=84532 VC_KYC_OWNER=<timelock> forge script script/DeployVCKycRegistry.s.sol:DeployVCKycRegistry --rpc-url $RPC --account $ACCOUNT --sender $DEPLOYER --broadcast`
+   （不設 `VC_KYC_WIRE_EXCHANGE`：移交後部署者不是 exchange owner）。
+2. 由 timelock 以**一個** `scheduleBatch` 排程 `registry.acceptOwnership()` 與 `exchange.setKycRegistry(registry)`，到期後 `executeBatch`。
+3. 前端 `frontend/src/contracts/vcKycRegistry.ts` 的 `VC_KYC_REGISTRY_BY_CHAIN[84532]` 填入（走 PR）。
+
+cutover 演練的第 12 步照這個順序實跑（只在 fork 上），確認可行。
+
 **完成後驗證（唯讀）：**
 
 ```bash

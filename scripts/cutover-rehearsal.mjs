@@ -17,6 +17,7 @@
 //      ReduceOnly → executeBatch → 回 Active → 讀回 exchange／TraderStake 的新指標
 //   9. DeployPepeIncentives（綁最終 CopyTracker）→ 10. DeployAMM（MockUSDC owner 簽）
 //   11. HandoverToTimelock phase 2 → VerifyHandover
+//   12. （選用）DeployVCKycRegistry → timelock batch（acceptOwnership＋setKycRegistry）
 //
 // 演練專用、真實部署**不可**照抄的值：GUARDIAN／TREASURY／timelock 的 proposer、executor 是演練用的
 // 空白地址（真實部署要用另一把熱錢包、treasury 與 Safe）；ALLOW_EOA_ROLES=true；部署者 MockUSDC
@@ -67,6 +68,7 @@ const R = {
   TREASURY: "0x00000000000000000000000000000000000b0b00",
   PROPOSER: "0x00000000000000000000000000000000000c0de1",
   EXECUTOR: "0x00000000000000000000000000000000000c0de2",
+  ISSUER: "0x00000000000000000000000000000000000155e1",
 };
 
 const SYMS = ["sBTC", "sETH", "sAAPL", "sTSLA", "sGOLD", "sBOND", "sNVDA", "sMSFT", "sGOOGL", "sICLN", "sESGU"];
@@ -408,6 +410,33 @@ async function main() {
       forgeScript("HandoverToTimelock", { env: { ...handover, HANDOVER_PHASE: "2" } });
       forgeScript("VerifyHandover", { env: { ...handover, EXPECT_PHASE: "2", DEPLOYER: OWNER }, broadcast: false });
       return "部署者已放棄所有 admin；VerifyHandover 通過";
+    });
+
+    // 選用路徑（不在 OWNER_ACTIONS 第 5 步的必做清單）：平台改用 VC 准入的 KYC 登錄。移交之後 exchange
+    // 的 owner 是 timelock，所以接線（setKycRegistry）與新登錄的 acceptOwnership 都要排進同一個 timelock batch。
+    await step("12. （選用）VCKycRegistry 部署 → timelock 接線", () => {
+      const out = forgeScript("DeployVCKycRegistry", {
+        env: { VC_KYC_ISSUER: R.ISSUER, VC_KYC_CHAIN_ID: String(CHAIN_ID), VC_KYC_OWNER: addrs.TIMELOCK, EXCHANGE: addrs.EXCHANGE_NEW },
+      });
+      const reg = grab(out, "registry");
+      addrs.VCKycRegistry = reg;
+      const calls = [
+        [reg, cast(["calldata", "acceptOwnership()"])],
+        [addrs.EXCHANGE_NEW, cast(["calldata", "setKycRegistry(address)", reg])],
+      ];
+      const delay = call(addrs.TIMELOCK, "getMinDelay()(uint256)");
+      const salt = cast(["keccak", `vc-kyc ${reg}`]);
+      const zero = `0x${"0".repeat(64)}`;
+      const batch = [`[${calls.map((c) => c[0]).join(",")}]`, "[0,0]", `[${calls.map((c) => c[1]).join(",")}]`, zero, salt];
+      send(R.PROPOSER, addrs.TIMELOCK, "scheduleBatch(address[],uint256[],bytes[],bytes32,bytes32,uint256)", ...batch, delay);
+      rpc("evm_increaseTime", String(Number(delay) + 1));
+      rpc("evm_mine");
+      send(R.EXECUTOR, addrs.TIMELOCK, "executeBatch(address[],uint256[],bytes[],bytes32,bytes32)", ...batch);
+      const kyc = call(addrs.EXCHANGE_NEW, "kyc()(address)");
+      const owner = call(reg, "owner()(address)");
+      if (!eq(kyc, reg)) throw new Error(`exchange.kyc() = ${kyc}`);
+      if (!eq(owner, addrs.TIMELOCK)) throw new Error(`registry.owner() = ${owner}`);
+      return "新登錄由 timelock 持有；acceptOwnership＋setKycRegistry 一個 batch 執行後 exchange 改讀它";
     });
   } finally {
     summary(meta);
