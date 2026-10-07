@@ -102,14 +102,17 @@ async function unlock(name) {
   if (!fs.existsSync(p.keystore)) throw new Error(`找不到角色 ${name} 的 keystore（~/.foundry/keystores/pepelab-rwa-${name}）`);
   if (!fs.existsSync(p.password)) throw new Error(`找不到角色 ${name} 的密碼檔（~/.foundry/pepelab-rwa-${name}.password）`);
   try {
-    return await Wallet.fromEncryptedJson(fs.readFileSync(p.keystore, 'utf8'), fs.readFileSync(p.password, 'utf8').trim());
+    return await Wallet.fromEncryptedJson(fs.readFileSync(p.keystore, 'utf8'), fs.readFileSync(p.password, 'utf8').replace(/\s+$/, ''));
   } catch {
     throw new Error(`角色 ${name} 的 keystore 解鎖失敗（密碼錯誤或檔案損毀）`);
   }
 }
 
 // 在頁面裡執行的 provider。這段字串會進頁面，所以裡面只能有公開資訊。
-function pageProvider() {
+// 只注入到「主 frame 且 origin 等於受測前端」：iframe、外部網站都拿不到 window.ethereum。
+// （真正的防線在 Node 端 binding 的來源檢查；這裡只是不讓其他來源看到 provider。）
+function pageProvider(allowedOrigin) {
+  if (window.top !== window || window.location.origin !== allowedOrigin) return;
   if (window.ethereum && window.ethereum.__pepePoc) return;
   const listeners = new Map();
   const emit = (event, ...args) => {
@@ -158,9 +161,19 @@ function pageProvider() {
  * 在 page 上安裝注入錢包。必須在第一次 page.goto 之前呼叫。
  *
  * @param {import('playwright').Page} page
- * @param {{ role: string, rpcUrl?: string, allowSend?: boolean, log?: (msg: string) => void }} opts
+ * @param {{
+ *   role: string,
+ *   origin: string,              受測前端的 origin（例如 http://localhost:5173）；只有主 frame 且 origin 相符才能用錢包
+ *   rpcUrl?: string,
+ *   allowSend?: boolean,         false（預設）＝ eth_sendTransaction 一律拒絕
+ *   allowSign?: boolean,         false ＝ personal_sign / eth_signTypedData_v4 也一律拒絕（--no-sign）
+ *   onSign?: (entry: object) => void,  每個簽章請求（不論核准或拒絕）都回報，供寫進 JSON 紀錄
+ *   log?: (msg: string) => void,
+ * }} opts
  */
-export async function installWallet(page, { role, rpcUrl = DEFAULT_RPC, allowSend = false, log = () => {} }) {
+export async function installWallet(page, { role, origin, rpcUrl = DEFAULT_RPC, allowSend = false, allowSign = true, onSign = () => {}, log = () => {} }) {
+  if (!origin) throw new Error('installWallet 需要 origin（受測前端的 origin）');
+  const allowedOrigin = new URL(origin).origin;
   const provider = new JsonRpcProvider(rpcUrl, CHAIN_ID, { staticNetwork: true });
   /** @type {Map<string, Wallet>} 角色 → 已解鎖 Wallet（只在記憶體） */
   const unlocked = new Map();
@@ -200,17 +213,45 @@ export async function installWallet(page, { role, rpcUrl = DEFAULT_RPC, allowSen
         const [msg, addr] = params;
         if (!sameAddr(addr)) throw new RpcError(4100, '簽名地址不是目前角色');
         const payload = isHexString(msg) ? getBytes(msg) : msg;
-        log(`personal_sign（${current.name}）：${typeof payload === 'string' ? payload : safeUtf8(payload)}`);
+        const text = typeof payload === 'string' ? payload : safeUtf8(payload);
+        const entry = { method, role: current.name, address: current.wallet.address, message: text.slice(0, 300), timestamp: new Date().toISOString() };
+        if (!allowSign) {
+          onSign({ ...entry, approved: false, reason: '--no-sign' });
+          throw new RpcError(4001, 'PoC 錄影 --no-sign：已拒絕簽章');
+        }
+        log(`personal_sign（${current.name}）：${entry.message}`);
+        onSign({ ...entry, approved: true });
         return current.wallet.signMessage(payload);
       }
       case 'eth_signTypedData_v4': {
         const [addr, json] = params;
         if (!sameAddr(addr)) throw new RpcError(4100, '簽名地址不是目前角色');
         const typed = typeof json === 'string' ? JSON.parse(json) : json;
+        const domain = typed.domain ?? {};
+        const entry = {
+          method,
+          role: current.name,
+          address: current.wallet.address,
+          primaryType: typed.primaryType,
+          domainName: domain.name ?? null,
+          domainChainId: domain.chainId != null ? String(domain.chainId) : null,
+          verifyingContract: domain.verifyingContract ?? null,
+          timestamp: new Date().toISOString(),
+        };
+        // 只簽 Base Sepolia 或不綁鏈的 typed data：防止被誘導簽出能在其他鏈重放的授權
+        if (domain.chainId != null && BigInt(domain.chainId) !== BigInt(CHAIN_ID)) {
+          onSign({ ...entry, approved: false, reason: `domain.chainId ${domain.chainId} ≠ ${CHAIN_ID}` });
+          throw new RpcError(4001, `PoC 錢包只簽 chainId ${CHAIN_ID} 的 typed data`);
+        }
+        if (!allowSign) {
+          onSign({ ...entry, approved: false, reason: '--no-sign' });
+          throw new RpcError(4001, 'PoC 錄影 --no-sign：已拒絕簽章');
+        }
         const types = { ...typed.types };
         delete types.EIP712Domain; // ethers 自己從 domain 推導
-        log(`eth_signTypedData_v4（${current.name}）：primaryType=${typed.primaryType}`);
-        return current.wallet.signTypedData(typed.domain, types, typed.message);
+        log(`eth_signTypedData_v4（${current.name}）：primaryType=${typed.primaryType} domain=${entry.domainName}`);
+        onSign({ ...entry, approved: true });
+        return current.wallet.signTypedData(domain, types, typed.message);
       }
       case 'eth_sendTransaction': {
         const [tx] = params;
@@ -238,7 +279,15 @@ export async function installWallet(page, { role, rpcUrl = DEFAULT_RPC, allowSen
     }
   }
 
-  await page.exposeFunction('__pepePocBridge', async (method, paramsJson) => {
+  // exposeBinding 會裝進每個 frame（含跨來源 iframe 與導到外部網站後的頁面），
+  // 所以每次呼叫都檢查來源：只接受主 frame 且 origin 等於受測前端。
+  await page.exposeBinding('__pepePocBridge', async (source, method, paramsJson) => {
+    let frameOrigin = null;
+    try { frameOrigin = new URL(source.frame.url()).origin; } catch { /* about:blank 等 */ }
+    if (source.frame !== page.mainFrame() || frameOrigin !== allowedOrigin) {
+      log(`已拒絕來自非受測頁面的錢包請求：${method}（${frameOrigin ?? source.frame.url()}）`);
+      return { error: { code: 4100, message: 'PoC 錢包只服務受測前端的主頁面' } };
+    }
     try {
       return { result: await handle(method, JSON.parse(paramsJson)) };
     } catch (e) {
@@ -250,7 +299,7 @@ export async function installWallet(page, { role, rpcUrl = DEFAULT_RPC, allowSen
       return { error: { code, message: String(message).slice(0, 500), data } };
     }
   });
-  await page.addInitScript(pageProvider);
+  await page.addInitScript(pageProvider, allowedOrigin);
 
   return {
     provider,

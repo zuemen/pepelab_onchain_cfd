@@ -18,7 +18,7 @@
 
 ```bash
 cd scripts/poc/video
-npm install                     # 獨立的 package.json，不碰 frontend（yarn）
+npm ci                          # 獨立的 package.json + lockfile，不碰 frontend（yarn）
 npx playwright install chromium
 ```
 
@@ -46,6 +46,7 @@ node record.mjs --scenes scenes/smoke.mjs    # 自檢
 | `--size` | `1920x1080` | 視窗與影片解析度（例如 `1600x900`） |
 | `--slowmo` | `400` | Playwright 每個動作之間的延遲（ms） |
 | `--allow-tx` | 關（或 `POC_ALLOW_TX=1`） | **開啟才會真的廣播交易**；沒開時 `eth_sendTransaction` 一律以 4001 拒絕 |
+| `--no-sign` | 關（或 `POC_NO_SIGN=1`） | 連 `personal_sign`／`eth_signTypedData_v4` 也一律以 4001 拒絕 |
 | `--headed` | 關 | 顯示瀏覽器視窗 |
 | `--rpc` | `https://sepolia.base.org`（或 `POC_RPC_URL`） | 唯讀 RPC |
 
@@ -56,7 +57,9 @@ node record.mjs --scenes scenes/smoke.mjs    # 自檢
 全部在 `scripts/poc/video/out/`（已在 `.gitignore`）：
 
 - `<劇本>-<時間>.webm`、`.mp4`：影片
-- `<劇本>-<時間>.json`：每步 `{step, caption, role, txHash, url, timestamp}`，有交易的步驟另有 `txHashes`、`explorer`
+- `<劇本>-<時間>.json`：每步 `{step, caption, role, txHash, url, timestamp}`，有交易的步驟另有 `txHashes`、`explorer`；
+  頂層 `signatures` 列出**每個簽章請求**（`method`、`primaryType`、`domainName`、`domainChainId`、`approved`、`reason`），
+  發生在哪一步也會掛在該步的 `signatures`
 - `<劇本>-<時間>-fail-step<N>.png`：某步失敗時的截圖（影片仍會存檔）
 
 ## 寫劇本
@@ -85,23 +88,29 @@ export default {
 
 ## 錢包注入怎麼運作
 
-- `page.addInitScript` 在每個頁面載入前放一個 `window.ethereum`（`isMetaMask: true`，也發 EIP-6963 announce）。
-- 頁面的每個 `request()` 都經 `page.exposeFunction` 交給 Node：
+- `page.addInitScript` 在頁面載入前放一個 `window.ethereum`（`isMetaMask: true`，也發 EIP-6963 announce），
+  但**只在主 frame 且 origin 等於 `--base`** 時注入；iframe 與外部網站看不到。
+- 頁面的每個 `request()` 都經 `page.exposeBinding` 交給 Node。binding 會被裝進每個 frame，所以 Node 端每次都檢查
+  呼叫來源：`source.frame === page.mainFrame()` 且 origin 等於 `--base`，否則以 4100 拒絕並記 log。
   - `eth_requestAccounts` / `eth_accounts` → 目前角色地址
   - `eth_chainId` → `0x14a34`；`wallet_switchEthereumChain` 只接受 84532
   - 唯讀方法（`eth_call`、`eth_getBalance`、`eth_blockNumber`、`eth_getLogs`…白名單）→ 原樣轉發到 RPC，
     revert data 原封交回頁面；限制同時 4 個請求並對 429 退避重試（公開節點對並發很敏感）
-  - `personal_sign`、`eth_signTypedData_v4`、`eth_sendTransaction` → Node 端 ethers Wallet 簽
+  - `personal_sign`、`eth_signTypedData_v4`、`eth_sendTransaction` → Node 端 ethers Wallet 簽；
+    typed data 的 `domain.chainId` 必須是 84532 或未設定，否則以 4001 拒絕
   - 其他（含 `eth_sendRawTransaction`）一律拒絕
 - `ctx.switchRole(name)` 換成另一把 keystore，並在頁面觸發 `accountsChanged`。
 
 ## 私鑰安全
 
 - keystore：`~/.foundry/keystores/pepelab-rwa-<name>`，密碼檔：`~/.foundry/pepelab-rwa-<name>.password`。
-  用 `Wallet.fromEncryptedJson(keystore, password.trim())` 在 Node 行程裡解開。
+  用 `Wallet.fromEncryptedJson(keystore, password)` 在 Node 行程裡解開；密碼檔只去掉結尾的換行／空白（與 `cast` 一致）。
 - **私鑰只存在 Node 行程記憶體**裡的 ethers Wallet 物件：不 console.log、不寫檔、不傳進頁面。
   頁面（以及錄影畫面）只看得到地址、簽名結果與 tx hash。
 - 解鎖失敗時錯誤訊息只帶角色名稱，不轉印原始例外，避免 keystore 片段出現在 log。
 - 傳回頁面的錯誤只有 `{code, message, data}`，不含 stack。
-- 預設唯讀：不加 `--allow-tx` 時任何交易都會被攔下，適合排練與自檢。
+- **唯讀 = 不廣播交易，但會簽章**：不加 `--allow-tx` 時任何交易都會被攔下；`personal_sign`、
+  `eth_signTypedData_v4` 預設仍會簽（簽章本身可能是鏈下授權，例如 permit），所以每個簽章請求都寫進 JSON 的
+  `signatures`。要完全不簽請加 `--no-sign`。
+- 只有受測前端的主頁面能用錢包（見上節的來源檢查），劇本裡導到外部網站或內嵌第三方 iframe 也拿不到簽章。
 - 錄影產出（影片、JSON）只含公開資訊，但仍放在 `.gitignore` 的 `out/` 底下，要分享請自行挑選。

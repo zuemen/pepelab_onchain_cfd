@@ -5,7 +5,7 @@
   "license": "UNLICENSED",
   "type": "module",
   "scripts": {
-    "setup": "npm install && npx playwright install chromium",
+    "setup": "npm ci && npx playwright install chromium",
     "record": "node record.mjs",
     "record:smoke": "node record.mjs --scenes scenes/smoke.mjs"
   },

@@ -3,13 +3,15 @@
 //
 //   node record.mjs [--scenes scenes/rwa-poc.mjs] [--base http://localhost:5173]
 //                   [--role investor] [--size 1920x1080] [--slowmo 400]
-//                   [--allow-tx] [--headed] [--rpc https://sepolia.base.org]
+//                   [--allow-tx] [--no-sign] [--headed] [--rpc https://sepolia.base.org]
 //
 // 產出（scripts/poc/video/out/，已在 .gitignore）：
 //   <scene>-<時間>.webm / .mp4   錄影（mp4 需要系統有 ffmpeg）
 //   <scene>-<時間>.json          每步 {step, caption, txHash, url, timestamp}
 //
 // 預設唯讀：不加 --allow-tx（或 POC_ALLOW_TX=1）時，注入錢包會拒絕所有 eth_sendTransaction。
+// 唯讀 ≠ 不簽章：personal_sign / eth_signTypedData_v4 預設照簽（不廣播），全部記進 JSON 的
+// signatures；要連簽章都拒絕請加 --no-sign（或 POC_NO_SIGN=1）。
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -33,6 +35,7 @@ const { values: args } = parseArgs({
     slowmo: { type: 'string', default: '400' },
     rpc: { type: 'string', default: process.env.POC_RPC_URL ?? DEFAULT_RPC },
     'allow-tx': { type: 'boolean', default: process.env.POC_ALLOW_TX === '1' },
+    'no-sign': { type: 'boolean', default: process.env.POC_NO_SIGN === '1' },
     headed: { type: 'boolean', default: false },
   },
 });
@@ -53,7 +56,8 @@ async function main() {
   const tmpVideoDir = path.join(OUT, '.tmp', baseName);
   fs.mkdirSync(tmpVideoDir, { recursive: true });
 
-  log(`劇本 ${scene.name}（${scene.steps.length} 步），角色 ${role}，${allowSend ? '允許送交易（會上鏈）' : '唯讀模式（交易一律拒絕）'}`);
+  const allowSign = !args['no-sign'];
+  log(`劇本 ${scene.name}（${scene.steps.length} 步），角色 ${role}，${allowSend ? '允許送交易（會上鏈）' : '唯讀模式（交易一律拒絕）'}，${allowSign ? '簽章：會簽（personal_sign / typed data，不廣播）' : '簽章：一律拒絕（--no-sign）'}`);
 
   const browser = await chromium.launch({ headless: !args.headed, slowMo: Number(args.slowmo) });
   const context = await browser.newContext({
@@ -65,17 +69,25 @@ async function main() {
   const page = await context.newPage();
   page.on('pageerror', (e) => log(`頁面錯誤：${e.message}`));
 
-  const wallet = await installWallet(page, { role, rpcUrl: args.rpc, allowSend, log });
-  const overlay = createOverlay(page);
-
   const record = {
     scene: scene.name,
     base: args.base,
     startedAt: new Date().toISOString(),
     readOnly: !allowSend,
+    signing: allowSign,
     steps: [],
+    signatures: [],
   };
   let currentEntry = null;
+
+  // 每個簽章請求（核准或拒絕）都留紀錄：唯讀模式不廣播交易，但仍會簽章
+  const onSign = (entry) => {
+    const e = { step: currentEntry?.step ?? null, ...entry };
+    record.signatures.push(e);
+    if (currentEntry) (currentEntry.signatures ??= []).push(e);
+  };
+  const wallet = await installWallet(page, { role, origin: args.base, rpcUrl: args.rpc, allowSend, allowSign, onSign, log });
+  const overlay = createOverlay(page);
 
   const ctx = {
     page,
