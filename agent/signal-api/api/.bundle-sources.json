@@ -1,12 +1,12 @@
 {
-  "digest": "8a0fd8d99868d79f",
+  "digest": "2419689f561fbdb5",
   "files": {
     "agent/shared/src/abis.ts": "872c3136604d6584",
     "agent/shared/src/addresses.ts": "a6cb279048c58a4b",
     "agent/shared/src/aggregate.ts": "1490fb0cb819656e",
     "agent/shared/src/apiResponse.ts": "99ce63d982e3c064",
     "agent/shared/src/audit.ts": "9ce1b7e8dfb8f490",
-    "agent/shared/src/delegation.ts": "ed41fc16298a7281",
+    "agent/shared/src/delegation.ts": "32df065a2a13e069",
     "agent/shared/src/env.ts": "e7b776826761f968",
     "agent/shared/src/fileLock.ts": "6d87ada57322849c",
     "agent/shared/src/format.ts": "13f79372bcf8e599",
@@ -21,7 +21,7 @@
     "agent/shared/src/vcNonce.ts": "23f0a3a39df9a8da",
     "agent/shared/src/vcStatus.ts": "8a1a26fe0c960950",
     "agent/shared/src/verification.ts": "c7823c4dc411e59a",
-    "agent/shared/src/write.ts": "6dd4fe73cabb0ff6",
+    "agent/shared/src/write.ts": "60d89b708d5c7308",
     "agent/shared/src/x402Client.ts": "5da0cba5d9e429ee",
     "agent/signal-api/src/app.ts": "f3c96d6a0cfa3dc0",
     "agent/signal-api/src/benchmarks.ts": "bac063beeb2f0f45",

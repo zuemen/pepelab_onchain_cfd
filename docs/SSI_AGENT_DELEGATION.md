@@ -119,6 +119,17 @@ Schema 單一來源：`frontend/src/contracts/agentDelegation.ts`（純函式、
 
 撤銷 session 之後：`isAnchored` 立即為 false（不需要另一筆交易），`currentCredential` 保留供稽核。
 
+**誰會讀錨定**（2026-10-07 起兩處）：
+
+- signal-api 的 x402 KYA（第 4 節，`X402_KYA_ANCHOR`）。
+- 代理人的寫入路徑（`agent/shared/src/write.ts` → `delegation.ts` 的 `checkDelegationAnchor`）：代理人的環境有設
+  `SESSION_ANCHOR_ADDRESS` 時，**開倉**要求 `isAnchored(sessionId, credentialHash)`；錨定合約綁的 manager 不是代理人用的那一顆、
+  位址打錯、或讀不到，一律拒絕開倉（fail-closed）。**平倉**不看錨定：使用者解除錨定是為了停掉代理人，不能反過來把部位鎖住。
+  沒設 `SESSION_ANCHOR_ADDRESS` 時不檢查（與之前相同）。
+
+這兩處都只約束「跑這份程式的代理人」。代理人金鑰外洩時，攻擊者可以直接呼叫 `AgentSessionManager.openPositionForSession`，
+鏈上只檢查 session 的額度與白名單，不看憑證或錨定——硬性停止要用 `revokeSession`。
+
 ## 4. x402 KYA（signal-api）
 
 `agent/signal-api/src/kya.ts`，接在 `app.ts` 付費牆分流之前，v1（`X-PAYMENT`）與 v2（`PAYMENT-SIGNATURE`）都適用。

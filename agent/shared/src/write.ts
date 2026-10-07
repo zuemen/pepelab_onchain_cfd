@@ -34,7 +34,10 @@ import { checkAndRecordVcNonce } from "./vcNonce.ts";
 import { checkCredentialStatus } from "./vcStatus.ts";
 import { redactSecrets } from "./redact.ts";
 import {
+  anchorAddressFromEnv,
+  checkDelegationAnchor,
   compareDelegationWithSession,
+  contractAnchorReader,
   delegationAsVerifyResult,
   delegationFieldsFromCredential,
   isDelegationCredential,
@@ -350,6 +353,16 @@ async function verifyDelegationAgainstChain(
     const s = await readOnchainSession(runner, mgrAddress, sessionId);
     const mm = compareDelegationWithSession(r3.fields!, s);
     if (mm) return `${mm.message}（${mm.code}）`;
+    // 有設定 SESSION_ANCHOR_ADDRESS 時，開倉要求憑證仍被 session 使用者錨定（平倉不受影響）。
+    const anc = await checkDelegationAnchor({
+      anchor: anchorAddressFromEnv(),
+      sessionManager: mgrAddress,
+      sessionId,
+      credentialHash: r3.credentialHash!,
+      action,
+      reader: contractAnchorReader(runner),
+    });
+    if (anc) return `${anc.message}（${anc.code}）`;
   } catch (err) {
     return `讀取鏈上 session 失敗：${redactSecrets((err as Error).message)}`;
   }
