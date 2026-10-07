@@ -16,7 +16,10 @@ import "../src/PepeAMM.sol";
 ///   works and no private key is read by the script; it must be the MockUSDC owner.)
 ///
 ///   Required env vars: MOCK_USDC, MOCK_ORACLE
-///   Optional:          SEED_ETH (wei, default 1e18), SEED_USDC (18-dec, default 2300e18)
+///   Optional:          SEED_ETH (wei, default 1e18),
+///                      SEED_USDC (18-dec; unset or 0 = SEED_ETH at the oracle's sETH price, so the
+///                      pool opens at the oracle. A fixed default of 2300e18 opened 14.7% off the
+///                      2026-10-07 oracle in the cutover rehearsal.)
 ///
 /// @dev    Audit 2026-08-06 fallout this script has to respect:
 ///
@@ -54,7 +57,8 @@ contract DeployAMM is Script {
         address oracleAddr = vm.envAddress("MOCK_ORACLE");
 
         uint256 seedEth  = vm.envOr("SEED_ETH",  uint256(1 ether));
-        uint256 seedUsdc = vm.envOr("SEED_USDC", uint256(2_300e18));
+        uint256 seedUsdc = vm.envOr("SEED_USDC", uint256(0));
+        require(seedEth > 0, "SEED_ETH must be non-zero");
 
         MockUSDC usdc = MockUSDC(usdcAddr);
 
@@ -64,10 +68,14 @@ contract DeployAMM is Script {
             "the broadcaster is not the MockUSDC owner - mint() became onlyOwner in PA-3"
         );
 
-        // The opening price is the seed ratio. Say where it lands relative to
-        // the oracle while it is still free to change.
-        uint256 seedPrice8 = seedUsdc * 1e8 / seedEth;
+        // The opening price is the seed ratio. Default it to the oracle, and
+        // say where an explicit one lands while it is still free to change.
         (uint256 oraclePrice8, uint256 updatedAt) = IPriceOracle(oracleAddr).getPrice(ETH_ASSET_ID);
+        if (seedUsdc == 0) {
+            require(oraclePrice8 > 0, "oracle has no sETH price - set SEED_USDC explicitly");
+            seedUsdc = seedEth * oraclePrice8 / 1e8;
+        }
+        uint256 seedPrice8 = seedUsdc * 1e8 / seedEth;
         console.log("seed ETH (wei)    :", seedEth);
         console.log("seed mUSDC (18d)  :", seedUsdc);
         console.log("seed price (8d)   :", seedPrice8);

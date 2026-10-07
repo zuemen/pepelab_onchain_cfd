@@ -275,7 +275,10 @@ async function main() {
     await step("2. Verify130", () => (forgeScript("Verify130", { env: v130, broadcast: false }), "全部斷言通過"));
 
     await step("3. RedeployGuardedOracle", () => {
-      const out = forgeScript("RedeployGuardedOracle", { env: { GUARDIAN: R.GUARDIAN, EXCHANGE_NEW: addrs.EXCHANGE_NEW } });
+      // KEEPER_HEARTBEAT：base-sepolia-keeper 的實際值（agent/keeper/run.ts 預設 900 秒、workflow 未覆寫），
+      // 讓腳本核對 maxPriceAge ≥ heartbeat＋排程延遲；不帶時腳本只印警告。
+      const out = forgeScript("RedeployGuardedOracle", { env: { GUARDIAN: R.GUARDIAN, EXCHANGE_NEW: addrs.EXCHANGE_NEW, KEEPER_HEARTBEAT: "900" } });
+      if (/KEEPER_HEARTBEAT not given/.test(out)) throw new Error("腳本沒有收到 KEEPER_HEARTBEAT");
       addrs.NEW_GUARDED_ORACLE = grab(out, "NEW_GUARDED_ORACLE");
       const o = call(VAULT_PROXY, "oracle()(address)");
       if (!eq(o, addrs.NEW_GUARDED_ORACLE)) throw new Error(`V2 金庫 oracle() 是 ${o}，不是新 oracle`);
@@ -395,8 +398,10 @@ async function main() {
       heartbeat(MOCK_ORACLE, "MockOracle");
       const out = forgeScript("DeployAMM", { env: { MOCK_USDC: USDC, MOCK_ORACLE }, sender: usdcOwner, extra: ["--skip-simulation"] });
       addrs.PepeAMM = grab(out, "PepeAMM deployed");
+      const dev = (out.match(/deviation \(bps\)\s*:\s*(\d+)/) ?? [])[1];
+      if (/The pool would open more than 5% away/.test(out)) throw new Error(`種子價格偏離 oracle ${dev} bps——套利會吃掉種子`);
       if (!eq(usdcOwner, OWNER)) caveats.push(`DeployAMM 的簽署者是 MockUSDC owner \`${usdcOwner}\`，不是部署者`);
-      return `MockUSDC owner ${usdcOwner} 簽署`;
+      return `MockUSDC owner ${usdcOwner} 簽署；種子依 oracle 現價，偏離 ${dev ?? "?"} bps`;
     });
 
     await step("11. HandoverToTimelock phase 2 → VerifyHandover", () => {

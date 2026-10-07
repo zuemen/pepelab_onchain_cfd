@@ -48,18 +48,30 @@ jobs:
           version: v1.8.0
 
       # sepolia.base.org 會拒絕 runner 上的 forge（scripts/verify-dedicated-tenants.mjs 的 PUBLIC_RPC 註解），
-      # 所以先用 publicnode。block.chainid 不是 84532 時 fork 測試會 skip，這裡要求四支都真的跑了。
+      # 所以先用 publicnode。block.chainid 不是 84532 時 fork 測試會 skip，這裡要求每一支都真的跑了。
+      # 逐檔、單執行緒（-j 1）：這些測試以 vm.setEnv 傳參數給腳本，env 是整個行程共用的，平行跑時
+      # GUARDIAN／EXCHANGE_NEW／HANDOVER_PHASE 會互相覆蓋。-vvv 只替失敗的測試印 trace。
       - name: forge test test/fork against a live fork
         working-directory: contracts
         env:
           FORK_RPC: https://base-sepolia-rpc.publicnode.com
         run: |
           set -o pipefail
-          forge test --match-path 'test/fork/*.t.sol' --fork-url "$FORK_RPC" -vv 2>&1 | tee ../fork-tests.log
+          status=0
+          for f in test/fork/*.t.sol; do
+            echo "::group::$f"
+            if ! forge test --match-path "$f" --fork-url "$FORK_RPC" -j 1 -vvv 2>&1 | tee -a ../fork-tests.log; then
+              status=1
+              echo "::error::$f failed"
+            fi
+            echo "::endgroup::"
+          done
           if grep -q '\[SKIP' ../fork-tests.log; then
             echo "::error::a fork test was skipped - it did not run against Base Sepolia"
-            exit 1
+            status=1
           fi
+          grep -E '^\[(PASS|FAIL)' ../fork-tests.log || true
+          exit "$status"
 
   rehearsal:
     name: cutover rehearsal on an anvil fork

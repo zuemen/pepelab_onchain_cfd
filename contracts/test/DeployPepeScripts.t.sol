@@ -70,5 +70,13 @@ contract DeployPepeScriptsTest is Test {
         assertEq(amm.usdcReserve(), 2_300e18);
         assertEq(usdc.balanceOf(deployer), 0, "the minted seed went into the pool");
         assertGt(amm.sharesOf(deployer), 0, "LP shares belong to the broadcaster");
+
+        // SEED_USDC=0 (or unset) seeds at the oracle price instead of a fixed
+        // 2300 that went stale: the pool must open exactly at the oracle.
+        MockOracle(vm.envAddress("MOCK_ORACLE")).updatePrice(keccak256("sETH"), 2_697.57e8);
+        vm.setEnv("SEED_USDC", "0");
+        PepeAMM atOracle = s.run();
+        assertEq(atOracle.usdcReserve(), 2_697.57e18, "seed = SEED_ETH x oracle price");
+        assertEq(atOracle.getPrice(), 2_697.57e18, "opens at the oracle");
     }
 }

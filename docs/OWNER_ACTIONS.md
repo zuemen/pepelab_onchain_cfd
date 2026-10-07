@@ -385,7 +385,8 @@ PepeAMM 的修正都只存在於原始碼；平台 FeeRouter 的 `platformTreasu
      `STRATEGY_REGISTRY_NEW`、`GUARDIAN`（與 broadcast 印出的值相同）。
 2. **新 GuardedOracle**：`DEPLOY_130_CUTOVER.md` §10，`script/RedeployGuardedOracle.s.sol`。
    - 先跑 fork 測試：`forge test --match-path test/fork/RedeployGuardedOracleFork.t.sol --fork-url $RPC -vv`。
-   - 環境變數：`KEEPER`、`GUARDIAN`、`KEEPER_HEARTBEAT`（keeper 實際值，秒）、`ORACLE_MAX_PRICE_AGE`（預設 21600，必須 ≥
+   - 環境變數：`KEEPER`、`GUARDIAN`、`KEEPER_HEARTBEAT`（keeper 實際值，秒；`base-sepolia-keeper.yml` 沒有覆寫，
+     是 `agent/keeper/run.ts` 的預設 900。不帶時腳本不核對、只印警告）、`ORACLE_MAX_PRICE_AGE`（預設 21600，必須 ≥
      `KEEPER_HEARTBEAT` ＋ `KEEPER_SCHEDULE_SLACK`）、`WINDOW_SECONDS`／`WINDOW_DEVIATION_BPS`（預設 1h／2500）；
      `OLD_GUARDED_ORACLE`、`VAULT_PROXY`、`EXCHANGE_NEW` 有預設值時核對一次。
    - broadcast：`forge script script/RedeployGuardedOracle.s.sol:RedeployGuardedOracle --rpc-url $RPC --account $ACCOUNT --sender $DEPLOYER --broadcast --slow -vv`
@@ -489,7 +490,8 @@ PepeAMM 的修正都只存在於原始碼；平台 FeeRouter 的 `platformTreasu
    - 部署後更新 `addresses.ts`、轉入獎勵池；新實例從空狀態開始，舊的連續簽到等資料不會帶過來（`KNOWN_LIMITATIONS.md`）。
 6. **PepeAMM**：`contracts/script/DeployAMM.s.sol`，簽署者必須是 MockUSDC 的 owner。
    - 環境變數：`MOCK_USDC`、`MOCK_ORACLE`（都取 `addresses.ts` 的 Base Sepolia 值；oracle 若在第 1 項換了，
-     填 exchange 實際讀的那顆）、選用 `SEED_ETH`／`SEED_USDC`。
+     填 exchange 實際讀的那顆）、選用 `SEED_ETH`／`SEED_USDC`。`SEED_USDC` 不帶（或 0）時以 oracle 的 sETH 現價計算，池子以 oracle
+     價格開盤；舊的固定預設 2300 在 2026-10-07 的演練裡偏離 oracle 14.7%（套利會吃掉種子）。腳本印出的 `deviation (bps)` 要在 500 以內。
    - `forge script script/DeployAMM.s.sol --rpc-url $RPC --account $ACCOUNT --sender <MockUSDC owner> --broadcast --skip-simulation --slow -v`
    - 部署後更新 `addresses.ts`。
 7. **SessionCredentialAnchor（平台從未部署）**：`contracts/script/DeploySessionCredentialAnchor.s.sol`。它把 v3 代理人委託憑證
