@@ -91,3 +91,55 @@ node ../scripts/post-deploy-smoke.mjs --tenant rwa-poc
 
 部署用的指令（先 fork 模擬、再以加密 keystore 廣播）見 `docs/TENANT_DEPLOYMENT.md` §3–§5 與
 `docs/HANDOFF_RWA_POC.md` 第 4 步。
+
+## 營運驗收（S4）
+
+### 推價（`scripts/poc/rwa-poc-keeper.sh --once`，keeper 錢包，加密 keystore）
+
+先乾跑一輪（不送交易、`failed=0`），再實送。摘要：`available=11 skipped=0 rejected=0 wrote=11 failed=0`。
+
+| 資產 | 寫價交易 |
+|---|---|
+| sBTC | [0xb0cd80a9…](https://sepolia.basescan.org/tx/0xb0cd80a9503a40bf1d7d42ca420fb6626b866e0350bbfa338841546c0d3897ae) |
+| sETH | [0xdf58372b…](https://sepolia.basescan.org/tx/0xdf58372bb028133d6f4b1bce63d53de5a6fa48da7f420a4b7dc418a97204a211) |
+| sAAPL | [0x0f5fe0b9…](https://sepolia.basescan.org/tx/0x0f5fe0b97573757330a982d1e80d8c904ce5ac861aadae81e1d392be460c4eb8) |
+| sTSLA | [0xd754b3ee…](https://sepolia.basescan.org/tx/0xd754b3ee564d45f71993c7bf6d74ec37fca11ebed7684f69240be3279ad26293) |
+| sNVDA | [0x086a022d…](https://sepolia.basescan.org/tx/0x086a022d2f1b471c34d18dd17ce684d4743b560498b20c09a7188d446e62a0ab) |
+| sMSFT | [0x3e4c86e0…](https://sepolia.basescan.org/tx/0x3e4c86e059b2a7381a75bf808ad6dd3cd23da91799269e7ef944091964b2d02a) |
+| sGOOGL | [0xca7cf3f0…](https://sepolia.basescan.org/tx/0xca7cf3f07e45b61cb3015fbbe5e4b544ab1a905c2025f725ca3e0acec9ba22bf) |
+| sGOLD | [0xe0cff4ee…](https://sepolia.basescan.org/tx/0xe0cff4ee64ec1393f15a1d1d0f96fb3f24fc35fedf57f3d5951f028d9bd98554) |
+| sBOND | [0x98fcb687…](https://sepolia.basescan.org/tx/0x98fcb687f1d87fce4f92a12b71610a44c921bcdd8a3a28d441d4d5db6d5eca8a) |
+| sICLN | [0xfd5501f0…](https://sepolia.basescan.org/tx/0xfd5501f05647d369dbc7e799ac8e21e8806c2df00e8b15473010b35e87b29c74) |
+| sESGU | [0xfab6b879…](https://sepolia.basescan.org/tx/0xfab6b879ebe5cffc4d4b7414b68556b7764432919d9cdf7e831063d5d6fca5b5) |
+
+keeper 同一輪也以 marketOperator 身分依交易所行事曆切換休市（美股收盤時段）：
+
+| 資產 | 切換 | 交易 |
+|---|---|---|
+| sAAPL | 行事曆休市：Active → ReduceOnly | [0x1f35edef…](https://sepolia.basescan.org/tx/0x1f35edefa4d0602a0b9a8c32ffb06742ecab97322d4c9eed042be95b3b1fa6c8) |
+| sTSLA | 行事曆休市：Active → ReduceOnly | [0x100cdf5c…](https://sepolia.basescan.org/tx/0x100cdf5c33957cde82e43df08aac80ab21d2bbec6026f2c58cc0efda1048b0f2) |
+| sNVDA | 行事曆休市：Active → ReduceOnly | [0x73325e62…](https://sepolia.basescan.org/tx/0x73325e62a997607abbd5854febb2c9d061729a5b5ae8c3a54bd69e7d62c6d890) |
+| sMSFT | 行事曆休市：Active → ReduceOnly | [0x516f8080…](https://sepolia.basescan.org/tx/0x516f80809d501ffd5081f600d6209194fe9578909009eaa7848e309cae549a4a) |
+| sGOOGL | 行事曆休市：Active → ReduceOnly | [0x752a07c9…](https://sepolia.basescan.org/tx/0x752a07c95bdf9e077270e8d256db24830e17e703e14f8dc4ca7846b9a1e3d8f4) |
+| sBOND | 行事曆休市：Active → ReduceOnly | [0xadad544e…](https://sepolia.basescan.org/tx/0xadad544e6418d9862a21e6f2ecc90cb78c12a5ed884987ddaf27c89c4189275f) |
+| sICLN | 行事曆休市：Active → ReduceOnly | [0x9f765a28…](https://sepolia.basescan.org/tx/0x9f765a28adf0a545a7c6b39d62d7a938e767d623db729f3de7e4689cbeb1a875) |
+| sESGU | 行事曆休市：Active → ReduceOnly | [0xfad4e493…](https://sepolia.basescan.org/tx/0xfad4e4936687671a0c87b69d0e552b41d1988fd9983dd53ab670145fd73f9c21) |
+
+`observeReserve()`：[0x9a21302e…](https://sepolia.basescan.org/tx/0x9a21302eb681d5c4dca583242e880ba98bc07e97e1974d070d8a34be8edb74bb)
+
+### 休市示範（sETH，投資人錢包）
+
+sETH 不是 RWA、不需要合格投資人憑證，keeper 也不自動切它，所以用它示範 ReduceOnly 的行為最乾淨。
+
+| # | 步驟 | 錢包 | 結果 | 交易 |
+|---|---|---|---|---|
+| 1 | 轉 300 MockUSDC 給投資人 | 部署者 | 成功 | [0xd91e4e5e…](https://sepolia.basescan.org/tx/0xd91e4e5ebdae41db6a5a69cb8a2845931a7561897105511b479e3707e2f54c64) |
+| 2 | `approve` 交易所 | 投資人 | 成功 | [0xde5a2cac…](https://sepolia.basescan.org/tx/0xde5a2cac5c1a269aa9f000b4d579b382fb7de2c6b10c7dacab8dc843af5b8692) |
+| 3 | `depositMargin(200)` | 投資人 | 成功 | [0xe0c9566e…](https://sepolia.basescan.org/tx/0xe0c9566e06f2ea346d4b3886d32b6485c204f883a2d2ea40dadb7c76415a27f0) |
+| 4 | Active 時開 sETH 多單（保證金 20、2x），倉位 #0 | 投資人 | 成功 | [0x8bb0e953…](https://sepolia.basescan.org/tx/0x8bb0e953deab9fe884457509e760d591e92db0ec6576452e4cf5cd9f3cd1fea3) |
+| 5 | `setAssetMode(sETH, ReduceOnly)`（`rwa-poc-market-mode.sh sETH 1`） | keeper（marketOperator） | 成功 | [0xd204c5ba…](https://sepolia.basescan.org/tx/0xd204c5bab2bed2876361f21f2adcc3ea5194311dd2e148166ca716437b56cd8a) |
+| 6 | ReduceOnly 時再開倉 | 投資人 | **被拒**：`AssetNotActive(sETH, ReduceOnly)`（交易上鏈並 revert，status 0） | [0xd71ccda6…](https://sepolia.basescan.org/tx/0xd71ccda6b670367af722d473acd448491fd852adc2e9455f5cf32008cb93790d) |
+| 7 | ReduceOnly 時平倉 #0 | 投資人 | 成功 | [0x1b8457e6…](https://sepolia.basescan.org/tx/0x1b8457e6c0a06eff356ddf7c9be09a5d1845bc6e5ecbbf8f8321435e96e915a0) |
+| 8 | `setAssetMode(sETH, Active)` | keeper（marketOperator） | 成功 | [0xa6af46cc…](https://sepolia.basescan.org/tx/0xa6af46cccb239b916ff1ad1020dcd3a5463ab6f4b5d813ad071bddb47bc38828) |
+
+第 6 步刻意以固定 gas 送出（跳過預估），讓「被拒」留下可在 BaseScan 查到的鏈上證據；送出前的 `cast call` 模擬同樣回 `AssetNotActive`。

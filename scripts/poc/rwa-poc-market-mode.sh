@@ -63,8 +63,10 @@ echo "── 送出 ──"
 OUT="$(clean cast send "$EX" "setAssetMode(bytes32,uint8)" "$AID" "$MODE" \
   --account "$ACCOUNT" --password-file "$PASSWORD_FILE" --rpc-url "$RPC" --json)"
 HASH="$(clean node -e 'const r=JSON.parse(process.argv[1]); console.log(r.transactionHash + " status=" + r.status)' "$OUT")"
+BLOCK="$(clean node -e 'console.log(Number(JSON.parse(process.argv[1]).blockNumber))' "$OUT")"
 echo "tx $HASH"
 echo "https://sepolia.basescan.org/tx/${HASH%% *}"
-NEW="$(clean cast call "$EX" "assetMode(bytes32)(uint8)" "$AID" --rpc-url "$RPC")"
+# 讀交易所在區塊的狀態：公開 RPC 有負載平衡，讀 latest 可能落到還沒同步的節點而讀到舊值。
+NEW="$(clean cast call "$EX" "assetMode(bytes32)(uint8)" "$AID" --rpc-url "$RPC" --block "$BLOCK")"
 echo "$SYM 現在是 ${NAMES[$NEW]:-$NEW}"
 [[ "$NEW" == "$MODE" ]] || { echo "✖ 讀回的模式與預期不同" >&2; exit 1; }
