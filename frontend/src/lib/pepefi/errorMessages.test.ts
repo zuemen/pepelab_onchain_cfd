@@ -111,7 +111,7 @@ describe('prettyError · JSON-RPC 巢狀 data 也能取到 selector', () => {
 
 describe('RWA／休市閘門的 revert data（公開節點只回 data、沒有錯誤名稱）', () => {
   it('NotKycVerified 與 AssetNotActive 以 selector 對應到可讀訊息', () => {
-    const kyc = { data: '0xbb723368000000000000000000000000ebafe53877ad3b691664d8cb0b34874ce1240194', message: 'execution reverted' }
+    const kyc = { data: '0xbb7233680000000000000000000000001111111111111111111111111111111111111111', message: 'execution reverted' }
     expect(prettyError(kyc)).toContain('KYC')
     const closed = {
       info: { error: { data: '0x4f402872eed17252f75eebef59a2839f0991464677fec970326e35128ddaf7f3acfb72200000000000000000000000000000000000000000000000000000000000000001' } },

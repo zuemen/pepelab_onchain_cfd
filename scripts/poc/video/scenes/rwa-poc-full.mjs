@@ -20,11 +20,10 @@ import { Contract, ZeroAddress, keccak256, toUtf8Bytes } from 'ethers';
 
 import { clickAndWaitTx, downloadVia, smoothScroll, uploadFile, waitForLoaded, waitForText } from '../helpers.mjs';
 import { connectWallet } from './rwa-poc.mjs';
+import { scene6Pending } from './scene6-x402.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../..');
 const AGENT_DIR = path.join(ROOT, 'agent');
-// S6 的 x402 腳本與憑證狀態在 s6 worktree（signal-api 從那裡跑）；可用 POC_X402_ROOT 覆寫。
-const X402_ROOT = process.env.POC_X402_ROOT ?? path.resolve(ROOT, '..', 's6');
 const POC_DIR = path.join(AGENT_DIR, '.state', 'poc');
 const VC_PATH = path.join(POC_DIR, 'investor-qi-vc.json');
 const DELEGATION_PATH = path.join(POC_DIR, 'delegation-v3.json');
@@ -61,9 +60,10 @@ const STATE_PATH = path.join(POC_DIR, 'scene-state.json');
 const state = (() => { try { return JSON.parse(fs.readFileSync(STATE_PATH, 'utf8')); } catch { return { sid: null, agentPos: null }; } })();
 const saveState = () => { fs.mkdirSync(POC_DIR, { recursive: true }); fs.writeFileSync(STATE_PATH, JSON.stringify(state) + '\n'); };
 
-const sh = (ctx, cmd, o = {}) => ctx.run(cmd, { cwd: ROOT, env: ENV, cwdLabel: '~/pepelab_onchain_cfd', ...o });
-const agentSh = (ctx, cmd, o = {}) => ctx.run(cmd, { cwd: AGENT_DIR, env: ENV, cwdLabel: '~/pepelab_onchain_cfd/agent', ...o });
-const x402 = (ctx, args) => ctx.run(`bash scripts/poc/rwa-poc-x402.sh ${args}`, { cwd: X402_ROOT, env: {}, cwdLabel: '~/pepelab_onchain_cfd', allowFail: true });
+// 送交易的指令（rwa-poc-tx.sh ok／fail-send）大半時間在等區塊確認；後製依 waitLabel 加速並標示
+const labelOf = (cmd) => (/rwa-poc-tx\.sh \w+ (ok|fail-send) /.test(cmd) ? '等待區塊確認' : /cast call|issuer -- verify/.test(cmd) ? '等待鏈上讀取' : '等待指令執行');
+const sh = (ctx, cmd, o = {}) => ctx.run(cmd, { cwd: ROOT, env: ENV, cwdLabel: '~/pepelab_onchain_cfd', waitLabel: labelOf(cmd), ...o });
+const agentSh = (ctx, cmd, o = {}) => ctx.run(cmd, { cwd: AGENT_DIR, env: ENV, cwdLabel: '~/pepelab_onchain_cfd/agent', waitLabel: labelOf(cmd), ...o });
 const ISSUER_ENV = 'ISSUER_KEYSTORE=pepelab-rwa-issuer ISSUER_KEYSTORE_PASSWORD_FILE=$HOME/.foundry/pepelab-rwa-issuer.password';
 const tx = (wallet, mode, label, to, sig, args, value) =>
   `${value ? 'VALUE=$FEE ' : ''}bash scripts/poc/rwa-poc-tx.sh ${wallet} ${mode} "${label}" ${to} "${sig}" ${args}`;
@@ -81,13 +81,13 @@ async function openTerminalAsset(ctx, symbol) {
   await collapseBanner(ctx);
   await waitForLoaded(ctx);
   // 市場選擇列的按鈕文字是「🔒 sAAPL」加上「● 休市」徽章，用自己的文字節點比對
-  const ok = await ctx.page.waitForFunction((sym) => {
+  const ok = await ctx.wait('等待頁面載入', () => ctx.page.waitForFunction((sym) => {
     for (const el of document.querySelectorAll('div')) {
       const own = Array.from(el.childNodes).filter((n) => n.nodeType === 3).map((n) => n.textContent.trim()).join('').replace('🔒', '').trim();
       if (own === sym && getComputedStyle(el).cursor === 'pointer') { el.click(); return true; }
     }
     return false;
-  }, symbol, { timeout: 45_000, polling: 500 }).then(() => true, () => false);
+  }, symbol, { timeout: 45_000, polling: 500 }).then(() => true, () => false));
   ctx.assert(ok, `市場選擇列找不到 ${symbol}`);
   await ctx.pause(2500);
 }
@@ -147,7 +147,7 @@ ${ISSUER_ENV} npm run -s issuer -- issue --subject $INV --registry $REG --chain-
         await fillMargin(ctx, 20);
         const notice = ctx.page.getByText('開倉需要有效的合格投資人資格').first();
         await notice.scrollIntoViewIfNeeded();
-        await notice.waitFor({ timeout: 30_000 });
+        await ctx.wait('等待鏈上資料載入', () => notice.waitFor({ timeout: 30_000 }));
         ctx.assert(await cta(ctx, 'sGOLD').isDisabled(), '未持證時下單按鈕應停用');
       },
       hold: 5500,
@@ -195,9 +195,9 @@ ${ISSUER_ENV} npm run -s issuer -- issue --subject $INV --registry $REG --chain-
         await fillMargin(ctx, 20);
         const b = cta(ctx, 'sGOLD');
         await b.scrollIntoViewIfNeeded();
-        await ctx.page.waitForFunction(() => !document.body.innerText.includes('開倉需要有效的合格投資人資格'), null, { timeout: 60_000 });
+        await ctx.wait('等待節點同步', () => ctx.page.waitForFunction(() => !document.body.innerText.includes('開倉需要有效的合格投資人資格'), null, { timeout: 60_000 }));
         await clickAndWaitTx(ctx, 'role=button[name=/開倉 做多 sGOLD/]');
-        await waitForText(ctx, 'sGOLD 已開倉', { timeout: 60_000 }).catch(() => {});
+        await waitForText(ctx, 'sGOLD 已開倉', { timeout: 20_000, label: '等待節點同步' }).catch(() => {});
         await smoothScroll(ctx, 500);
       },
       hold: 6000,
@@ -232,7 +232,7 @@ ${ISSUER_ENV} npm run -s issuer -- issue --subject $INV --registry $REG --chain-
         }
         await ctx.pause(800);
         await clickAndWaitTx(ctx, 'role=button[name="建立 Session"]');
-        await page.getByRole('dialog').getByText('委託授權憑證 v3').first().waitFor({ timeout: 90_000 });
+        await ctx.wait('等待節點同步', () => page.getByRole('dialog').getByText('委託授權憑證 v3').first().waitFor({ timeout: 90_000 }));
       },
       hold: 4500,
     },
@@ -247,7 +247,7 @@ ${ISSUER_ENV} npm run -s issuer -- issue --subject $INV --registry $REG --chain-
           await el.pressSequentially(v, { delay: 80 });
         }
         await dlg.getByRole('button', { name: '以錢包簽發 v3' }).click();
-        await dlg.getByRole('button', { name: '錨定到鏈上' }).waitFor({ timeout: 60_000 });
+        await ctx.wait('等待錢包簽名', () => dlg.getByRole('button', { name: '錨定到鏈上' }).waitFor({ timeout: 60_000 }));
       },
       hold: 4500,
     },
@@ -256,7 +256,7 @@ ${ISSUER_ENV} npm run -s issuer -- issue --subject $INV --registry $REG --chain-
       run: async (ctx) => {
         const dlg = ctx.page.getByRole('dialog');
         await clickAndWaitTx(ctx, 'role=dialog >> role=button[name="錨定到鏈上"]');
-        await dlg.getByText('已錨定').first().waitFor({ timeout: 90_000 });
+        await ctx.wait('等待節點同步', () => dlg.getByText('已錨定').first().waitFor({ timeout: 90_000 }));
         await downloadVia(ctx, 'role=dialog >> role=button[name="下載憑證 .json"]', DELEGATION_PATH);
         const vc = JSON.parse(fs.readFileSync(DELEGATION_PATH, 'utf8'));
         state.sid = Number(vc.credentialSubject.sessionId);
@@ -277,31 +277,8 @@ echo "錨定的憑證雜湊："; cast call $ANCHOR "currentCredential(uint256)(b
       hold: 5500,
     },
 
-    // ── 第 6 景：x402 KYA ───────────────────────────────────────────────────
-    {
-      caption: '第 6 景｜代理人買訊號（x402）：不出示委託憑證 → 賣方在收錢前就拒絕（403）',
-      note: 'x402 用的是 S6 為付費 API 建立的 session #0（上限 0.02）與 #1（上限 0.005）',
-      run: async (ctx) => {
-        await ctx.showTerminal('代理人 — x402 付費呼叫（本機 signal-api :4021，KYA on）');
-        await x402(ctx, 'call main novp');
-      },
-      hold: 5500,
-    },
-    {
-      caption: '第 6 景｜出示 VP，但這張憑證的 x402 上限 0.005 USDC 低於單價 0.01 → 超額被拒，不會送去結算',
-      run: async (ctx) => {
-        await x402(ctx, 'call lowcap vp');
-      },
-      hold: 5500,
-    },
-    {
-      caption: '第 6 景｜出示 VP、上限足夠：KYA 全部通過，交給 facilitator；代理人測試 USDC 餘額為 0，所以付款失敗（實付待入金後補拍）',
-      run: async (ctx) => {
-        await x402(ctx, 'balance');
-        await x402(ctx, 'call main vp');
-      },
-      hold: 6500,
-    },
+    // ── 第 6 景：x402 KYA（scenes/scene6-x402.mjs；入金後只重錄這一段，見 POC_SCRIPT.md「補拍流程」）──
+    ...scene6Pending,
 
     // ── 第 7 景：代理人下單 ──────────────────────────────────────────────────
     {
@@ -417,7 +394,7 @@ echo "錨定的憑證雜湊："; cast call $ANCHOR "currentCredential(uint256)(b
       run: async (ctx) => {
         await openTerminalAsset(ctx, 'sGOLD');
         const close = ctx.page.getByRole('button', { name: '平倉', exact: true }).first();
-        await close.waitFor({ timeout: 60_000 });
+        await ctx.wait('等待鏈上資料載入', () => close.waitFor({ timeout: 60_000 }));
         await close.scrollIntoViewIfNeeded();
         await ctx.pause(1500);
         await clickAndWaitTx(ctx, 'role=button[name="平倉"]');

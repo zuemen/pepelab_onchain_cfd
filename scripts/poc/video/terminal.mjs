@@ -21,7 +21,7 @@ const HTML = `<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><t
   #bar { height: 40px; display: flex; align-items: center; gap: 8px; padding: 0 16px; background: #161b26; border-bottom: 1px solid #252b38; }
   .dot { width: 13px; height: 13px; border-radius: 50%; display: inline-block; }
   #title { margin-left: 14px; color: #9ca3af; font-size: 15px; }
-  #screen { position: absolute; top: 41px; left: 0; right: 0; bottom: 0; overflow: hidden; padding: 128px 48px 32px; box-sizing: border-box; }
+  #screen { position: absolute; top: 41px; left: 0; right: 0; bottom: 0; overflow: hidden; padding: 56px 48px 220px; box-sizing: border-box; }
   #lines { font-size: 21px; line-height: 1.55; white-space: pre-wrap; word-break: break-all; }
   .cmd { color: #f9fafb; } .cmd .ps { color: #22c55e; font-weight: 700; } .cmd .cwd { color: #60a5fa; }
   .comment { color: #6b7280; }
@@ -53,7 +53,7 @@ const HTML = `<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><t
       const box = document.getElementById('lines');
       box.appendChild(el);
       const screen = document.getElementById('screen');
-      while (box.scrollHeight > screen.clientHeight - 160 && box.children.length > 1) box.removeChild(box.firstChild);
+      while (box.scrollHeight > screen.clientHeight - 290 && box.children.length > 1) box.removeChild(box.firstChild);
       return el;
     },
     async addMany(items, gap) {
@@ -146,10 +146,12 @@ export async function createTerminal(context, { log, onTx }) {
       };
       child.stdout.on('data', (d) => { buf += d; flush(false); });
       child.stderr.on('data', (d) => { buf += d; flush(false); });
+      const waitStart = Date.now();
       const code = await new Promise((resolve) => {
         const timer = setTimeout(() => { child.kill('SIGTERM'); }, o.timeout ?? 300_000);
         child.on('close', (c) => { clearTimeout(timer); resolve(c ?? 1); });
       });
+      o.onWait?.({ label: o.waitLabel ?? '等待指令執行', start: waitStart, end: Date.now() });
       flush(true);
       clearInterval(pumpTimer);
       pump();

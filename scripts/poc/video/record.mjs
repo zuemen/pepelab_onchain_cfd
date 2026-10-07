@@ -90,6 +90,12 @@ async function main() {
     signing: allowSign,
     steps: [],
     signatures: [],
+    // 「等待區塊確認／節點同步／載入」的區段（毫秒，相對 t0Ms＝剪接後影片的 0 秒），給 postprocess.mjs 加速用
+    waits: [],
+  };
+  const addWait = (w) => {
+    if (w.end - w.start < 300) return;
+    record.waits.push({ step: currentEntry?.step ?? null, label: w.label, startMs: w.start, endMs: w.end });
   };
   let currentEntry = null;
 
@@ -137,6 +143,15 @@ async function main() {
     log,
     pause: sleep,
     /** 相對路徑導頁（/rwa）；完整 URL 也可。 */
+    /** 標記一段「等待」（區塊確認、節點同步、載入），後製會加速並在畫面角落註明。 */
+    async wait(label, fn) {
+      const start = Date.now();
+      try {
+        return await fn();
+      } finally {
+        addWait({ label, start, end: Date.now() });
+      }
+    },
     /** 切到前端分頁（goto 會自動切）。 */
     showApp: () => show('app'),
     /** 切到終端機分頁；title 會清空畫面並換標題列。 */
@@ -147,17 +162,17 @@ async function main() {
     /** 在終端機分頁執行指令，輸出逐行入鏡；`tx 0x…` 自動記進 JSON 並顯示在字幕列。 */
     async run(cmd, o = {}) {
       await show('term');
-      const r = await term.run(cmd, o);
+      const r = await term.run(cmd, { ...o, onWait: addWait });
       (currentEntry.commands ??= []).push({ display: o.display ?? cmd, exit: r.code, txHashes: r.txHashes, output: r.output.slice(-4000) });
       return r;
     },
     async goto(p) {
       await show('app');
-      await page.goto(new URL(p, args.base).href, { waitUntil: 'networkidle' }).catch(async (e) => {
+      await ctx.wait('等待頁面載入', () => page.goto(new URL(p, args.base).href, { waitUntil: 'networkidle' }).catch(async (e) => {
         // vite dev 有 HMR websocket，networkidle 偶爾等不到；退回 load
         log(`networkidle 未達成（${e.message.split('\n')[0]}），改等 load`);
         await page.waitForLoadState('load');
-      });
+      }));
       await overlay.reapply();
     },
     async switchRole(name) {
@@ -204,6 +219,9 @@ async function main() {
   record.finishedAt = new Date().toISOString();
   record.address = wallet.address;
   record.timeline = timeline.map((x) => ({ view: x.view, at: new Date(x.t).toISOString() }));
+  record.t0Ms = timeline[0].t;
+  record.endMs = endT;
+  for (const e of record.steps) e.startMs = Date.parse(e.timestamp);
 
   const video = page.video();
   const termVideo = term.page.video();

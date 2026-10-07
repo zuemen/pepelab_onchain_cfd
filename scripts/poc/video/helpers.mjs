@@ -17,7 +17,7 @@ export async function clickAndWaitTx(ctx, selector, { timeout = 120_000, confirm
   const hash = await pending;
   ctx.recordTx(hash);
   await ctx.overlay.tx(hash);
-  const receipt = await ctx.wallet.waitReceipt(hash, confirmations);
+  const receipt = await (ctx.wait ? ctx.wait('等待區塊確認', () => ctx.wallet.waitReceipt(hash, confirmations)) : ctx.wallet.waitReceipt(hash, confirmations));
   if (receipt && receipt.status !== 1) throw new Error(`交易失敗（reverted）：${hash}`);
   await ctx.overlay.note(null);
   return hash;
@@ -32,8 +32,9 @@ export async function typeInto(ctx, selector, value, { delay = 60 } = {}) {
 }
 
 /** 等某段文字出現在畫面上（例如交易完成後的狀態列）。 */
-export async function waitForText(ctx, text, { timeout = 30_000 } = {}) {
-  await ctx.page.getByText(text, { exact: false }).first().waitFor({ state: 'visible', timeout });
+export async function waitForText(ctx, text, { timeout = 30_000, label = '等待畫面更新' } = {}) {
+  const go = () => ctx.page.getByText(text, { exact: false }).first().waitFor({ state: 'visible', timeout });
+  await (ctx.wait ? ctx.wait(label, go) : go());
 }
 
 /** 慢慢捲到元素，讓觀眾跟得上畫面移動。 */
@@ -56,7 +57,8 @@ export async function smoothScroll(ctx, dy, { steps = 10, stepDelay = 80 } = {})
  */
 export async function waitForLoaded(ctx, { text = '讀取中', timeout = 30_000 } = {}) {
   try {
-    await ctx.page.waitForFunction((t) => !document.body.innerText.includes(t), text, { timeout, polling: 500 });
+    const go = () => ctx.page.waitForFunction((t) => !document.body.innerText.includes(t), text, { timeout, polling: 500 });
+    await (ctx.wait ? ctx.wait('等待鏈上資料載入', go) : go());
   } catch {
     ctx.log(`等待「${text}」消失逾時（${timeout}ms），繼續下一步`);
   }
