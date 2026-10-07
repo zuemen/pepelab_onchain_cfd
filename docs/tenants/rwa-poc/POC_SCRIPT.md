@@ -1,7 +1,7 @@
 # RWA＋SSI PoC 錄影劇本（Base Sepolia，租戶 `rwa-poc`）
 
-> 狀態：**草稿（S7）**。每一步的指令與預期畫面都是依程式碼與 S3–S5 的實測結果寫的，**還沒有照劇本實跑**；
-> 交易 hash 欄一律是 `待實跑`，實跑後回填。錢包見 [WALLETS.md](WALLETS.md)，合約見 [DEPLOYMENT.md](DEPLOYMENT.md)，
+> 狀態：**2026-10-07 完整彩排一次跑通（S7）**，交易 hash 是那次實跑的結果（見 §7）。錄影劇本 `scripts/poc/video/scenes/rwa-poc-full.mjs`
+> 照本文 10 景自動操作前端並把 CLI 步驟放進「終端機分頁」。錢包見 [WALLETS.md](WALLETS.md)，合約見 [DEPLOYMENT.md](DEPLOYMENT.md)，
 > keeper 與休市切換見 [RUNBOOK.md](RUNBOOK.md)，前端設定見 [FRONTEND.md](FRONTEND.md)。
 
 ## 誠實聲明（片頭或片尾字幕要講到）
@@ -91,7 +91,8 @@ mkdir -p agent/.state/public-status
 (cd agent && npm run vc-status:init -- --dir .state/public-status/vc)             # 委託憑證清單目錄標記（ADR-016）
 
 # 終端機 A：清單主機（只綁 127.0.0.1、開 CORS、不快取）
-npx --yes http-server agent/.state/public-status -a 127.0.0.1 -p 8787 --cors -c-1
+node scripts/poc/rwa-poc-status-server.mjs --mount investor=agent/.state/public-status/investor --mount vc=<S6 的 agent/.state/rwa-poc/vc-status>
+#   不需外部套件；只綁 127.0.0.1、CORS *、Cache-Control: no-store、不列目錄、不轉址
 #   投資人 VC 清單： http://localhost:8787/investor/<發證者地址小寫>.json （還沒撤銷前是 404 ＝「沒有發佈清單（沒有撤銷）」）
 #   委託憑證清單：   http://localhost:8787/vc/<投資人地址小寫>.json
 ```
@@ -148,7 +149,7 @@ BaseScan 連結格式：`https://sepolia.basescan.org/tx/<hash>`。
   `verify` 輸出 `signature.valid: true`、`issuer` = `0xf67b…cD83`、`status.ok: true`（還沒有清單）、
   `onchain.issuerTrusted: true`、`submitted: false`、`valid: false`。可以 `jq '.credentialSubject, .proof.attestation' .state/poc/investor-qi-vc.json` 給特寫：沒有姓名、證號。
 - **旁白**：「發證者在鏈下完成審查後，用自己的金鑰簽一張合格投資人憑證。憑證裡只有錢包的去中心化識別碼和資格類型，沒有任何個人資料；這裡的發證者是我們自己的測試錢包，示範的是流程，不是真實審查。」
-- **交易**：無（離線簽名）。記下 `credentialHash`：`待實跑`。
+- **交易**：無（離線簽名）。彩排的 `credentialHash`：`0x5efa698a46331c0d8e14bbefe9707a3bedac4673c672bb565d790c93ddb16c39`。
 - **備援**：排練時產出的同一張 VC 與 CLI 輸出截圖（nonce 未用掉前仍可送）；或預錄的終端機片段。
 
 ### 第 2 景　未持證開 sGOLD 被拒
@@ -169,7 +170,7 @@ BaseScan 連結格式：`https://sepolia.basescan.org/tx/<hash>`。
   #   預期：status 0 (failed)
   ```
 - **旁白**：「sGOLD 是 RWA 市場，交易所開倉前會向 KYC 登錄確認這個錢包是否具備合格投資人資格。現在還沒有，所以前端擋下，直接送上鏈也會被合約拒絕。」
-- **交易**：`NotKycVerified` 失敗交易 `待實跑`。
+- **交易**：`NotKycVerified` 失敗交易（status 0）[`0x49b6098b…`](https://sepolia.basescan.org/tx/0x49b6098ba496434da80fec8eb3e61513c7eaf7e57f27218003fca192bca5f8da)。
 - **備援**：S4 的 sETH 失敗交易是同一種「固定 gas 留證據」做法，可以先播 `cast call` 的 revert 輸出；或預錄片段。
 
 ### 第 3 景　投資人在 `/credentials` 上傳 VC、本地驗證、送上鏈
@@ -182,7 +183,7 @@ BaseScan 連結格式：`https://sepolia.basescan.org/tx/<hash>`。
   - 送出後：「交易：0x…」，上鏈後警示變綠：「你的錢包已具 RWA 市場資格（要求：合格投資人）；憑證到期：…」。
 - **讀回**：`cast call $REG "isVerified(address)(bool)" $INV -r $R` → `true`。
 - **旁白**：「投資人把憑證帶到平台，瀏覽器先在本地驗證簽章、效期與撤銷狀態，再送到鏈上的登錄合約。合約自己再驗一次發證者簽章，鏈上只記地址、類型、到期日和憑證雜湊。」
-- **交易**：`submitAttestation` `待實跑`。
+- **交易**：`submitAttestation` [`0x81a414a7…`](https://sepolia.basescan.org/tx/0x81a414a7b4cff444be6d620f8a75e67e5da444d0ce332ec992c1c1a7bf734fdd)。
 - **備援**：UI 送出失敗時改用 CLI（投資人 keystore 送同一份簽章）：
 
   ```bash
@@ -197,7 +198,7 @@ BaseScan 連結格式：`https://sepolia.basescan.org/tx/<hash>`。
 - **UI 操作**：重新整理 → sGOLD 多單、保證金 20、槓桿 1 → 下單 → 錢包確認（注入錢包自動簽）。
 - **預期畫面**：KYC 提示消失、按鈕可按；送出後持倉表出現 sGOLD 多單（記下部位編號）；`/portfolio` 可用保證金減少約 20。
 - **旁白**：「同一個錢包、同一筆單，資格登記上鏈之後就能開倉。交易所合約沒有改，只是換上一顆用可驗證憑證准入的 KYC 登錄。」
-- **交易**：開倉 `待實跑`；部位編號 `待實跑`。
+- **交易**：開倉 [`0x1cc9f226…`](https://sepolia.basescan.org/tx/0x1cc9f2268cad57d47f9d2cf0c1ba2b6a766baab1b0428245ae503d6913952288)；部位 #6。
 - **備援**：`cast send $EX "openPosition(bytes32,bool,uint256,uint256)" $GOLD true $(cast to-wei 20) 1 --value $FEE $(acct investor) -r $R`（先 `cast call --from $INV` 模擬）。
 
 ### 第 5 景　投資人為代理人建 session、簽發委託 VC v3、錨定
@@ -214,7 +215,7 @@ BaseScan 連結格式：`https://sepolia.basescan.org/tx/<hash>`。
   與鏈上逐欄一致的額度、credentialHash、「已錨定」。
 - **讀回**：`cast call $ANCHOR "currentCredential(uint256)(bytes32)" <sessionId> -r $R` 等於畫面上的 credentialHash。
 - **旁白**：「投資人不把主錢包交給 AI。他在鏈上開一個有上限的 session，再把同樣的上限和付費額度簽成一張委託憑證，並把憑證雜湊錨定在鏈上。之後任何服務都能查到：是誰、授權了哪個代理人、授權到哪裡。」
-- **交易**：`createSessionWithAssets` `待實跑`；`anchor` `待實跑`；sessionId `待實跑`；credentialHash `待實跑`。
+- **交易**：`createSessionWithAssets` [`0xfc13d46e…`](https://sepolia.basescan.org/tx/0xfc13d46ef4165a3b66222f0006e56a8f71bf50d48bbfe8081c2b05b75da7ef97)；`anchor` [`0x4e9cd3ea…`](https://sepolia.basescan.org/tx/0x4e9cd3ead31adc34fe053cf5b415bd70bc4ed664b20077b0cf238dd0513a1d73)；session #5；委託憑證 credentialHash `0x9bc10740d20d133d4841f421ed820efed271e695ebcf7cfcd90158b042bcc8c0`。
 - **備援**：建 session 可用 CLI（投資人 keystore；到期時間要與 v3 憑證一致，所以之後仍要在 `/sessions` 對這個 session 簽發 v3）：
 
   ```bash
@@ -246,7 +247,7 @@ BaseScan 連結格式：`https://sepolia.basescan.org/tx/<hash>`。
 - **預期畫面**：終端機三次呼叫的狀態碼與原因代碼；x402 結算交易（若走真實 facilitator）。
 - **旁白**：「代理人買訊號時，除了付款，還要出示由自己簽名的憑證呈現。賣方在收錢之前確認：付款人就是被授權的代理人、授權還有效、鏈上 session 和錨定都對得上、而且沒有超過投資人給的付費上限。」
   （若結算是模擬 facilitator，要加一句「這一段的結算是模擬的，沒有錢移動」。）
-- **交易**：x402 付款結算 `待實跑`。
+- **交易**：無。彩排時代理人測試 USDC 為 0：不帶 VP → 403 `kya_presentation_required`；`lowcap` 帶 VP → 403 `kya_spend_limit_exceeded`；`main` 帶 VP → KYA 通過、facilitator 回 402 `invalid_exact_evm_insufficient_balance`。實付待入金後補拍（字幕已照實說明）。
 - **備援**：`bash scripts/poc/agent-delegation-demo.sh`（本機 anvil、模擬 facilitator，13 項已在 2026-10-06 實測）的錄影，明確標示是本機模擬。
 
 ### 第 7 景　代理人在 session 上限內下單、超額被拒
@@ -272,7 +273,7 @@ BaseScan 連結格式：`https://sepolia.basescan.org/tx/<hash>`。
   （也可再示範 sAAPL → `AssetNotAllowed`：不在 session 白名單。）
 - **預期畫面**：第一筆成功，`/sessions` 花費變 20 / 60；投資人的 `/portfolio` 多一筆 sGOLD 部位（部位擁有者是投資人，不是代理人）。第二筆模擬回 `MarginExceedsPerTradeCap`，送出後 status 0。
 - **旁白**：「代理人用自己的 session 金鑰下單，部位記在投資人名下；合約檢查每筆和總額的上限。超過上限的單，不管代理人怎麼送，合約都會拒絕。」
-- **交易**：額度內開倉 `待實跑`（部位編號 `待實跑`）；超額失敗 `待實跑`。
+- **交易**：額度內開倉 [`0xcf81a667…`](https://sepolia.basescan.org/tx/0xcf81a66781e5b0fd801363a0c1ff4b535af2bacd19f869589f2c7694b5e16b60)（部位 #7）；超額只保留模擬的 revert `MarginExceedsPerTradeCap()`，沒有送出。
 - **備援**：預錄的終端機片段；或 `agent-delegation-demo.sh` 第 9 步（本機）。
 
 ### 第 8 景　休市：ReduceOnly 拒絕新開倉
@@ -290,7 +291,7 @@ BaseScan 連結格式：`https://sepolia.basescan.org/tx/<hash>`。
   畫面指出 keeper 切換那筆交易（keeper log 的 `setAssetMode`，或 DEPLOYMENT.md 的 S4 紀錄）。
 - **預期畫面**：UI 送出時錢包預估失敗並顯示錯誤（或按鈕不可按，以實跑為準）；`cast call` 回 `AssetNotActive`。
 - **旁白**：「美股休市時，keeper 依交易所行事曆把股票類資產切成只能減倉。這時不能開新倉，但既有部位隨時可以平倉，投資人不會被鎖在部位裡。」
-- **交易**：keeper 切換 `待實跑`（或引用 S4 的 `0x1f35edef…`）；開倉失敗 `待實跑`。
+- **交易**：keeper 切換引用 S4 的 [`0x1f35edef…`](https://sepolia.basescan.org/tx/0x1f35edefa4d0602a0b9a8c32ffb06742ecab97322d4c9eed042be95b3b1fa6c8)（彩排時 sAAPL 已是 ReduceOnly）；開倉失敗（status 0）[`0x6f4853b6…`](https://sepolia.basescan.org/tx/0x6f4853b63fae369f2973beb71579892e060c6e5e9954fc2d00951e146d9f2c7b)。前端送出後顯示「這個標的目前休市或暫停…不能開新倉；既有部位可以平倉」。
 - **備援**：S4 的 sETH 休市示範（開倉被拒 `0xd71ccda6…`、平倉成功 `0x1b8457e6…`）截圖。
 - **若在美股時段錄**：keeper 用 `--no-market-operator` 跑，`bash scripts/poc/rwa-poc-market-mode.sh sAAPL 1` 手動切（keeper 錢包），示範完 `sAAPL 0` 切回，並在旁白說明是手動切。
 
@@ -328,7 +329,7 @@ BaseScan 連結格式：`https://sepolia.basescan.org/tx/<hash>`。
   付費 API 回 403。v3 憑證的狀態清單撤銷要再走「簽清單 → 下載 → `SESSION_MANAGER_ADDRESS=$MGR npx tsx examples/vc-status.ts install --list <檔> --dir .state/public-status/vc` → 確認已發佈」，片中可略。
 - **預期畫面**：撤銷交易成功；投資人與代理人的開倉都回 `NotKycVerified`；兩筆平倉成功，`/portfolio` 部位清空、保證金回到可用。
 - **旁白**：「發證者撤銷資格後，交易所對這個投資人的新開倉一律拒絕，連他授權的代理人也一樣，因為代理人是代表他下單。撤銷只擋開新倉，既有部位照常可以平倉。」
-- **交易**：鏈上 `revoke` `待實跑`；投資人開倉失敗（選用）`待實跑`；代理人開倉失敗（選用）`待實跑`；投資人平倉 `待實跑`；代理人平倉 `待實跑`；`revokeSession`（選用）`待實跑`。
+- **交易**：鏈上 `revoke` [`0x6803d363…`](https://sepolia.basescan.org/tx/0x6803d363fa6e16e58faad42690aa53ddf81c0b47d363c2979230cdad641cf531)（狀態清單 sequence 2）；投資人與代理人開倉只保留模擬的 `NotKycVerified`；代理人平倉 #7 [`0xb7dfc257…`](https://sepolia.basescan.org/tx/0xb7dfc257c63084e19764b6c6c42c26d91d110e00d37d11c06aae9dfacc55fb27)；投資人平倉 #6 [`0x51810406…`](https://sepolia.basescan.org/tx/0x518104061f9eb8660b7954694f45b3c6818f8f418c83f7c31700b22a8174b6f7)。9e（收回委託）片中略過。
 - **備援**：`bash scripts/poc/rwa-ssi-demo.sh`（本機 anvil，步驟 6–8 是同樣的撤銷→被拒→平倉）的錄影，標示為本機。
 
 ### 第 10 景　揭露頁：`/rwa`、`/oracle`、`/solvency`
@@ -358,23 +359,40 @@ BaseScan 連結格式：`https://sepolia.basescan.org/tx/<hash>`。
 | 撤銷後代理人與投資人都被拒、既有部位可平倉 | 9 | 撤銷的是合格投資人 VC；收回委託是選用的 9e |
 | `/rwa`、`/oracle`、`/solvency` | 10 | — |
 
-## 6. 尚未決定或不確定的事
+## 6. 已決定的事（2026-10-07）
 
-1. **代理人下單走哪條路**：代理人寫入路徑（`agent/shared/src/write.ts`，MCP `open_position`、demo-agent）只讀明文 `AGENT_PRIVATE_KEY`，沒有 keystore 支援；
-   它會先驗 v3 憑證（逐欄比對鏈上 session、撤銷清單、資產白名單）再送單。劇本目前用 `cast`＋keystore 直接呼叫 session manager，
-   示範的是**鏈上**上限（權威），沒有示範鏈下的 VC 閘門。若要示範 MCP／VC 閘門，需要先比照 `keeper/keySource.ts` 幫代理人加 `AGENT_KEYSTORE`（另一個 PR），
-   或接受在錄影當下把私鑰放進行程環境變數（不建議）。另外寫入路徑讀 `executionFee` 用的是平台交易所位址（`ADDRESSES`），目前兩邊都是 1e14 才剛好可用。
-2. **x402（第 6 景）**：signal-api 啟動方式、`/signals/:trader` 要用哪個已註冊的 trader（signal-api 讀平台還是租戶的 StrategyRegistry）、結算走真實 facilitator 還是模擬、
-   付款客戶端（demo-agent 也只吃 `AGENT_PRIVATE_KEY`），都等 S6 定案。代理人目前測試 USDC 餘額 0。
-3. **既有 session #0、#1**：`AgentSessionManager` 已有兩個 session（投資人→代理人，單筆 50、總額 150、5 倍，約 7 天後到期），不知道是誰為何建立（S6 測試？）。
-   劇本用新的 session；若要畫面乾淨，錄影前由投資人撤銷這兩個，或在旁白略過。
-4. **sGOLD 還是 sAAPL**：建議主線 sGOLD（§1）。若堅持 sAAPL 主線，錄影只能在台灣夏令 21:30–01:00（冬令 22:30–02:00），而且休市示範要改手動切。
-5. **委託憑證下載**：第 5 景要把 v3 憑證 JSON 交給代理人；錄影工具目前沒有處理瀏覽器下載的 helper（需要在 scene 裡接 Playwright 的 `download` 事件，或從頁面複製 JSON）。
-6. **`/credentials` 上傳**：錄影工具需用 `setInputFiles` 對隱藏的 file input 上傳；或改用「貼上憑證 JSON」欄位。scene 尚未寫。
-7. **UI 下單面板的文案**：sGOLD 未持證時提示是「🔒 sGOLD 需 KYC，請至 Exchange 頁送出申請（送出後需審核）」，下方才是「用合格投資人憑證取得資格 →」連結；
-   前半句是舊 allowlist 流程的說法，VC 准入部署下會誤導，錄影前要不要改文案待決定。
-8. **ReduceOnly 時 UI 行為**：終端機只顯示「只能減倉」徽章，下單按鈕是否停用、或是送出時才由錢包預估失敗，要實跑確認（第 8 景的「預期畫面」以實跑為準）。
-9. **狀態清單主機**：用 `npx http-server`（第一次會從 npm 下載）。要不要改成 repo 內一支不需外部套件的小伺服器，待決定；VC 內的清單網址是 `http://localhost:8787/…`，換主機就要重簽 VC。
-10. **重錄成本**：每跑一次都會用掉投資人 nonce、留下撤銷紀錄與部位。重錄時發證者要以新的 nonce 重簽 VC（舊紀錄已失效，可以被取代）；保證金每輪會因手續費略減。
-    純 CLI 部分可以先在 `anvil --fork-url $R` 上排練，但前端讀的是公開 RPC，UI 部分無法在 fork 上排練。
-11. **失敗交易留證據**：固定 gas 送出會讓錢包付一點 gas 換一筆 status 0 的交易；要不要每個「被拒」都留鏈上證據（第 2、7、8、9 景），或只留 `cast call` 的 revert 輸出，待決定。
+1. 代理人下單用 `cast`＋代理人 keystore 直接呼叫 session manager（示範鏈上上限）；鏈下 VC 閘門由 x402 KYA 那段示範，不另開 `AGENT_KEYSTORE`。
+2. x402 用 S6 的 `scripts/poc/rwa-poc-x402.sh`（`call`／`balance`），session 是 S6 建的 #0（`main`，上限 0.02）與 #1（`lowcap`，上限 0.005）；字幕照實說明。代理人 USDC 入金前只拍「不帶 VP 被拒＋超額被拒＋KYA 通過但餘額不足」。
+3. 代理人下單那景用第 5 景新開的 session。
+4. 狀態清單主機改用 `scripts/poc/rwa-poc-status-server.mjs`（不需外部套件）。
+5. 終端機文案已修：VC 准入部署下顯示「是 RWA 市場，開倉需要有效的合格投資人資格」，不再叫人去 Exchange 頁。
+6. ReduceOnly 的 UI：下單按鈕**沒有**停用；按下後先出現休市確認視窗，確認送出時錢包預估就失敗，前端顯示休市訊息，不會送出交易。
+7. 鏈上 status 0 證據只留第 2 景與第 8 景；其他被拒只保留模擬的 revert。
+
+### 重跑
+
+`bash scripts/poc/rwa-poc-rehearsal-reset.sh` 把投資人恢復成「沒有資格、沒有部位」並撤銷彩排建的 session（#0、#1 保留），之後：
+
+```bash
+cd scripts/poc/video && node record.mjs --scenes scenes/rwa-poc-full.mjs --base http://localhost:4173 --allow-tx
+```
+
+前端用錄影專用的 worktree 起在 4173（`yarn dev --mode rwa-poc --port 4173`；signal-api 的 CORS 白名單含 4173），
+`scripts/poc/rwa-poc-frontend.sh --status-url http://localhost:8787/vc` 產生設定。同一個 `out/` 同時只能有一個錄影行程。
+
+## 7. 實跑紀錄（2026-10-07 02:43 UTC，完整彩排，1920×1080，約 10 分 13 秒）
+
+| 景 | 結果 | 交易 |
+|---|---|---|
+| 1 發證 | VC 簽發，nonce 0，驗證：簽章有效、發證者受信任、未登記 | — |
+| 2 未持證 | 前端停用按鈕並提示；鏈上 `NotKycVerified` | {L(T['h2'])}（status 0） |
+| 3 提交 | 晶片「簽章有效／合格投資人／未撤銷／發證者受信任」，上鏈後顯示已具資格 | {L(T['h3'])} |
+| 4 開倉 | sGOLD 多單 20、1 倍，部位 #6 | {L(T['h4'])} |
+| 5 委託 | session #5（30／60／1 倍／24 小時／sGOLD），v3 簽發、錨定 | {L(T['h5a'])}、{L(T['h5b'])} |
+| 6 x402 | 403 `kya_presentation_required`；403 `kya_spend_limit_exceeded`；402 餘額不足（KYA 已通過） | — |
+| 7 代理人 | 15 成功（部位 #7）；50 模擬 `MarginExceedsPerTradeCap()` | {L(T['h7'])} |
+| 8 休市 | sAAPL `assetMode = 1`；前端顯示休市訊息；鏈上 `AssetNotActive(sAAPL, 1)` | {L(T['h8'])}（status 0） |
+| 9 撤銷 | 清單 sequence 2＋鏈上 revoke；前端「已撤銷」；投資人與代理人模擬 `NotKycVerified`；兩筆平倉成功 | {L(T['h9a'])}、{L(T['h9c'])}、{L(T['h9d'])} |
+| 10 揭露 | `/rwa`、`/oracle`、`/solvency` 讀鏈正常 | — |
+
+彩排之前另有幾次中斷的試跑（找出前端的節點同步問題），留下的鏈上交易都由 `rwa-poc-rehearsal-reset.sh` 收尾（撤銷資格、平倉、撤銷 session #2–#4）。
