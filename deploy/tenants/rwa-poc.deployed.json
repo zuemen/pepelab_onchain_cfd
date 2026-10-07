@@ -1,26 +1,28 @@
 {
-  "schemaVersion": 1,
-  "tenant": "rwa-poc",
-  "kind": "dedicated",
   "chainId": 84532,
-  "oracleKind": "guarded",
   "contracts": {
-    "SettlementToken": "0x69fd695Bc7C3aFdb35ABA35cD6890C506400b035",
-    "Oracle": "0x249A6CE5b467A4F44dC6378be313D681B2c4358a",
+    "AgentSessionManager": "0xa60a1dC20E1CBb0cBc869464E35AEBa6ff3acbdd",
+    "AssetVaultV2": "0x9e77476BB4Fe36259E729628Cf4A38F54107720b",
+    "AssetVaultV2Impl": "0x6A6A20176E480985Ea90f717D5c64898bE0ffcE9",
+    "CopyTracker": "0x48e770D50e7c1Ac2F0C098A70B28BD5e641CdD0a",
     "ESGRegistryV2": "0x91CcbBBCEF651C2b1e57117a5b0dEcDE23dE572b",
-    "KYCRegistry": "0x3869405c4641C72E5F01EaD9ced69139B4D830bD",
-    "InsuranceVault": "0x792f0B2072CB3c65D618C50aE31c7802B8909035",
     "FeeRouter": "0x622a4c0aFd20105c5Be28FA5e39D3808FFb065dF",
-    "TraderStake": "0x2a7bE6Faccb9B00337FF52712430C835cCED1034",
+    "InsuranceSeeder": "0xae18A14E91973B5ecd0aBd0c3C334538deFcd555",
+    "InsuranceVault": "0x792f0B2072CB3c65D618C50aE31c7802B8909035",
+    "KYCRegistry": "0x3869405c4641C72E5F01EaD9ced69139B4D830bD",
+    "Oracle": "0x249A6CE5b467A4F44dC6378be313D681B2c4358a",
     "PerpetualExchange": "0xbB7f8059eD5450889c745F5c1F458Cb1290FA96B",
     "StrategyRegistry": "0x2a1a974Ba8eD424CD6Acf035A17A88c1816eEcE9",
-    "CopyTracker": "0x48e770D50e7c1Ac2F0C098A70B28BD5e641CdD0a",
-    "AgentSessionManager": "0xa60a1dC20E1CBb0cBc869464E35AEBa6ff3acbdd",
-    "AssetVaultV2": "0x9e77476BB4Fe36259E729628Cf4A38F54107720b"
+    "TraderStake": "0x2a7bE6Faccb9B00337FF52712430C835cCED1034"
   },
-  "shared": [
-    "contracts.SettlementToken"
-  ],
+  "deployBlock": 47781289,
+  "deployer": "0xF52D1a91B93bFF40C7D36Cb7f898833c16a049eE",
+  "mode": "broadcast",
+  "oracleKind": "guarded",
+  "owner": "0xC0f050fDeD9330169d3b6fD91D731799b26a7f00",
+  "schemaVersion": 1,
+  "settlementToken": "0x69fd695Bc7C3aFdb35ABA35cD6890C506400b035",
+  "tenantId": "rwa-poc",
   "tokens": {
     "sAAPL": "0x17792Ed0e52688cdFA5698fFc3a09531634B61af",
     "sBOND": "0x631551d7695b16155CDbd5D9F8e394B65ca50620",
@@ -33,5 +35,6 @@
     "sMSFT": "0x5D544Ee95a2A71Cb9D612238b9E1Fc83b01A2c7E",
     "sNVDA": "0xdA3E3096198c587dd5ce1D3C96057A3CbEB37dc8",
     "sTSLA": "0x79E05B58980EECd7096E6aCdf073439bA827a74a"
-  }
+  },
+  "treasury": "0xC0f050fDeD9330169d3b6fD91D731799b26a7f00"
 }

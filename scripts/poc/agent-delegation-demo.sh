@@ -32,7 +32,7 @@ for _ in $(seq 1 50); do
   sleep 0.2
 done
 
-echo "▶ 部署合約到本機 anvil（$RPC，chainId 31337）…（第一次要編譯，約數分鐘）"
+echo "▶ 部署合約到本機 anvil（${RPC}，chainId 31337）…（第一次要編譯，約數分鐘）"
 cd "$ROOT/contracts"
 # 只編譯這兩支部署腳本與它們依賴的合約：其餘 script／test 跳過（via_ir 全量編譯很慢、很吃記憶體）。
 # --offline：本機 PoC 不需要網路；斷網時 forge 會卡在對外查詢。

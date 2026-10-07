@@ -26,7 +26,7 @@ prev="${VERCEL_GIT_PREVIOUS_SHA:-}"
 # dependabot 的 preview 建置沒有人看，GitHub Actions 已經驗證過 build。
 case "$ref" in
   dependabot/*)
-    echo "skip: dependabot 分支（$ref）不建 preview"
+    echo "skip: dependabot 分支（${ref}）不建 preview"
     exit 0
     ;;
 esac
@@ -62,7 +62,7 @@ case "$rc" in
     echo "build: 自 ${prev:0:7} 以來 $* 有變更"
     ;;
   *)
-    echo "build: git diff 失敗（exit $rc）"
+    echo "build: git diff 失敗（exit ${rc}）"
     ;;
 esac
 exit 1

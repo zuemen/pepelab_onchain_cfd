@@ -19,18 +19,81 @@
 // 用法：node scripts/verify-dedicated-tenants.mjs            # CI
 //       node scripts/verify-dedicated-tenants.mjs --list     # 只列出會驗證的租戶
 
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { listDedicatedTenantIds } from "./lib/tenant-keeper.mjs";
 
-/** 公開、免金鑰的唯讀 RPC（每條鏈一個）。只用來讀；不在這裡放任何帶金鑰的網址。 */
+/**
+ * 公開、免金鑰的唯讀 RPC（每條鏈依序嘗試）。只用來讀；不在這裡放任何帶金鑰的網址。
+ * 不只一個：sepolia.base.org 會拒絕 GitHub Actions runner 上的 forge（HTTP 401「rejected due to request
+ * filter settings」），也會對權限歷史掃描的 eth_getLogs 限流。依序嘗試；某個節點因為連線／限流失敗
+ * （不是驗證失敗）就換下一個，全部不行才失敗（仍不略過）。
+ * logChunk：該節點 eth_getLogs 一次可查的區塊數（VerifyTenant 的 TENANT_LOG_CHUNK_BLOCKS）；
+ * 越大呼叫次數越少、越不會被限流。
+ */
 export const PUBLIC_RPC = {
-  84532: "https://sepolia.base.org",
-  8453: "https://mainnet.base.org",
+  84532: [
+    { url: "https://base-sepolia-rpc.publicnode.com", logChunk: 10_000 },
+    { url: "https://sepolia.base.org", logChunk: 1_000 },
+    { url: "https://base-sepolia.drpc.org", logChunk: 1_000 },
+  ],
+  8453: [
+    { url: "https://base-rpc.publicnode.com", logChunk: 10_000 },
+    { url: "https://mainnet.base.org", logChunk: 1_000 },
+  ],
 };
+
+/**
+ * forge **stderr** 裡代表「這個節點不能用」的訊息（連線、401、限流、getLogs 被拒）。
+ * 只比對 stderr：stdout 的 Logs 會印出 VerifyTenant 的檢查名稱（例如「oracle rate limit is on」），
+ * 拿整份輸出比對會把真的驗證失敗誤判成節點問題。不放泛用的「rate limit」：限流由 HTTP 429 與
+ * VerifyTenant 自己的「eth_getLogs refused」涵蓋。其他失敗是真的驗證失敗，不重試。
+ */
+export const RPC_UNUSABLE = [
+  /HTTP error (401|403|429|5\d\d)/i,
+  /failed to determine network family/i,
+  /eth_getLogs refused/i,
+  /error sending request/i,
+];
+
+/** 單一節點跑 VerifyTenant 的上限（job 是 30 分鐘；卡住的節點要留時間給下一個）。 */
+export const FORGE_TIMEOUT_MS = 8 * 60 * 1000;
+
+/** 邊跑邊印（CI log 即時），同時收集 stderr 判斷是不是節點問題。 */
+function runForge(root, t) {
+  return new Promise((resolve) => {
+    const child = spawn("forge", ["script", "script/VerifyTenant.s.sol:VerifyTenant", "--fork-url", t.rpc, "-vv"], {
+      cwd: join(root, "contracts"),
+      env: { ...process.env, TENANT: t.id, TENANT_LOG_CHUNK_BLOCKS: String(t.logChunk) },
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    let stderr = "";
+    let timedOut = false;
+    const timer = setTimeout(() => {
+      timedOut = true;
+      child.kill("SIGTERM");
+      setTimeout(() => child.kill("SIGKILL"), 10_000).unref();
+    }, FORGE_TIMEOUT_MS);
+    child.stdout.on("data", (d) => process.stdout.write(d));
+    child.stderr.on("data", (d) => {
+      process.stderr.write(d);
+      stderr = (stderr + d).slice(-1_000_000); // 留尾端：最後的「Error:」那行才是判斷依據
+    });
+    child.on("error", (e) => {
+      clearTimeout(timer);
+      // forge 本身跑不起來（例如 ENOENT）不是節點問題：當成驗證失敗，不去試下一個節點。
+      resolve({ status: null, stderr: `forge 無法執行：${e.message}` });
+    });
+    child.on("close", (code) => {
+      clearTimeout(timer);
+      // 逾時當成節點問題（換下一個）：卡住的是 RPC，不是驗證結果。
+      resolve({ status: code, stderr: timedOut ? `${stderr}\nerror sending request: forge 逾時 ${FORGE_TIMEOUT_MS / 60000} 分鐘` : stderr });
+    });
+  });
+}
 
 /** 每個要驗證的租戶：{ id, chainId, rpc }。缺檔或狀態不對直接丟錯（不略過）。 */
 export function plan(root) {
@@ -43,22 +106,17 @@ export function plan(root) {
     const cfg = JSON.parse(readFileSync(cfgFile, "utf8"));
     if (cfg.status !== "deployed") throw new Error(`${id}：deploy/tenants/${id}.json 的 status 是 ${cfg.status}，不是 deployed`);
     const chainId = cfg.network?.chainId;
-    const rpc = PUBLIC_RPC[chainId];
-    if (!rpc) throw new Error(`${id}：chain ${chainId} 沒有設定公開 RPC`);
-    return { id, chainId, rpc };
+    const rpcs = PUBLIC_RPC[chainId];
+    if (!rpcs?.length) throw new Error(`${id}：chain ${chainId} 沒有設定公開 RPC`);
+    return { id, chainId, rpcs };
   });
 }
 
+/** 用 cast 探測（與 forge 同一套 HTTP 客戶端；node fetch 通、forge 被擋的情況才探得到）。 */
 async function rpcChainId(rpc) {
-  const res = await fetch(rpc, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "eth_chainId", params: [] }),
-    signal: AbortSignal.timeout(20_000),
-  });
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  const body = await res.json();
-  return Number.parseInt(body.result, 16);
+  const r = spawnSync("cast", ["chain-id", "--rpc-url", rpc], { encoding: "utf8", timeout: 30_000 });
+  if (r.status !== 0) throw new Error((r.stderr || r.error?.message || `exit ${r.status}`).trim().split("\n").pop());
+  return Number.parseInt(r.stdout.trim(), 10);
 }
 
 /**
@@ -70,30 +128,41 @@ async function rpcChainId(rpc) {
 export async function verifyAll({ root, log = console.log, runVerify, chainIdOf = rpcChainId }) {
   const targets = plan(root);
   log(`專屬租戶 ${targets.length} 個${targets.length ? `：${targets.map((t) => t.id).join("、")}` : "——沒有要驗證的鏈上部署"}`);
-  const run =
-    runVerify ??
-    ((t) =>
-      spawnSync("forge", ["script", "script/VerifyTenant.s.sol:VerifyTenant", "--fork-url", t.rpc, "-vv"], {
-        cwd: join(root, "contracts"),
-        env: { ...process.env, TENANT: t.id },
-        stdio: "inherit",
-      }).status);
+  const run = runVerify ?? ((t) => runForge(root, t));
   const problems = [];
   for (const t of targets) {
-    let got;
-    try {
-      got = await chainIdOf(t.rpc);
-    } catch (e) {
-      problems.push(`${t.id}：公開 RPC ${t.rpc} 連不上（${e.message}）——沒有驗證到的租戶不算通過`);
-      continue;
+    const failures = [];
+    let verdict = null; // "pass" | 真的驗證失敗的訊息
+    for (const { url, logChunk } of t.rpcs) {
+      let got;
+      try {
+        got = await chainIdOf(url);
+      } catch (e) {
+        failures.push(`${url} 連不上（${e.message}）`);
+        continue;
+      }
+      if (got !== t.chainId) {
+        failures.push(`${url} 回報 chainId ${got}，設定是 ${t.chainId}`);
+        continue;
+      }
+      log(`=== VerifyTenant ${t.id}（chain ${t.chainId}，${url}）===`);
+      const raw = await run({ ...t, rpc: url, logChunk });
+      const { status, stderr = "" } = typeof raw === "number" ? { status: raw } : raw;
+      if (status === 0) {
+        verdict = "pass";
+        break;
+      }
+      const unusable = RPC_UNUSABLE.find((re) => re.test(stderr));
+      if (unusable) {
+        failures.push(`${url} 在驗證途中不能用（${stderr.match(unusable)[0]}）`);
+        continue;
+      }
+      verdict = `${t.id}：VerifyTenant 失敗（exit ${status}）`;
+      break;
     }
-    if (got !== t.chainId) {
-      problems.push(`${t.id}：RPC ${t.rpc} 回報 chainId ${got}，設定是 ${t.chainId}`);
-      continue;
-    }
-    log(`=== VerifyTenant ${t.id}（chain ${t.chainId}，${t.rpc}）===`);
-    const status = run(t);
-    if (status !== 0) problems.push(`${t.id}：VerifyTenant 失敗（exit ${status}）`);
+    for (const f of failures) log(`略過 ${f}`);
+    if (verdict === null) problems.push(`${t.id}：沒有可用的公開 RPC（${failures.join("；")}）——沒有驗證到的租戶不算通過`);
+    else if (verdict !== "pass") problems.push(verdict);
   }
   if (problems.length) for (const p of problems) log(`::error::${p}`);
   else log(`專屬租戶鏈上驗證通過 ✓（${targets.length} 個）`);
@@ -103,7 +172,7 @@ export async function verifyAll({ root, log = console.log, runVerify, chainIdOf 
 async function main(argv) {
   const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
   if (argv.includes("--list")) {
-    for (const t of plan(root)) console.log(`${t.id}\t${t.chainId}\t${t.rpc}`);
+    for (const t of plan(root)) console.log(`${t.id}\t${t.chainId}\t${t.rpcs.map((r) => r.url).join(",")}`);
     return 0;
   }
   return (await verifyAll({ root })).length ? 1 : 0;
