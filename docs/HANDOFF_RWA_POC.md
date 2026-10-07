@@ -44,8 +44,10 @@
 
 ### 還開著的 PR
 
-| PR | 分支 | 狀態 | 接手要做的事 |
-|---|---|---|---|
+RWA PoC 相關的 PR 都已合併（#286 錄影、#287 文件收尾，2026-10-07）。第 6 節原本標「#286 合併後」的指令現在都在 master。
+剩下的待辦只有 x402 實付補拍（第 6 節），需要代理人錢包先入 Base Sepolia 測試 USDC。
+
+---|---|---|---|
 | #286 | `feat/rwa-poc-recording` | 錄影劇本 `POC_SCRIPT.md`、完整錄影劇本與後製、狀態清單主機、彩排重置腳本 | 審查後合併；合併後第 6 節標「#286 合併後」的指令才在 master |
 | （本文件 PR） | `docs/rwa-poc-wrapup` | S8 文件收尾 | 審查中 |
 
@@ -65,7 +67,7 @@
 | **S5 前端接新部署** | 以租戶設定或環境變數切換「RWA PoC」位址，**不弄壞現有展示站**；本機 `yarn dev` 可用；有權限時開 Vercel preview | 本機頁面讀到新部署的資料；`/rwa`、`/oracle`、`/solvency`、`/sessions`、KYC 憑證面板都能用；現有展示站的測試仍全過 | 3–4 h | 可選：Vercel 權限（見第 3 節） | ✅ 完成（2026-10-07：#282 合併；本機 `yarn dev --mode rwa-poc` 各頁讀到新部署，驗收表見 `docs/tenants/rwa-poc/FRONTEND.md`；Vercel preview 未開） |
 | **S6 x402 KYA** | 本機跑 signal-api：`PAY_TO`＝新收款地址、`X402_KYA_MODE` 開啟；代理人錢包用測試 USDC 實付 | 一筆真的 x402 付款成功（有 tx hash）；不帶 VP 被拒；超過憑證花費上限被拒 | 1–2 h | **代理人錢包的測試 USDC**（見第 3 節） | 🟡 部分完成（#285 合併；不帶 VP／超額被拒已驗收；實付待入金，見 `docs/tenants/rwa-poc/X402_KYA.md`） |
 | **S7 PoC 劇本與實跑** | 寫 `docs/tenants/rwa-poc/POC_SCRIPT.md`（每步：操作、預期畫面、要說的話、交易 hash、BaseScan 連結、預錄備援）；照劇本在 Base Sepolia 從頭跑一遍 | 劇本每一步都有實際 tx hash；整條故事線一次跑通；只用真實截圖 | 3–4 h | 無 | 🟡 部分完成（劇本、實跑、成片 7:37；第 6 景實付待補拍；#286） |
-| **S8 文件收尾** | 更新 `RWA_ALIGNMENT.md` 方案狀態、`RELEASE_STATUS.md`（新部署）、README 部署段落、本交接文件狀態 | 文件與鏈上一致；CI 綠；推上 GitHub | 1–2 h | 無 | 🟡 文件 PR 審查中（`docs/tenants/rwa-poc/README.md` 總覽、`RWA_ALIGNMENT.md` 方案 ①–⑤ 狀態、README 部署段落；新部署不寫進 `RELEASE_STATUS.md`，理由見下） |
+| **S8 文件收尾** | 更新 `RWA_ALIGNMENT.md` 方案狀態、`RELEASE_STATUS.md`（新部署）、README 部署段落、本交接文件狀態 | 文件與鏈上一致；CI 綠；推上 GitHub | 1–2 h | 無 | ✅ 完成（2026-10-07：#287 合併——租戶總覽、RWA_ALIGNMENT、README、HANDOFF 現況；錄影 #286 合併） |
 | **合計** | | | **約 15–24 h** | | |
 
 ### 各階段細節
@@ -205,7 +207,7 @@ PoC 錢包（部署者與 2026-10-06 新建的 admin／risk／guardian／keeper�
 
 ## 6. 交接現況（2026-10-07）
 
-S0–S5 已完成；S6、S7 部分完成，差「x402 帶憑證實付」一筆（等代理人錢包入測試 USDC）與第 6 景補拍；S8 文件 PR 審查中。總覽、重現指令與已知限制見 [`docs/tenants/rwa-poc/README.md`](tenants/rwa-poc/README.md)。
+S0–S5 已完成；S6、S7 部分完成，差「x402 帶憑證實付」一筆（等代理人錢包入測試 USDC）與第 6 景補拍；S8 已完成（#287）。總覽、重現指令與已知限制見 [`docs/tenants/rwa-poc/README.md`](tenants/rwa-poc/README.md)。
 
 - **#286 待合併**：劇本 `docs/tenants/rwa-poc/POC_SCRIPT.md`、錄影與後製工具（`scripts/poc/video/` 的 `scenes/rwa-poc-full.mjs`、`postprocess.mjs`、`terminal.mjs`）、
   狀態清單主機 `scripts/poc/rwa-poc-status-server.mjs`、彩排重置 `scripts/poc/rwa-poc-rehearsal-reset.sh` 在 #286（分支 `feat/rwa-poc-recording`）。
