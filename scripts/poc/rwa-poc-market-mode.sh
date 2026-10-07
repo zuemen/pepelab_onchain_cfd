@@ -66,6 +66,7 @@ HASH="$(clean node -e 'const r=JSON.parse(process.argv[1]); console.log(r.transa
 BLOCK="$(clean node -e 'console.log(Number(JSON.parse(process.argv[1]).blockNumber))' "$OUT")"
 echo "tx $HASH"
 echo "https://sepolia.basescan.org/tx/${HASH%% *}"
+[[ "$BLOCK" =~ ^[0-9]+$ ]] || { echo "✖ 收據沒有區塊高度（${BLOCK}），無法讀回；請到 BaseScan 確認上面那筆交易" >&2; exit 1; }
 # 讀交易所在區塊的狀態：公開 RPC 有負載平衡，讀 latest 可能落到還沒同步的節點而讀到舊值。
 NEW="$(clean cast call "$EX" "assetMode(bytes32)(uint8)" "$AID" --rpc-url "$RPC" --block "$BLOCK")"
 echo "$SYM 現在是 ${NAMES[$NEW]:-$NEW}"
