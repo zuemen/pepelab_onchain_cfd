@@ -1,5 +1,5 @@
 {
-  "digest": "d4f3199941d97c3f",
+  "digest": "8a0fd8d99868d79f",
   "files": {
     "agent/shared/src/abis.ts": "872c3136604d6584",
     "agent/shared/src/addresses.ts": "a6cb279048c58a4b",
@@ -27,7 +27,7 @@
     "agent/signal-api/src/benchmarks.ts": "bac063beeb2f0f45",
     "agent/signal-api/src/candles.ts": "1fd61b7585fca322",
     "agent/signal-api/src/exposure.ts": "dffd7355ac1e0842",
-    "agent/signal-api/src/kya.ts": "acbad6fef8d71aa6",
+    "agent/signal-api/src/kya.ts": "27b8b754cb73898d",
     "agent/signal-api/src/ledger.ts": "a8fd8c0d60444c54",
     "agent/signal-api/src/lru.ts": "32e45fb037d32c24",
     "agent/signal-api/src/onchainRevenue.ts": "c369334c41ba8fe5",
