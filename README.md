@@ -56,6 +56,14 @@ x402 付款使用 Circle 官方測試網 USDC `0x036CbD53842c5426634e7929541eC23
 Sepolia（11155111）仍有舊部署與價格 keeper 在跑，但只作為 V2 金庫的對照展示，不是產品路徑；
 Sepolia 的合約**未做金鑰輪替**（見 [`docs/RUNBOOK_KEY_ROTATION.md`](docs/RUNBOOK_KEY_ROTATION.md)）。
 
+### RWA＋SSI PoC 專屬租戶（Base Sepolia，`rwa-poc`）
+
+2026-10-07 以新的部署金鑰（`0xF52D…49eE`）另外部署了一整套 master 版合約，作為 RWA＋SSI PoC 的專屬租戶 `rwa-poc`
+（交易所 `0xbB7f…A96B`）。它和上表的現役部署是**兩套獨立的位址**，上表與展示站不受影響。這套部署帶有合格投資人 VC 准入
+（`VCKycRegistry`）、逐資產休市模式、`GuardedOracle`、AI 代理人委託憑證錨定（`SessionCredentialAnchor`）與 x402 KYA，
+已在鏈上實跑驗證並錄成 PoC 影片；前端、keeper、signal-api 都在本機執行。完整位址、錢包、重現指令、驗收結果與已知限制見
+[`docs/tenants/rwa-poc/README.md`](docs/tenants/rwa-poc/README.md)。
+
 ## 3. 功能現況
 
 ### 3.1 已上線（Base Sepolia，2026-09-30）
@@ -168,6 +176,7 @@ npm run mcp-server      # 本機啟動 MCP server（stdio）
 | [`docs/INTEGRATION_GUIDE.md`](docs/INTEGRATION_GUIDE.md) | 給持牌機構的整合說明（草案） |
 | [`docs/TENANT_DEPLOYMENT.md`](docs/TENANT_DEPLOYMENT.md) | 白標租戶：前端租戶設定、隔離模型（ADR-008）、部署設定、dry-run 與新增租戶步驟（廣播由擁有者執行） |
 | [`docs/TENANT_OPERATIONS.md`](docs/TENANT_OPERATIONS.md) | 白標租戶部署之後：每租戶的 keeper 金鑰與 workflow、signal-api 與收款、SDK 指向租戶部署 |
+| [`docs/tenants/rwa-poc/README.md`](docs/tenants/rwa-poc/README.md) | RWA＋SSI PoC 專屬租戶（Base Sepolia）：目的、架構、錢包與合約、重現指令、驗收結果、已知限制 |
 | [`docs/COMPLIANCE_BOUNDARY.md`](docs/COMPLIANCE_BOUNDARY.md) | 我方與客戶的合規責任邊界（草案） |
 | [`docs/RISK_WATERFALL.md`](docs/RISK_WATERFALL.md) | 損失吸收順序（草案） |
 | [`docs/CARBON_METHODOLOGY.md`](docs/CARBON_METHODOLOGY.md) | 碳分級方法與資料品質（草案） |
