@@ -186,9 +186,9 @@ async function main() {
     log(`步驟 ${step}/${total}：${s.caption}`);
     try {
       await overlay.caption(step, total, s.caption, s.note);
-      await sleep(s.lead ?? 1200); // 先讓觀眾讀字幕
+      await sleep(s.lead ?? scene.lead ?? 1200); // 先讓觀眾讀字幕
       await s.run(ctx);
-      await sleep(s.hold ?? 2000); // 停在結果畫面
+      await sleep(s.hold ?? scene.hold ?? 2000); // 停在結果畫面
     } catch (e) {
       failed = e;
       currentEntry.error = e.message;

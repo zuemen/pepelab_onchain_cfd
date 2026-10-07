@@ -91,6 +91,8 @@ const cta = (ctx, symbol) => ctx.page.getByRole('button', { name: new RegExp(`�
 export default {
   name: 'rwa-poc-full',
   role: 'investor',
+  // 字幕多半是一整句中文：先讓觀眾讀完（lead），做完再停在結果上（各步 hold 另計）
+  lead: 3000,
   steps: [
     // ── 片頭 ────────────────────────────────────────────────────────────────
     {
@@ -104,7 +106,7 @@ export default {
         await ctx.pause(1500);
         await connectWallet(ctx);
       },
-      hold: 3000,
+      hold: 4500,
     },
 
     // ── 第 1 景：發證 ────────────────────────────────────────────────────────
@@ -119,7 +121,7 @@ ${ISSUER_ENV} npm run -s issuer -- issue --subject $INV --registry $REG --chain-
         await agentSh(ctx, `jq '{type, issuer, credentialSubject, validUntil, credentialStatus: .credentialStatus.statusListCredential}' .state/poc/investor-qi-vc.json`);
         await agentSh(ctx, `npm run -s issuer -- verify --vc .state/poc/investor-qi-vc.json --registry $REG --chain-id 84532 --dir .state/public-status/investor --rpc $R | jq '{"簽章有效": .signature.valid, "發證者": .signature.issuer, "撤銷狀態正常": .status.ok, "發證者受信任": .onchain.issuerTrusted, "已登記上鏈": .onchain.submitted}'`, { allowFail: true });
       },
-      hold: 4000,
+      hold: 5500,
     },
 
     // ── 第 2 景：未持證被拒 ──────────────────────────────────────────────────
@@ -133,7 +135,7 @@ ${ISSUER_ENV} npm run -s issuer -- issue --subject $INV --registry $REG --chain-
         await notice.waitFor({ timeout: 30_000 });
         ctx.assert(await cta(ctx, 'sGOLD').isDisabled(), '未持證時下單按鈕應停用');
       },
-      hold: 4000,
+      hold: 5500,
     },
     {
       caption: '第 2 景｜直接送上鏈也會被交易所合約拒絕：NotKycVerified（固定 gas 送出，留下 status 0 的鏈上紀錄）',
@@ -141,7 +143,7 @@ ${ISSUER_ENV} npm run -s issuer -- issue --subject $INV --registry $REG --chain-
         await ctx.showTerminal('投資人 — cast（keystore pepelab-rwa-investor）');
         await sh(ctx, tx('investor', 'fail-send', '未持證開 sGOLD 多單（保證金 20、1 倍）', '$EX', OPEN, '$GOLD true $(cast to-wei 20) 1', true));
       },
-      hold: 4000,
+      hold: 5500,
     },
 
     // ── 第 3 景：提交憑證 ────────────────────────────────────────────────────
@@ -157,7 +159,7 @@ ${ISSUER_ENV} npm run -s issuer -- issue --subject $INV --registry $REG --chain-
         await waitForText(ctx, '發證者受信任', { timeout: 60_000 });
         await ctx.page.getByText('簽章有效').first().scrollIntoViewIfNeeded();
       },
-      hold: 4500,
+      hold: 6000,
     },
     {
       caption: '第 3 景｜送出資格證明上鏈：登錄合約自己再驗一次發證者簽章，鏈上只記地址、類型、到期日與憑證雜湊',
@@ -166,7 +168,7 @@ ${ISSUER_ENV} npm run -s issuer -- issue --subject $INV --registry $REG --chain-
         await waitForText(ctx, '你的錢包已具 RWA 市場資格', { timeout: 90_000 });
         await ctx.page.getByText('你的錢包已具 RWA 市場資格').first().scrollIntoViewIfNeeded();
       },
-      hold: 4500,
+      hold: 6000,
     },
 
     // ── 第 4 景：持證開倉 ────────────────────────────────────────────────────
@@ -183,7 +185,7 @@ ${ISSUER_ENV} npm run -s issuer -- issue --subject $INV --registry $REG --chain-
         await waitForText(ctx, 'sGOLD 已開倉', { timeout: 60_000 }).catch(() => {});
         await smoothScroll(ctx, 500);
       },
-      hold: 4500,
+      hold: 6000,
     },
 
     // ── 第 5 景：建 session、簽發委託憑證 v3、錨定 ─────────────────────────────
@@ -217,7 +219,7 @@ ${ISSUER_ENV} npm run -s issuer -- issue --subject $INV --registry $REG --chain-
         await clickAndWaitTx(ctx, 'role=button[name="建立 Session"]');
         await page.getByRole('dialog').getByText('委託授權憑證 v3').first().waitFor({ timeout: 90_000 });
       },
-      hold: 3000,
+      hold: 4500,
     },
     {
       caption: '第 5 景｜把同樣的上限與 x402 付費額度簽成委託憑證 v3（EIP-712，錢包簽名，不是交易）',
@@ -232,7 +234,7 @@ ${ISSUER_ENV} npm run -s issuer -- issue --subject $INV --registry $REG --chain-
         await dlg.getByRole('button', { name: '以錢包簽發 v3' }).click();
         await dlg.getByRole('button', { name: '錨定到鏈上' }).waitFor({ timeout: 60_000 });
       },
-      hold: 3000,
+      hold: 4500,
     },
     {
       caption: '第 5 景｜把憑證雜湊錨定到 SessionCredentialAnchor：任何服務都查得到「誰授權了哪個代理人、到哪裡」',
@@ -246,7 +248,7 @@ ${ISSUER_ENV} npm run -s issuer -- issue --subject $INV --registry $REG --chain-
         saveState();
         ctx.log(`新 session #${state.sid}`);
       },
-      hold: 4000,
+      hold: 5500,
     },
     {
       caption: '第 5 景｜鏈上讀回：session 條款與錨定的憑證雜湊',
@@ -257,7 +259,7 @@ ${ISSUER_ENV} npm run -s issuer -- issue --subject $INV --registry $REG --chain-
 cast call $MGR "sessions(uint256)(address,address,uint256,uint256,uint256,uint256,uint256,bool)" $SID -r $R; \\
 echo "錨定的憑證雜湊："; cast call $ANCHOR "currentCredential(uint256)(bytes32)" $SID -r $R`);
       },
-      hold: 4000,
+      hold: 5500,
     },
 
     // ── 第 6 景：x402 KYA ───────────────────────────────────────────────────
@@ -268,14 +270,14 @@ echo "錨定的憑證雜湊："; cast call $ANCHOR "currentCredential(uint256)(b
         await ctx.showTerminal('代理人 — x402 付費呼叫（本機 signal-api :4021，KYA on）');
         await x402(ctx, 'call main novp');
       },
-      hold: 4000,
+      hold: 5500,
     },
     {
       caption: '第 6 景｜出示 VP，但這張憑證的 x402 上限 0.005 USDC 低於單價 0.01 → 超額被拒，不會送去結算',
       run: async (ctx) => {
         await x402(ctx, 'call lowcap vp');
       },
-      hold: 4000,
+      hold: 5500,
     },
     {
       caption: '第 6 景｜出示 VP、上限足夠：KYA 全部通過，交給 facilitator；代理人測試 USDC 餘額為 0，所以付款失敗（實付待入金後補拍）',
@@ -283,7 +285,7 @@ echo "錨定的憑證雜湊："; cast call $ANCHOR "currentCredential(uint256)(b
         await x402(ctx, 'balance');
         await x402(ctx, 'call main vp');
       },
-      hold: 5000,
+      hold: 6500,
     },
 
     // ── 第 7 景：代理人下單 ──────────────────────────────────────────────────
@@ -303,7 +305,7 @@ echo "錨定的憑證雜湊："; cast call $ANCHOR "currentCredential(uint256)(b
         saveState();
         ctx.log(`代理人開的部位 #${state.agentPos}`);
       },
-      hold: 3500,
+      hold: 5000,
     },
     {
       caption: '第 7 景｜超過單筆上限（保證金 50 > 30）：合約拒絕 MarginExceedsPerTradeCap（只模擬，不送出）',
@@ -311,7 +313,7 @@ echo "錨定的憑證雜湊："; cast call $ANCHOR "currentCredential(uint256)(b
         await sh(ctx, tx('agent', 'fail', `session #${state.sid} 超額開 sGOLD（保證金 50）`, '$MGR', OPEN_S, `${state.sid} $GOLD true $(cast to-wei 50) 1 $ZERO`, true));
         await sh(ctx, `cast call $MGR "sessions(uint256)(address,address,uint256,uint256,uint256,uint256,uint256,bool)" ${state.sid} -r $R | sed -n '3,5p' | paste -sd' ' - | awk '{print "單筆上限 "$1"  總預算 "$3"  已用 "$5}'`);
       },
-      hold: 4000,
+      hold: 5500,
     },
 
     // ── 第 8 景：休市 ───────────────────────────────────────────────────────
@@ -326,7 +328,7 @@ echo "錨定的憑證雜湊："; cast call $ANCHOR "currentCredential(uint256)(b
         await ctx.showTerminal('任何人 — 鏈上讀回');
         await sh(ctx, `echo "assetMode(sAAPL) = $(cast call $EX "assetMode(bytes32)(uint8)" $AAPL -r $R)   # 0 Active、1 ReduceOnly"; echo "assetMode(sGOLD) = $(cast call $EX "assetMode(bytes32)(uint8)" $GOLD -r $R)"`);
       },
-      hold: 4000,
+      hold: 5500,
     },
     {
       caption: '第 8 景｜休市時開 sAAPL 新倉：前端先警告，確認送出後被合約拒絕',
@@ -343,7 +345,7 @@ echo "錨定的憑證雜湊："; cast call $ANCHOR "currentCredential(uint256)(b
         }
         await ctx.pause(6000);
       },
-      hold: 3000,
+      hold: 4500,
     },
     {
       caption: '第 8 景｜鏈上證據：AssetNotActive（固定 gas 送出，status 0）。既有部位隨時可以平倉',
@@ -351,7 +353,7 @@ echo "錨定的憑證雜湊："; cast call $ANCHOR "currentCredential(uint256)(b
         await ctx.showTerminal('投資人 — cast（keystore pepelab-rwa-investor）');
         await sh(ctx, tx('investor', 'fail-send', '休市時開 sAAPL 多單（保證金 10）', '$EX', OPEN, '$AAPL true $(cast to-wei 10) 1', true));
       },
-      hold: 4000,
+      hold: 5500,
     },
 
     // ── 第 9 景：撤銷 ───────────────────────────────────────────────────────
@@ -363,7 +365,7 @@ echo "錨定的憑證雜湊："; cast call $ANCHOR "currentCredential(uint256)(b
         await sh(ctx, `HASH=$(jq -r .proof.attestation.credentialHash agent/.state/poc/investor-qi-vc.json); ${tx('issuer', 'ok', '鏈上撤銷合格投資人憑證', '$REG', 'revoke(bytes32)', '$HASH', false)}`);
         await sh(ctx, `echo "isVerified(投資人) = $(cast call $REG "isVerified(address)(bool)" $INV -r $R)"`);
       },
-      hold: 4000,
+      hold: 5500,
     },
     {
       caption: '第 9 景｜投資人重新驗證憑證：狀態清單顯示「已撤銷」，錢包不再具有 RWA 市場資格',
@@ -377,7 +379,7 @@ echo "錨定的憑證雜湊："; cast call $ANCHOR "currentCredential(uint256)(b
         await waitForText(ctx, '發證者已撤銷這張憑證', { timeout: 60_000 });
         await ctx.page.getByText('發證者已撤銷這張憑證').first().scrollIntoViewIfNeeded();
       },
-      hold: 4500,
+      hold: 6000,
     },
     {
       caption: '第 9 景｜投資人與代理人的新開倉都被拒：代理人代表投資人下單，交易所檢查的是 session 的使用者（只模擬）',
@@ -386,14 +388,14 @@ echo "錨定的憑證雜湊："; cast call $ANCHOR "currentCredential(uint256)(b
         await sh(ctx, tx('investor', 'fail', '投資人開 sGOLD（撤銷後）', '$EX', OPEN, '$GOLD true $(cast to-wei 20) 1', true));
         await sh(ctx, tx('agent', 'fail', `代理人經 session #${state.sid} 開 sGOLD（撤銷後）`, '$MGR', OPEN_S, `${state.sid} $GOLD true $(cast to-wei 15) 1 $ZERO`, true));
       },
-      hold: 4500,
+      hold: 6000,
     },
     {
       caption: '第 9 景｜撤銷只擋開新倉：代理人平掉自己開的部位',
       run: async (ctx) => {
         await sh(ctx, tx('agent', 'ok', `代理人平倉 #${state.agentPos}（session #${state.sid}）`, '$MGR', 'closePositionForSession(uint256,uint256)', `${state.sid} ${state.agentPos}`, false));
       },
-      hold: 3500,
+      hold: 5000,
     },
     {
       caption: '第 9 景｜投資人在終端機平掉自己的 sGOLD 部位：成功，保證金回到可用',
@@ -406,7 +408,7 @@ echo "錨定的憑證雜湊："; cast call $ANCHOR "currentCredential(uint256)(b
         await clickAndWaitTx(ctx, 'role=button[name="平倉"]');
         await ctx.pause(4000);
       },
-      hold: 4000,
+      hold: 5500,
     },
 
     // ── 第 10 景：揭露 ──────────────────────────────────────────────────────
@@ -419,7 +421,7 @@ echo "錨定的憑證雜湊："; cast call $ANCHOR "currentCredential(uint256)(b
         await ctx.pause(2000);
         await smoothScroll(ctx, 1200, { steps: 16 });
       },
-      hold: 3000,
+      hold: 4500,
     },
     {
       caption: '第 10 景｜/oracle：鏈上價格（本機 keeper 寫入）與鏈下參考價的差距',
@@ -430,7 +432,7 @@ echo "錨定的憑證雜湊："; cast call $ANCHOR "currentCredential(uint256)(b
         await ctx.pause(2500);
         await smoothScroll(ctx, 900, { steps: 12 });
       },
-      hold: 3000,
+      hold: 4500,
     },
     {
       caption: '第 10 景｜/solvency：保險金庫（測試網種子 1 USDC）、金庫儲備與 ADL，全部直接讀鏈',
@@ -441,7 +443,7 @@ echo "錨定的憑證雜湊："; cast call $ANCHOR "currentCredential(uint256)(b
         await ctx.pause(2500);
         await smoothScroll(ctx, 900, { steps: 12 });
       },
-      hold: 4000,
+      hold: 5500,
     },
   ],
 };
