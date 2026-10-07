@@ -4,7 +4,6 @@ pragma solidity ^0.8.20;
 import "forge-std/Test.sol";
 import "../../src/v2/GuardedOracle.sol";
 import "../../script/RedeployGuardedOracle.s.sol";
-import "../utils/KeylessAddr.sol";
 
 /// @notice Fork simulation of `RedeployGuardedOracle` against the live Base
 ///         Sepolia vault: the new oracle carries the rate limit AND the bounded
@@ -25,13 +24,18 @@ contract RedeployGuardedOracleForkTest is Test {
     address constant KEEPER = 0x540aECD37E7A7885824e7b7e996eBddfb842ef17;
     address constant VAULT  = 0x916D7Fc399d9afd23BAa113E2c2Cc601341ff10a;
 
-    address guardian = KeylessAddr.addr("oracleGuardian");   // no known key: see test/utils/KeylessAddr.sol
+    address guardian = makeAddr("oracleGuardian");
 
     bytes32 constant ETH = keccak256("sETH");
     bytes32 constant BTC = keccak256("sBTC");
 
     function setUp() public {
         if (block.chainid != 84532) vm.skip(true, "needs --fork-url https://sepolia.base.org");
+        // On a Base Sepolia fork, a pranked call from an address with no ETH
+        // reverted with 0 gas before reaching the target (forge 1.8.0, CI run
+        // 37573968977: every failing caller had balance 0, the funded keeper's
+        // calls in the same tests went through). Fund every pranked address.
+        vm.deal(guardian, 1 ether);
     }
 
     function _syms() internal pure returns (string[11] memory s) {

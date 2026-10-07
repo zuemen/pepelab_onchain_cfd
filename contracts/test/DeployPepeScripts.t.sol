@@ -41,10 +41,16 @@ contract DeployPepeScriptsTest is Test {
         assertEq(address(inc.copyTracker()), copyTracker);
     }
 
-    function _ammEnv() internal returns (MockUSDC usdc) {
-        vm.prank(deployer);
+    function _ammEnv() internal returns (MockUSDC usdc, MockOracle oracle) {
+        // startPrank/stopPrank, not a one-shot prank: under forge 1.8.0 (CI) a
+        // bare `vm.prank` before `new MockUSDC()` also made `deployer` the owner
+        // of the MockOracle created on the next line. Both owners are asserted.
+        vm.startPrank(deployer);
         usdc = new MockUSDC();
-        MockOracle oracle = new MockOracle();
+        vm.stopPrank();
+        oracle = new MockOracle();
+        assertEq(usdc.owner(), deployer);
+        assertEq(oracle.owner(), address(this));
         oracle.addAsset(keccak256("sETH"), 2_300e8);
         vm.setEnv("MOCK_USDC", vm.toString(address(usdc)));
         vm.setEnv("MOCK_ORACLE", vm.toString(address(oracle)));
@@ -54,7 +60,7 @@ contract DeployPepeScriptsTest is Test {
 
     /// @dev One test for the same reason as above (process-wide env).
     function test_amm_seedsFromTheBroadcaster_andOnlyTheUsdcOwnerCanSeed() public {
-        MockUSDC usdc = _ammEnv();
+        (MockUSDC usdc, MockOracle oracle) = _ammEnv();
         vm.deal(stranger, 2 ether);
         vm.deal(deployer, 2 ether);
 
@@ -73,7 +79,7 @@ contract DeployPepeScriptsTest is Test {
 
         // SEED_USDC=0 (or unset) seeds at the oracle price instead of a fixed
         // 2300 that went stale: the pool must open exactly at the oracle.
-        MockOracle(vm.envAddress("MOCK_ORACLE")).updatePrice(keccak256("sETH"), 2_697.57e8);
+        oracle.updatePrice(keccak256("sETH"), 2_697.57e8);
         vm.setEnv("SEED_USDC", "0");
         PepeAMM atOracle = s.run();
         assertEq(atOracle.usdcReserve(), 2_697.57e18, "seed = SEED_ETH x oracle price");

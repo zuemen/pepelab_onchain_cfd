@@ -6,7 +6,6 @@ import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "../../src/v2/AssetVaultV2_5.sol";
 import "../../src/v2/GuardedOracle.sol";
 import "../../script/UpgradeVaultToV2_5.s.sol";
-import "../utils/KeylessAddr.sol";
 
 /// @notice Fork simulation: upgrade the live Base Sepolia vault proxy to V2.5
 ///         (maxPriceAge 30d -> 6h in the same run) and prove mint / redeem
@@ -20,10 +19,15 @@ contract VaultV2_5ForkTest is Test {
     address constant VAULT  = 0x916D7Fc399d9afd23BAa113E2c2Cc601341ff10a;
     address constant USDC   = 0x69fd695Bc7C3aFdb35ABA35cD6890C506400b035;
 
-    address user = KeylessAddr.addr("vaultUser");   // no known key: see test/utils/KeylessAddr.sol
+    address user = makeAddr("vaultUser");
 
     function setUp() public {
         if (block.chainid != 84532) vm.skip(true, "needs --fork-url https://sepolia.base.org");
+        // On a Base Sepolia fork, a pranked call from an address with no ETH
+        // reverted with 0 gas before reaching the target (forge 1.8.0, CI run
+        // 37573968977: every failing caller had balance 0, the funded keeper's
+        // calls in the same tests went through). Fund every pranked address.
+        vm.deal(user, 1 ether);
     }
 
     function _heartbeat(AssetVaultV2_5 v) internal {

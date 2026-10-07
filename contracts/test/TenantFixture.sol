@@ -4,7 +4,6 @@ pragma solidity ^0.8.20;
 import "forge-std/Test.sol";
 import "../script/DeployTenant.s.sol";
 import "../script/VerifyTenant.s.sol";
-import "./utils/KeylessAddr.sol";
 
 /// @notice Exposes `TenantBase`'s read-back checks so a test can verify a
 ///         tenant from the config + record strings alone — the same two inputs
@@ -90,25 +89,18 @@ abstract contract TenantFixture is Test {
         s = ["sBTC", "sETH", "sAAPL", "sTSLA", "sGOLD", "sBOND", "sNVDA", "sMSFT", "sGOOGL", "sICLN", "sESGU"];
     }
 
-    /// @dev Role addresses without a known private key (test/utils/KeylessAddr.sol):
-    ///      the fork suite pranks them on live Base Sepolia.
-    function _keyless(string memory label) internal returns (address a) {
-        a = KeylessAddr.addr(label);
-        vm.label(a, label);
-    }
-
     /// @dev A complete, valid spec whose role addresses are derived from the
     ///      tenant id — two ids give two disjoint sets of keys.
     function _spec(string memory id, address usdc, address priceSource) internal returns (Spec memory s) {
         s.id = id;
         s.status = "ready";
         s.chainId = block.chainid;
-        s.admin          = _keyless(string.concat(id, "-admin"));
-        s.risk           = _keyless(string.concat(id, "-risk"));
-        s.guardian       = _keyless(string.concat(id, "-guardian"));
-        s.keeper         = _keyless(string.concat(id, "-keeper"));
+        s.admin          = makeAddr(string.concat(id, "-admin"));
+        s.risk           = makeAddr(string.concat(id, "-risk"));
+        s.guardian       = makeAddr(string.concat(id, "-guardian"));
+        s.keeper         = makeAddr(string.concat(id, "-keeper"));
         s.marketOperator = s.keeper;   // the live platform's arrangement: the keeper switches markets
-        s.treasury       = _keyless(string.concat(id, "-treasury"));
+        s.treasury       = makeAddr(string.concat(id, "-treasury"));
         s.usdc = usdc;
         s.priceSource = priceSource;
         s.oracleKind = "guarded";

@@ -11,7 +11,6 @@ import "../../script/Verify130.s.sol";
 import "../../script/DeployGovernance.s.sol";
 import "../../script/HandoverToTimelock.s.sol";
 import "../../script/VerifyHandover.s.sol";
-import "../utils/KeylessAddr.sol";
 
 /// @notice Fork simulation of the whole #130 sequence against live Base
 ///         Sepolia state: cutover → Verify130 → caps/guardian behave →
@@ -33,9 +32,9 @@ contract CutoverGovernanceForkTest is Test {
     address constant G_ORACLE = 0x8E9e59BE9589Ad88EC14F3ef6bdcc43E8B76f842;
     address constant ESG_V2   = 0xBF5B9cD78566791d79c687A732b4ed5bc3E95dFf;
 
-    address guardian = KeylessAddr.addr("guardian");   // no known key: see test/utils/KeylessAddr.sol
-    address safe     = KeylessAddr.addr("safe");
-    address trader   = KeylessAddr.addr("trader");
+    address guardian = makeAddr("guardian");
+    address safe     = makeAddr("safe");
+    address trader   = makeAddr("trader");
 
     bytes32 constant BTC = keccak256("sBTC");
 
@@ -54,6 +53,12 @@ contract CutoverGovernanceForkTest is Test {
             (bool ok, ) = mock.call(abi.encodeWithSignature("updatePrice(bytes32,uint256)", id, p));
             require(ok, "keeper heartbeat failed");
         }
+        // On a Base Sepolia fork, a pranked call from an address with no ETH
+        // reverted with 0 gas before reaching the target (forge 1.8.0, CI run
+        // 37573968977: every failing caller had balance 0, the funded keeper's
+        // calls in the same tests went through). Fund every pranked address.
+        vm.deal(guardian, 1 ether);
+        vm.deal(safe, 1 ether);
     }
 
     function _cutover() internal returns (Cutover130Base.Deployed130 memory d) {
