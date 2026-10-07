@@ -64,9 +64,9 @@ async function main() {
   const allowSend = args['allow-tx'];
   const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
   const baseName = `${scene.name ?? path.basename(scenePath, '.mjs')}-${stamp}`;
+  acquireLock(); // 先搶鎖，搶到才建暫存目錄
   const tmpVideoDir = path.join(OUT, '.tmp', `${baseName}-${process.pid}`);
   fs.mkdirSync(tmpVideoDir, { recursive: true });
-  acquireLock();
 
   const allowSign = !args['no-sign'];
   log(`劇本 ${scene.name}（${scene.steps.length} 步），角色 ${role}，${allowSend ? '允許送交易（會上鏈）' : '唯讀模式（交易一律拒絕）'}，${allowSign ? '簽章：會簽（personal_sign / typed data，不廣播）' : '簽章：一律拒絕（--no-sign）'}`);
@@ -273,24 +273,28 @@ async function main() {
 const LOCK = path.join(OUT, '.record.lock');
 function acquireLock() {
   fs.mkdirSync(OUT, { recursive: true });
-  try {
-    const pid = Number(fs.readFileSync(LOCK, 'utf8'));
-    if (pid && pid !== process.pid) {
-      try {
-        process.kill(pid, 0);
-        throw new Error(`另一個錄影行程（pid ${pid}）正在跑；等它結束再錄（鎖檔 ${LOCK}）`);
-      } catch (e) {
-        if (e.code !== 'ESRCH') throw e;
-      }
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      // 'wx'：檔案已存在就失敗——建立與檢查是同一個原子操作，兩個行程不會同時拿到鎖
+      const fd = fs.openSync(LOCK, 'wx');
+      fs.writeSync(fd, String(process.pid));
+      fs.closeSync(fd);
+      process.on('exit', () => {
+        try { if (Number(fs.readFileSync(LOCK, 'utf8')) === process.pid) fs.rmSync(LOCK); } catch { /* 已不存在 */ }
+      });
+      return;
+    } catch (e) {
+      if (e.code !== 'EEXIST') throw e;
     }
-  } catch (e) {
-    if (e.code !== 'ENOENT') throw e;
+    const pid = Number(fs.readFileSync(LOCK, 'utf8').trim());
+    let alive = false;
+    if (pid) {
+      try { process.kill(pid, 0); alive = true; } catch (e) { alive = e.code === 'EPERM'; }
+    }
+    if (alive) throw new Error(`另一個錄影行程（pid ${pid}）正在跑；等它結束再錄（鎖檔 ${LOCK}）`);
+    fs.rmSync(LOCK, { force: true }); // 殘留的鎖（行程已不在）：清掉再搶一次
   }
-  fs.writeFileSync(LOCK, String(process.pid));
-  const release = () => {
-    try { if (Number(fs.readFileSync(LOCK, 'utf8')) === process.pid) fs.rmSync(LOCK); } catch { /* 已不存在 */ }
-  };
-  process.on('exit', release);
+  throw new Error(`拿不到錄影鎖（${LOCK}）`);
 }
 
 function hasFfmpeg() {
