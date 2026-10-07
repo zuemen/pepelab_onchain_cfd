@@ -1,0 +1,55 @@
+{
+  "schemaVersion": 1,
+  "id": "rwa-poc",
+  "brand": {
+    "name": "PepeLab RWA PoC",
+    "mark": "🐸",
+    "logo": {
+      "src": "/avatars/pepe-01.png",
+      "fallbackSrc": "/assets/images/pepefi/pepe_eth.jpg"
+    },
+    "favicon": "/avatars/pepe-01.png",
+    "themeColor": "#0A0F0B"
+  },
+  "theme": {},
+  "defaultLocale": "zh-TW",
+  "assets": {
+    "enabled": "all"
+  },
+  "compliance": {
+    "operatorName": null,
+    "additionalDisclosures": {
+      "zh-TW": [],
+      "en": []
+    }
+  },
+  "support": {
+    "email": null,
+    "url": null
+  },
+  "legal": {
+    "links": []
+  },
+  "features": {
+    "gamefi": {
+      "allowed": false,
+      "default": false
+    },
+    "pepeRewards": {
+      "allowed": false,
+      "default": false
+    },
+    "copyTrading": {
+      "allowed": true,
+      "default": false
+    },
+    "showLeverage": {
+      "allowed": true,
+      "default": false
+    },
+    "showPerpetuals": {
+      "allowed": true,
+      "default": false
+    }
+  }
+}

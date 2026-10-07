@@ -1,0 +1,71 @@
+{
+  "$comment": "RWA＋SSI 正式 PoC（Base Sepolia 測試網，平台團隊自營）。所有角色都是測試網 EOA，以加密 keystore 簽署（~/.foundry/keystores/pepelab-rwa-<角色>），secretsEnv 只是格式欄位、沒有使用。錢包與角色見 docs/tenants/rwa-poc/WALLETS.md。測試網 PoC 不收租戶費，所以收費模式定為 0／0。",
+  "schemaVersion": 4,
+  "tenantId": "rwa-poc",
+  "status": "ready",
+  "frontendTenant": "rwa-poc",
+  "network": {
+    "chainId": 84532
+  },
+  "secretsEnv": {
+    "deployerPrivateKey": "RWA_POC_DEPLOYER_PRIVATE_KEY",
+    "keeperPrivateKey": "RWA_POC_KEEPER_PRIVATE_KEY",
+    "rpcUrl": "BASE_SEPOLIA_RPC_URL"
+  },
+  "roles": {
+    "admin": "0xC0f050fDeD9330169d3b6fD91D731799b26a7f00",
+    "risk": "0x745637A4bEc417E3C5f32A9D2F9158E9D61878b7",
+    "guardian": "0xbB7f5F528994AEFA79bb8Cb2F660D08c28A3Cf4F",
+    "keeper": "0x5358cf4E0a1409F6B433Dd25Adf8c92bF0821ED8",
+    "marketOperator": "0x5358cf4E0a1409F6B433Dd25Adf8c92bF0821ED8",
+    "treasury": "0xC0f050fDeD9330169d3b6fD91D731799b26a7f00"
+  },
+  "shared": {
+    "settlementToken": "0x69fd695Bc7C3aFdb35ABA35cD6890C506400b035",
+    "priceSource": "0xeD90c4F3B48213888870C1FC8486921Cb0990Aa3",
+    "referenceSource": "none"
+  },
+  "params": {
+    "oracleKind": "guarded",
+    "oracleMaxDeviationBps": 1000,
+    "oracleWindowSeconds": 3600,
+    "oracleWindowDeviationBps": 2500,
+    "oiCapNonRwaUsdc": 100000,
+    "oiCapRwaUsdc": 100000,
+    "maxProfitBps": 50000,
+    "maxLeverage": 5,
+    "liquidationPenaltyBps": 2000,
+    "markPremiumCapBps": 0,
+    "vaultFeeShareBps": 0,
+    "deployVault": true,
+    "vaultRedeemFeeBps": 30,
+    "vaultMinReserveRatioBps": 11000,
+    "kycRegistry": "vc"
+  },
+  "assets": {
+    "registered": [
+      "sAAPL",
+      "sTSLA",
+      "sNVDA",
+      "sMSFT",
+      "sGOOGL",
+      "sICLN",
+      "sESGU",
+      "sBOND",
+      "sGOLD",
+      "sETH",
+      "sBTC"
+    ],
+    "additionalRwa": [
+      "sGOLD"
+    ]
+  },
+  "fees": {
+    "status": "decided",
+    "baseFeeBps": 0,
+    "tenantMarkupBps": 0
+  },
+  "keeper": {
+    "cron": "*/15 * * * *"
+  }
+}
