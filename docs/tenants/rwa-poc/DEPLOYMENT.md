@@ -86,7 +86,7 @@ cd contracts
 TENANT=rwa-poc forge script script/VerifyTenant.s.sol:VerifyTenant --rpc-url https://sepolia.base.org -vv
 # 檔案層檢查
 node ../scripts/check-tenant-deploy.mjs
-node ../scripts/post-deploy-smoke.mjs --tenant rwa-poc
+node ../scripts/post-deploy-smoke.mjs --tenant rwa-poc --skip-http   # 只做鏈上檢查；本機 signal-api 在跑時改用 --signal-api http://localhost:4021
 ```
 
 部署用的指令（先 fork 模擬、再以加密 keystore 廣播）見 `docs/TENANT_DEPLOYMENT.md` §3–§5 與

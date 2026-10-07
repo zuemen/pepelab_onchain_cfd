@@ -59,9 +59,10 @@ Sepolia 的合約**未做金鑰輪替**（見 [`docs/RUNBOOK_KEY_ROTATION.md`](d
 ### RWA＋SSI PoC 專屬租戶（Base Sepolia，`rwa-poc`）
 
 2026-10-07 以新的部署金鑰（`0xF52D…49eE`）另外部署了一整套 master 版合約，作為 RWA＋SSI PoC 的專屬租戶 `rwa-poc`
-（交易所 `0xbB7f…A96B`）。它和上表的現役部署是**兩套獨立的位址**，上表與展示站不受影響。這套部署帶有合格投資人 VC 准入
+（交易所 `0xbB7f…A96B`）。它和上表的現役部署是**兩套獨立的位址**（結算幣除外：保證金沿用上表的測試幣 MockUSDC，與現役部署共用、不受 PoC 金鑰控制），上表與展示站不受影響。這套部署帶有合格投資人 VC 准入
 （`VCKycRegistry`）、逐資產休市模式、`GuardedOracle`、AI 代理人委託憑證錨定（`SessionCredentialAnchor`）與 x402 KYA，
-已在鏈上實跑驗證並錄成 PoC 影片；前端、keeper、signal-api 都在本機執行。完整位址、錢包、重現指令、驗收結果與已知限制見
+已在鏈上實跑驗證並錄成 PoC 影片；前端、keeper、signal-api 都在本機執行。
+限制：只在測試網、保證金是測試幣；合格投資人憑證的發證者與碳分級見證者是 PoC 自己的錢包，沒有真實身分審查；新合約未經外部稽核；x402 帶憑證的實付尚未完成（待代理人錢包入測試 USDC）。完整位址、錢包、重現指令、驗收結果與已知限制見
 [`docs/tenants/rwa-poc/README.md`](docs/tenants/rwa-poc/README.md)。
 
 ## 3. 功能現況

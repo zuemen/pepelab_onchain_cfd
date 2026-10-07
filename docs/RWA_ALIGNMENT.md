@@ -220,7 +220,7 @@ Pyth 有 `Equity.US.<代號>/USD` 與 `Metal.XAU/USD`（ADR-013 §2.5，以 Herm
 - **狀態（2026-10-07）**：**已部署並在鏈上驗證**。專屬租戶 `rwa-poc` 以新金鑰部署 master 版整套到 Base Sepolia（`DeployTenant` 164 筆交易全部成功；
   真鏈 `VerifyTenant` 131 項 ok、0 FAIL，權限歷史掃描通過）。部署、錢包與驗收紀錄見 [`docs/tenants/rwa-poc/`](tenants/rwa-poc/README.md)。
   - 已在鏈上驗證：逐資產模式（keeper 以 marketOperator 依行事曆切 ReduceOnly；ReduceOnly 時開倉被拒 `AssetNotActive`、平倉成功，有 status 0 的鏈上證據），
-    交易所讀租戶的 `GuardedOracle`，新的 `ESGRegistryV2` 由不同的 attestor 地址寫入 11 檔碳分級。**已知限制 #31 在這個租戶上不成立。**
+    交易所讀租戶的 `GuardedOracle`，新的 `ESGRegistryV2` 由不同的 attestor 地址寫入 11 檔碳分級。**在 keeper 以 marketOperator 模式運行時，已知限制 #31 在這個租戶上不成立**（keeper 停掉或以 `--no-market-operator` 執行時，資產模式不會自動切換）。
   - 與上述設計的差異：准入改接方案 ⑤ 的 `VCKycRegistry`（不是送件／核准分離的 `KYCRegistry`）；`assets.registered` 放了全部 11 檔（含 sBTC、sETH），
     sGOLD 以 `additionalRwa` 標成 RWA；`deployVault: true`，所以金庫的合成代幣仍可自由轉讓（C4 未改善）；keeper 在本機跑，沒有租戶自己的 GitHub Actions workflow；
     `GuardedOracle` 沒有鏈上參考來源（`referenceSource: none`）。
@@ -240,7 +240,7 @@ Pyth 有 `Equity.US.<代號>/USD` 與 `Metal.XAU/USD`（ADR-013 §2.5，以 Herm
 - **風險**：新合約沒有稽核；VC 發證者其實是團隊自己，簡報要說「模擬持牌機構的 KYC 單位」；與 ④ 有相依關係，時程上 ⑤ 要排在 ④ 之後。
 - **狀態（2026-10-07）**：**已實作、部署並在鏈上驗證**。實作是 `VCKycRegistry`（#267，實作 `IKyc`；投資人提交發證者簽的 EIP-712 合格投資人憑證，合約在鏈上驗簽、
   檢查發證者信任與撤銷，不存個資；設計見 [`SSI_RWA_ACCESS.md`](SSI_RWA_ACCESS.md)），在 PoC 租戶由部署腳本接到交易所（`requiredType` = `QUALIFIED_INVESTOR`）。
-  PoC 錄影實跑：未持證開 sGOLD 被拒（`NotKycVerified`，status 0）→ 提交憑證後開倉成功 → 撤銷後投資人與其 AI 代理人新開倉都被拒、既有部位可平倉。
+  PoC 錄影實跑：未持證開 sGOLD 被拒（`NotKycVerified`，status 0）→ 提交憑證後開倉成功 → 撤銷後投資人與其 AI 代理人新開倉都被拒（以 `cast call` 模擬驗證，回 `NotKycVerified`）、既有部位兩筆平倉成功（鏈上交易）。
   延伸：AI 代理人委託憑證 v3、`SessionCredentialAnchor` 錨定與 x402 KYA（#270、#285，[`SSI_AGENT_DELEGATION.md`](SSI_AGENT_DELEGATION.md)）也已在同一租戶驗證，
   x402 帶憑證實付一筆尚待代理人錢包入測試 USDC（[`tenants/rwa-poc/X402_KYA.md`](tenants/rwa-poc/X402_KYA.md)）。
   限制：發證者是 PoC 團隊自己的測試錢包，沒有做真實的身分審查；撤銷狀態清單主機在本機。

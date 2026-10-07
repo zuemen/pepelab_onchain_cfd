@@ -1,4 +1,4 @@
-# 交接：RWA ＋ SSI 正式 PoC（2026-10-06 18:00 台灣時間）
+# 交接：RWA ＋ SSI 正式 PoC（2026-10-07 更新）
 
 給下一台電腦／下一個 session 接手用。目標是把 PepeLab 做成**標準的 RWA 衍生品平台 PoC**：SSI（可驗證憑證）真正接上 RWA 准入與 AI 代理人委託，部署到 Base Sepolia 新的一套合約，達到**可以錄 PoC 影片**的程度。
 
@@ -8,7 +8,7 @@
 
 ## 1. 目前狀態
 
-- **master**：#268 合併後（2026-10-06 19:00）。CI 全綠，Dependabot 警示 0。
+- **master**：#270、#278–#285 已合併（2026-10-07）。RWA PoC 已部署為專屬租戶 `rwa-poc`（Base Sepolia），總覽見 [`docs/tenants/rwa-poc/README.md`](tenants/rwa-poc/README.md)。
 - **展示站**：<https://pepelab-onchain-cfd-djot.vercel.app>（Base Sepolia 84532，舊版合約；主鏈設定 `PRIMARY_CHAIN_ID = 84532`）。
 - **鏈上現役合約是舊版**：交易所 `0x827e…` 沒有 guardian、休市停單（asset mode）；owner 是 `0x27C2…A585`，**金鑰不在手上**，所以現役合約的設定改不了。PoC 要用**新金鑰重新部署一整套**（使用者已同意）。
 
@@ -28,11 +28,26 @@
 | #268 | RWA 資產卡 `/rwa`、參考價見證看板 `/oracle`、儲備與償付能力頁 `/solvency`、signal-api 免費端點 `/reference-prices`（審查 6 項已修） |
 | #269 | 可用性稽核與修正：公開節點 eth_getLogs 上限降為 500 塊，chainLogs 改 400 塊＋自動對半重試；`docs/USABILITY_AUDIT_2026-10-06.md` |
 
+### 2026-10-07 已合併
+
+| PR | 內容 |
+|---|---|
+| #270 | SSI 委託授權：AgentDelegationCredential v3、`SessionCredentialAnchor`、x402 KYA、前端 `/sessions`（經對抗式審查、修正、複審） |
+| #278 | 租戶文件與廣播紀錄移出平台位址全集；PoC 錢包表 |
+| #279 | 租戶設定 schema v4：`kycRegistry: "vc"`、`additionalRwa` |
+| #280 | `deploy/tenants/rwa-poc.json` 租戶設定 |
+| #281 | 本機 keeper 與休市切換腳本（`scripts/poc/rwa-poc-keeper.sh`、`rwa-poc-market-mode.sh`） |
+| #282 | 前端接租戶部署（`yarn dev --mode rwa-poc`） |
+| #283 | Base Sepolia 部署紀錄與前端 dedicated 登記（S3） |
+| #284 | PoC 錄影工具（Playwright：注入錢包、字幕列、tx 紀錄） |
+| #285 | 本機 signal-api x402 KYA（`scripts/poc/rwa-poc-x402.sh`、`docs/tenants/rwa-poc/X402_KYA.md`） |
+
 ### 還開著的 PR
 
 | PR | 分支 | 狀態 | 接手要做的事 |
 |---|---|---|---|
-| #270 | `feat/ssi-delegation-kya` | **SSI 委託授權**：AgentDelegationCredential v3（W3C VC 2.0、did:pkh、EIP-712）、新合約 `SessionCredentialAnchor`、x402 KYA（`X402_KYA_MODE`，預設 off；付款前驗 VP＝憑證主體＝付款人、撤銷、鏈上 session、錨定、重放、依憑證累計花費）、前端 `/sessions`、PoC 腳本 `scripts/poc/agent-delegation-demo.sh`、`docs/SSI_AGENT_DELEGATION.md`。CI 15 項綠，**尚未審查** | 先合 master（和 #267 在 `agent/package.json` test 行、`frontend/vitest.pinnedEnv.ts` 有相鄰新增，手動合併）。做一次對抗式審查（合約權限、VP 重放與綁定、花費累計的原子性與退回、x402 v1／v2 兩條路徑、fail-closed、揭露），修正後合併 |
+| #286 | `feat/rwa-poc-recording` | 錄影劇本 `POC_SCRIPT.md`、完整錄影劇本與後製、狀態清單主機、彩排重置腳本 | 審查後合併；合併後第 6 節標「#286 合併後」的指令才在 master |
+| （本文件 PR） | `docs/rwa-poc-wrapup` | S8 文件收尾 | 審查中 |
 
 ---
 
@@ -48,9 +63,9 @@
 | **S3 部署整套** | 用 `DeployTenant.s.sol` 部署 master 版整套到 Base Sepolia；部署 `VCKycRegistry`、`SessionCredentialAnchor`；接 `setKycRegistry`、`setRwaAsset`（含黃金）、marketOperator、guardian；寫入碳分級見證；先模擬再廣播 | 部署紀錄 JSON 進 repo；`post-deploy-smoke.mjs` 對新部署無 FAIL（外洩地址檢查必須全 PASS）；合約在 BaseScan 驗證原始碼（有 API key 時） | 3–5 h | 可選：BaseScan API key | ✅ 完成（2026-10-07：DeployTenant 164 筆、VerifyTenant 真鏈 131 ok／權限歷史掃描通過、smoke 32 PASS；發證者、attestor、11 檔碳分級、SessionCredentialAnchor 完成；見 `docs/tenants/rwa-poc/DEPLOYMENT.md`；BaseScan 原始碼驗證待 API key） |
 | **S4 推價與休市** | 本機跑 keeper 以新金鑰推價；跑休市切換（ReduceOnly）；寫一鍵啟動腳本 | 11 檔價格都在 5 分鐘內更新；休市時新開倉被拒、平倉可行（實際交易 hash） | 1–2 h | 無 | ✅ 完成（2026-10-07：本機 keeper 以加密 keystore 一輪寫入 11 檔、failed=0；sETH 休市示範：開倉被拒 `AssetNotActive`、平倉成功，tx 見 `docs/tenants/rwa-poc/DEPLOYMENT.md`） |
 | **S5 前端接新部署** | 以租戶設定或環境變數切換「RWA PoC」位址，**不弄壞現有展示站**；本機 `yarn dev` 可用；有權限時開 Vercel preview | 本機頁面讀到新部署的資料；`/rwa`、`/oracle`、`/solvency`、`/sessions`、KYC 憑證面板都能用；現有展示站的測試仍全過 | 3–4 h | 可選：Vercel 權限（見第 3 節） | ✅ 完成（2026-10-07：#282 合併；本機 `yarn dev --mode rwa-poc` 各頁讀到新部署，驗收表見 `docs/tenants/rwa-poc/FRONTEND.md`；Vercel preview 未開） |
-| **S6 x402 KYA** | 本機跑 signal-api：`PAY_TO`＝新收款地址、`X402_KYA_MODE` 開啟；代理人錢包用測試 USDC 實付 | 一筆真的 x402 付款成功（有 tx hash）；不帶 VP 被拒；超過憑證花費上限被拒 | 1–2 h | **代理人錢包的測試 USDC**（見第 3 節） | ✅ 已合併 #285；不帶 VP／超額被拒已驗收，實付待入金（見 `docs/tenants/rwa-poc/X402_KYA.md`） |
-| **S7 PoC 劇本與實跑** | 寫 `docs/tenants/rwa-poc/POC_SCRIPT.md`（每步：操作、預期畫面、要說的話、交易 hash、BaseScan 連結、預錄備援）；照劇本在 Base Sepolia 從頭跑一遍 | 劇本每一步都有實際 tx hash；整條故事線一次跑通；只用真實截圖 | 3–4 h | 無 | ✅ 劇本與實跑完成、成片 7:37（錄影 PR 待合併） |
-| **S8 文件收尾** | 更新 `RWA_ALIGNMENT.md` 方案狀態、`RELEASE_STATUS.md`（新部署）、README 部署段落、本交接文件狀態 | 文件與鏈上一致；CI 綠；推上 GitHub | 1–2 h | 無 | ✅ 完成（`docs/tenants/rwa-poc/README.md` 總覽、`RWA_ALIGNMENT.md` 方案 ①–⑤ 狀態、README 部署段落；新部署不寫進 `RELEASE_STATUS.md`，理由見下） |
+| **S6 x402 KYA** | 本機跑 signal-api：`PAY_TO`＝新收款地址、`X402_KYA_MODE` 開啟；代理人錢包用測試 USDC 實付 | 一筆真的 x402 付款成功（有 tx hash）；不帶 VP 被拒；超過憑證花費上限被拒 | 1–2 h | **代理人錢包的測試 USDC**（見第 3 節） | 🟡 部分完成（#285 合併；不帶 VP／超額被拒已驗收；實付待入金，見 `docs/tenants/rwa-poc/X402_KYA.md`） |
+| **S7 PoC 劇本與實跑** | 寫 `docs/tenants/rwa-poc/POC_SCRIPT.md`（每步：操作、預期畫面、要說的話、交易 hash、BaseScan 連結、預錄備援）；照劇本在 Base Sepolia 從頭跑一遍 | 劇本每一步都有實際 tx hash；整條故事線一次跑通；只用真實截圖 | 3–4 h | 無 | 🟡 部分完成（劇本、實跑、成片 7:37；第 6 景實付待補拍；#286） |
+| **S8 文件收尾** | 更新 `RWA_ALIGNMENT.md` 方案狀態、`RELEASE_STATUS.md`（新部署）、README 部署段落、本交接文件狀態 | 文件與鏈上一致；CI 綠；推上 GitHub | 1–2 h | 無 | 🟡 文件 PR 審查中（`docs/tenants/rwa-poc/README.md` 總覽、`RWA_ALIGNMENT.md` 方案 ①–⑤ 狀態、README 部署段落；新部署不寫進 `RELEASE_STATUS.md`，理由見下） |
 | **合計** | | | **約 15–24 h** | | |
 
 ### 各階段細節
@@ -188,38 +203,43 @@ PoC 錢包（部署者與 2026-10-06 新建的 admin／risk／guardian／keeper�
 
 ---
 
-## 6. 交接現況（2026-10-07，S8 完成時）
+## 6. 交接現況（2026-10-07）
 
-S0–S8 都已完成，只剩「x402 帶憑證實付」一筆等代理人錢包入金。總覽、重現指令與已知限制見 [`docs/tenants/rwa-poc/README.md`](tenants/rwa-poc/README.md)。
+S0–S5 已完成；S6、S7 部分完成，差「x402 帶憑證實付」一筆（等代理人錢包入測試 USDC）與第 6 景補拍；S8 文件 PR 審查中。總覽、重現指令與已知限制見 [`docs/tenants/rwa-poc/README.md`](tenants/rwa-poc/README.md)。
 
-- **錄影分支待合併**：劇本 `docs/tenants/rwa-poc/POC_SCRIPT.md`、錄影與後製工具（`scripts/poc/video/` 的 `rwa-poc-full.mjs`、`postprocess.mjs`、`terminal.mjs`）、
-  狀態清單主機 `scripts/poc/rwa-poc-status-server.mjs`、彩排重置 `scripts/poc/rwa-poc-rehearsal-reset.sh` 在分支 `feat/rwa-poc-recording`，PR 合併後才會在 master。
-  下面標「錄影分支」的指令要在那個分支（或合併後的 master）執行。
+- **#286 待合併**：劇本 `docs/tenants/rwa-poc/POC_SCRIPT.md`、錄影與後製工具（`scripts/poc/video/` 的 `scenes/rwa-poc-full.mjs`、`postprocess.mjs`、`terminal.mjs`）、
+  狀態清單主機 `scripts/poc/rwa-poc-status-server.mjs`、彩排重置 `scripts/poc/rwa-poc-rehearsal-reset.sh` 在 #286（分支 `feat/rwa-poc-recording`）。
+  下面標「#286 合併後」的指令要在那個分支或合併後的 master 執行。
+- **成片**：`PepeLab-RWA-SSI-PoC-final.mp4`（7 分 37 秒、1920×1080）由後製產生在 `scripts/poc/video/out/`，**不進版控**，直接交付給使用者。
 
 ### 背景服務怎麼起（repo 根目錄，各開一個終端機）
 
 | 順序 | 服務 | 指令 |
 |---|---|---|
 | 1 | keeper（推價＋休市切換） | `bash scripts/poc/rwa-poc-keeper.sh`（乾跑一輪 `failed=0` 才進迴圈） |
-| 2 | 撤銷狀態清單主機（錄影分支） | `node scripts/poc/rwa-poc-status-server.mjs --mount investor=agent/.state/public-status/investor --mount vc=agent/.state/rwa-poc/vc-status`（port 8787，只綁 127.0.0.1；目錄初始化見 `POC_SCRIPT.md` §2） |
-| 3 | signal-api（x402 KYA） | `bash scripts/poc/rwa-poc-x402.sh server`（port 4021；要在沒有 `agent/.env` 的 checkout 執行） |
+| 2 | 撤銷狀態清單主機（#286 合併後） | `node scripts/poc/rwa-poc-status-server.mjs --mount investor=agent/.state/public-status/investor --mount vc=agent/.state/rwa-poc/vc-status`（port 8787，只綁 127.0.0.1；目錄初始化見 `POC_SCRIPT.md` §2） |
+| 3 | signal-api（x402 KYA） | `bash scripts/poc/rwa-poc-x402.sh server`（port 4021；要在沒有 `agent/.env` 的 checkout 執行；會綁所有網卡，錄影時用可信網路或防火牆擋 4021） |
 | 4 | 前端 | `scripts/poc/rwa-poc-frontend.sh --status-url http://localhost:8787/vc`，再 `cd frontend && yarn dev --mode rwa-poc --port 4173` |
 
 錄影前逐項確認 `POC_SCRIPT.md` §3 的檢查清單（時段、價格新鮮、各錢包 ETH、投資人保證金、殼層沒有私鑰變數）。
-重跑整片前先 `bash scripts/poc/rwa-poc-rehearsal-reset.sh`（錄影分支）。
+錄影工具第一次使用：`cd scripts/poc/video && npm ci && npx playwright install chromium`，另需 `ffmpeg`（轉 mp4 與後製）。
+重跑整片前先 `bash scripts/poc/rwa-poc-rehearsal-reset.sh`（#286 合併後）；它要知道哪些 session 是 x402 用的、不能撤銷：
+以 `X402_ROOT` 指向含 `agent/.state/rwa-poc/x402/*.json` 的 checkout，或直接給 `KEEP_SESSIONS="0 1"`，兩者都沒有時腳本會停下。
 
 ### x402 實付補拍步驟（代理人領到測試 USDC 之後）
 
-1. 使用者到 <https://faucet.circle.com> 選 Base Sepolia，領測試 USDC 到代理人錢包（`0xB4e3…2ef7`，完整位址見 [`WALLETS.md`](tenants/rwa-poc/WALLETS.md)）；需要 ≥ 0.02 USDC。
-2. `bash scripts/poc/rwa-poc-x402.sh balance` 確認餘額 ≥ 20000（atomic）。
-3. 重啟 signal-api（`bash scripts/poc/rwa-poc-x402.sh server`），讓記憶體中的 KYA 花費帳從 0 開始。
-4. `bash scripts/poc/rwa-poc-x402.sh pay`：預期第 1、2 次 `200` 並印出結算 tx，第 3 次 `403 kya_spend_limit_exceeded`。
-   把兩筆結算 tx 填回 `docs/tenants/rwa-poc/X402_KYA.md` §4 (c) 的表格。
-5. 依 `POC_SCRIPT.md` §7「補拍第 6 景」流程重錄並替換成片第 6 景。補拍本身會再跑一次 `pay`，所以**先重啟 signal-api** 讓花費帳歸零，
-   且代理人要再有 ≥ 0.02 USDC（或略過步驟 4，直接以補拍產生結算 tx）：
+**不要另外先跑 `pay`**：補拍劇本本身就會帶 VP 實付，這是唯一一次實付。若先跑 `pay` 再重啟 signal-api，記憶體花費帳歸零，
+同一張憑證在鏈上實際付出的總額就會超過憑證上限。
+
+1. 使用者到 <https://faucet.circle.com> 選 Base Sepolia，領測試 USDC 到代理人錢包（`0xB4e3…2ef7`，完整位址見 [`WALLETS.md`](tenants/rwa-poc/WALLETS.md)）；需要 **≥ 0.03 USDC**
+   （兩筆各 0.01 成功、第 3 筆被拒不扣款，其餘為餘裕）。
+2. `bash scripts/poc/rwa-poc-x402.sh balance` 確認餘額 ≥ 30000（atomic）。
+3. 確認 signal-api 是本次全新啟動、`main` 憑證還沒有任何花費（`bash scripts/poc/rwa-poc-x402.sh server`）。
+4. 依 `POC_SCRIPT.md` §7「補拍第 6 景」重錄並替換成片第 6 景（#286 合併後）。補拍會跑 `bash scripts/poc/rwa-poc-x402.sh pay`：
+   預期第 1、2 次 `200` 並印出結算 tx，第 3 次 `403 kya_spend_limit_exceeded`。
    `cd scripts/poc/video && node record.mjs --scenes scenes/rwa-poc-scene6-pay.mjs --base http://localhost:4173 --no-sign`，
    再 `node postprocess.mjs --main out/<完整版>.json --replace-scene 6=out/rwa-poc-scene6-pay-<時間>.json --frames`。
-6. 把結算 tx 填回 `POC_SCRIPT.md` 第 6 景與 §8、`X402_KYA.md` §4 (c)，並把本文件計劃表 S6 的狀態改成實付完成。
+5. 把兩筆結算 tx 填回 `POC_SCRIPT.md` 第 6 景與 §8、`X402_KYA.md` §4 (c)，並把本文件計劃表 S6、S7 的狀態改成完成。
 
 ### 尚未完成、不擋 PoC 的事
 
