@@ -17,6 +17,7 @@ process.env.FREE_RATE_WINDOW_MS = "60000";
 process.env.CORS_ALLOWED_ORIGINS = "http://localhost:5173";
 
 const { createApp } = await import("../signal-api/src/app.ts");
+const { freshOracleReader } = await import("../signal-api/src/testing/freshOracle.ts");
 
 async function main() {
   // P0：payTo 守門在 402 前檢查收款地址；這裡給安全 EOA + 假 getCode（無 code），不打 RPC。
@@ -28,6 +29,7 @@ async function main() {
       if (t.toLowerCase() === "0x" + "66".repeat(20)) throw new Error("rpc down (fake)");
       return t.toLowerCase() === "0x" + "55".repeat(20);
     },
+    oracleFreshnessReader: freshOracleReader,
   });
   const get = (path: string, headers: Record<string, string> = {}) =>
     app.fetch(new Request("http://localhost" + path, { headers }));
@@ -84,11 +86,39 @@ async function main() {
     console.log("✓ /signals/<合法地址> → 402（付費牆仍在）");
   }
   {
-    // sBTC 合法。stale 閘門在讀不到鏈上價格時會放行（RPC 連不上 → 交給下游），
-    // 因此這裡預期的是付費牆的 402。
+    // sBTC 合法、鏈上價格新鮮 → 付費牆的 402。
     const res = await get("/oracle/sBTC");
     assert.equal(res.status, 402, `合法資產應回 402，實得 ${res.status}`);
     console.log("✓ /oracle/sBTC → 402（付費牆仍在）");
+  }
+  {
+    // 新鮮度讀不到（RPC 失敗）→ 503、不發 402（fail-closed）。以前這裡放行，照樣收費賣出
+    // 一份沒檢查過新鮮度的價格。
+    const down = createApp({
+      payTo: "0x4444444444444444444444444444444444444444",
+      payoutCodeReader: { getCode: async () => "0x" },
+      oracleFreshnessReader: async () => {
+        throw new Error("rpc down (fake)");
+      },
+    });
+    const res = await down.fetch(new Request("http://localhost/oracle/sBTC"));
+    assert.equal(res.status, 503, `新鮮度讀不到應回 503，實得 ${res.status}`);
+    const body = (await res.json()) as { error?: string; accepts?: unknown };
+    assert.equal(body.error, "price_unverified");
+    assert.equal(body.accepts, undefined, "不可附上付款要求");
+    console.log("✓ /oracle/sBTC 新鮮度讀不到 → 503 price_unverified（未發出 402）");
+  }
+  {
+    // 讀得到、但超過交易所 maxPriceAge → 503 price_stale（既有行為，補上測試）。
+    const stale = createApp({
+      payTo: "0x4444444444444444444444444444444444444444",
+      payoutCodeReader: { getCode: async () => "0x" },
+      oracleFreshnessReader: async () => ({ updatedAtSec: Math.floor(Date.now() / 1000) - 7 * 3600, maxPriceAgeSec: 21_600 }),
+    });
+    const res = await stale.fetch(new Request("http://localhost/oracle/sBTC"));
+    assert.equal(res.status, 503, `過期價格應回 503，實得 ${res.status}`);
+    assert.equal(((await res.json()) as { error?: string }).error, "price_stale");
+    console.log("✓ /oracle/sBTC 價格超過 maxPriceAge → 503 price_stale");
   }
 
   // ── liveness 不受節流影響 ────────────────────────────────────────────────

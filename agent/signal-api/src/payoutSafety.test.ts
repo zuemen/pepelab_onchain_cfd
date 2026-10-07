@@ -205,6 +205,7 @@ const codes = {
 // ── 7) signal-api：payTo unsafe → 付費路由 503，且不發 402 ─────────────────
 {
   const { createApp } = await import("./app.ts");
+  const { freshOracleReader } = await import("./testing/freshOracle.ts");
 
   for (const [label, payTo] of [
     ["外洩清單", LEAKED],
@@ -212,7 +213,7 @@ const codes = {
     ["合約（非 EOA）", CONTRACT],
   ] as const) {
     clearPayoutSafetyCache();
-    const app = createApp({ payTo, payoutCodeReader: fakeReader(codes) });
+    const app = createApp({ payTo, payoutCodeReader: fakeReader(codes), oracleFreshnessReader: freshOracleReader });
     for (const path of ["/oracle/sBTC", `/signals/${EOA}`]) {
       const res = await app.request(path);
       assert.equal(res.status, 503, `${label} ${path} 應回 503，got ${res.status}`);
@@ -247,6 +248,7 @@ const codes = {
       "/oracle%2FsBTC",
     ];
     const app = createApp({
+      oracleFreshnessReader: freshOracleReader,
       payTo: LEAKED,
       payoutCodeReader: fakeReader(codes),
       isRegisteredTrader: async () => true,
@@ -259,6 +261,7 @@ const codes = {
     // 對照組：safe payTo 時，變體被正規化成同一條付費路由（402），閘門照樣生效
     clearPayoutSafetyCache();
     const safe = createApp({
+      oracleFreshnessReader: freshOracleReader,
       payTo: EOA,
       payoutCodeReader: fakeReader(codes),
       isRegisteredTrader: async (t) => t.toLowerCase() === EOA.toLowerCase(),
@@ -280,6 +283,7 @@ const codes = {
     // 複審 6：付費路徑上的 HEAD → 405，不執行 handler（連 registry 閘門都不會碰到）
     let registryCalls = 0;
     const headApp = createApp({
+      oracleFreshnessReader: freshOracleReader,
       payTo: EOA,
       payoutCodeReader: fakeReader(codes),
       isRegisteredTrader: async () => {
@@ -302,6 +306,7 @@ const codes = {
   {
     clearPayoutSafetyCache();
     const app = createApp({
+      oracleFreshnessReader: freshOracleReader,
       payTo: EOA,
       payoutCodeReader: {
         getCode: async () => {
@@ -321,7 +326,7 @@ const codes = {
     clearPayoutSafetyCache();
     const r = fakeReader(codes);
     r.down = true;
-    const app = createApp({ payTo: EOA, payoutCodeReader: r });
+    const app = createApp({ payTo: EOA, payoutCodeReader: r, oracleFreshnessReader: freshOracleReader });
     const res = await app.request("/oracle/sBTC");
     assert.equal(res.status, 503);
     console.log("payTo 檢查 RPC 失敗且無快取 → 503（fail-closed） ✓");
@@ -330,7 +335,7 @@ const codes = {
   // 對照組：safe 的 EOA → 會走到 x402 付費牆（402）
   {
     clearPayoutSafetyCache();
-    const app = createApp({ payTo: EOA, payoutCodeReader: fakeReader(codes) });
+    const app = createApp({ payTo: EOA, payoutCodeReader: fakeReader(codes), oracleFreshnessReader: freshOracleReader });
     const res = await app.request("/oracle/sBTC");
     assert.equal(res.status, 402, `safe payTo 應發出 402，got ${res.status}`);
     const root = (await (await app.request("/")).json()) as { payToSafety: { safe: boolean } };

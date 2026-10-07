@@ -511,6 +511,11 @@ export interface CreateAppOptions {
   /** 覆寫 /signals/:trader 的資料來源（測試用；預設讀鏈上 getTraderPerformance）。 */
   signalReader?: (trader: string) => Promise<unknown>;
   /**
+   * 覆寫 /oracle/:asset 付款前新鮮度檢查的鏈上讀取（測試用；預設讀 oracle.getPrice 與
+   * perp.maxPriceAge）。讀取失敗 → 503、不發出 402（fail-closed）。
+   */
+  oracleFreshnessReader?: (assetId: string) => Promise<{ updatedAtSec: number; maxPriceAgeSec: number }>;
+  /**
    * x402 KYA 閘門（docs/SSI_AGENT_DELEGATION.md）。省略＝依 X402_KYA_MODE 環境變數（預設 off）；
    * 傳 null＝強制關閉；傳 KyaGate＝測試／PoC 注入（鏈上讀取、花費帳、撤銷檢查都可替換）。
    */
@@ -1220,38 +1225,57 @@ export function createApp(opts: CreateAppOptions = {}): Hono<{ Variables: AppVar
     return next();
   });
 
-  app.use("/oracle/*", async (c, next) => {
-    const asset = c.req.path.split("/")[2];
-    if (!asset) return next();
-    try {
-      const assetId = assetIdOf(asset);
+  const readOracleFreshness =
+    opts.oracleFreshnessReader ??
+    (async (assetId: string) => {
       const [[, updatedAt], maxPriceAge] = await Promise.all([
         contracts.oracle.getPrice(assetId) as Promise<[bigint, bigint]>,
         contracts.perp.maxPriceAge() as Promise<bigint>,
       ]);
-      const tf = classifyTradeFreshness({
-        updatedAtSec: Number(updatedAt),
-        nowSec: Math.floor(Date.now() / 1000),
-        maxPriceAgeSec: Number(maxPriceAge),
-      });
-      if (!tf.fresh) {
-        return c.json(
-          {
-            ok: false,
-            error: "price_stale",
-            message:
-              `${asset} 的鏈上價格已 ${Math.round(tf.ageSec / 3600)} 小時未更新，` +
-              `超過交易所的 maxPriceAge（${tf.maxPriceAgeSec} 秒）。此時開倉會 revert ` +
-              `StalePrice，故不販售這份快照。`,
-            asset,
-            ageSec: tf.ageSec,
-            maxPriceAgeSec: tf.maxPriceAgeSec,
-          },
-          503,
-        );
-      }
-    } catch {
-      // 讀不到（資產不存在、RPC 抖動）→ 交給下游處理，不要因為監測失敗就擋住服務。
+      return { updatedAtSec: Number(updatedAt), maxPriceAgeSec: Number(maxPriceAge) };
+    });
+  app.use("/oracle/*", async (c, next) => {
+    const asset = c.req.path.split("/")[2];
+    if (!asset) return next();
+    let freshness: { updatedAtSec: number; maxPriceAgeSec: number };
+    try {
+      freshness = await readOracleFreshness(assetIdOf(asset));
+    } catch (err) {
+      // 讀不到（RPC 抖動、鏈上沒有這個資產）→ 無法確認新鮮度就不賣（fail-closed，與 payTo、
+      // registry 閘門一致）。以前這裡放行，RPC 失敗時會照樣收費賣出一份沒檢查過的價格。
+      console.error(`[oracle-freshness] ${asset} 讀取失敗：`, err);
+      return c.json(
+        {
+          ok: false,
+          error: "price_unverified",
+          message: `無法確認 ${asset} 的鏈上價格是否新鮮（RPC 暫時無法使用）。`,
+          asset,
+          note: "未付款：無法確認就不發出付款要求（x402 無退費機制）。",
+        },
+        503,
+        { "Retry-After": "60" },
+      );
+    }
+    const tf = classifyTradeFreshness({
+      updatedAtSec: freshness.updatedAtSec,
+      nowSec: Math.floor(Date.now() / 1000),
+      maxPriceAgeSec: freshness.maxPriceAgeSec,
+    });
+    if (!tf.fresh) {
+      return c.json(
+        {
+          ok: false,
+          error: "price_stale",
+          message:
+            `${asset} 的鏈上價格已 ${Math.round(tf.ageSec / 3600)} 小時未更新，` +
+            `超過交易所的 maxPriceAge（${tf.maxPriceAgeSec} 秒）。此時開倉會 revert ` +
+            `StalePrice，故不販售這份快照。`,
+          asset,
+          ageSec: tf.ageSec,
+          maxPriceAgeSec: tf.maxPriceAgeSec,
+        },
+        503,
+      );
     }
     return next();
   });

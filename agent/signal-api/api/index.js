@@ -68021,34 +68021,50 @@ function createApp(opts = {}) {
     }
     return next();
   });
+  const readOracleFreshness = opts.oracleFreshnessReader ?? (async (assetId) => {
+    const [[, updatedAt], maxPriceAge] = await Promise.all([
+      contracts2.oracle.getPrice(assetId),
+      contracts2.perp.maxPriceAge()
+    ]);
+    return { updatedAtSec: Number(updatedAt), maxPriceAgeSec: Number(maxPriceAge) };
+  });
   app2.use("/oracle/*", async (c, next) => {
     const asset = c.req.path.split("/")[2];
     if (!asset) return next();
+    let freshness;
     try {
-      const assetId = assetIdOf(asset);
-      const [[, updatedAt], maxPriceAge] = await Promise.all([
-        contracts2.oracle.getPrice(assetId),
-        contracts2.perp.maxPriceAge()
-      ]);
-      const tf = classifyTradeFreshness({
-        updatedAtSec: Number(updatedAt),
-        nowSec: Math.floor(Date.now() / 1e3),
-        maxPriceAgeSec: Number(maxPriceAge)
-      });
-      if (!tf.fresh) {
-        return c.json(
-          {
-            ok: false,
-            error: "price_stale",
-            message: `${asset} \u7684\u93C8\u4E0A\u50F9\u683C\u5DF2 ${Math.round(tf.ageSec / 3600)} \u5C0F\u6642\u672A\u66F4\u65B0\uFF0C\u8D85\u904E\u4EA4\u6613\u6240\u7684 maxPriceAge\uFF08${tf.maxPriceAgeSec} \u79D2\uFF09\u3002\u6B64\u6642\u958B\u5009\u6703 revert StalePrice\uFF0C\u6545\u4E0D\u8CA9\u552E\u9019\u4EFD\u5FEB\u7167\u3002`,
-            asset,
-            ageSec: tf.ageSec,
-            maxPriceAgeSec: tf.maxPriceAgeSec
-          },
-          503
-        );
-      }
-    } catch {
+      freshness = await readOracleFreshness(assetIdOf(asset));
+    } catch (err) {
+      console.error(`[oracle-freshness] ${asset} \u8B80\u53D6\u5931\u6557\uFF1A`, err);
+      return c.json(
+        {
+          ok: false,
+          error: "price_unverified",
+          message: `\u7121\u6CD5\u78BA\u8A8D ${asset} \u7684\u93C8\u4E0A\u50F9\u683C\u662F\u5426\u65B0\u9BAE\uFF08RPC \u66AB\u6642\u7121\u6CD5\u4F7F\u7528\uFF09\u3002`,
+          asset,
+          note: "\u672A\u4ED8\u6B3E\uFF1A\u7121\u6CD5\u78BA\u8A8D\u5C31\u4E0D\u767C\u51FA\u4ED8\u6B3E\u8981\u6C42\uFF08x402 \u7121\u9000\u8CBB\u6A5F\u5236\uFF09\u3002"
+        },
+        503,
+        { "Retry-After": "60" }
+      );
+    }
+    const tf = classifyTradeFreshness({
+      updatedAtSec: freshness.updatedAtSec,
+      nowSec: Math.floor(Date.now() / 1e3),
+      maxPriceAgeSec: freshness.maxPriceAgeSec
+    });
+    if (!tf.fresh) {
+      return c.json(
+        {
+          ok: false,
+          error: "price_stale",
+          message: `${asset} \u7684\u93C8\u4E0A\u50F9\u683C\u5DF2 ${Math.round(tf.ageSec / 3600)} \u5C0F\u6642\u672A\u66F4\u65B0\uFF0C\u8D85\u904E\u4EA4\u6613\u6240\u7684 maxPriceAge\uFF08${tf.maxPriceAgeSec} \u79D2\uFF09\u3002\u6B64\u6642\u958B\u5009\u6703 revert StalePrice\uFF0C\u6545\u4E0D\u8CA9\u552E\u9019\u4EFD\u5FEB\u7167\u3002`,
+          asset,
+          ageSec: tf.ageSec,
+          maxPriceAgeSec: tf.maxPriceAgeSec
+        },
+        503
+      );
     }
     return next();
   });

@@ -21,6 +21,7 @@ import { ExactEvmScheme } from "@x402/evm/exact/client";
 import { startMockFacilitator } from "./testing/mockFacilitator.ts";
 import { startFakeUpstash } from "./testing/fakeUpstash.ts";
 import { startRpcStub } from "./testing/rpcStub.ts";
+import { freshOracleReader } from "./testing/freshOracle.ts";
 
 const facilitator = await startMockFacilitator();
 const upstash = await startFakeUpstash();
@@ -107,6 +108,7 @@ const seams = {
   payoutCodeReader: { getCode: async () => "0x" },
   isRegisteredTrader: async () => true,
   signalReader: async (trader: string) => ({ trader, note: "mock signal (kya.test)" }),
+  oracleFreshnessReader: freshOracleReader,
 };
 const appOn = createApp({ ...seams, x402Protocol: "both", kya });
 const appOff = createApp({ ...seams, x402Protocol: "both", kya: null });
