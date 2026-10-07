@@ -43,7 +43,7 @@
 | 階段 | 做什麼 | 驗收標準（全部成立才算完成） | 預估 | 需要使用者 | 狀態 |
 |---|---|---|---|---|---|
 | **S0 環境** | clone、`git submodule update --init --recursive`、裝相依（frontend `yarn install`、agent `npm ci`）、讀交接與相關文件 | `forge build` 成功；`yarn --cwd frontend test` 與 `npm test`（agent）各跑一次全過；`gh auth status` 是 zuemen | 0.5–1 h | 裝工具、`gh auth login`（見第 3 節） | ✅ 完成（2026-10-06：forge 1302 測試、frontend 1222、agent 全過；gh 登入待使用者） |
-| **S1 #270** | 合 master 解衝突 → 另一個 agent 對抗式審查（合約權限、VP 重放與綁定、花費累計原子性與退回、x402 v1／v2、fail-closed、揭露）→ 修正 → 複審 | CI 全綠、審查無未解的高中風險、已合併 | 2–4 h | 無 | 進行中：已合 master、兩份對抗式審查 0 高 3 中，修正中 |
+| **S1 #270** | 合 master 解衝突 → 另一個 agent 對抗式審查（合約權限、VP 重放與綁定、花費累計原子性與退回、x402 v1／v2、fail-closed、揭露）→ 修正 → 複審 | CI 全綠、審查無未解的高中風險、已合併 | 2–4 h | 無 | ✅ 完成（2026-10-07：#270、#278 PR-1、#279 PR-2 皆經對抗式審查→修正→複審、CI 全綠後合併） |
 | **S2 部署金鑰** | 已在舊電腦建立加密 keystore `pepelab-rwa-deployer`（`0xF52D…49eE`）並跨鏈入金 0.8 ETH。新電腦只要確認使用者已把 keystore 與密碼檔放好（第 3.0 節） | `cast wallet address --account pepelab-rwa-deployer --password-file ~/.foundry/pepelab-rwa-deployer.password` 等於 `0xF52D…49eE`；餘額 ≥ 0.5 ETH | 0.1 h | **複製 keystore 與密碼檔**（第 3.0 節） | ✅ 已確認（keystore 地址 0xF52D…49eE、0.8 ETH） |
 | **S3 部署整套** | 用 `DeployTenant.s.sol` 部署 master 版整套到 Base Sepolia；部署 `VCKycRegistry`、`SessionCredentialAnchor`；接 `setKycRegistry`、`setRwaAsset`（含黃金）、marketOperator、guardian；寫入碳分級見證；先模擬再廣播 | 部署紀錄 JSON 進 repo；`post-deploy-smoke.mjs` 對新部署無 FAIL（外洩地址檢查必須全 PASS）；合約在 BaseScan 驗證原始碼（有 API key 時） | 3–5 h | 可選：BaseScan API key | 未開始 |
 | **S4 推價與休市** | 本機跑 keeper 以新金鑰推價；跑休市切換（ReduceOnly）；寫一鍵啟動腳本 | 11 檔價格都在 5 分鐘內更新；休市時新開倉被拒、平倉可行（實際交易 hash） | 1–2 h | 無 | 未開始 |
@@ -59,8 +59,8 @@
 2. **審查並合併 #270**（見上表）——**從這裡開始**。
 3. **新部署金鑰（已完成）**：keystore `pepelab-rwa-deployer`（`0xF52D…49eE`）已在舊電腦建立並跨鏈入金 0.8 ETH；使用者用隨身碟把 keystore 與密碼檔放到新電腦（第 3.0 節）。新電腦先驗證地址與餘額，再進 S3。
 4. **部署新的一整套到 Base Sepolia**（master 版，含 guardian、休市 asset mode、GuardedOracle、InsuranceVault virtual shares）：
-   - 先決定用哪支腳本：`contracts/script/DeployTenant.s.sol`（會接 ESGRegistryV2，碳定價啟用；新資產預設 Unrated＝1x，要用部署者當 attestor 寫入碳分級，並在文件照實說明「見證者是自己」）或 `Deploy.s.sol`（esgRegistry＝0，碳定價停用）。**建議 DeployTenant**，因為碳強度定價是題目主軸。
-   - 部署 `VCKycRegistry`（`DeployVCKycRegistry.s.sol`，`VC_KYC_CHAIN_ID=84532`）、`SessionCredentialAnchor`；在新交易所 `setKycRegistry`、`setRwaAsset`（股票、債券、ESG ETF、**黃金也要標**）；設 marketOperator 與 guardian。
+   - 用 `contracts/script/DeployTenant.s.sol`，設定檔 `deploy/tenants/rwa-poc.json`（schema v4）。`params.kycRegistry: "vc"` 讓腳本自己部署 admin 擁有的 `VCKycRegistry` 並接到交易所；內建 8 檔 RWA 加 `assets.additionalRwa: ["sGOLD"]` 在部署當下標成 RWA；guardian、marketOperator 也由腳本設好。**不要**再另跑 `DeployVCKycRegistry.s.sol` 或以部署者呼叫 `setKycRegistry`／`setRwaAsset`：部署結束時部署者沒有任何權限，那樣只會多出孤兒合約、讓 `check-tenant-deploy` 變紅。
+   - 部署後以 admin 錢包：`VCKycRegistry.setIssuer(issuer, QUALIFIED_INVESTOR, true)`、對 attestor 錢包授 `ESGRegistryV2` 的 `ATTESTOR_ROLE`；再以 attestor 跑 `AttestTenantCarbon.s.sol` 寫入碳分級（見證者是獨立錢包，文件照實說明）。另以部署者部署 `SessionCredentialAnchor`（`SESSION_MANAGER_ADDR`＝租戶的 AgentSessionManager）。
    - 每一步先 `--simulate`／不廣播跑一次（演練加 `FOUNDRY_BROADCAST=cache/rehearsal/rwa-poc`），再 `FOUNDRY_BROADCAST=broadcast/tenants/rwa-poc` 加 `--account pepelab-rwa-deployer --password-file ~/.foundry/pepelab-rwa-deployer.password --broadcast --slow`（`DeployTenant`、`DeployVCKycRegistry`、`DeploySessionCredentialAnchor` 都一樣；廣播紀錄寫到租戶目錄，否則部署者與合約會被當成平台位址）；完成後用 `scripts/post-deploy-smoke.mjs` 與 `scripts/check-deployment-status.mjs` 讀回驗收。
    - **嚴禁**用舊電腦 `contracts/.env` 的 `PRIVATE_KEY`：那把是外洩地址 `0xE80A…Eb93`。
 5. **價格與 keeper**：新部署要有人推價。錄影期間可在本機跑 keeper（`agent/` 的 keeper 程式，以新部署者或另一把新 keeper 金鑰），並跑休市切換（ReduceOnly）。若要 GitHub Actions 自動推價，需要使用者把新 keeper 私鑰放進 GitHub environment——那是使用者的操作。

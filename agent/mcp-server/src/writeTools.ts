@@ -398,7 +398,7 @@ export function registerWriteTools(
       marginUsdc: z.number().positive().describe("保證金（USDC，人類單位）"),
       leverage: z.number().int().positive().describe("槓桿（受 session.maxLeverage 約束）"),
       // 稽核 A-3：必填，缺 VC 連呼叫都組不起來。
-      authVcJson: z.string().min(1).describe("使用者簽發的授權 VC JSON 字串（必填）；下單前必須驗證通過"),
+      authVcJson: z.string().min(1).describe("使用者簽發的授權 VC JSON 字串（必填；v2 授權 VC 或 v3 委託憑證 AgentDelegationCredential）；下單前必須驗證通過"),
     },
     TOOL_ANNOTATIONS.open_position,
     async (args) => guard(() => h.openPosition(args)),
@@ -411,7 +411,7 @@ export function registerWriteTools(
       sessionId: z.number().int().nonnegative().describe("鏈上 session id"),
       positionId: z.number().int().nonnegative().describe("要平的倉位 ID"),
       // 稽核 A-4：平倉會實現虧損，授權要求與開倉對稱。
-      authVcJson: z.string().min(1).describe("使用者簽發的授權 VC JSON 字串（必填）；平倉前必須驗證通過"),
+      authVcJson: z.string().min(1).describe("使用者簽發的授權 VC JSON 字串（必填；v2 或 v3）；平倉前必須驗證通過"),
     },
     TOOL_ANNOTATIONS.close_position,
     async (args) => guard(() => h.closePosition(args)),

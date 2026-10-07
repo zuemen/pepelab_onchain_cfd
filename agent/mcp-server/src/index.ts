@@ -34,6 +34,9 @@ import {
   closePositionForSession,
   getSession,
   verifyAuthorizationVC,
+  verifyDelegationCredential,
+  delegationAsVerifyResult,
+  isDelegationCredential,
   checkCredentialStatus,
   preflightVcStatus,
   preflightErrorText,
@@ -41,6 +44,7 @@ import {
   parseDidPkh,
   buildAgentVerification,
   type AuthorizationVC,
+  type AgentCredential,
   type ContractTarget,
   jsonSafe,
   assetIdOf,
@@ -112,13 +116,13 @@ const writeDeps: Parameters<typeof registerWriteTools>[1] = {
       isLong: a.isLong,
       marginUsdc: a.marginUsdc,
       leverage: a.leverage,
-      authVc: JSON.parse(a.authVcJson) as AuthorizationVC,
+      authVc: JSON.parse(a.authVcJson) as AgentCredential,
     }) as any,
   close: (a) =>
     closePositionForSession({
       sessionId: a.sessionId,
       positionId: a.positionId,
-      authVc: JSON.parse(a.authVcJson) as AuthorizationVC,
+      authVc: JSON.parse(a.authVcJson) as AgentCredential,
     }) as any,
   readFees: async (asset) => {
     let tradingFeeBps: number | null = null;
@@ -176,7 +180,11 @@ const writeDeps: Parameters<typeof registerWriteTools>[1] = {
   },
   warn: (m) => console.error(m),
   vcStatusPreview: async (json) => {
-    const r = verifyAuthorizationVC(JSON.parse(json) as AuthorizationVC);
+    // v2 授權 VC 或 v3 委託憑證（docs/SSI_AGENT_DELEGATION.md）；v3 以 jti＝nonce 投影後查同一份狀態清單。
+    const vc = JSON.parse(json) as AgentCredential;
+    const r = isDelegationCredential(vc)
+      ? delegationAsVerifyResult(verifyDelegationCredential(vc))
+      : verifyAuthorizationVC(vc as AuthorizationVC);
     if (!r.valid) return null; // VC 本身的問題由 write.ts 回報
     const st = await checkCredentialStatus(r, { action: "write" });
     return { warnings: st.warnings ?? [], problem: st.ok && st.status !== "unknown" ? null : `${st.reasonCode}：${st.message}` };
