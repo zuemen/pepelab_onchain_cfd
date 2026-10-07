@@ -274,7 +274,7 @@ export function TerminalView() {
             kycUnknown={kycUnknown}
             kycPending={kycPending}
             kycCredentialsHref={kycCredentialsHref}
-            kycVcAction={kycAction}
+            kycVcAction={wallet.address ? kycAction : undefined}
             onKycVcRetry={vcKyc.retry}
             staleNotice={staleNoticeFor(selAsset)}
             marketStatus={selStatus}
