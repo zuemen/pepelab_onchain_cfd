@@ -26,7 +26,7 @@ const quiet = () => {};
 
 test("repo 現況：每個 dedicated 登記都有部署設定與紀錄、而且有公開 RPC（不連網）", () => {
   const targets = plan(root);
-  for (const t of targets) assert.ok(t.rpcs.length > 0, `${t.id} 沒有公開 RPC`);
+  for (const t of targets) assert.ok(t.rpcs.length > 0 && t.rpcs.every((r) => r.url.startsWith("https://") && r.logChunk > 0), `${t.id} 公開 RPC 設定不對`);
   assert.deepEqual(
     targets.map((t) => t.id),
     listDedicatedTenantIds(root),
@@ -69,12 +69,45 @@ test("第一個公開 RPC 拒絕（例如 runner 被擋）→ 改用下一個", 
     log: quiet,
     runVerify: (t) => (used.push(t.rpc), 0),
     chainIdOf: async (rpc) => {
-      if (rpc === PUBLIC_RPC[84532][0]) throw new Error("HTTP 401");
+      if (rpc === PUBLIC_RPC[84532][0].url) throw new Error("HTTP 401");
       return 84532;
     },
   });
   assert.deepEqual(problems, []);
-  assert.deepEqual(used, [PUBLIC_RPC[84532][1]]);
+  assert.deepEqual(used, [PUBLIC_RPC[84532][1].url]);
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test("forge 途中被節點拒絕（401、getLogs 被拒）→ 換下一個；真的驗證失敗 → 不重試", async () => {
+  const dir = fakeRoot();
+  const used = [];
+  const ok = await verifyAll({
+    root: dir,
+    log: quiet,
+    chainIdOf: async () => 84532,
+    runVerify: (t) => {
+      used.push(t.rpc);
+      return used.length === 1 ? { status: 1, output: "HTTP error 401 with body: rejected" } : { status: 0, output: "" };
+    },
+  });
+  assert.deepEqual(ok, []);
+  assert.deepEqual(used, PUBLIC_RPC[84532].slice(0, 2).map((r) => r.url));
+  const tries = [];
+  const bad = await verifyAll({
+    root: dir,
+    log: quiet,
+    chainIdOf: async () => 84532,
+    runVerify: (t) => (tries.push(t.rpc), { status: 1, output: "verify tenant failed: owner mismatch" }),
+  });
+  assert.match(bad.join("\n"), /bank-a：VerifyTenant 失敗（exit 1）/);
+  assert.equal(tries.length, 1);
+  const allDown = await verifyAll({
+    root: dir,
+    log: quiet,
+    chainIdOf: async () => 84532,
+    runVerify: () => ({ status: 1, output: "eth_getLogs refused" }),
+  });
+  assert.match(allDown.join("\n"), /沒有可用的公開 RPC/);
   rmSync(dir, { recursive: true, force: true });
 });
 
