@@ -59,8 +59,8 @@ export function InvestorCredentialPanel({ wallet, registryAddress }: Props) {
   const [busy, setBusy] = useState(false)
   const [txHash, setTxHash] = useState<string | null>(null)
 
-  const readMine = useCallback(async () => {
-    if (!registry || !wallet.provider || !wallet.address) return
+  const readMine = useCallback(async (): Promise<boolean | null> => {
+    if (!registry || !wallet.provider || !wallet.address) return null
     try {
       const reg = new Contract(registry, VC_KYC_REGISTRY_ABI as unknown as string[], wallet.provider)
       // 依 registry 實際要求的類型讀紀錄（不寫死 QUALIFIED_INVESTOR）。
@@ -76,8 +76,10 @@ export function InvestorCredentialPanel({ wallet, registryAddress }: Props) {
         isVerified: Boolean(isVerified),
         requiredLabel: name ? t.investorVc.typeLabel[name] : required,
       })
+      return Boolean(isVerified)
     } catch {
       setMine(null)
+      return null
     }
   }, [registry, wallet.provider, wallet.address])
 
@@ -188,8 +190,14 @@ export function InvestorCredentialPanel({ wallet, registryAddress }: Props) {
       )
       setTxHash(tx.hash)
       await tx.wait()
-      await readMine()
+      // 公開節點負載平衡：receipt 之後的下一次讀取可能落在還沒同步的節點，讀到舊狀態（未登記）。
+      // 讀到資格生效為止（最多約 20 秒），再重新驗證；交易 hash 保留在畫面上。
+      for (let i = 0; i < 10; i++) {
+        if ((await readMine()) === true) break
+        await new Promise((r) => setTimeout(r, 2000))
+      }
       await verify()
+      setTxHash(tx.hash)
     } catch (e) {
       const reason = (e as { reason?: string; shortMessage?: string }).reason ?? (e as { shortMessage?: string }).shortMessage
       setError(interpolate(t.investorVc.submitFailed, { reason: reason ?? (e as Error).message }))
