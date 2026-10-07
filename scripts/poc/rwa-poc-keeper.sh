@@ -96,7 +96,8 @@ cd "$REPO_ROOT/agent"
 # 每輪的暫存 log：結束（正常、Ctrl-C、錯誤）時一律刪掉。
 LOG=""
 trap 'rm -f "$LOG"' EXIT
-trap 'echo; echo "keeper 結束"; exit 0' INT TERM
+trap 'echo; echo "keeper 中斷"; exit 130' INT
+trap 'echo; echo "keeper 中斷"; exit 143' TERM
 
 # keeper/run.ts 的完整環境：env -i 清空，只放白名單（寫進全域陣列 KENV；第一個參數 dry|live）。
 keeper_env() {
