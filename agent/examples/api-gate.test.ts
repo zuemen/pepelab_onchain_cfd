@@ -22,6 +22,7 @@ const { freshOracleReader } = await import("../signal-api/src/testing/freshOracl
 async function main() {
   // P0：payTo 守門在 402 前檢查收款地址；這裡給安全 EOA + 假 getCode（無 code），不打 RPC。
   const app = createApp({
+    trustProxyHeaders: true, // 模擬 Vercel：平台覆寫 x-forwarded-for，每個值代表一個用戶端
     payTo: "0x4444444444444444444444444444444444444444",
     payoutCodeReader: { getCode: async () => "0x" },
     // 只有 0x5555… 是「已註冊 trader」；0x6666… 讓 registry 查詢失敗。
@@ -141,6 +142,29 @@ async function main() {
     const other = await get("/candles/sBTC", { "x-forwarded-for": "8.8.8.8" });
     assert.notEqual(other.status, 429);
     console.log(`✓ 免費端點 per-IP 節流生效（8 次中 ${limited} 次 429，其他 IP 不受影響）`);
+  }
+
+  // ── 不在 Vercel 後面（本機／PoC 直接對外）：客戶端自填的 x-forwarded-for 不能拿來換 IP ──────
+  {
+    const { trustProxyFromEnv } = await import("../signal-api/src/app.ts");
+    assert.equal(trustProxyFromEnv({}), false, "預設不信任");
+    assert.equal(trustProxyFromEnv({ VERCEL: "1" }), true, "Vercel 會覆寫 header");
+    assert.equal(trustProxyFromEnv({ SIGNAL_API_TRUST_PROXY: "1" }), true);
+    assert.equal(trustProxyFromEnv({ SIGNAL_API_TRUST_PROXY: "true" }), false, "只接受 1");
+    const direct = createApp({
+      trustProxyHeaders: false,
+      payTo: "0x4444444444444444444444444444444444444444",
+      payoutCodeReader: { getCode: async () => "0x" },
+    });
+    let limited = 0;
+    for (let i = 0; i < 8; i++) {
+      const r = await direct.fetch(
+        new Request("http://localhost/candles/sBTC", { headers: { "x-forwarded-for": `203.0.113.${i}` } }),
+      );
+      if (r.status === 429) limited++;
+    }
+    assert.ok(limited > 0, "每個請求偽造不同的 x-forwarded-for，仍然算同一個用戶端、照樣被節流");
+    console.log(`✓ 不信任代理時，偽造的 x-forwarded-for 繞不過節流（8 次中 ${limited} 次 429）`);
   }
 
   // ── /demo/* 的 origin 白名單 ────────────────────────────────────────────

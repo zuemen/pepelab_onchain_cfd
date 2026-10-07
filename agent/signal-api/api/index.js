@@ -42989,6 +42989,21 @@ var cors = (options) => {
   };
 };
 
+// ../node_modules/@hono/node-server/dist/conninfo.mjs
+var getConnInfo = (c) => {
+  const bindings = c.env.server ? c.env.server : c.env;
+  const address = bindings.incoming.socket.remoteAddress;
+  const port = bindings.incoming.socket.remotePort;
+  const family = bindings.incoming.socket.remoteFamily;
+  return {
+    remote: {
+      address,
+      port,
+      addressType: family === "IPv4" ? "IPv4" : family === "IPv6" ? "IPv6" : void 0
+    }
+  };
+};
+
 // ../node_modules/viem/_esm/utils/getAction.js
 function getAction(client, actionFn, name) {
   const action_implicit = client[actionFn.name];
@@ -67382,8 +67397,20 @@ function pruneIpMap(map, ttlMs, cap = 5e3) {
     }
   }
 }
-function clientIp(c) {
-  return c.req.header("x-forwarded-for")?.split(",")[0]?.trim() || c.req.header("x-real-ip") || "unknown";
+function trustProxyFromEnv(env = process.env) {
+  return Boolean(env.VERCEL?.trim()) || env.SIGNAL_API_TRUST_PROXY?.trim() === "1";
+}
+function clientIp(c, trustProxy) {
+  if (trustProxy) {
+    const fwd = c.req.header("x-forwarded-for")?.split(",")[0]?.trim() || c.req.header("x-real-ip")?.trim();
+    if (fwd) return fwd;
+  }
+  try {
+    const addr = getConnInfo(c).remote.address;
+    if (addr) return addr;
+  } catch {
+  }
+  return "unknown";
 }
 var FREE_RATE_WINDOW_MS = Number(process.env.FREE_RATE_WINDOW_MS ?? "60000");
 var FREE_RATE_MAX = Number(process.env.FREE_RATE_MAX ?? "60");
@@ -67610,6 +67637,8 @@ function createApp(opts = {}) {
     }
   });
   const payTo = opts.payTo ?? PAY_TO;
+  const trustProxy = opts.trustProxyHeaders ?? trustProxyFromEnv();
+  const ipOf = (c) => clientIp(c, trustProxy);
   const x402Protocol = opts.x402Protocol ?? X402_PROTOCOL;
   let x402v2 = null;
   let x402v2SetupError = null;
@@ -67690,7 +67719,7 @@ function createApp(opts = {}) {
     const p = c.req.path;
     if (p === "/healthz") return next();
     if (p.startsWith("/oracle/") || p.startsWith("/signals/")) return next();
-    const { limited, retryAfterSec } = freeRateLimited(clientIp(c));
+    const { limited, retryAfterSec } = freeRateLimited(ipOf(c));
     if (limited) {
       return c.json(
         { ok: false, error: `rate limited \u2014 \u6BCF ${FREE_RATE_WINDOW_MS / 1e3}s \u4E0A\u9650 ${FREE_RATE_MAX} \u6B21\uFF0C\u8ACB ${retryAfterSec}s \u5F8C\u518D\u8A66` },
@@ -67877,7 +67906,7 @@ function createApp(opts = {}) {
     }
   });
   app2.post("/demo/buy-signal", async (c) => {
-    const ip = clientIp(c);
+    const ip = ipOf(c);
     const now = Date.now();
     pruneIpMap(lastBuyByIp, Math.max(DEMO_COOLDOWN_MS * 10, 6e5));
     const last = lastBuyByIp.get(ip) ?? 0;
@@ -68152,7 +68181,7 @@ function createApp(opts = {}) {
       const pay = useV2 ? v2Hdr : x402Protocol === "v2" ? void 0 : v1Hdr;
       const ambiguous = x402Protocol === "both" && x402v2 !== null && Boolean(v2Hdr) && Boolean(v1Hdr);
       if (pay && !ambiguous) {
-        const ip = clientIp(c);
+        const ip = ipOf(c);
         const throttled = kyaFailLimiter.hit(ip);
         if (throttled.limited) {
           kyaFailLimiter.unhit(ip, throttled.token);

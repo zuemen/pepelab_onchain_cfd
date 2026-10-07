@@ -202,6 +202,7 @@ function fakeFetcher(fail: Record<string, Error> = {}, calls: string[] = []) {
 {
   const svc = rp.createReferencePriceService(fakeFetcher(), { nowMs: () => 0 });
   const app = createApp({
+    trustProxyHeaders: true, // 模擬 Vercel：每個 x-forwarded-for 值是一個用戶端
     payTo: "0x4444444444444444444444444444444444444444",
     payoutCodeReader: { getCode: async () => "0x" },
     referencePriceService: svc,
@@ -229,6 +230,7 @@ function fakeFetcher(fail: Record<string, Error> = {}, calls: string[] = []) {
   assert.equal(health.headers.get("access-control-allow-origin"), "*");
 
   const broken = createApp({
+    trustProxyHeaders: true,
     payTo: "0x4444444444444444444444444444444444444444",
     payoutCodeReader: { getCode: async () => "0x" },
     referencePriceService: { get: async () => { throw new Error("boom https://rpc.example/SECRET"); } },

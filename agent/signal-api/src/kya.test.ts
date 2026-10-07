@@ -109,6 +109,8 @@ const seams = {
   isRegisteredTrader: async () => true,
   signalReader: async (trader: string) => ({ trader, note: "mock signal (kya.test)" }),
   oracleFreshnessReader: freshOracleReader,
+  // 這些測試模擬 Vercel：平台覆寫 x-forwarded-for，每個 header 值代表一個用戶端。
+  trustProxyHeaders: true,
 };
 const appOn = createApp({ ...seams, x402Protocol: "both", kya });
 const appOff = createApp({ ...seams, x402Protocol: "both", kya: null });

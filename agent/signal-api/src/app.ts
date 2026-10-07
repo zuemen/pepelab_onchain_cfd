@@ -7,6 +7,7 @@
 //   - /revenue 直接讀鏈上（X402 FeeRouter），因 in-memory 帳務每次 invocation 歸零。
 import { Hono, type Context, type Next } from "hono";
 import { cors } from "hono/cors";
+import { getConnInfo } from "@hono/node-server/conninfo";
 import { paymentMiddleware, type Network } from "x402-hono";
 import { computeRoutePatterns, findMatchingRoute } from "x402/shared";
 import { ethers } from "ethers";
@@ -230,12 +231,29 @@ function pruneIpMap(map: Map<string, number>, ttlMs: number, cap = 5_000): void 
   }
 }
 
-function clientIp(c: { req: { header: (k: string) => string | undefined } }): string {
-  return (
-    c.req.header("x-forwarded-for")?.split(",")[0]?.trim() ||
-    c.req.header("x-real-ip") ||
-    "unknown"
-  );
+/**
+ * 是否信任 `x-forwarded-for`／`x-real-ip`。只有前面有一個會**覆寫**這兩個 header 的代理時才可以：
+ * Vercel（平台會設 `VERCEL=1`）或明確設定 `SIGNAL_API_TRUST_PROXY=1`。其他情況（本機
+ * `src/index.ts`、PoC 錄影時直接對外的 node 行程）這兩個 header 由客戶端自己填，信任它等於讓
+ * 每個請求自選 IP、繞過每 IP 節流與 KYA 失敗上限。
+ */
+export function trustProxyFromEnv(env: NodeJS.ProcessEnv = process.env): boolean {
+  return Boolean(env.VERCEL?.trim()) || env.SIGNAL_API_TRUST_PROXY?.trim() === "1";
+}
+
+/** 節流用的用戶端位址：信任代理時取 header 第一段，否則（或沒有 header 時）取 TCP 連線的對端位址。 */
+export function clientIp(c: Context, trustProxy: boolean): string {
+  if (trustProxy) {
+    const fwd = c.req.header("x-forwarded-for")?.split(",")[0]?.trim() || c.req.header("x-real-ip")?.trim();
+    if (fwd) return fwd;
+  }
+  try {
+    const addr = getConnInfo(c).remote.address;
+    if (addr) return addr;
+  } catch {
+    // 不是經 @hono/node-server 進來的請求（例如測試的 app.request）：沒有 socket 可讀。
+  }
+  return "unknown";
 }
 
 // ── 免費端點的節流（稽核 四·Low：CORS 全開且免費端點無節流）────────────────
@@ -510,6 +528,8 @@ export interface CreateAppOptions {
   x402V2Timing?: Pick<X402V2Options, "now" | "timer" | "initBackoffMs" | "unpaidInitTimeoutMs" | "initTimeoutMs">;
   /** 覆寫 /signals/:trader 的資料來源（測試用；預設讀鏈上 getTraderPerformance）。 */
   signalReader?: (trader: string) => Promise<unknown>;
+  /** 覆寫「是否信任 x-forwarded-for」（測試用；預設 trustProxyFromEnv()）。 */
+  trustProxyHeaders?: boolean;
   /**
    * 覆寫 /oracle/:asset 付款前新鮮度檢查的鏈上讀取（測試用；預設讀 oracle.getPrice 與
    * perp.maxPriceAge）。讀取失敗 → 503、不發出 402（fail-closed）。
@@ -635,6 +655,8 @@ export function createApp(opts: CreateAppOptions = {}): Hono<{ Variables: AppVar
     }
   });
   const payTo = opts.payTo ?? PAY_TO;
+  const trustProxy = opts.trustProxyHeaders ?? trustProxyFromEnv();
+  const ipOf = (c: Context) => clientIp(c, trustProxy);
   // x402 協定版本。v1（預設）時 x402v2 是 null：下面所有 v2 分支都不會執行，行為與遷移前相同。
   const x402Protocol: X402Protocol = opts.x402Protocol ?? X402_PROTOCOL;
   let x402v2: X402V2Paywall | null = null;
@@ -751,7 +773,7 @@ export function createApp(opts: CreateAppOptions = {}): Hono<{ Variables: AppVar
     if (p === "/healthz") return next();
     // 付費端點由 x402 付款牆自然節流，不重複限流。
     if (p.startsWith("/oracle/") || p.startsWith("/signals/")) return next();
-    const { limited, retryAfterSec } = freeRateLimited(clientIp(c));
+    const { limited, retryAfterSec } = freeRateLimited(ipOf(c));
     if (limited) {
       return c.json(
         { ok: false, error: `rate limited — 每 ${FREE_RATE_WINDOW_MS / 1000}s 上限 ${FREE_RATE_MAX} 次，請 ${retryAfterSec}s 後再試` },
@@ -1017,7 +1039,7 @@ export function createApp(opts: CreateAppOptions = {}): Hono<{ Variables: AppVar
 
   // ── 免費 demo：訪客不需自帶錢包；不付款、不結算，只回真實訊號（原因見下方註解） ──
   app.post("/demo/buy-signal", async (c) => {
-    const ip = clientIp(c);
+    const ip = ipOf(c);
     const now = Date.now();
     pruneIpMap(lastBuyByIp, Math.max(DEMO_COOLDOWN_MS * 10, 600_000));
     const last = lastBuyByIp.get(ip) ?? 0;
@@ -1393,7 +1415,7 @@ export function createApp(opts: CreateAppOptions = {}): Hono<{ Variables: AppVar
       if (pay && !ambiguous) {
         // 進入驗證前先計一次（同步，所以並行的請求也擋得住），驗證通過或是我們這邊的 503 再退回：
         // 計數器同時是「每 IP 進行中＋失敗」的上限，不會因為 await 期間一起湧入而超過。
-        const ip = clientIp(c);
+        const ip = ipOf(c);
         const throttled = kyaFailLimiter.hit(ip);
         if (throttled.limited) {
           kyaFailLimiter.unhit(ip, throttled.token);
