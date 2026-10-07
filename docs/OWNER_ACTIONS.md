@@ -369,6 +369,11 @@ PepeAMM 的修正都只存在於原始碼；平台 FeeRouter 的 `platformTreasu
 廣播當天先在 Actions 頁面手動跑一次（Run workflow），全綠、而且 Summary 列出的「真實阻擋項」都已處理，再開始。
 演練用的 guardian、treasury、timelock 角色是空白地址，**不是**要填的值。
 
+2026-10-07 的結果（runs 37571938413、37573968977，fork 區塊 47789827／47790425 起）：12 步全部通過、fork 上 10 次 broadcast；
+舊 exchange 沒有未平倉（§5.1 不阻擋）；部署者已有 ≥1 枚 MockUSDC 可當保險金庫種子；PepeAMM 的 MockUSDC owner 就是部署者。
+演練抓到並已修正：`DeployAMM` 固定種子偏離 oracle 14.7%（改為依 oracle 計算）、`RedeployGuardedOracle` 沒帶 `KEEPER_HEARTBEAT`
+（實際值 900）、四支 fork 測試以零餘額地址 prank 而失敗（測試改為先 `vm.deal`，修正後 7 項全過）。
+
 **操作（依序）：**
 
 > **Oracle 選擇決定順序。** 若 #130 選 `ORACLE_KIND=guarded`（`DEPLOY_130_CUTOVER.md` §4），exchange 上的 oracle 是 **immutable**：
