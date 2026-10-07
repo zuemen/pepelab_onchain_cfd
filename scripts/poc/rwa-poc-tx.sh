@@ -27,7 +27,6 @@ ERRORS=(
   "NotKycVerified(address)" "AssetNotActive(bytes32,uint8)" "MarginExceedsPerTradeCap()" "BudgetExceeded()"
   "LeverageExceedsSessionCap()" "AssetNotAllowed(uint256,bytes32)" "SessionIsRevoked()" "SessionExpired()"
   "NotSessionAgent()" "CredentialIsRevoked(bytes32)" "StalePrice(bytes32,uint256)" "MarginTooLow()"
-  "InsufficientMargin()" "LeverageTooHigh()"
 )
 decode() {
   local data=$1 sel=${1:0:10} e
@@ -70,11 +69,16 @@ set -e
 h=$(echo "$out" | grep -oE '"transactionHash":"0x[0-9a-fA-F]{64}"' | grep -oE '0x[0-9a-fA-F]{64}' | head -1 || true)
 st=$(echo "$out" | grep -oE '"status":"0x[01]"' | grep -oE '0x[01]' | head -1 || true)
 if [ -z "$h" ]; then echo "  ✖ 送出失敗：$(echo "$out" | tail -1 | cut -c1-200)"; exit 1; fi
-if [ "$st" = "0x1" ]; then
+if [ -z "$st" ]; then
+  echo "  tx ${h}  ✖ 讀不到交易狀態（receipt 沒有 status），請到 BaseScan 確認"
+  exit 1
+elif [ "$st" = "0x1" ]; then
   echo "  tx ${h}  status 1（成功）"
   [ "$mode" = ok ] || { echo "  ✖ 預期失敗卻成功"; exit 1; }
-else
+elif [ "$mode" = fail-send ]; then
   echo "  tx ${h}  status 0（被合約拒絕，符合預期）"
-  [ "$mode" = fail-send ] || exit 1
+else
+  echo "  tx ${h}  status 0 ✖ 失敗（非預期：模擬通過但上鏈 revert）"
+  exit 1
 fi
 [ $rc -eq 0 ] || [ "$mode" = fail-send ] || exit 1
