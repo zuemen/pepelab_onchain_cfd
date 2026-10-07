@@ -12,6 +12,9 @@ export const errors: Catalog['errors'] = {
     '0xbb90b0d9': 'Click Approve to let the SwapRouter spend your USDC.',
     '0xe450d38c':
       'Your wallet is short on USDC — grab free test USDC from the faucet on the Funding & Swap page first 🚰',
+    '0xbb723368': 'This asset is an RWA market — complete KYC verification before trading.',
+    '0x4f402872':
+      'This market is closed or paused (on-chain mode reduce-only or halted): no new positions; existing positions can still be closed.',
     // Keyword matches (case-insensitive)
     ERC20InsufficientBalance:
       'Your wallet is short on USDC — grab free test USDC from the faucet on the Funding & Swap page first 🚰',
@@ -52,6 +55,7 @@ export const errors: Catalog['errors'] = {
     StalePrice:
       "The on-chain price is stale — the keeper hasn't updated it yet. Wait a few minutes and try again, or ask an admin to trigger the keeper manually.",
     NotKycVerified: 'This asset is an RWA market — complete KYC verification before trading.',
+    AssetNotActive: 'This market is closed or paused (on-chain mode reduce-only or halted): no new positions; existing positions can still be closed.',
     PositionIsHealthy:
       "This position's margin is still healthy — it doesn't meet the liquidation condition.",
     FundingIntervalNotElapsed:
