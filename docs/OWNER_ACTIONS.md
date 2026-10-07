@@ -21,7 +21,7 @@
 | 2 | 部署 keeper-trigger 與 monitoring 兩個 Worker | Cloudflare | 1.5–2 小時 | Worker Logs、`gh api …/actions/runs` |
 | 3 | 凍結舊部署上外洩地址的權限 | 本機 forge（Base 先、Sepolia 後） | 2–3 小時 | `ops/freeze-legacy/readback.mjs`、`post-deploy-smoke.mjs` |
 | 4 | 換 PAY_TO、重部署 x402 FeeRouter（沿用舊 x402 保險金庫，先斷開再存種子） | 本機 forge／cast＋Vercel＋GitHub variables | 1.5–2 小時 | `cast call … platformTreasury()`、`post-deploy-smoke.mjs` |
-| 5 | 完整 cutover：#130、GuardedOracle、AssetVaultV2 升級 V2_5、InsuranceVault＋平台 FeeRouter＋CopyTracker（腳本已備；**前提：#130 完成＋timelock 或明確選擇不移交**）、PepeIncentives、PepeAMM | 本機 forge（先 dispatch keeper） | 不含阻塞項 6–8 小時；阻塞項解除後另 2–3 小時，加 timelock 48 小時等待與 2 天緩衝 | `Verify130`、`post-deploy-smoke.mjs` |
+| 5 | 完整 cutover：#130、GuardedOracle、AssetVaultV2 升級 V2_5、InsuranceVault＋平台 FeeRouter＋CopyTracker（腳本已備；**前提：#130 完成＋timelock 或明確選擇不移交**）、PepeIncentives、PepeAMM、SessionCredentialAnchor（平台首次部署） | 本機 forge（先 dispatch keeper；先跑 cutover 演練） | 不含阻塞項 6–8 小時；阻塞項解除後另 2–3 小時，加 timelock 48 小時等待與 2 天緩衝 | `Verify130`、`post-deploy-smoke.mjs` |
 | 6 | 每台 agent 主機 `npm run vc-status:init` | 各 agent 主機 | 每台 5 分 | `agent/.state/vc-status/index.json` 存在 |
 | 7 | 重跑發布狀態與 smoke test，確認「原始碼較新」變成「鏈上＝原始碼」 | 本機 | 45–60 分（含 `forge build`） | `check-deployment-status.mjs --offline`、`post-deploy-smoke.mjs` |
 
@@ -331,7 +331,7 @@ node scripts/post-deploy-smoke.mjs   # X402FeeRouter.platformTreasury() 與 sign
 
 ---
 
-## 第 5 步：完整 cutover（#130、新 GuardedOracle、AssetVaultV2 升級 V2_5、InsuranceVault＋平台 FeeRouter＋CopyTracker、PepeIncentives、PepeAMM）
+## 第 5 步：完整 cutover（#130、新 GuardedOracle、AssetVaultV2 升級 V2_5、InsuranceVault＋平台 FeeRouter＋CopyTracker、PepeIncentives、PepeAMM、SessionCredentialAnchor）
 
 **為什麼：** 交易引擎、保險金庫份額定價、oracle 速率限制與凍結期限、V2 金庫的安全修正（C12–C16、M1）、PepeIncentives、
 PepeAMM 的修正都只存在於原始碼；平台 FeeRouter 的 `platformTreasury` 仍是外洩地址（immutable）。
@@ -362,6 +362,12 @@ PepeAMM 的修正都只存在於原始碼；平台 FeeRouter 的 `platformTreasu
 `--account $ACCOUNT --sender $DEPLOYER`（`DeployAMM` 的 `--sender` 要是 MockUSDC 的 owner）。
 `DeployPepeIncentives`、`DeployAMM` 原本在腳本內讀 `vm.envUint("PRIVATE_KEY")`，2026-10-07 已改成 `vm.startBroadcast()`
 （測試 `contracts/test/DeployPepeScripts.t.sol`），不再需要 `export PRIVATE_KEY`。
+
+**事前演練（不需要金鑰）：** `.github/workflows/cutover-rehearsal.yml` 在 GitHub runner 上對 Base Sepolia 實況跑兩件事——
+`contracts/test/fork/*.t.sol`（四支都必須真的跑、不可 skip），以及 `scripts/cutover-rehearsal.mjs`：在 anvil fork 上以假冒的部署者
+依序**真的送交易**跑完下面第 1–7 項與治理移交（timelock 排程→等待→執行），每一步讀回核對，結果寫在該 run 的 Summary。
+廣播當天先在 Actions 頁面手動跑一次（Run workflow），全綠、而且 Summary 列出的「真實阻擋項」都已處理，再開始。
+演練用的 guardian、treasury、timelock 角色是空白地址，**不是**要填的值。
 
 **操作（依序）：**
 
@@ -486,6 +492,14 @@ PepeAMM 的修正都只存在於原始碼；平台 FeeRouter 的 `platformTreasu
      填 exchange 實際讀的那顆）、選用 `SEED_ETH`／`SEED_USDC`。
    - `forge script script/DeployAMM.s.sol --rpc-url $RPC --account $ACCOUNT --sender <MockUSDC owner> --broadcast --skip-simulation --slow -v`
    - 部署後更新 `addresses.ts`。
+7. **SessionCredentialAnchor（平台從未部署）**：`contracts/script/DeploySessionCredentialAnchor.s.sol`。它把 v3 代理人委託憑證
+   錨定在 session 上（[`SSI_AGENT_DELEGATION.md`](SSI_AGENT_DELEGATION.md) §3）；沒有它，平台的 `/sessions` 頁只能簽發、不能錨定，
+   x402 KYA 的 `X402_KYA_ANCHOR=required` 也無從滿足。`sessionManager` 是 immutable，**要綁第 1 項之後的新 AgentSessionManager**
+   （`SESSION_MANAGER_NEW`），所以排在第 1 項之後；合約沒有 admin、任何帳號都能部署。
+   - `SESSION_MANAGER_ADDR=<SESSION_MANAGER_NEW> forge script script/DeploySessionCredentialAnchor.s.sol --rpc-url $RPC --account $ACCOUNT --sender $DEPLOYER --broadcast --slow -v`
+   - 讀回：`cast call <anchor> "sessionManager()(address)" --rpc-url $RPC` 必須是 `SESSION_MANAGER_NEW`。
+   - 部署後：`frontend/src/contracts/sessionCredentialAnchor.ts` 的 `SESSION_ANCHOR_ADDRESS[84532]` 填入（走 PR）；
+     signal-api（Vercel）與各 agent 主機設 `SESSION_ANCHOR_ADDRESS`（`agent/.env.example`）。設了之後代理人開倉要求憑證已錨定。
 
 **完成後驗證（唯讀）：**
 
