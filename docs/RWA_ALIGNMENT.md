@@ -11,6 +11,12 @@
 > - **本文不是法律意見。** 監理定位一律「需法遵確認」。
 > - 行號都是 `檔案:行號`，相對 repo 根目錄，以 `master`（`origin/master`，2026-10-06）為準。**原始碼不等於鏈上**：凡兩者不同都分開寫。
 
+> **2026-10-07 更新（RWA PoC）**：方案 ①②③ 已合併到 master（#268）；方案 ④⑤ 已以新金鑰部署為專屬租戶 `rwa-poc`（Base Sepolia），
+> 並在鏈上實跑驗證（合格投資人 VC 准入、撤銷、休市 ReduceOnly、AI 代理人委託與 x402 KYA）。總覽與限制見
+> [`docs/tenants/rwa-poc/README.md`](tenants/rwa-poc/README.md)。第 0–3 節的評分與鏈上讀值是 **2026-10-06 對現役平台部署**的評估，
+> 現役部署沒有改變，所以照原樣保留；各方案在 PoC 租戶上的狀態寫在第 4.3 節各方案的「狀態」。
+> 注意：PoC 租戶與現役平台是兩套位址，PoC 補上的部分**只在 PoC 租戶上成立**。
+
 ---
 
 ## 0. 一頁結論
@@ -161,7 +167,8 @@ Pyth 有 `Equity.US.<代號>/USD` 與 `Metal.XAU/USD`（ADR-013 §2.5，以 Herm
 - **金鑰**：不需要。
 - **Demo**：打開 sAAPL 資產卡，週末時顯示「休市中：鏈上價格為週五收盤，本平台現役合約仍接受開倉（已知限制 #31）」；點 sGOLD 顯示「鏈上未標為需 KYC」。
 - **風險**：文案寫得太像法律意見——所有監理文字都標「需法遵確認」；休市狀態依賴 Yahoo，拿不到時要顯示「無法判斷」而不是「開盤」。
-- **狀態（2026-10-06）**：前端已實作（分支 `feat/rwa-transparency`，路由 `/rwa`），資料來源與限制見 [`RWA_TRANSPARENCY.md`](RWA_TRANSPARENCY.md) §1。
+- **狀態（2026-10-07）**：已合併（#268，路由 `/rwa`），資料來源與限制見 [`RWA_TRANSPARENCY.md`](RWA_TRANSPARENCY.md) §1。
+  在 PoC 租戶上，資產卡讀租戶自己的交易所：sGOLD 鏈上 `rwaAsset` 為 true、碳分級為 attestor 寫入的分級、美股收盤時段顯示「只能減倉」（[`tenants/rwa-poc/FRONTEND.md`](tenants/rwa-poc/FRONTEND.md)），並在 PoC 成片第 10 景展示。
   與上述設計的差異：「目前是否休市」用前端的排定時段（`marketHours.ts`，keeper 規則的複製，不含假日），沒有接 Yahoo `currentTradingPeriod`；
   公司行動政策只寫進每檔的風險揭露，沒有另做一頁。
 
@@ -178,7 +185,8 @@ Pyth 有 `Equity.US.<代號>/USD` 與 `Metal.XAU/USD`（ADR-013 §2.5，以 Herm
 - **金鑰**：不需要（只讀）。若使用 Pyth Hermes 需要 Pyth 的 API key（不是區塊鏈金鑰），取得條件**未查證**。
 - **Demo**：表格即時顯示 sAAPL 鏈上價、Yahoo 價、第二來源價與偏離；週末時顯示「來源報價時間停在週五 16:00 ET，鏈上寫入時間仍是新的」——這一欄正是已知限制 #31 的證據，也是評審會欣賞的誠實。
 - **風險**：Yahoo 與 CoinGecko 的商業授權未查證（`COMPLIANCE_BOUNDARY.md` §2）；Chainlink 主網代幣化股價與現股定義不同，不能說成「Chainlink 驗證了股價」。
-- **狀態（2026-10-06）**：部分完成（分支 `feat/rwa-transparency`，路由 `/oracle`＋signal-api 免費端點 `GET /reference-prices`），見 [`RWA_TRANSPARENCY.md`](RWA_TRANSPARENCY.md) §2。
+- **狀態（2026-10-07）**：部分完成，已合併（#268，路由 `/oracle`＋signal-api 免費端點 `GET /reference-prices`），見 [`RWA_TRANSPARENCY.md`](RWA_TRANSPARENCY.md) §2。
+  PoC 租戶上 `/oracle` 讀租戶 oracle 的鏈上價格（本機 keeper 寫入），鏈下參考價來自本機 signal-api；租戶 oracle 沒有鏈上參考來源（`referenceSource: none`）。
   第二來源實際用的是：加密 Yahoo（keeper 第二來源）＋Coinbase 現貨；美股與 ETF 用 Nasdaq 公開報價（不需金鑰）；黃金用 gold-api.com XAU 現貨（與 GC=F 期貨有基差）。
   未做：每日帶雜湊的 JSON 快照、Pyth／Chainlink 來源、熔斷規則欄位。
 
@@ -194,7 +202,8 @@ Pyth 有 `Equity.US.<代號>/USD` 與 `Metal.XAU/USD`（ADR-013 §2.5，以 Herm
 - **金鑰**：不需要。
 - **Demo**：一張比率曲線＋一張損失吸收瀑布圖；指著 `ratioIsStale` 說明「有資產無法計價時，畫面顯示『無法確認』而不是樂觀數字」。
 - **風險**：比率數字很漂亮但沒有意義（測試幣）——畫面上必須和數字並列說明。keeper 是否持續呼叫 `observeReserve` 要先確認（`PARAMS_INVENTORY.md:189`），否則歷史會有斷點。
-- **狀態（2026-10-06）**：前端已實作（分支 `feat/rwa-transparency`，路由 `/solvency`），見 [`RWA_TRANSPARENCY.md`](RWA_TRANSPARENCY.md) §3。
+- **狀態（2026-10-07）**：已合併（#268，路由 `/solvency`），見 [`RWA_TRANSPARENCY.md`](RWA_TRANSPARENCY.md) §3。
+  PoC 租戶上讀到保險金庫 1.00 USDC（部署時的種子）、金庫儲備與 ADL 狀態；數字很小，展示時照實說是測試網種子資金。
   歷史曲線只讀 `ReserveObserved`（最近約 24 小時，當天只有 4 個觀測點，keeper 排程延遲造成斷點）；`ReserveBreached`／`ReserveRestored` 與 `BadDebt` 事件歷史未做。
 
 #### ④ RWA 示範租戶（以新金鑰部署 master 版整套）
@@ -208,7 +217,14 @@ Pyth 有 `Equity.US.<代號>/USD` 與 `Metal.XAU/USD`（ADR-013 §2.5，以 Herm
 - **為什麼符合 RWA 判準**：同時補 C1（受限的 oracle）、C3（真的有核准步驟）、C5（休市停開新倉、平倉與清算照常）。不違反自訂大小上限（餘裕 0 B）：部署的是**現有** master 原始碼，沒有新增任何方法。
 - **元件**：既有腳本與設定檔（新增一份租戶 JSON）、新租戶的 keeper workflow（`TENANT_OPERATIONS.md`）、前端租戶設定。
 - **金鑰**：**不需要**現役 owner 金鑰；需要使用者本人保管的**新**部署金鑰、keeper 金鑰與 Base Sepolia 測試幣。新金鑰不得放進 repo，依 `TENANT_DEPLOYMENT.md` 只放 secret。
-- **狀態（2026-10-06）**：使用者已選擇「新金鑰重新部署到 Base Sepolia」作為 PoC 部署方式，進行中；方案 ⑤ 的 VC 准入正在 `feat/vc-kyc-registry` 分支實作。
+- **狀態（2026-10-07）**：**已部署並在鏈上驗證**。專屬租戶 `rwa-poc` 以新金鑰部署 master 版整套到 Base Sepolia（`DeployTenant` 164 筆交易全部成功；
+  真鏈 `VerifyTenant` 131 項 ok、0 FAIL，權限歷史掃描通過）。部署、錢包與驗收紀錄見 [`docs/tenants/rwa-poc/`](tenants/rwa-poc/README.md)。
+  - 已在鏈上驗證：逐資產模式（keeper 以 marketOperator 依行事曆切 ReduceOnly；ReduceOnly 時開倉被拒 `AssetNotActive`、平倉成功，有 status 0 的鏈上證據），
+    交易所讀租戶的 `GuardedOracle`，新的 `ESGRegistryV2` 由不同的 attestor 地址寫入 11 檔碳分級。**在 keeper 以 marketOperator 模式運行時，已知限制 #31 在這個租戶上不成立**（keeper 停掉或以 `--no-market-operator` 執行時，資產模式不會自動切換）。
+  - 與上述設計的差異：准入改接方案 ⑤ 的 `VCKycRegistry`（不是送件／核准分離的 `KYCRegistry`）；`assets.registered` 放了全部 11 檔（含 sBTC、sETH），
+    sGOLD 以 `additionalRwa` 標成 RWA；`deployVault: true`，所以金庫的合成代幣仍可自由轉讓（C4 未改善）；keeper 在本機跑，沒有租戶自己的 GitHub Actions workflow；
+    `GuardedOracle` 沒有鏈上參考來源（`referenceSource: none`）。
+  - 仍成立的風險：attestor 與 admin 由同一團隊控制，**不是**獨立見證；合約原始碼尚未在 BaseScan 驗證（需 API key）。
 - **工時**：24–32 h（設定與 dry-run 4 h、部署與驗證 6 h、keeper workflow 6 h、前端租戶與驗收 8 h、文件 4 h），另需 `forge` 編譯與模擬——**要排在同機沒有其他示範在跑的時段**。
 - **Demo**：同一個前端切到示範租戶；週末對 sAAPL 開倉被拒（`AssetNotActive`），但既有部位可以平倉；未核准的錢包開 sAAPL 被拒（`NotKycVerified`），核准後通過、撤銷後不能再開但能平倉。
 - **風險**：(a) 示範租戶與現役平台是兩套位址，簡報要講清楚「現役是舊版、示範租戶是 master 版」；(b) `PerpetualExchange` 等於 repo 自訂上限 23,911 B（距 EIP-170 尚有 665 B 保留給安全修正），部署的必須是通過 `contract-size` 檢查的 master 原始碼，不得順手加功能；(c) 新 keeper 會增加維運負擔（GitHub Actions cron 延遲）；(d) 新 ESGRegistryV2 的 attestor 雖然是不同地址，仍由同一團隊控制，**不能**說成獨立見證。
@@ -222,6 +238,12 @@ Pyth 有 `Equity.US.<代號>/USD` 與 `Metal.XAU/USD`（ADR-013 §2.5，以 Herm
 - **工時**：14–20 h（合約與測試 6 h、准入服務 6 h、前端 4 h、文件 2 h）。
 - **Demo**：錢包出示過期的 VC → 登錄拒絕；出示有效 VC → `isVerified` 為 true → 在示範租戶開 sAAPL 成功；機構撤銷 → 不能再開新倉、既有部位可平倉。
 - **風險**：新合約沒有稽核；VC 發證者其實是團隊自己，簡報要說「模擬持牌機構的 KYC 單位」；與 ④ 有相依關係，時程上 ⑤ 要排在 ④ 之後。
+- **狀態（2026-10-07）**：**已實作、部署並在鏈上驗證**。實作是 `VCKycRegistry`（#267，實作 `IKyc`；投資人提交發證者簽的 EIP-712 合格投資人憑證，合約在鏈上驗簽、
+  檢查發證者信任與撤銷，不存個資；設計見 [`SSI_RWA_ACCESS.md`](SSI_RWA_ACCESS.md)），在 PoC 租戶由部署腳本接到交易所（`requiredType` = `QUALIFIED_INVESTOR`）。
+  PoC 錄影實跑：未持證開 sGOLD 被拒（`NotKycVerified`，status 0）→ 提交憑證後開倉成功 → 撤銷後投資人與其 AI 代理人新開倉都被拒（以 `cast call` 模擬驗證，回 `NotKycVerified`）、既有部位兩筆平倉成功（鏈上交易）。
+  延伸：AI 代理人委託憑證 v3、`SessionCredentialAnchor` 錨定與 x402 KYA（#270、#285，[`SSI_AGENT_DELEGATION.md`](SSI_AGENT_DELEGATION.md)）也已在同一租戶驗證，
+  x402 帶憑證實付一筆尚待代理人錢包入測試 USDC（[`tenants/rwa-poc/X402_KYA.md`](tenants/rwa-poc/X402_KYA.md)）。
+  限制：發證者是 PoC 團隊自己的測試錢包，沒有做真實的身分審查；撤銷狀態清單主機在本機。
 
 #### ⑥ 碳資料來源可驗證（附帶建議）
 
@@ -237,7 +259,7 @@ Pyth 有 `Equity.US.<代號>/USD` 與 `Metal.XAU/USD`（ADR-013 §2.5，以 Herm
 | 10/8–10/14 | ①、③、⑥（純鏈下，不需金鑰） |
 | 10/14–10/20 | ②；決定是否做 ④（需要使用者準備新金鑰與測試幣、找一個不影響其他示範的時段編譯） |
 | 10/21 | 20P：①②③⑥ 以「已完成」寫入；④⑤ 依實際進度寫成「已完成」或「設計＋時程」，**不得預寫成已上線** |
-| 10/21–11/30 | ④ → ⑤ |
+| 10/21–11/30 | ④ → ⑤（**2026-10-07 已提前完成**，見 [`tenants/rwa-poc/README.md`](tenants/rwa-poc/README.md)） |
 | 12/1–12/7 | Demo 彩排；週末與平日各錄一次休市行為的畫面備援 |
 
 ---
