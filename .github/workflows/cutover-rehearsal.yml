@@ -73,6 +73,20 @@ jobs:
           grep -E '^\[(PASS|FAIL)' ../fork-tests.log || true
           exit "$status"
 
+      # 診斷：forge-std makeAddr(label) 的私鑰是 keccak256(label)，公開可推。fork 測試以前用的這幾個
+      # 地址若在 Base Sepolia 上已有程式碼（EIP-7702 委派），就不是測試以為的空白 EOA。印出來留證據；
+      # 測試已改用 test/utils/KeylessAddr.sol（沒有私鑰、不可能被委派）。
+      - name: Diagnose the old makeAddr labels on chain
+        if: ${{ !cancelled() }}
+        env:
+          FORK_RPC: https://base-sepolia-rpc.publicnode.com
+        run: |
+          for l in vaultUser oracleGuardian fork-bank-a-guardian guardian safe trader tenant-deployer tenant-trader; do
+            a=$(cast wallet address --private-key "$(cast keccak "$l")")
+            code=$(cast code "$a" --rpc-url "$FORK_RPC" || echo "?")
+            echo "$l $a code=${code:0:60} balance=$(cast balance "$a" --rpc-url "$FORK_RPC" || echo "?")"
+          done
+
   rehearsal:
     name: cutover rehearsal on an anvil fork
     runs-on: ubuntu-latest

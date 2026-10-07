@@ -4,6 +4,7 @@ pragma solidity ^0.8.20;
 import "forge-std/Test.sol";
 import "../../src/v2/GuardedOracle.sol";
 import "../../script/RedeployGuardedOracle.s.sol";
+import "../utils/KeylessAddr.sol";
 
 /// @notice Fork simulation of `RedeployGuardedOracle` against the live Base
 ///         Sepolia vault: the new oracle carries the rate limit AND the bounded
@@ -24,7 +25,7 @@ contract RedeployGuardedOracleForkTest is Test {
     address constant KEEPER = 0x540aECD37E7A7885824e7b7e996eBddfb842ef17;
     address constant VAULT  = 0x916D7Fc399d9afd23BAa113E2c2Cc601341ff10a;
 
-    address guardian = makeAddr("oracleGuardian");
+    address guardian = KeylessAddr.addr("oracleGuardian");   // no known key: see test/utils/KeylessAddr.sol
 
     bytes32 constant ETH = keccak256("sETH");
     bytes32 constant BTC = keccak256("sBTC");

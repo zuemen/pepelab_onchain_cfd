@@ -10,6 +10,7 @@ import "../../src/FeeRouter.sol";
 import "../../src/InsuranceVault.sol";
 import "../../src/TraderStake.sol";
 import "../TenantFixture.sol";
+import "../utils/KeylessAddr.sol";
 
 /// @notice ADR-008 — `DeployTenant` against live Base Sepolia state: a tenant
 ///         that shares the settlement token and (for the one-off seed) the
@@ -42,8 +43,8 @@ contract DeployTenantForkTest is TenantFixture {
     address constant LIVE_VAULT    = 0x916D7Fc399d9afd23BAa113E2c2Cc601341ff10a;
     address constant LIVE_G_ORACLE = 0x8E9e59BE9589Ad88EC14F3ef6bdcc43E8B76f842;
 
-    address deployer = makeAddr("tenant-deployer");
-    address trader   = makeAddr("tenant-trader");
+    address deployer = KeylessAddr.addr("tenant-deployer");
+    address trader   = KeylessAddr.addr("tenant-trader");
     bytes32 constant BTC = keccak256("sBTC");
 
     struct LiveSnapshot {
@@ -187,7 +188,7 @@ contract DeployTenantForkTest is TenantFixture {
         b.deployVault = false;
         b.assets = "\"sBTC\",\"sETH\",\"sGOLD\"";
         TenantBase.TenantDeployed memory da = _deployTenant(a, deployer).lastDeployed();
-        TenantBase.TenantDeployed memory db = _deployTenant(b, makeAddr("tenant-deployer-b")).lastDeployed();
+        TenantBase.TenantDeployed memory db = _deployTenant(b, KeylessAddr.addr("tenant-deployer-b")).lastDeployed();
 
         assertTrue(da.exchange != db.exchange && da.oracle != db.oracle && da.insuranceVault != db.insuranceVault
             && da.feeRouter != db.feeRouter && da.kyc != db.kyc && da.esgRegistry != db.esgRegistry);

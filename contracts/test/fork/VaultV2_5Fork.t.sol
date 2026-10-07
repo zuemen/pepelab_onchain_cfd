@@ -6,6 +6,7 @@ import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "../../src/v2/AssetVaultV2_5.sol";
 import "../../src/v2/GuardedOracle.sol";
 import "../../script/UpgradeVaultToV2_5.s.sol";
+import "../utils/KeylessAddr.sol";
 
 /// @notice Fork simulation: upgrade the live Base Sepolia vault proxy to V2.5
 ///         (maxPriceAge 30d -> 6h in the same run) and prove mint / redeem
@@ -19,7 +20,7 @@ contract VaultV2_5ForkTest is Test {
     address constant VAULT  = 0x916D7Fc399d9afd23BAa113E2c2Cc601341ff10a;
     address constant USDC   = 0x69fd695Bc7C3aFdb35ABA35cD6890C506400b035;
 
-    address user = makeAddr("vaultUser");
+    address user = KeylessAddr.addr("vaultUser");   // no known key: see test/utils/KeylessAddr.sol
 
     function setUp() public {
         if (block.chainid != 84532) vm.skip(true, "needs --fork-url https://sepolia.base.org");
