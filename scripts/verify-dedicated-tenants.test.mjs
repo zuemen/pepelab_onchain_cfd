@@ -8,6 +8,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { PUBLIC_RPC, plan, verifyAll } from "./verify-dedicated-tenants.mjs";
+import { listDedicatedTenantIds } from "./lib/tenant-keeper.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -23,22 +24,18 @@ const fakeRoot = ({ kind = "dedicated", status = "deployed", record = true, chai
 };
 const quiet = () => {};
 
-test("repo 現況：沒有專屬租戶 → 通過並印出數量 0", async () => {
-  const lines = [];
-  const problems = await verifyAll({
-    root,
-    log: (m) => lines.push(m),
-    runVerify: () => assert.fail("沒有租戶時不應該跑 forge"),
-    chainIdOf: () => assert.fail("沒有租戶時不應該連 RPC"),
-  });
-  assert.deepEqual(problems, []);
-  assert.match(lines.join("\n"), /專屬租戶 0 個——沒有要驗證的鏈上部署/);
-  assert.match(lines.join("\n"), /專屬租戶鏈上驗證通過 ✓（0 個）/);
+test("repo 現況：每個 dedicated 登記都有部署設定與紀錄、而且有公開 RPC（不連網）", () => {
+  const targets = plan(root);
+  for (const t of targets) assert.ok(t.rpcs.length > 0, `${t.id} 沒有公開 RPC`);
+  assert.deepEqual(
+    targets.map((t) => t.id),
+    listDedicatedTenantIds(root),
+  );
 });
 
 test("每個 dedicated 租戶都以公開 RPC 跑一次 VerifyTenant；平台租戶不跑", async () => {
   const dir = fakeRoot();
-  assert.deepEqual(plan(dir), [{ id: "bank-a", chainId: 84532, rpc: PUBLIC_RPC[84532] }]);
+  assert.deepEqual(plan(dir), [{ id: "bank-a", chainId: 84532, rpcs: PUBLIC_RPC[84532] }]);
   const ran = [];
   const problems = await verifyAll({ root: dir, log: quiet, runVerify: (t) => (ran.push(t.id), 0), chainIdOf: async () => 84532 });
   assert.deepEqual(problems, []);
@@ -59,9 +56,26 @@ test("VerifyTenant 失敗、RPC 連不上、RPC 是別條鏈 → 失敗（不是
       throw new Error("ECONNREFUSED");
     },
   });
-  assert.match(down.join("\n"), /bank-a：公開 RPC .* 連不上（ECONNREFUSED）——沒有驗證到的租戶不算通過/);
+  assert.match(down.join("\n"), /bank-a：沒有可用的公開 RPC（.*連不上（ECONNREFUSED）.*）——沒有驗證到的租戶不算通過/);
   const wrong = await verifyAll({ root: dir, log: quiet, runVerify: () => 0, chainIdOf: async () => 8453 });
   assert.match(wrong.join("\n"), /回報 chainId 8453，設定是 84532/);
+});
+
+test("第一個公開 RPC 拒絕（例如 runner 被擋）→ 改用下一個", async () => {
+  const dir = fakeRoot();
+  const used = [];
+  const problems = await verifyAll({
+    root: dir,
+    log: quiet,
+    runVerify: (t) => (used.push(t.rpc), 0),
+    chainIdOf: async (rpc) => {
+      if (rpc === PUBLIC_RPC[84532][0]) throw new Error("HTTP 401");
+      return 84532;
+    },
+  });
+  assert.deepEqual(problems, []);
+  assert.deepEqual(used, [PUBLIC_RPC[84532][1]]);
+  rmSync(dir, { recursive: true, force: true });
 });
 
 test("前端是 dedicated 但部署設定或紀錄不完整 → 丟錯", () => {

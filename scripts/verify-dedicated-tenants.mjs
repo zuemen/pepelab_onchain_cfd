@@ -26,10 +26,15 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { listDedicatedTenantIds } from "./lib/tenant-keeper.mjs";
 
-/** 公開、免金鑰的唯讀 RPC（每條鏈一個）。只用來讀；不在這裡放任何帶金鑰的網址。 */
+/**
+ * 公開、免金鑰的唯讀 RPC（每條鏈依序嘗試）。只用來讀；不在這裡放任何帶金鑰的網址。
+ * 不只一個：sepolia.base.org 會拒絕 GitHub Actions runner（HTTP 401「rejected due to request filter
+ * settings」），只放一個時專屬租戶的驗證在 CI 上永遠是紅的。依序用第一個回報正確 chainId 的節點；
+ * 全部連不上才失敗（仍不略過）。
+ */
 export const PUBLIC_RPC = {
-  84532: "https://sepolia.base.org",
-  8453: "https://mainnet.base.org",
+  84532: ["https://sepolia.base.org", "https://base-sepolia-rpc.publicnode.com", "https://base-sepolia.drpc.org"],
+  8453: ["https://mainnet.base.org", "https://base-rpc.publicnode.com"],
 };
 
 /** 每個要驗證的租戶：{ id, chainId, rpc }。缺檔或狀態不對直接丟錯（不略過）。 */
@@ -43,9 +48,9 @@ export function plan(root) {
     const cfg = JSON.parse(readFileSync(cfgFile, "utf8"));
     if (cfg.status !== "deployed") throw new Error(`${id}：deploy/tenants/${id}.json 的 status 是 ${cfg.status}，不是 deployed`);
     const chainId = cfg.network?.chainId;
-    const rpc = PUBLIC_RPC[chainId];
-    if (!rpc) throw new Error(`${id}：chain ${chainId} 沒有設定公開 RPC`);
-    return { id, chainId, rpc };
+    const rpcs = PUBLIC_RPC[chainId];
+    if (!rpcs?.length) throw new Error(`${id}：chain ${chainId} 沒有設定公開 RPC`);
+    return { id, chainId, rpcs };
   });
 }
 
@@ -80,19 +85,30 @@ export async function verifyAll({ root, log = console.log, runVerify, chainIdOf 
       }).status);
   const problems = [];
   for (const t of targets) {
-    let got;
-    try {
-      got = await chainIdOf(t.rpc);
-    } catch (e) {
-      problems.push(`${t.id}：公開 RPC ${t.rpc} 連不上（${e.message}）——沒有驗證到的租戶不算通過`);
+    let rpc = null;
+    const failures = [];
+    for (const candidate of t.rpcs) {
+      let got;
+      try {
+        got = await chainIdOf(candidate);
+      } catch (e) {
+        failures.push(`${candidate} 連不上（${e.message}）`);
+        continue;
+      }
+      if (got !== t.chainId) {
+        failures.push(`${candidate} 回報 chainId ${got}，設定是 ${t.chainId}`);
+        continue;
+      }
+      rpc = candidate;
+      break;
+    }
+    if (!rpc) {
+      problems.push(`${t.id}：沒有可用的公開 RPC（${failures.join("；")}）——沒有驗證到的租戶不算通過`);
       continue;
     }
-    if (got !== t.chainId) {
-      problems.push(`${t.id}：RPC ${t.rpc} 回報 chainId ${got}，設定是 ${t.chainId}`);
-      continue;
-    }
-    log(`=== VerifyTenant ${t.id}（chain ${t.chainId}，${t.rpc}）===`);
-    const status = run(t);
+    for (const f of failures) log(`略過 ${f}`);
+    log(`=== VerifyTenant ${t.id}（chain ${t.chainId}，${rpc}）===`);
+    const status = run({ ...t, rpc });
     if (status !== 0) problems.push(`${t.id}：VerifyTenant 失敗（exit ${status}）`);
   }
   if (problems.length) for (const p of problems) log(`::error::${p}`);
@@ -103,7 +119,7 @@ export async function verifyAll({ root, log = console.log, runVerify, chainIdOf 
 async function main(argv) {
   const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
   if (argv.includes("--list")) {
-    for (const t of plan(root)) console.log(`${t.id}\t${t.chainId}\t${t.rpc}`);
+    for (const t of plan(root)) console.log(`${t.id}\t${t.chainId}\t${t.rpcs.join(",")}`);
     return 0;
   }
   return (await verifyAll({ root })).length ? 1 : 0;

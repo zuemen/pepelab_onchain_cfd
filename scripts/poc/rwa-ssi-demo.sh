@@ -41,12 +41,12 @@ cleanup() {
   if [[ -n "$ANVIL_PID" ]] && kill -0 "$ANVIL_PID" 2>/dev/null; then
     kill "$ANVIL_PID" 2>/dev/null || true
     wait "$ANVIL_PID" 2>/dev/null || true
-    echo "■ anvil（pid $ANVIL_PID）已關閉"
+    echo "■ anvil（pid ${ANVIL_PID}）已關閉"
   fi
 }
 trap cleanup EXIT INT TERM
 
-say "▶ 0. 起本機 anvil（port $PORT）"
+say "▶ 0. 起本機 anvil（port ${PORT}）"
 anvil --port "$PORT" --silent > "$OUT/anvil.log" 2>&1 &
 ANVIL_PID=$!
 for _ in $(seq 1 60); do
@@ -55,7 +55,7 @@ for _ in $(seq 1 60); do
 done
 CHAIN_ID="$(cast chain-id --rpc-url "$RPC")"
 [[ "$CHAIN_ID" == "31337" ]] || { echo "✖ chainId 不是 31337：$CHAIN_ID" >&2; exit 1; }
-echo "  anvil pid $ANVIL_PID，chainId $CHAIN_ID"
+echo "  anvil pid ${ANVIL_PID}，chainId $CHAIN_ID"
 
 cd "$REPO_ROOT/contracts"
 # 廣播紀錄放 PoC 自己的目錄，不碰 contracts/broadcast/（正式部署紀錄）。
