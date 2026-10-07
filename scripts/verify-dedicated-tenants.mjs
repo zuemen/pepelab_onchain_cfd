@@ -19,7 +19,7 @@
 // 用法：node scripts/verify-dedicated-tenants.mjs            # CI
 //       node scripts/verify-dedicated-tenants.mjs --list     # 只列出會驗證的租戶
 
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -47,16 +47,51 @@ export const PUBLIC_RPC = {
 };
 
 /**
- * forge 輸出裡代表「這個節點不能用」的訊息（連線、401、限流、getLogs 被拒）。
- * 只有這些才換下一個節點；其他失敗（斷言不成立）是真的驗證失敗，不重試。
+ * forge **stderr** 裡代表「這個節點不能用」的訊息（連線、401、限流、getLogs 被拒）。
+ * 只比對 stderr：stdout 的 Logs 會印出 VerifyTenant 的檢查名稱（例如「oracle rate limit is on」），
+ * 拿整份輸出比對會把真的驗證失敗誤判成節點問題。不放泛用的「rate limit」：限流由 HTTP 429 與
+ * VerifyTenant 自己的「eth_getLogs refused」涵蓋。其他失敗是真的驗證失敗，不重試。
  */
 export const RPC_UNUSABLE = [
   /HTTP error (401|403|429|5\d\d)/i,
   /failed to determine network family/i,
   /eth_getLogs refused/i,
   /error sending request/i,
-  /rate limit|too many requests/i,
 ];
+
+/** 單一節點跑 VerifyTenant 的上限（job 是 30 分鐘；卡住的節點要留時間給下一個）。 */
+export const FORGE_TIMEOUT_MS = 12 * 60 * 1000;
+
+/** 邊跑邊印（CI log 即時），同時收集 stderr 判斷是不是節點問題。 */
+function runForge(root, t) {
+  return new Promise((resolve) => {
+    const child = spawn("forge", ["script", "script/VerifyTenant.s.sol:VerifyTenant", "--fork-url", t.rpc, "-vv"], {
+      cwd: join(root, "contracts"),
+      env: { ...process.env, TENANT: t.id, TENANT_LOG_CHUNK_BLOCKS: String(t.logChunk) },
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    let stderr = "";
+    let timedOut = false;
+    const timer = setTimeout(() => {
+      timedOut = true;
+      child.kill("SIGTERM");
+    }, FORGE_TIMEOUT_MS);
+    child.stdout.on("data", (d) => process.stdout.write(d));
+    child.stderr.on("data", (d) => {
+      process.stderr.write(d);
+      if (stderr.length < 1_000_000) stderr += d;
+    });
+    child.on("error", (e) => {
+      clearTimeout(timer);
+      resolve({ status: null, stderr: `error sending request: ${e.message}` });
+    });
+    child.on("close", (code) => {
+      clearTimeout(timer);
+      // 逾時當成節點問題（換下一個）：卡住的是 RPC，不是驗證結果。
+      resolve({ status: code, stderr: timedOut ? `${stderr}\nerror sending request: forge 逾時 ${FORGE_TIMEOUT_MS / 60000} 分鐘` : stderr });
+    });
+  });
+}
 
 /** 每個要驗證的租戶：{ id, chainId, rpc }。缺檔或狀態不對直接丟錯（不略過）。 */
 export function plan(root) {
@@ -91,19 +126,7 @@ async function rpcChainId(rpc) {
 export async function verifyAll({ root, log = console.log, runVerify, chainIdOf = rpcChainId }) {
   const targets = plan(root);
   log(`專屬租戶 ${targets.length} 個${targets.length ? `：${targets.map((t) => t.id).join("、")}` : "——沒有要驗證的鏈上部署"}`);
-  const run =
-    runVerify ??
-    ((t) => {
-      const r = spawnSync("forge", ["script", "script/VerifyTenant.s.sol:VerifyTenant", "--fork-url", t.rpc, "-vv"], {
-        cwd: join(root, "contracts"),
-        env: { ...process.env, TENANT: t.id, TENANT_LOG_CHUNK_BLOCKS: String(t.logChunk) },
-        encoding: "utf8",
-        maxBuffer: 256 * 1024 * 1024,
-      });
-      process.stdout.write(r.stdout ?? "");
-      process.stderr.write(r.stderr ?? "");
-      return { status: r.status, output: `${r.stdout ?? ""}\n${r.stderr ?? ""}` };
-    });
+  const run = runVerify ?? ((t) => runForge(root, t));
   const problems = [];
   for (const t of targets) {
     const failures = [];
@@ -121,15 +144,15 @@ export async function verifyAll({ root, log = console.log, runVerify, chainIdOf 
         continue;
       }
       log(`=== VerifyTenant ${t.id}（chain ${t.chainId}，${url}）===`);
-      const raw = run({ ...t, rpc: url, logChunk });
-      const { status, output = "" } = typeof raw === "number" ? { status: raw } : raw;
+      const raw = await run({ ...t, rpc: url, logChunk });
+      const { status, stderr = "" } = typeof raw === "number" ? { status: raw } : raw;
       if (status === 0) {
         verdict = "pass";
         break;
       }
-      const unusable = RPC_UNUSABLE.find((re) => re.test(output));
+      const unusable = RPC_UNUSABLE.find((re) => re.test(stderr));
       if (unusable) {
-        failures.push(`${url} 在驗證途中不能用（${output.match(unusable)[0]}）`);
+        failures.push(`${url} 在驗證途中不能用（${stderr.match(unusable)[0]}）`);
         continue;
       }
       verdict = `${t.id}：VerifyTenant 失敗（exit ${status}）`;

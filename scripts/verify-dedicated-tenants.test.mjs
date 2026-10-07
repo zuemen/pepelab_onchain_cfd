@@ -87,7 +87,7 @@ test("forge 途中被節點拒絕（401、getLogs 被拒）→ 換下一個；�
     chainIdOf: async () => 84532,
     runVerify: (t) => {
       used.push(t.rpc);
-      return used.length === 1 ? { status: 1, output: "HTTP error 401 with body: rejected" } : { status: 0, output: "" };
+      return used.length === 1 ? { status: 1, stderr: "Error: HTTP error 401 with body: rejected" } : { status: 0, stderr: "" };
     },
   });
   assert.deepEqual(ok, []);
@@ -97,7 +97,15 @@ test("forge 途中被節點拒絕（401、getLogs 被拒）→ 換下一個；�
     root: dir,
     log: quiet,
     chainIdOf: async () => 84532,
-    runVerify: (t) => (tries.push(t.rpc), { status: 1, output: "verify tenant failed: owner mismatch" }),
+        // 回歸：stdout 的 Logs 會含「oracle rate limit is on」之類的檢查名稱；只看 stderr，真的失敗不能被當成節點問題。
+    runVerify: (t) => (
+      tries.push(t.rpc),
+      {
+        status: 1,
+        stdout: "  ok   oracle rate limit is on (window != 0)\n  NOTE no step cap, no rate limit",
+        stderr: "Error: script failed: verify tenant failed: owner mismatch",
+      }
+    ),
   });
   assert.match(bad.join("\n"), /bank-a：VerifyTenant 失敗（exit 1）/);
   assert.equal(tries.length, 1);
@@ -105,7 +113,7 @@ test("forge 途中被節點拒絕（401、getLogs 被拒）→ 換下一個；�
     root: dir,
     log: quiet,
     chainIdOf: async () => 84532,
-    runVerify: () => ({ status: 1, output: "eth_getLogs refused" }),
+    runVerify: () => ({ status: 1, stderr: "Error: script failed: verify tenant failed: eth_getLogs refused (RPC block-range or rate limit?)" }),
   });
   assert.match(allDown.join("\n"), /沒有可用的公開 RPC/);
   rmSync(dir, { recursive: true, force: true });
