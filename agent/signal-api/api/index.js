@@ -67620,6 +67620,9 @@ function internalError(where, err) {
   console.error(`[${where}]`, err);
   return `${where}_unavailable`;
 }
+function isResponse(x) {
+  return typeof x === "object" && x !== null && typeof x.status === "number" && "headers" in x;
+}
 function createApp(opts = {}) {
   const app2 = new Hono3({ getPath: normalizeRequestPath });
   checkPayoutDenylistEnv();
@@ -68127,7 +68130,7 @@ function createApp(opts = {}) {
       if (!f2) throw err;
       return c.json(f2.body, f2.status, f2.headers);
     }
-    if (res) c.res = res;
+    if (isResponse(res)) c.res = res;
     if (c.res.status === 402 && c.req.header("X-PAYMENT")) {
       const body = await c.res.clone().json().catch(() => null);
       const f2 = typeof body?.error === "string" ? classifyFacilitatorFailure(body.error) : null;
@@ -68137,7 +68140,7 @@ function createApp(opts = {}) {
   };
   const runV2 = async (c, next) => {
     const res = await x402v2.handle(c, next);
-    if (res) c.res = res;
+    if (isResponse(res)) c.res = res;
     c.res = await applyLedgerRecording(c.get("ledgerEntry"), c.res, c.req.header("PAYMENT-SIGNATURE"), "v2");
   };
   app2.use(async (c, next) => {

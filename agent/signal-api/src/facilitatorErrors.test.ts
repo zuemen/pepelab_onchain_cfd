@@ -124,4 +124,14 @@ assert.equal(r.body.error, "invalid_exact_evm_payload_signature");
 console.log("real verification failure stays 402 ✓");
 
 await new Promise<void>((r) => stub.close(() => r()));
+// ── 回歸：未註冊的路徑回 404，不是 500 ───────────────────────────────────────
+// x402-hono 對非付費路由回傳的不是 Response；原本原樣塞回 c.res，Hono 讀 headers 時丟
+// RangeError，任何打錯的路徑都變成 500（看起來像服務壞掉）。
+{
+  const nf = await app.request("/definitely-not-a-route");
+  assert.equal(nf.status, 404, `未註冊路徑應回 404，got ${nf.status}`);
+  const hz = await app.request("/healthz");
+  assert.equal(hz.status, 200);
+}
+
 console.log("facilitatorErrors.test.ts ✓ all assertions passed");
