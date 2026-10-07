@@ -66,11 +66,13 @@ assert.equal(
 );
 
 // ── deviationAccepted：必須與 GuardedOracle._deviationExceeded 同義 ──────
-// 合約條件:(hi-lo)*10000 > bps*lo 即拒絕。
+// 合約條件（master）:|new-old|*10000 > bps*old 即拒絕；分母是舊價，上下對稱。
+// 對照 contracts/test/v2/GuardedOracle.t.sol test_deviationCapIsSymmetric。
 assert.equal(deviationAccepted(100n, 110n, 1000n), true);   // 上漲剛好 10%,可過
 assert.equal(deviationAccepted(100n, 111n, 1000n), false);
-assert.equal(deviationAccepted(100n, 90n, 1000n), false);   // 下跌 10% 反而被拒(合約現況)
-assert.equal(deviationAccepted(100n, 91n, 1000n), true);
+assert.equal(deviationAccepted(100n, 90n, 1000n), true);    // 下跌剛好 10%,同樣可過
+assert.equal(deviationAccepted(100n, 89n, 1000n), false);
+assert.equal(deviationAccepted(110n, 99n, 1000n), true);    // 110 → 99 是 −10%（合約測試的同一組數字）
 assert.equal(deviationAccepted(0n, 500n, 1000n), true);     // 無前價 → 不限制
 assert.equal(deviationAccepted(100n, 999n, 0n), true);      // cap 0 → 不限制
 

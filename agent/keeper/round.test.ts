@@ -98,14 +98,28 @@ function ctx(over: Partial<RoundCtx> & Pick<RoundCtx, "oracle">): RoundCtx {
   assert.equal(r.rejected, 0);
 }
 
-// ── 向下不對稱：−9.5% 超過 Guarded 的 −9.09% → 兩顆都不寫；−8% → 都寫 ────────
+// ── 向下對稱（master 的 Guarded）：−9.5% 與 −10% 都在 ±10% 內 → 兩顆都寫；−10.5% → 都不寫 ──
 {
-  const o1 = fakeOracle(100), g1 = fakeGuarded(100);
-  await runRound(ctx({ oracle: o1, guarded: g1, fetchPrice: async () => yahoo(90.5) }));
-  assert.equal(o1.writes.length + g1.writes.length, 0);
-  const o2 = fakeOracle(100), g2 = fakeGuarded(100);
-  await runRound(ctx({ oracle: o2, guarded: g2, fetchPrice: async () => yahoo(92) }));
-  assert.deepEqual([o2.writes, g2.writes], [[P(92)], [P(92)]]);
+  for (const target of [90.5, 90]) {
+    const o = fakeOracle(100), g = fakeGuarded(100);
+    const r = await runRound(ctx({ oracle: o, guarded: g, fetchPrice: async () => yahoo(target) }));
+    assert.deepEqual([o.writes, g.writes], [[P(target)], [P(target)]], `target ${target}`);
+    assert.equal(r.rejected, 0);
+  }
+  const o3 = fakeOracle(100), g3 = fakeGuarded(100);
+  const r3 = await runRound(ctx({ oracle: o3, guarded: g3, fetchPrice: async () => yahoo(89.5) }));
+  assert.equal(o3.writes.length + g3.writes.length, 0);
+  assert.equal(r3.rejected, 1);
+}
+
+// ── 舊部署的 Guarded（向下只到 −9.09%）：−9.5% 本地判斷會寫，但鏈上預檢 revert → 兩顆都不寫 ──
+{
+  const oracle = fakeOracle(100);
+  const guarded = fakeGuarded(100, { checkThrows: new Error("execution reverted: DeviationTooLarge") });
+  const r = await runRound(ctx({ oracle, guarded, fetchPrice: async () => yahoo(90.5) }));
+  assert.equal(oracle.writes.length + guarded.writes.length, 0);
+  assert.equal(r.rejected, 1);
+  assert.ok(r.refused[0].reason.includes("預檢 revert"), r.refused[0].reason);
 }
 
 // ── 多源確認通過、但 Guarded 會拒絕的大變動 → 一樣兩顆都不寫 ─────────────────
@@ -500,9 +514,8 @@ for (const target of [101, 112]) {
 }
 
 // ── effectiveBreaker ─────────────────────────────────────────────────────
-assert.equal(effectiveBreaker(0.2, 1000n, true), 0.1);
-assert.ok(Math.abs(effectiveBreaker(0.2, 1000n, false) - 1000 / 11000) < 1e-12);
-assert.equal(effectiveBreaker(0.05, 1000n, true), 0.05);
-assert.equal(effectiveBreaker(0.2, 0n, true), 0.2);
+assert.equal(effectiveBreaker(0.2, 1000n), 0.1);   // 上下一樣是 10%（不再是向下 9.09%）
+assert.equal(effectiveBreaker(0.05, 1000n), 0.05);
+assert.equal(effectiveBreaker(0.2, 0n), 0.2);
 
 console.log("round.test.ts ✓ all assertions passed");
