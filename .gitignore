@@ -69,3 +69,6 @@ scripts/.log-*.txt
 .dev.vars
 .dev.vars.*
 .wrangler/
+
+# PoC 錄影產出（影片、JSON 紀錄、失敗截圖）
+scripts/poc/video/out/
