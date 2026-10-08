@@ -114,44 +114,32 @@ HTTP 403  error=kya_spend_limit_exceeded
 
 首次實測時投資人還沒有狀態清單，狀態檢查是以 `STATUS_NO_LIST` 放行的。發佈 sequence 1 的空清單後重測，結果相同：(a)、(b) 一樣，(c) 一樣停在餘額不足。
 
-「累計超過」的版本是案例 (c) 的第 3 次呼叫：`main` 上限 0.02，前兩次各 0.01 結算之後，第 3 次預期回 `403 kya_spend_limit_exceeded`。
+「累計超過」的版本見案例 (c) 最後一次呼叫：`main` 上限 0.02，兩筆各 0.01 結算之後再呼叫，回 `403 kya_spend_limit_exceeded`。
 
-### (c) 帶 VP、真 USDC 付款：⏳ 等代理人入金
+### (c) 帶 VP、真 USDC 付款：✅（2026-10-08）
 
-2026-10-07 實測時代理人的 USDC 餘額是 0。`call main vp` 的結果如下：
+**入金前（2026-10-07）**：代理人的 USDC 餘額是 0，`call main vp` 回 `402 invalid_exact_evm_insufficient_balance`。
+這次呼叫 KYA 全部通過，交給公開 facilitator 驗證時因餘額不足被拒，沒有交易上鏈；KYA 依設計退回了預留額度（`totalAtomic=0`）。
 
-```
-HTTP 402  error=invalid_exact_evm_insufficient_balance
-```
+**入金後（2026-10-08 12:31 UTC）**：代理人領到 20 測試 USDC，全新啟動 `server`（memory 花費帳從 0 計）後，第 6 景補拍跑 `pay`（帶 VP、`main` 憑證，上限 0.02）：
 
-這次呼叫的過程：
+| 呼叫 | 回應 | 結算 | KYA 花費帳 |
+|---|---|---|---|
+| 第 1 次 | `200` | [`0x2b9fa83c…`](https://sepolia.basescan.org/tx/0x2b9fa83cccf278fa6fa7d70314eca68461a84304b3ad19798da91fe4d9283911)（區塊 47847228，status 1） | `total=10000` |
+| 第 2 次 | `402`（facilitator 驗證失敗，原因當時被 driver 印成 `[object Object]`，已修） | 無；沒有扣款 | 預留額度退回，仍是 `10000` |
+| 第 3 次 | `200` | [`0xba9d7d2e…`](https://sepolia.basescan.org/tx/0xba9d7d2ea945d0ef24ba2cd0fe13da6fad796888bf8e416c4eedf158a43e7d27)（區塊 47847231，status 1） | `total=20000` |
+| 第 4 次（同一個 server 行程） | `403 kya_spend_limit_exceeded`（已花 0.02，本筆 0.01，上限 0.02） | 無 | 不變 |
 
-1. 取得 402 付款需求。
-2. 代理人簽 EIP-3009 授權，並以 `kyaFetch` 簽 VP（綁定 `GET /signals/<trader>`、付款 nonce 與 payer）。
-3. **KYA 全部通過**。
-4. 交給公開 facilitator 驗證，因餘額不足被拒，沒有交易上鏈。
+讀回驗證：兩筆結算 tx 都是官方 USDC（`0x036C…CF7e`）的 `transferWithAuthorization`，status 1；
+收款地址 `0xC7F9…eFBE` 的 USDC 餘額為 20000（0.02）；代理人從 20 變成 19.98。
+這張憑證的鏈上實付總額恰好等於上限 0.02。
 
-KYA 依設計退回了預留額度。`GET /kya/spend/<main 的 credentialHash>?period=3600` 回 `totalAtomic=0`。
+第 2 次的 402 是付款端點正常的「未付款」回應，KYA 預留在失敗時退回，所以這次結果同時驗證了「失敗不計入花費」。
+原本 `pay` 固定呼叫 3 次，中途一次失敗就錄不到超額被拒。現在 `pay` 改成呼叫到出現 `kya_spend_limit_exceeded` 為止（最多 5 次）。
+這次的超額被拒是在同一個 server 行程另外錄的續段（`scenes/rwa-poc-scene6-overlimit.mjs`）。
 
-**USDC 到帳後的一鍵指令**（代理人需要 ≥ 0.02 USDC，到 <https://faucet.circle.com> 選 Base Sepolia）：
-
-```bash
-bash scripts/poc/rwa-poc-x402.sh server      # 若還沒在跑（重啟會讓 memory 花費帳歸零，正好重新從 0 計）
-bash scripts/poc/rwa-poc-x402.sh pay
-```
-
-預期結果：
-
-| 次數 | 回應 | 結算 |
-|---|---|---|
-| 第 1 次 | `200` | `X-PAYMENT-RESPONSE.transaction` 是結算 tx hash（腳本印 BaseScan 連結），`X-Agent-KYA-Spend: total=10000;…` |
-| 第 2 次 | `200` | `total=20000` |
-| 第 3 次 | `403 kya_spend_limit_exceeded` | 不結算 |
-
-| 結算 tx | BaseScan |
-|---|---|
-| 第 1 次 | （待填） |
-| 第 2 次 | （待填） |
+**重跑注意**：`main` 這張憑證的上限已在鏈上用滿。若重啟 signal-api，memory 花費帳會歸零，再跑 `pay` 會讓這張憑證的鏈上實付總額超過上限。
+要再示範實付，請先 `setup` 一張新憑證（例如 `setup main2 20000 20000`），再 `pay main2`。
 
 ## 5. 錄影注意事項
 

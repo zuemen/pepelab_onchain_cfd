@@ -14,7 +14,7 @@
 #   bash scripts/poc/rwa-poc-x402.sh balance           # 代理人的 Base Sepolia USDC
 #   bash scripts/poc/rwa-poc-x402.sh status-list [label…]
 #                                                     # 投資人簽發並安裝 ADR-016 狀態清單（不帶 label＝空清單；帶 label＝撤銷那張憑證）
-#   bash scripts/poc/rwa-poc-x402.sh pay [label]       # 一鍵案例 (c)：確認 USDC ≥ 0.02 與 server 在線 → 帶 VP 付費 3 次
+#   bash scripts/poc/rwa-poc-x402.sh pay [label]       # 一鍵案例 (c)：確認 USDC ≥ 0.02 與 server 在線 → 帶 VP 付費到超額被拒（最多 5 次）
 #                                                     #   （預設 label=main：0.02 上限 → 前 2 次結算成功、第 3 次超額被拒）
 # 環境變數：RWA_POC_RPC_URL（預設 https://sepolia.base.org）、SIGNAL_API_PORT（預設 4021）
 set -euo pipefail
@@ -100,8 +100,8 @@ case "$cmd" in
     USDC="$(driver balance | sed -n 's/^RESULT balance atomic=\([0-9]*\)$/\1/p')"
     [[ "$USDC" =~ ^[0-9]+$ ]] || { echo "✖ 讀不到代理人 USDC 餘額" >&2; exit 1; }
     (( USDC >= 20000 )) || { echo "✖ 代理人 USDC 只有 ${USDC} atomic（需要 ≥ 20000 = 0.02）：到 https://faucet.circle.com 領 Base Sepolia USDC" >&2; exit 1; }
-    echo "▶ 代理人 USDC ${USDC} atomic；帶 VP 付費呼叫 3 次（憑證上限 0.02 → 預期 200、200、403 kya_spend_limit_exceeded）"
-    driver call "$LABEL" vp 3
+    echo "▶ 代理人 USDC ${USDC} atomic；帶 VP 付費，呼叫到累計超額被拒為止（憑證上限 0.02 → 預期 200、200、403 kya_spend_limit_exceeded；facilitator 暫時失敗的 402 不扣款，最多 5 次）"
+    driver call "$LABEL" vp 5 until-limit
     ;;
   *) sed -n '2,19p' "$0"; exit 2 ;;
 esac

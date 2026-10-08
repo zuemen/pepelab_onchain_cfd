@@ -81,8 +81,8 @@ S3 上線當下那次 `VerifyTenant` 是加 `TENANT_PRIVILEGE_SCAN_REQUIRED=true
 | S3 部署 | `DeployTenant` 164 筆交易全部成功；真鏈 `VerifyTenant` 131 項 ok、0 FAIL，權限歷史掃描通過；smoke 32 PASS；發證者、attestor、11 檔碳分級、`SessionCredentialAnchor` 完成 | [`DEPLOYMENT.md`](DEPLOYMENT.md) |
 | S4 推價與休市 | keeper 一輪寫入 11 檔、`failed=0`；sETH 示範 ReduceOnly 時開倉被拒（`AssetNotActive`，鏈上 status 0）、平倉成功 | [`DEPLOYMENT.md`](DEPLOYMENT.md)「營運驗收」 |
 | S5 前端 | 本機 `/rwa`、`/oracle`、`/solvency`、`/sessions`、`/credentials`、`/portfolio`、`/terminal` 讀到租戶部署；展示站測試照常通過 | [`FRONTEND.md`](FRONTEND.md) |
-| S6 x402 KYA | 不帶 VP → `403 kya_presentation_required`；超過憑證花費上限 → `403 kya_spend_limit_exceeded`；帶 VP 時 KYA 全部通過，但代理人測試 USDC 餘額為 0，facilitator 回餘額不足、沒有扣款 | [`X402_KYA.md`](X402_KYA.md) |
-| S7 劇本與實跑 | 10 景一次跑通（2026-10-07 03:01 UTC），成片 7 分 37 秒、1920×1080；第 6 景實付待補拍 | `POC_SCRIPT.md` §8（#286） |
+| S6 x402 KYA | 不帶 VP → `403 kya_presentation_required`；超過憑證花費上限 → `403 kya_spend_limit_exceeded`；帶 VP 真 USDC 實付兩筆各 0.01 成功（2026-10-08，[`0x2b9fa83c…`](https://sepolia.basescan.org/tx/0x2b9fa83cccf278fa6fa7d70314eca68461a84304b3ad19798da91fe4d9283911)、[`0xba9d7d2e…`](https://sepolia.basescan.org/tx/0xba9d7d2ea945d0ef24ba2cd0fe13da6fad796888bf8e416c4eedf158a43e7d27)），累計到上限 0.02 後再付被拒 | [`X402_KYA.md`](X402_KYA.md) |
+| S7 劇本與實跑 | 10 景一次跑通（2026-10-07 03:01 UTC），第 6 景 2026-10-08 以實付補拍替換；成片 7 分 41 秒、1920×1080 | [`POC_SCRIPT.md`](POC_SCRIPT.md) §7、§8 |
 
 成片的 10 景：
 
@@ -91,7 +91,7 @@ S3 上線當下那次 `VerifyTenant` 是加 `TENANT_PRIVILEGE_SCAN_REQUIRED=true
 3. 投資人在 `/credentials` 提交 VC，鏈上驗證後具資格。
 4. 持證後開 sGOLD 多單成功。
 5. 投資人為代理人開 session、簽發委託憑證 v3、錨定。
-6. x402 KYA：不帶 VP 被拒、超額被拒；KYA 通過但餘額不足（實付待代理人入金後補拍）。
+6. x402 KYA：不帶 VP 被拒；帶 VP 用真測試 USDC 實付兩筆（BaseScan 可查）；累計超過憑證上限後被拒、不扣款。
 7. 代理人在 session 上限內下單成功；超過單筆上限的模擬回 `MarginExceedsPerTradeCap()`。
 8. 休市：sAAPL 在 ReduceOnly，新開倉被拒（鏈上 `AssetNotActive`，status 0）。
 9. 撤銷資格後投資人與代理人新開倉都被拒（模擬回 `NotKycVerified`），既有部位兩筆平倉成功。
@@ -103,7 +103,7 @@ S3 上線當下那次 `VerifyTenant` 是加 `TENANT_PRIVILEGE_SCAN_REQUIRED=true
 - **發證者與見證者是自己的測試錢包**：合格投資人 VC 的發證者、ESG 碳分級的 attestor 都由 PoC 團隊控制，不是持牌 KYC 機構或第三方驗證機構；「合格投資人」只是示範身分，沒有做真實的身分審查。
 - **參考價**：價格由本機 keeper 從公開行情寫入；oracle 沒有獨立參考來源（`referenceSource: none`），寫價只受 `GuardedOracle` 的單次上限與時間窗限制。
 - **KYA 花費帳在記憶體**：`X402_KYA_SPEND_STORE=memory`，signal-api 重啟後歸零；VP 防重放集合同樣在記憶體（舊付款仍會被 EIP-3009 nonce 擋下）。
-- **x402 實付待補**：代理人錢包還沒有 Base Sepolia 測試 USDC，「帶 VP 實付成功」那一筆尚未發生，成片第 6 景是不帶 VP 與超額被拒，待補拍。補拍步驟見 [`docs/HANDOFF_RWA_POC.md`](../../HANDOFF_RWA_POC.md)「交接現況」。
+- **x402 第 6 景是補拍**：實付在 2026-10-08 另錄後插回成片（其餘 9 景是 2026-10-07 的一次完整錄影）；實付過程中有一次 facilitator 回 402、未扣款，片中照實呈現。結算走公開 facilitator `x402.org`，不是自己營運的結算服務。
 - **sAAPL 交易時段**：keeper 在美股正規盤以外、以及收盤前 3 小時就切 ReduceOnly，台灣白天 sAAPL 不能開新倉。成片主線改用 sGOLD（只在週末切），sAAPL 用來示範休市（[`RUNBOOK.md`](RUNBOOK.md)）。
 - **sGOLD 槓桿 1 倍**：sGOLD 碳分級 3 級，交易所槓桿上限 1 倍。
 - **signal-api 綁所有網卡**：`index.ts` 沒有 hostname 設定，會監聽 `*:4021`，同一區網的機器也連得到。錄影時用可信任的網路，或以本機防火牆擋掉 4021 的對外連線。

@@ -153,7 +153,9 @@ async function pickTrader(): Promise<string> {
   return t;
 }
 
-async function call(label: string, mode: string, count: number) {
+// untilLimit：呼叫到出現 403 kya_spend_limit_exceeded 就停（最多 count 次）。facilitator 偶爾回 402（未扣款、KYA 花費帳會退回），
+// 固定 3 次會錄不到「累計超額被拒」，所以 pay 用這個模式。
+async function call(label: string, mode: string, count: number, untilLimit = false) {
   const saved = JSON.parse(fs.readFileSync(path.join(STATE, `${label}.json`), "utf8"));
   const agent = await unlock("agent");
   const { createWalletClient, http, publicActions } = await import("viem");
@@ -190,12 +192,16 @@ async function call(label: string, mode: string, count: number) {
     if (xpr) { try { settle = JSON.parse(Buffer.from(xpr, "base64").toString("utf8")); } catch { settle = xpr; } }
     const spend = r.headers.get(AGENT_KYA_SPEND_HEADER);
     console.log(`\n[${mode} #${i}] GET /signals/<trader> → HTTP ${r.status}（呼叫前代理人 USDC ${formatUsdcAtomic(bal)}）`);
-    if (r.status >= 400) console.log(`  error=${String(body.error ?? "")} message=${String(body.message ?? body.reason ?? "").slice(0, 400)}`);
+    // x402 中介層與 facilitator 的 error 有時是物件（例如 { reason, payer }），直接 String() 會印成 [object Object]
+    const errText = typeof body.error === "object" && body.error !== null ? JSON.stringify(body.error).slice(0, 400) : String(body.error ?? "");
+    if (r.status >= 400) console.log(`  error=${errText} message=${String(body.message ?? body.reason ?? "").slice(0, 400)}`);
     if (body.accepts) console.log(`  accepts: ${JSON.stringify(body.accepts.map((a: any) => ({ scheme: a.scheme, network: a.network, maxAmountRequired: a.maxAmountRequired, payTo: a.payTo, asset: a.asset })))}`);
     if (settle) console.log(`  X-PAYMENT-RESPONSE: ${JSON.stringify(settle)}${settle.transaction ? `\n  結算 tx ${EXPLORER}${settle.transaction}` : ""}`);
     if (spend) console.log(`  ${AGENT_KYA_SPEND_HEADER}: ${spend}`);
-    console.log(`RESULT call label=${label} mode=${mode} i=${i} status=${r.status} error=${String(body.error ?? "")} tx=${settle?.transaction ?? ""}`);
+    console.log(`RESULT call label=${label} mode=${mode} i=${i} status=${r.status} error=${errText.replace(/\s+/g, "")} tx=${settle?.transaction ?? ""}`);
+    if (untilLimit && r.status === 403 && body.error === "kya_spend_limit_exceeded") return;
   }
+  if (untilLimit) throw new Error(`呼叫 ${count} 次都沒有出現 kya_spend_limit_exceeded`);
 }
 
 async function statusList(revokeLabels: string[]) {
@@ -242,7 +248,7 @@ if (cmd === "call" && rest[2] !== undefined && !/^[1-9]\d{0,1}$/.test(rest[2])) 
 }
 if (["setup", "call", "balance"].includes(cmd ?? "")) await assertBaseSepolia();
 if (cmd === "setup" && rest.length === 3 && /^\d+$/.test(rest[1]!) && /^\d+$/.test(rest[2]!)) await setup(rest[0]!, rest[1]!, rest[2]!);
-else if (cmd === "call" && rest.length >= 2 && ["vp", "novp"].includes(rest[1]!)) await call(rest[0]!, rest[1]!, Number(rest[2] ?? 1));
+else if (cmd === "call" && rest.length >= 2 && ["vp", "novp"].includes(rest[1]!)) await call(rest[0]!, rest[1]!, Number(rest[2] ?? 1), rest[3] === "until-limit");
 else if (cmd === "balance") await balance();
 else if (cmd === "status-list") await statusList(rest);
 else {

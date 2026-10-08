@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // PoC 影片後製：片頭卡＋（可選：替換某一景）＋等待區段加速＋片尾卡 → 成片 mp4。
 //
-//   node postprocess.mjs --main out/<完整版>.json [--replace-scene 6=out/<補拍>.json]
+//   node postprocess.mjs --main out/<完整版>.json [--replace-scene 6=out/<補拍>.json[+out/<續段>.json]] [--resume-at <秒>]
 //                        [--out out/PepeLab-RWA-SSI-PoC-final.mp4] [--frames]
 //
 // 等待區段：record.mjs 在 JSON 的 waits 記下「等待區塊確認／節點同步／載入／指令執行」的時間（毫秒）。
@@ -22,12 +22,13 @@ const { values: args } = parseArgs({
   options: {
     main: { type: 'string' },
     'replace-scene': { type: 'string' },
+    'resume-at': { type: 'string' },
     out: { type: 'string', default: path.join('out', 'PepeLab-RWA-SSI-PoC-final.mp4') },
     frames: { type: 'boolean', default: false },
   },
 });
 if (!args.main) {
-  console.error('用法：node postprocess.mjs --main out/<完整版>.json [--replace-scene 6=out/<補拍>.json]');
+  console.error('用法：node postprocess.mjs --main out/<完整版>.json [--replace-scene 6=out/<補拍>.json[+out/<續段>.json]]');
   process.exit(2);
 }
 const log = (m) => console.log(`[post] ${m}`);
@@ -51,19 +52,32 @@ const sceneOf = (caption) => Number(/^第 (\d+) 景/.exec(caption ?? '')?.[1] ??
 /** @type {{ rec: any, a: number, b: number }[]} 秒，相對各自影片 */
 let pieces = [{ rec: main, a: 0, b: sec(main, main.endMs) }];
 if (args['replace-scene']) {
-  const [n, file] = args['replace-scene'].split('=');
-  const rep = load(file);
+  // 可用 + 串接多段補拍（依序接上），例如 6=out/實付.json+out/超額.json
+  const [n, files] = args['replace-scene'].split('=');
+  const reps = files.split('+').map(load);
   const idx = main.steps.map((s, i) => (sceneOf(s.caption) === Number(n) ? i : -1)).filter((i) => i >= 0);
   if (!idx.length) throw new Error(`主影片沒有第 ${n} 景`);
   const a = sec(main, main.steps[idx[0]].startMs);
   const next = main.steps[idx.at(-1) + 1];
-  const b = next ? sec(main, next.startMs) : sec(main, main.endMs);
+  let b = next ? sec(main, next.startMs) : sec(main, main.endMs);
+  // 接回主影片時，下一景開頭若還停在被換掉那一景的終端機畫面，要從終端機清畫面那一刻接，
+  // 否則會露出舊的輸出。新錄影有 termClearsMs 可自動找；舊錄影用 --resume-at <主影片秒數> 指定。
+  const viewAt = (t) => (main.timeline ?? []).filter((x) => sec(main, Date.parse(x.at)) <= t).at(-1)?.view;
+  if (args['resume-at'] != null) {
+    const r = Number(args['resume-at']);
+    if (!(r >= b && r < b + 15)) throw new Error(`--resume-at ${r} 要在下一景開頭 ${b.toFixed(1)} 秒之後 15 秒內`);
+    b = r;
+  } else if (next && viewAt(b) === 'term') {
+    const c = (main.termClearsMs ?? []).map((ms) => sec(main, ms)).find((t) => t >= b && t < b + 15);
+    if (c != null) b = c;
+    else log(`⚠ 第 ${n} 景之後接回時終端機可能還是舊畫面；舊錄影請用 --resume-at 指定清畫面的秒數`);
+  }
   pieces = [
     { rec: main, a: 0, b: a },
-    { rec: rep, a: sec(rep, rep.steps[0].startMs), b: sec(rep, rep.endMs) },
+    ...reps.map((rep) => ({ rec: rep, a: sec(rep, rep.steps[0].startMs), b: sec(rep, rep.endMs) })),
     { rec: main, a: b, b: sec(main, main.endMs) },
   ];
-  log(`第 ${n} 景：主影片 ${a.toFixed(1)}–${b.toFixed(1)} 秒換成 ${path.basename(file)}`);
+  log(`第 ${n} 景：主影片 ${a.toFixed(1)}–${b.toFixed(1)} 秒換成 ${files.split('+').map((f) => path.basename(f)).join(' ＋ ')}`);
 }
 
 // ── 2. 每個片段切成「原速／加速」小段 ─────────────────────────────────────────
