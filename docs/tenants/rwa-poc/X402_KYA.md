@@ -137,7 +137,8 @@ HTTP 403  error=kya_spend_limit_exceeded
 第 2 次的 402 經鏈上核對沒有扣款（收款地址剛好 0.02、代理人剛好少 0.02），KYA 也退回了預留額度。
 但這不是必然：v1（x402-hono 0.5.3）下結算階段的錯誤同樣回 402，若那筆其實上鏈，KYA 退回預留就會少算一筆。
 因此 driver 做了兩道防護：
-- 帶 VP 付款遇到 402 一律停下、不重試（`pay` 與 `call … vp N` 都是），請到 BaseScan 核對代理人的 USDC 轉帳後再決定；
+- 帶 VP 付款遇到 402 一律停下、不重試（`pay` 與 `call … vp N` 都是），並先在本機帳記一筆 `pending-402-<時間>`（結果不明視為已花）；
+  到 BaseScan 確認代理人沒有被扣款後，再手動從 `<label>.spent.json` 刪掉那一筆；
   `pay`（`call … until-limit`）遇到 200 以外、也不是 403 超額的回應同樣停下，最多 5 次。
 - 本機已付帳 `agent/.state/rwa-poc/x402/<label>.spent.json`（綁定 credentialHash，原子寫入）：每筆結算 tx 都記下來。
   帶 VP 付款前先不付款取得單價；「已付＋單價」超過憑證 `maxTotal` 時，查 `GET /kya/spend/<credentialHash>`：

@@ -255,7 +255,10 @@ async function call(label: string, mode: string, count: number, untilLimit = fal
       appendLedger(label, saved.credentialHash, settle.transaction, price);
     }
     if (mode === "vp" && r.status === 402) {
-      throw new Error(`帶 VP 付款回 402（${errText}）：v1 分不出驗證或結算失敗，為免超付停止；請到 BaseScan 核對代理人 ${agent.address} 的 USDC 轉帳`);
+      // 結果不明一律先計入花費（tx 記成 pending-402-<時間>）；人工在 BaseScan 確認沒有扣款後，再從帳裡刪掉這一筆
+      const mark = `pending-402-${new Date().toISOString()}`;
+      appendLedger(label, saved.credentialHash, mark, price);
+      throw new Error(`帶 VP 付款回 402（${errText}）：v1 分不出驗證或結算失敗，為免超付停止。已在 ${ledgerPath(label)} 先記一筆 ${mark}（${formatUsdcAtomic(price)}）；請到 BaseScan 核對代理人 ${agent.address} 的 USDC 轉帳，確認沒有扣款再刪掉那一筆`);
     }
     if (!untilLimit) continue;
     if (r.status === 403 && body.error === "kya_spend_limit_exceeded") return;
