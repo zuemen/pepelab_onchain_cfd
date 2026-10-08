@@ -137,16 +137,20 @@ HTTP 403  error=kya_spend_limit_exceeded
 第 2 次的 402 經鏈上核對沒有扣款（收款地址剛好 0.02、代理人剛好少 0.02），KYA 也退回了預留額度。
 但這不是必然：v1（x402-hono 0.5.3）下結算階段的錯誤同樣回 402，若那筆其實上鏈，KYA 退回預留就會少算一筆。
 因此 driver 做了兩道防護：
-- `pay`（`call … until-limit`）遇到 402 時，等 6 秒重讀鏈上餘額，扣款必須正好等於本輪已結算總額才繼續，否則立刻停下；
-  遇到 402 以外的錯誤也直接停下，最多 5 次。
-- 本機已付帳 `agent/.state/rwa-poc/x402/<label>.spent.json`：每筆結算 tx 都記下來；帶 VP 付款前先不付款取得單價，
-  「已付＋單價」超過憑證 `maxTotal` 就不送出（`status=local-refused`）。signal-api 重啟、memory 帳歸零，也不會讓鏈上實付超過上限。
+- 帶 VP 付款遇到 402 一律停下、不重試（`pay` 與 `call … vp N` 都是），請到 BaseScan 核對代理人的 USDC 轉帳後再決定；
+  `pay`（`call … until-limit`）遇到 200 以外、也不是 403 超額的回應同樣停下，最多 5 次。
+- 本機已付帳 `agent/.state/rwa-poc/x402/<label>.spent.json`（綁定 credentialHash，原子寫入）：每筆結算 tx 都記下來。
+  帶 VP 付款前先不付款取得單價；「已付＋單價」超過憑證 `maxTotal` 時，查 `GET /kya/spend/<credentialHash>`：
+  伺服端花費帳不少於本機帳，就照常送出，讓賣方 KYA 在收錢前回 403（錄影要的畫面）；
+  伺服端較少（signal-api 重啟、memory 帳歸零）或查不到，就在本機拒絕、不送出（`status=local-refused`）。
+  2026-10-08 實測三種情況，代理人餘額始終 19.98：同一個 server 行程 → 403；重啟 server → local-refused；`lowcap` → 403。
   帳只存在該 checkout 的 `agent/.state`（gitignore）。`main` 的帳已用上面兩筆 tx 補寫。
+- `novp`（不帶 VP）不查本機帳：KYA 開著時會在收錢前回 403；若 signal-api 關掉 KYA，`novp` 會直接付款且沒有任何上限，不要對 KYA off 的服務用它。
 
 原本 `pay` 固定呼叫 3 次，中途一次失敗就錄不到超額被拒，所以這次的超額被拒是在同一個 server 行程另外錄的續段（`scenes/rwa-poc-scene6-overlimit.mjs`）。
-現在 `pay` 會呼叫到出現 `kya_spend_limit_exceeded` 為止，之後不需要續段。
+現在 `pay` 會呼叫到出現 `kya_spend_limit_exceeded` 為止（中途遇 402 則停下），之後不需要續段。
 
-**重跑注意**：`main` 這張憑證的上限已在鏈上用滿，任何 `call main vp`、`pay`（以及使用它的錄影劇本）都會被本機已付帳擋下。
+**重跑注意**：`main` 這張憑證的上限已在鏈上用滿，signal-api 重啟後，任何 `call main vp`、`pay`（以及使用它的錄影劇本）都會被本機已付帳擋下；同一個 server 行程內則由伺服端回 403。
 要再示範實付，先 `setup` 一張新憑證（例如 `setup main2 20000 20000`），再 `pay main2`；錄影劇本用 `POC_X402_LABEL=main2`。
 換 checkout 執行時，要把 `agent/.state/rwa-poc/x402/` 整個目錄（含 `*.spent.json`）一起帶過去，否則本機帳是空的。
 

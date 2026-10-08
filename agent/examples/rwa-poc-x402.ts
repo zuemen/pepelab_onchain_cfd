@@ -156,22 +156,30 @@ async function pickTrader(): Promise<string> {
 // 本機已付帳：<label>.spent.json 記下這張憑證每一筆已結算的 tx。signal-api 的 KYA 花費帳是 memory，重啟就歸零，
 // 只靠伺服端會讓同一張憑證在鏈上實付超過 maxTotal；所以帶 VP 付款前先在本機檢查「已付＋單價 ≤ 憑證上限」。
 // 帳只存在這個 checkout 的 agent/.state（gitignore），換 checkout 要一起帶走。
-type SpentLedger = { settled: { tx: string; amount: string; at: string }[] };
+// 帳以 credentialHash 綁定：同一個 label 重新 setup 換了憑證時，舊帳不會被誤用（報錯請改 label 或移走舊帳）。
+type SpentLedger = { credentialHash: string; settled: { tx: string; amount: string; at: string }[] };
 const ledgerPath = (label: string) => path.join(STATE, `${label}.spent.json`);
-function readLedger(label: string): SpentLedger {
+function readLedger(label: string, credentialHash: string): SpentLedger {
   const p = ledgerPath(label);
-  return fs.existsSync(p) ? (JSON.parse(fs.readFileSync(p, "utf8")) as SpentLedger) : { settled: [] };
+  if (!fs.existsSync(p)) return { credentialHash, settled: [] };
+  const l = JSON.parse(fs.readFileSync(p, "utf8")) as SpentLedger;
+  if (String(l.credentialHash).toLowerCase() !== credentialHash.toLowerCase()) {
+    throw new Error(`${p} 記的是另一張憑證（${l.credentialHash}），與 ${label}.json（${credentialHash}）不同：請換 label 或移走舊帳`);
+  }
+  return l;
 }
 const ledgerTotal = (l: SpentLedger) => l.settled.reduce((t, x) => t + BigInt(x.amount), 0n);
-function appendLedger(label: string, tx: string, amount: bigint) {
-  const l = readLedger(label);
+function appendLedger(label: string, credentialHash: string, tx: string, amount: bigint) {
+  const l = readLedger(label, credentialHash);
   l.settled.push({ tx, amount: amount.toString(), at: new Date().toISOString() });
-  fs.writeFileSync(ledgerPath(label), JSON.stringify(l, null, 2));
+  const tmp = `${ledgerPath(label)}.tmp`;
+  fs.writeFileSync(tmp, JSON.stringify(l, null, 2));
+  fs.renameSync(tmp, ledgerPath(label)); // 先寫暫存檔再改名，寫到一半中斷不會留下壞掉的帳
 }
 
-// untilLimit：呼叫到出現 403 kya_spend_limit_exceeded 就停（最多 count 次），pay 用這個模式。
-// 只有 402 會繼續：v1（x402-hono 0.5.3）的驗證失敗與結算失敗都回 402、分不出來，KYA 會退回預留額度；
-// 若那筆其實上鏈了，再付就會超過憑證上限。所以 402 之後等幾秒重讀鏈上餘額，扣款必須正好等於本輪已結算的總額，否則立刻停下。
+// untilLimit：200 就繼續，呼叫到出現 403 kya_spend_limit_exceeded 為止（最多 count 次），pay 用這個模式。
+// 帶 VP 遇到 402 一律停下（兩種模式都是）：v1（x402-hono 0.5.3）的驗證失敗與結算失敗都回 402、分不出來，
+// KYA 會退回預留額度；若那筆其實已廣播、稍後才上鏈，再付就可能超過憑證上限。停下後請到 BaseScan 核對再決定。
 async function call(label: string, mode: string, count: number, untilLimit = false) {
   const saved = JSON.parse(fs.readFileSync(path.join(STATE, `${label}.json`), "utf8"));
   const agent = await unlock("agent");
@@ -199,8 +207,6 @@ async function call(label: string, mode: string, count: number, untilLimit = fal
   const url = `${API}/signals/${trader}`;
   const usdc = new ethers.Contract(OFFICIAL_BASE_SEPOLIA_USDC, ["function balanceOf(address) view returns (uint256)"], provider);
   const maxTotal = BigInt(saved.credential?.credentialSubject?.x402?.maxTotal ?? 0);
-  const startBal = (await usdc.balanceOf(agent.address)) as bigint;
-  let settledThisRun = 0n;
   for (let i = 1; i <= count; i++) {
     const bal = (await usdc.balanceOf(agent.address)) as bigint;
     let price = 0n;
@@ -210,8 +216,19 @@ async function call(label: string, mode: string, count: number, untilLimit = fal
       const req = ((await probe.json().catch(() => ({}))) as any)?.accepts?.[0]?.maxAmountRequired;
       if (probe.status !== 402 || !/^\d+$/.test(String(req ?? ""))) throw new Error(`取不到付款需求（HTTP ${probe.status}）`);
       price = BigInt(req);
-      const spent = ledgerTotal(readLedger(label));
+      const spent = ledgerTotal(readLedger(label, saved.credentialHash));
+      // 本機帳已滿時，看伺服端 KYA 花費帳：伺服端記得的不少於本機帳，就代表它會在收錢前擋下（403），照常送出讓賣方拒絕；
+      // 伺服端較少（重啟過、memory 帳歸零）或查不到，才在本機拒絕。
+      let serverWillRefuse = false;
       if (spent + price > maxTotal) {
+        const period = Number(saved.credential?.credentialSubject?.x402?.periodSeconds ?? 0);
+        const sr = await fetch(`${API}/kya/spend/${saved.credentialHash}?period=${period > 0 ? period : 86400}`).catch(() => null);
+        const sj = sr?.ok ? ((await sr.json().catch(() => null)) as any) : null;
+        const serverTotal = /^\d+$/.test(String(sj?.totalAtomic ?? "")) ? BigInt(sj.totalAtomic) : -1n;
+        serverWillRefuse = serverTotal >= spent;
+        console.log(`\n[${mode} #${i}] 本機已付帳 ${formatUsdcAtomic(spent)}＋本筆 ${formatUsdcAtomic(price)} 超過上限 ${formatUsdcAtomic(maxTotal)}；伺服端 KYA 花費帳 ${serverTotal >= 0n ? formatUsdcAtomic(serverTotal) : "查不到"}`);
+      }
+      if (spent + price > maxTotal && !serverWillRefuse) {
         console.log(`\n[${mode} #${i}] 本機已付帳：${label} 已結算 ${formatUsdcAtomic(spent)}，本筆 ${formatUsdcAtomic(price)}，憑證上限 ${formatUsdcAtomic(maxTotal)} → 不送出（signal-api 重啟後 memory 帳歸零，這裡防止鏈上實付超過上限）`);
         console.log(`RESULT call label=${label} mode=${mode} i=${i} status=local-refused error=ledger_limit tx=`);
         if (untilLimit) return;
@@ -235,19 +252,14 @@ async function call(label: string, mode: string, count: number, untilLimit = fal
     if (spend) console.log(`  ${AGENT_KYA_SPEND_HEADER}: ${spend}`);
     console.log(`RESULT call label=${label} mode=${mode} i=${i} status=${r.status} error=${errText.replace(/\s+/g, "")} tx=${settle?.transaction ?? ""}`);
     if (mode === "vp" && settle?.success === true && typeof settle.transaction === "string") {
-      appendLedger(label, settle.transaction, price);
-      settledThisRun += price;
+      appendLedger(label, saved.credentialHash, settle.transaction, price);
+    }
+    if (mode === "vp" && r.status === 402) {
+      throw new Error(`帶 VP 付款回 402（${errText}）：v1 分不出驗證或結算失敗，為免超付停止；請到 BaseScan 核對代理人 ${agent.address} 的 USDC 轉帳`);
     }
     if (!untilLimit) continue;
     if (r.status === 403 && body.error === "kya_spend_limit_exceeded") return;
-    if (r.status === 200) continue;
-    if (r.status !== 402) throw new Error(`HTTP ${r.status}（${errText}）：不是暫時性付款失敗，停止`);
-    await new Promise((res) => setTimeout(res, 6000));
-    const now = (await usdc.balanceOf(agent.address)) as bigint;
-    if (startBal - now !== settledThisRun) {
-      throw new Error(`402 之後鏈上扣款 ${formatUsdcAtomic(startBal - now)} ≠ 本輪已結算 ${formatUsdcAtomic(settledThisRun)}：可能有結果不明的結算，停止（請到 BaseScan 核對代理人轉帳）`);
-    }
-    console.log(`  402 後鏈上核對：扣款 ${formatUsdcAtomic(startBal - now)} ＝ 本輪已結算，沒有多扣，繼續`);
+    if (r.status !== 200) throw new Error(`HTTP ${r.status}（${errText}）：非預期回應，停止`);
   }
   if (untilLimit) throw new Error(`呼叫 ${count} 次都沒有出現 kya_spend_limit_exceeded`);
 }
