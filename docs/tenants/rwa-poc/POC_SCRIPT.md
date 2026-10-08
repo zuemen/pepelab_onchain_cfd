@@ -409,8 +409,9 @@ node postprocess.mjs --main out/rwa-poc-full-2026-10-07T03-01-02.json \
 - `--resume-at`：接回主影片時從哪一秒開始。第 7 景開頭約 2.7 秒，終端機還停在被換掉的舊第 6 景（餘額 0、402），所以從終端機清畫面那一刻（268.3 秒）接回。
   新版 `record.mjs` 會把清畫面時間記在 JSON 的 `termClearsMs`，之後的錄影由後製自動找，不用手動指定。
 - 這一段只有 CLI（終端機分頁），不需要前端送交易；`--no-sign` 讓注入錢包拒絕任何簽章。結算交易 hash 由 `rwa-poc-x402.sh` 印成 `tx 0x…`，會自動記進 JSON。
-- 成片 7 分 41 秒，交付檔名 `PepeLab-RWA-SSI-PoC-final-2026-10-08.mp4`（不進版控）。
-- **不要再對 `main` 重跑 `pay`**：它的上限已在鏈上用滿，重啟 server 會讓 memory 花費帳歸零，再付就會超過憑證上限。要重拍請先 `setup` 一張新憑證。
+- 後製輸出 `out/PepeLab-RWA-SSI-PoC-final.mp4`（7 分 41 秒，不進版控），交付時另存為 `PepeLab-RWA-SSI-PoC-final-2026-10-08.mp4`。
+- **`main` 的上限已在鏈上用滿**：帶 VP 的呼叫（`pay`、`call main vp`、兩支第 6 景劇本）會被本機已付帳 `agent/.state/rwa-poc/x402/main.spent.json` 擋下、不送出。
+  要重拍請先 `rwa-poc-x402.sh setup main2 20000 20000`，再以 `POC_X402_LABEL=main2 node record.mjs --scenes scenes/rwa-poc-scene6-pay.mjs …` 錄；現在 `pay` 會自己付到超額被拒，不需要續段。
 
 ## 8. 實跑紀錄（2026-10-07 03:01 UTC 完整錄影＋2026-10-08 12:31 UTC 第 6 景補拍，1920×1080）
 

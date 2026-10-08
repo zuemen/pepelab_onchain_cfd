@@ -9,7 +9,7 @@
 // 並在右上角疊「⏩ <原因>（加速 ×N）」誠實標示。其餘畫面（字幕、結果、tx）全部原速保留，不剪任何片段。
 //
 // 替換某一景：把主影片裡字幕以「第 N 景」開頭的那幾步，整段換成另一次錄影（同樣從第一步開始到結束）。
-// 用在代理人入金後只補錄第 6 景（docs/tenants/rwa-poc/POC_SCRIPT.md「補拍流程」）。
+// 例：只補錄第 6 景（docs/tenants/rwa-poc/POC_SCRIPT.md「補拍流程」）。多段補拍用 + 串接（路徑本身不能含 +）。
 import fs from 'node:fs';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
@@ -27,8 +27,12 @@ const { values: args } = parseArgs({
     frames: { type: 'boolean', default: false },
   },
 });
+if (args['resume-at'] != null && !args['replace-scene']) {
+  console.error('--resume-at 只能和 --replace-scene 一起用');
+  process.exit(2);
+}
 if (!args.main) {
-  console.error('用法：node postprocess.mjs --main out/<完整版>.json [--replace-scene 6=out/<補拍>.json[+out/<續段>.json]]');
+  console.error('用法：node postprocess.mjs --main out/<完整版>.json [--replace-scene 6=out/<補拍>.json[+out/<續段>.json]] [--resume-at <秒>]');
   process.exit(2);
 }
 const log = (m) => console.log(`[post] ${m}`);
@@ -53,7 +57,9 @@ const sceneOf = (caption) => Number(/^第 (\d+) 景/.exec(caption ?? '')?.[1] ??
 let pieces = [{ rec: main, a: 0, b: sec(main, main.endMs) }];
 if (args['replace-scene']) {
   // 可用 + 串接多段補拍（依序接上），例如 6=out/實付.json+out/超額.json
-  const [n, files] = args['replace-scene'].split('=');
+  const m = /^(\d+)=(.+)$/.exec(args['replace-scene']);
+  if (!m) throw new Error('--replace-scene 格式是 <景號>=<補拍>.json[+<續段>.json]');
+  const [, n, files] = m;
   const reps = files.split('+').map(load);
   const idx = main.steps.map((s, i) => (sceneOf(s.caption) === Number(n) ? i : -1)).filter((i) => i >= 0);
   if (!idx.length) throw new Error(`主影片沒有第 ${n} 景`);
@@ -64,11 +70,14 @@ if (args['replace-scene']) {
   // 否則會露出舊的輸出。新錄影有 termClearsMs 可自動找；舊錄影用 --resume-at <主影片秒數> 指定。
   const viewAt = (t) => (main.timeline ?? []).filter((x) => sec(main, Date.parse(x.at)) <= t).at(-1)?.view;
   if (args['resume-at'] != null) {
+    if (!next) throw new Error(`第 ${n} 景是最後一景，後面沒有要接回的主影片，不需要 --resume-at`);
     const r = Number(args['resume-at']);
     if (!(r >= b && r < b + 15)) throw new Error(`--resume-at ${r} 要在下一景開頭 ${b.toFixed(1)} 秒之後 15 秒內`);
     b = r;
   } else if (next && viewAt(b) === 'term') {
-    const c = (main.termClearsMs ?? []).map((ms) => sec(main, ms)).find((t) => t >= b && t < b + 15);
+    // 舊終端機畫面會停到「終端機清畫面」或「切回前端分頁」，取先發生的那個
+    const toApp = (main.timeline ?? []).map((x) => sec(main, Date.parse(x.at))).filter((t, i) => main.timeline[i].view === 'app');
+    const c = [...(main.termClearsMs ?? []).map((ms) => sec(main, ms)), ...toApp].filter((t) => t >= b && t < b + 15).sort((x, y) => x - y)[0];
     if (c != null) b = c;
     else log(`⚠ 第 ${n} 景之後接回時終端機可能還是舊畫面；舊錄影請用 --resume-at 指定清畫面的秒數`);
   }

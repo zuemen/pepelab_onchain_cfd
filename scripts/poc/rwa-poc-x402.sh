@@ -15,7 +15,9 @@
 #   bash scripts/poc/rwa-poc-x402.sh status-list [label…]
 #                                                     # 投資人簽發並安裝 ADR-016 狀態清單（不帶 label＝空清單；帶 label＝撤銷那張憑證）
 #   bash scripts/poc/rwa-poc-x402.sh pay [label]       # 一鍵案例 (c)：確認 USDC ≥ 0.02 與 server 在線 → 帶 VP 付費到超額被拒（最多 5 次）
-#                                                     #   （預設 label=main：0.02 上限 → 前 2 次結算成功、第 3 次超額被拒）
+#                                                     #   （0.02 上限的憑證 → 兩筆結算後超額被拒；402 後鏈上扣款對不上就停）
+#                                                     #   帶 VP 付款前先查本機已付帳 agent/.state/rwa-poc/x402/<label>.spent.json，
+#                                                     #   已付＋單價超過憑證上限就不送出（server 重啟 memory 帳歸零也不會超付）
 # 環境變數：RWA_POC_RPC_URL（預設 https://sepolia.base.org）、SIGNAL_API_PORT（預設 4021）
 set -euo pipefail
 

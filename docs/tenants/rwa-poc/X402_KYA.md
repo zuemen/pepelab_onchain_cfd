@@ -126,7 +126,7 @@ HTTP 403  error=kya_spend_limit_exceeded
 | 呼叫 | 回應 | 結算 | KYA 花費帳 |
 |---|---|---|---|
 | 第 1 次 | `200` | [`0x2b9fa83c…`](https://sepolia.basescan.org/tx/0x2b9fa83cccf278fa6fa7d70314eca68461a84304b3ad19798da91fe4d9283911)（區塊 47847228，status 1） | `total=10000` |
-| 第 2 次 | `402`（facilitator 驗證失敗，原因當時被 driver 印成 `[object Object]`，已修） | 無；沒有扣款 | 預留額度退回，仍是 `10000` |
+| 第 2 次 | `402`（原因未記錄：當時被 driver 印成 `[object Object]`，已修；v1 的驗證失敗與結算失敗都回 402，分不出階段） | 無；經鏈上核對沒有扣款 | 預留額度退回，仍是 `10000` |
 | 第 3 次 | `200` | [`0xba9d7d2e…`](https://sepolia.basescan.org/tx/0xba9d7d2ea945d0ef24ba2cd0fe13da6fad796888bf8e416c4eedf158a43e7d27)（區塊 47847231，status 1） | `total=20000` |
 | 第 4 次（同一個 server 行程） | `403 kya_spend_limit_exceeded`（已花 0.02，本筆 0.01，上限 0.02） | 無 | 不變 |
 
@@ -134,12 +134,21 @@ HTTP 403  error=kya_spend_limit_exceeded
 收款地址 `0xC7F9…eFBE` 的 USDC 餘額為 20000（0.02）；代理人從 20 變成 19.98。
 這張憑證的鏈上實付總額恰好等於上限 0.02。
 
-第 2 次的 402 是付款端點正常的「未付款」回應，KYA 預留在失敗時退回，所以這次結果同時驗證了「失敗不計入花費」。
-原本 `pay` 固定呼叫 3 次，中途一次失敗就錄不到超額被拒。現在 `pay` 改成呼叫到出現 `kya_spend_limit_exceeded` 為止（最多 5 次）。
-這次的超額被拒是在同一個 server 行程另外錄的續段（`scenes/rwa-poc-scene6-overlimit.mjs`）。
+第 2 次的 402 經鏈上核對沒有扣款（收款地址剛好 0.02、代理人剛好少 0.02），KYA 也退回了預留額度。
+但這不是必然：v1（x402-hono 0.5.3）下結算階段的錯誤同樣回 402，若那筆其實上鏈，KYA 退回預留就會少算一筆。
+因此 driver 做了兩道防護：
+- `pay`（`call … until-limit`）遇到 402 時，等 6 秒重讀鏈上餘額，扣款必須正好等於本輪已結算總額才繼續，否則立刻停下；
+  遇到 402 以外的錯誤也直接停下，最多 5 次。
+- 本機已付帳 `agent/.state/rwa-poc/x402/<label>.spent.json`：每筆結算 tx 都記下來；帶 VP 付款前先不付款取得單價，
+  「已付＋單價」超過憑證 `maxTotal` 就不送出（`status=local-refused`）。signal-api 重啟、memory 帳歸零，也不會讓鏈上實付超過上限。
+  帳只存在該 checkout 的 `agent/.state`（gitignore）。`main` 的帳已用上面兩筆 tx 補寫。
 
-**重跑注意**：`main` 這張憑證的上限已在鏈上用滿。若重啟 signal-api，memory 花費帳會歸零，再跑 `pay` 會讓這張憑證的鏈上實付總額超過上限。
-要再示範實付，請先 `setup` 一張新憑證（例如 `setup main2 20000 20000`），再 `pay main2`。
+原本 `pay` 固定呼叫 3 次，中途一次失敗就錄不到超額被拒，所以這次的超額被拒是在同一個 server 行程另外錄的續段（`scenes/rwa-poc-scene6-overlimit.mjs`）。
+現在 `pay` 會呼叫到出現 `kya_spend_limit_exceeded` 為止，之後不需要續段。
+
+**重跑注意**：`main` 這張憑證的上限已在鏈上用滿，任何 `call main vp`、`pay`（以及使用它的錄影劇本）都會被本機已付帳擋下。
+要再示範實付，先 `setup` 一張新憑證（例如 `setup main2 20000 20000`），再 `pay main2`；錄影劇本用 `POC_X402_LABEL=main2`。
+換 checkout 執行時，要把 `agent/.state/rwa-poc/x402/` 整個目錄（含 `*.spent.json`）一起帶過去，否則本機帳是空的。
 
 ## 5. 錄影注意事項
 

@@ -44,12 +44,11 @@
 
 ### 還開著的 PR
 
-RWA PoC 相關的 PR 都已合併（#286 錄影、#287 文件收尾，2026-10-07）。第 6 節原本標「#286 合併後」的指令現在都在 master。
-x402 實付補拍已在 2026-10-08 完成（第 6 節）；S0–S8 全部完成。
+RWA PoC 相關的 PR 都已合併（#286 錄影、#287 文件收尾，2026-10-07）。第 6 節的指令都在 master。
 
----|---|---|---|
-| #286 | `feat/rwa-poc-recording` | 錄影劇本 `POC_SCRIPT.md`、完整錄影劇本與後製、狀態清單主機、彩排重置腳本 | 審查後合併；合併後第 6 節標「#286 合併後」的指令才在 master |
-| （本文件 PR） | `docs/rwa-poc-wrapup` | S8 文件收尾 | 審查中 |
+| PR | 分支 | 內容 |
+|---|---|---|
+| #293 | `feat/rwa-poc-x402-paid` | x402 帶憑證實付（S6、S7 收尾）、driver 的本機已付帳與 402 鏈上核對、後製多段補拍；合併後 S0–S8 全部完成 |
 
 ---
 
@@ -209,7 +208,7 @@ PoC 錢包（部署者與 2026-10-06 新建的 admin／risk／guardian／keeper�
 
 S0–S8 全部完成。S6 的 x402 帶憑證實付與 S7 第 6 景補拍在 2026-10-08 完成；總覽、重現指令與已知限制見 [`docs/tenants/rwa-poc/README.md`](tenants/rwa-poc/README.md)。
 
-- **成片**：`PepeLab-RWA-SSI-PoC-final-2026-10-08.mp4`（7 分 41 秒、1920×1080）由後製產生在 `scripts/poc/video/out/`，**不進版控**，直接交付給使用者。
+- **成片**：後製產生 `scripts/poc/video/out/PepeLab-RWA-SSI-PoC-final.mp4`（7 分 41 秒、1920×1080，**不進版控**），交付時另存為 `PepeLab-RWA-SSI-PoC-final-2026-10-08.mp4`。
   第 6 景是 2026-10-08 的補拍（實付＋超額被拒兩段），其餘 9 景是 2026-10-07 03:01 UTC 的一次完整錄影。
 
 ### 背景服務怎麼起（repo 根目錄，各開一個終端機）
@@ -233,7 +232,7 @@ S0–S8 全部完成。S6 的 x402 帶憑證實付與 S7 第 6 景補拍在 2026
 [`0xba9d7d2e…`](https://sepolia.basescan.org/tx/0xba9d7d2ea945d0ef24ba2cd0fe13da6fad796888bf8e416c4eedf158a43e7d27)，status 1）→ 累計超額 403。
 中間有一次 facilitator 回 402、未扣款，KYA 花費帳也退回；細節見 [`X402_KYA.md`](tenants/rwa-poc/X402_KYA.md) §4 (c)。
 
-**`main` 憑證的上限 0.02 已在鏈上用滿**：不要再對它跑 `pay`（重啟 signal-api 會讓 memory 花費帳歸零，再付就超過憑證上限）。
+**`main` 憑證的上限 0.02 已在鏈上用滿**：帶 VP 對它付款會被本機已付帳（`agent/.state/rwa-poc/x402/main.spent.json`，只在 s6 worktree）擋下。
 要再示範實付，先 `bash scripts/poc/rwa-poc-x402.sh setup main2 20000 20000`，再 `pay main2`。代理人還有 19.98 測試 USDC。
 
 ### 尚未完成、不擋 PoC 的事

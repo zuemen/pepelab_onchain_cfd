@@ -153,8 +153,25 @@ async function pickTrader(): Promise<string> {
   return t;
 }
 
-// untilLimit：呼叫到出現 403 kya_spend_limit_exceeded 就停（最多 count 次）。facilitator 偶爾回 402（未扣款、KYA 花費帳會退回），
-// 固定 3 次會錄不到「累計超額被拒」，所以 pay 用這個模式。
+// 本機已付帳：<label>.spent.json 記下這張憑證每一筆已結算的 tx。signal-api 的 KYA 花費帳是 memory，重啟就歸零，
+// 只靠伺服端會讓同一張憑證在鏈上實付超過 maxTotal；所以帶 VP 付款前先在本機檢查「已付＋單價 ≤ 憑證上限」。
+// 帳只存在這個 checkout 的 agent/.state（gitignore），換 checkout 要一起帶走。
+type SpentLedger = { settled: { tx: string; amount: string; at: string }[] };
+const ledgerPath = (label: string) => path.join(STATE, `${label}.spent.json`);
+function readLedger(label: string): SpentLedger {
+  const p = ledgerPath(label);
+  return fs.existsSync(p) ? (JSON.parse(fs.readFileSync(p, "utf8")) as SpentLedger) : { settled: [] };
+}
+const ledgerTotal = (l: SpentLedger) => l.settled.reduce((t, x) => t + BigInt(x.amount), 0n);
+function appendLedger(label: string, tx: string, amount: bigint) {
+  const l = readLedger(label);
+  l.settled.push({ tx, amount: amount.toString(), at: new Date().toISOString() });
+  fs.writeFileSync(ledgerPath(label), JSON.stringify(l, null, 2));
+}
+
+// untilLimit：呼叫到出現 403 kya_spend_limit_exceeded 就停（最多 count 次），pay 用這個模式。
+// 只有 402 會繼續：v1（x402-hono 0.5.3）的驗證失敗與結算失敗都回 402、分不出來，KYA 會退回預留額度；
+// 若那筆其實上鏈了，再付就會超過憑證上限。所以 402 之後等幾秒重讀鏈上餘額，扣款必須正好等於本輪已結算的總額，否則立刻停下。
 async function call(label: string, mode: string, count: number, untilLimit = false) {
   const saved = JSON.parse(fs.readFileSync(path.join(STATE, `${label}.json`), "utf8"));
   const agent = await unlock("agent");
@@ -179,10 +196,28 @@ async function call(label: string, mode: string, count: number, untilLimit = fal
     : fetch;
   const pay = wrapFetchWithPayment(base, wallet as never, resolveX402MaxValue()) as unknown as typeof fetch;
   const trader = await pickTrader();
+  const url = `${API}/signals/${trader}`;
   const usdc = new ethers.Contract(OFFICIAL_BASE_SEPOLIA_USDC, ["function balanceOf(address) view returns (uint256)"], provider);
+  const maxTotal = BigInt(saved.credential?.credentialSubject?.x402?.maxTotal ?? 0);
+  const startBal = (await usdc.balanceOf(agent.address)) as bigint;
+  let settledThisRun = 0n;
   for (let i = 1; i <= count; i++) {
     const bal = (await usdc.balanceOf(agent.address)) as bigint;
-    const url = `${API}/signals/${trader}`;
+    let price = 0n;
+    if (mode === "vp") {
+      // 先不付款取得 402 的單價（不簽任何東西），再對本機已付帳檢查
+      const probe = await fetch(url, { method: "GET" });
+      const req = ((await probe.json().catch(() => ({}))) as any)?.accepts?.[0]?.maxAmountRequired;
+      if (probe.status !== 402 || !/^\d+$/.test(String(req ?? ""))) throw new Error(`取不到付款需求（HTTP ${probe.status}）`);
+      price = BigInt(req);
+      const spent = ledgerTotal(readLedger(label));
+      if (spent + price > maxTotal) {
+        console.log(`\n[${mode} #${i}] 本機已付帳：${label} 已結算 ${formatUsdcAtomic(spent)}，本筆 ${formatUsdcAtomic(price)}，憑證上限 ${formatUsdcAtomic(maxTotal)} → 不送出（signal-api 重啟後 memory 帳歸零，這裡防止鏈上實付超過上限）`);
+        console.log(`RESULT call label=${label} mode=${mode} i=${i} status=local-refused error=ledger_limit tx=`);
+        if (untilLimit) return;
+        continue;
+      }
+    }
     const r = await pay(url, { method: "GET" });
     const text = await r.text();
     let body: any = {};
@@ -199,7 +234,20 @@ async function call(label: string, mode: string, count: number, untilLimit = fal
     if (settle) console.log(`  X-PAYMENT-RESPONSE: ${JSON.stringify(settle)}${settle.transaction ? `\n  結算 tx ${EXPLORER}${settle.transaction}` : ""}`);
     if (spend) console.log(`  ${AGENT_KYA_SPEND_HEADER}: ${spend}`);
     console.log(`RESULT call label=${label} mode=${mode} i=${i} status=${r.status} error=${errText.replace(/\s+/g, "")} tx=${settle?.transaction ?? ""}`);
-    if (untilLimit && r.status === 403 && body.error === "kya_spend_limit_exceeded") return;
+    if (mode === "vp" && settle?.success === true && typeof settle.transaction === "string") {
+      appendLedger(label, settle.transaction, price);
+      settledThisRun += price;
+    }
+    if (!untilLimit) continue;
+    if (r.status === 403 && body.error === "kya_spend_limit_exceeded") return;
+    if (r.status === 200) continue;
+    if (r.status !== 402) throw new Error(`HTTP ${r.status}（${errText}）：不是暫時性付款失敗，停止`);
+    await new Promise((res) => setTimeout(res, 6000));
+    const now = (await usdc.balanceOf(agent.address)) as bigint;
+    if (startBal - now !== settledThisRun) {
+      throw new Error(`402 之後鏈上扣款 ${formatUsdcAtomic(startBal - now)} ≠ 本輪已結算 ${formatUsdcAtomic(settledThisRun)}：可能有結果不明的結算，停止（請到 BaseScan 核對代理人轉帳）`);
+    }
+    console.log(`  402 後鏈上核對：扣款 ${formatUsdcAtomic(startBal - now)} ＝ 本輪已結算，沒有多扣，繼續`);
   }
   if (untilLimit) throw new Error(`呼叫 ${count} 次都沒有出現 kya_spend_limit_exceeded`);
 }
@@ -248,7 +296,7 @@ if (cmd === "call" && rest[2] !== undefined && !/^[1-9]\d{0,1}$/.test(rest[2])) 
 }
 if (["setup", "call", "balance"].includes(cmd ?? "")) await assertBaseSepolia();
 if (cmd === "setup" && rest.length === 3 && /^\d+$/.test(rest[1]!) && /^\d+$/.test(rest[2]!)) await setup(rest[0]!, rest[1]!, rest[2]!);
-else if (cmd === "call" && rest.length >= 2 && ["vp", "novp"].includes(rest[1]!)) await call(rest[0]!, rest[1]!, Number(rest[2] ?? 1), rest[3] === "until-limit");
+else if (cmd === "call" && rest.length >= 2 && rest.length <= 4 && ["vp", "novp"].includes(rest[1]!) && (rest[3] === undefined || rest[3] === "until-limit")) await call(rest[0]!, rest[1]!, Number(rest[2] ?? 1), rest[3] === "until-limit");
 else if (cmd === "balance") await balance();
 else if (cmd === "status-list") await statusList(rest);
 else {
