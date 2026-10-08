@@ -153,7 +153,34 @@ async function pickTrader(): Promise<string> {
   return t;
 }
 
-async function call(label: string, mode: string, count: number) {
+// 本機已付帳：<label>.spent.json 記下這張憑證每一筆已結算的 tx。signal-api 的 KYA 花費帳是 memory，重啟就歸零，
+// 只靠伺服端會讓同一張憑證在鏈上實付超過 maxTotal；所以帶 VP 付款前先在本機檢查「已付＋單價 ≤ 憑證上限」。
+// 帳只存在這個 checkout 的 agent/.state（gitignore），換 checkout 要一起帶走。
+// 帳以 credentialHash 綁定：同一個 label 重新 setup 換了憑證時，舊帳不會被誤用（報錯請改 label 或移走舊帳）。
+type SpentLedger = { credentialHash: string; settled: { tx: string; amount: string; at: string }[] };
+const ledgerPath = (label: string) => path.join(STATE, `${label}.spent.json`);
+function readLedger(label: string, credentialHash: string): SpentLedger {
+  const p = ledgerPath(label);
+  if (!fs.existsSync(p)) return { credentialHash, settled: [] };
+  const l = JSON.parse(fs.readFileSync(p, "utf8")) as SpentLedger;
+  if (String(l.credentialHash).toLowerCase() !== credentialHash.toLowerCase()) {
+    throw new Error(`${p} 記的是另一張憑證（${l.credentialHash}），與 ${label}.json（${credentialHash}）不同：請換 label 或移走舊帳`);
+  }
+  return l;
+}
+const ledgerTotal = (l: SpentLedger) => l.settled.reduce((t, x) => t + BigInt(x.amount), 0n);
+function appendLedger(label: string, credentialHash: string, tx: string, amount: bigint) {
+  const l = readLedger(label, credentialHash);
+  l.settled.push({ tx, amount: amount.toString(), at: new Date().toISOString() });
+  const tmp = `${ledgerPath(label)}.tmp`;
+  fs.writeFileSync(tmp, JSON.stringify(l, null, 2));
+  fs.renameSync(tmp, ledgerPath(label)); // 先寫暫存檔再改名，寫到一半中斷不會留下壞掉的帳
+}
+
+// untilLimit：200 就繼續，呼叫到出現 403 kya_spend_limit_exceeded 為止（最多 count 次），pay 用這個模式。
+// 帶 VP 遇到 402 一律停下（兩種模式都是）：v1（x402-hono 0.5.3）的驗證失敗與結算失敗都回 402、分不出來，
+// KYA 會退回預留額度；若那筆其實已廣播、稍後才上鏈，再付就可能超過憑證上限。停下後請到 BaseScan 核對再決定。
+async function call(label: string, mode: string, count: number, untilLimit = false) {
   const saved = JSON.parse(fs.readFileSync(path.join(STATE, `${label}.json`), "utf8"));
   const agent = await unlock("agent");
   const { createWalletClient, http, publicActions } = await import("viem");
@@ -177,10 +204,37 @@ async function call(label: string, mode: string, count: number) {
     : fetch;
   const pay = wrapFetchWithPayment(base, wallet as never, resolveX402MaxValue()) as unknown as typeof fetch;
   const trader = await pickTrader();
+  const url = `${API}/signals/${trader}`;
   const usdc = new ethers.Contract(OFFICIAL_BASE_SEPOLIA_USDC, ["function balanceOf(address) view returns (uint256)"], provider);
+  const maxTotal = BigInt(saved.credential?.credentialSubject?.x402?.maxTotal ?? 0);
   for (let i = 1; i <= count; i++) {
     const bal = (await usdc.balanceOf(agent.address)) as bigint;
-    const url = `${API}/signals/${trader}`;
+    let price = 0n;
+    if (mode === "vp") {
+      // 先不付款取得 402 的單價（不簽任何東西），再對本機已付帳檢查
+      const probe = await fetch(url, { method: "GET" });
+      const req = ((await probe.json().catch(() => ({}))) as any)?.accepts?.[0]?.maxAmountRequired;
+      if (probe.status !== 402 || !/^\d+$/.test(String(req ?? ""))) throw new Error(`取不到付款需求（HTTP ${probe.status}）`);
+      price = BigInt(req);
+      const spent = ledgerTotal(readLedger(label, saved.credentialHash));
+      // 本機帳已滿時，看伺服端 KYA 花費帳：伺服端記得的不少於本機帳，就代表它會在收錢前擋下（403），照常送出讓賣方拒絕；
+      // 伺服端較少（重啟過、memory 帳歸零）或查不到，才在本機拒絕。
+      let serverWillRefuse = false;
+      if (spent + price > maxTotal) {
+        const period = Number(saved.credential?.credentialSubject?.x402?.periodSeconds ?? 0);
+        const sr = await fetch(`${API}/kya/spend/${saved.credentialHash}?period=${period > 0 ? period : 86400}`).catch(() => null);
+        const sj = sr?.ok ? ((await sr.json().catch(() => null)) as any) : null;
+        const serverTotal = /^\d+$/.test(String(sj?.totalAtomic ?? "")) ? BigInt(sj.totalAtomic) : -1n;
+        serverWillRefuse = serverTotal >= spent;
+        console.log(`\n[${mode} #${i}] 本機已付帳 ${formatUsdcAtomic(spent)}＋本筆 ${formatUsdcAtomic(price)} 超過上限 ${formatUsdcAtomic(maxTotal)}；伺服端 KYA 花費帳 ${serverTotal >= 0n ? formatUsdcAtomic(serverTotal) : "查不到"}`);
+      }
+      if (spent + price > maxTotal && !serverWillRefuse) {
+        console.log(`\n[${mode} #${i}] 本機已付帳：${label} 已結算 ${formatUsdcAtomic(spent)}，本筆 ${formatUsdcAtomic(price)}，憑證上限 ${formatUsdcAtomic(maxTotal)} → 不送出（signal-api 重啟後 memory 帳歸零，這裡防止鏈上實付超過上限）`);
+        console.log(`RESULT call label=${label} mode=${mode} i=${i} status=local-refused error=ledger_limit tx=`);
+        if (untilLimit) return;
+        continue;
+      }
+    }
     const r = await pay(url, { method: "GET" });
     const text = await r.text();
     let body: any = {};
@@ -190,12 +244,27 @@ async function call(label: string, mode: string, count: number) {
     if (xpr) { try { settle = JSON.parse(Buffer.from(xpr, "base64").toString("utf8")); } catch { settle = xpr; } }
     const spend = r.headers.get(AGENT_KYA_SPEND_HEADER);
     console.log(`\n[${mode} #${i}] GET /signals/<trader> → HTTP ${r.status}（呼叫前代理人 USDC ${formatUsdcAtomic(bal)}）`);
-    if (r.status >= 400) console.log(`  error=${String(body.error ?? "")} message=${String(body.message ?? body.reason ?? "").slice(0, 400)}`);
+    // x402 中介層與 facilitator 的 error 有時是物件（例如 { reason, payer }），直接 String() 會印成 [object Object]
+    const errText = typeof body.error === "object" && body.error !== null ? JSON.stringify(body.error).slice(0, 400) : String(body.error ?? "");
+    if (r.status >= 400) console.log(`  error=${errText} message=${String(body.message ?? body.reason ?? "").slice(0, 400)}`);
     if (body.accepts) console.log(`  accepts: ${JSON.stringify(body.accepts.map((a: any) => ({ scheme: a.scheme, network: a.network, maxAmountRequired: a.maxAmountRequired, payTo: a.payTo, asset: a.asset })))}`);
     if (settle) console.log(`  X-PAYMENT-RESPONSE: ${JSON.stringify(settle)}${settle.transaction ? `\n  結算 tx ${EXPLORER}${settle.transaction}` : ""}`);
     if (spend) console.log(`  ${AGENT_KYA_SPEND_HEADER}: ${spend}`);
-    console.log(`RESULT call label=${label} mode=${mode} i=${i} status=${r.status} error=${String(body.error ?? "")} tx=${settle?.transaction ?? ""}`);
+    console.log(`RESULT call label=${label} mode=${mode} i=${i} status=${r.status} error=${errText.replace(/\s+/g, "")} tx=${settle?.transaction ?? ""}`);
+    if (mode === "vp" && settle?.success === true && typeof settle.transaction === "string") {
+      appendLedger(label, saved.credentialHash, settle.transaction, price);
+    }
+    if (mode === "vp" && r.status === 402) {
+      // 結果不明一律先計入花費（tx 記成 pending-402-<時間>）；人工在 BaseScan 確認沒有扣款後，再從帳裡刪掉這一筆
+      const mark = `pending-402-${new Date().toISOString()}`;
+      appendLedger(label, saved.credentialHash, mark, price);
+      throw new Error(`帶 VP 付款回 402（${errText}）：v1 分不出驗證或結算失敗，為免超付停止。已在 ${ledgerPath(label)} 先記一筆 ${mark}（${formatUsdcAtomic(price)}）；請到 BaseScan 核對代理人 ${agent.address} 的 USDC 轉帳，確認沒有扣款再刪掉那一筆`);
+    }
+    if (!untilLimit) continue;
+    if (r.status === 403 && body.error === "kya_spend_limit_exceeded") return;
+    if (r.status !== 200) throw new Error(`HTTP ${r.status}（${errText}）：非預期回應，停止`);
   }
+  if (untilLimit) throw new Error(`呼叫 ${count} 次都沒有出現 kya_spend_limit_exceeded`);
 }
 
 async function statusList(revokeLabels: string[]) {
@@ -242,7 +311,7 @@ if (cmd === "call" && rest[2] !== undefined && !/^[1-9]\d{0,1}$/.test(rest[2])) 
 }
 if (["setup", "call", "balance"].includes(cmd ?? "")) await assertBaseSepolia();
 if (cmd === "setup" && rest.length === 3 && /^\d+$/.test(rest[1]!) && /^\d+$/.test(rest[2]!)) await setup(rest[0]!, rest[1]!, rest[2]!);
-else if (cmd === "call" && rest.length >= 2 && ["vp", "novp"].includes(rest[1]!)) await call(rest[0]!, rest[1]!, Number(rest[2] ?? 1));
+else if (cmd === "call" && rest.length >= 2 && rest.length <= 4 && ["vp", "novp"].includes(rest[1]!) && (rest[3] === undefined || rest[3] === "until-limit")) await call(rest[0]!, rest[1]!, Number(rest[2] ?? 1), rest[3] === "until-limit");
 else if (cmd === "balance") await balance();
 else if (cmd === "status-list") await statusList(rest);
 else {

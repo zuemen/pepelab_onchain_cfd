@@ -13,6 +13,9 @@ export const x402 = (ctx, args) =>
     cwd: X402_ROOT, env: {}, cwdLabel: '~/pepelab_onchain_cfd', allowFail: true, waitLabel: '等待付費 API 回應',
   });
 
+export const LABEL = process.env.POC_X402_LABEL ?? 'main';
+if (!/^[a-z0-9-]{1,20}$/.test(LABEL)) throw new Error(`POC_X402_LABEL 格式不對：${LABEL}`);
+
 const NOTE = 'x402 用的是 S6 為付費 API 建立的 session #0（上限 0.02）與 #1（上限 0.005）';
 
 const noVp = {
@@ -20,7 +23,7 @@ const noVp = {
   note: NOTE,
   run: async (ctx) => {
     await ctx.showTerminal('代理人 — x402 付費呼叫（本機 signal-api :4021，KYA on）');
-    await x402(ctx, 'call main novp');
+    await x402(ctx, `call ${LABEL} novp`);
   },
   hold: 5500,
 };
@@ -43,15 +46,16 @@ export const scene6Pending = [
   },
 ];
 
-/** 入金後的版本：不帶 VP 被拒 → 帶 VP 實付兩次成功（真 facilitator、真測試 USDC）→ 第 3 次累計超額被拒。 */
+/** 入金後的版本：不帶 VP 被拒 → 帶 VP 實付兩筆（真 facilitator、真測試 USDC）→ 累計超額被拒（pay 會呼叫到被拒為止）。
+ *  label 用 POC_X402_LABEL（預設 main）；main 的上限已在 2026-10-08 用滿，重拍請先 setup 新憑證並設這個變數。 */
 export const scene6Paid = [
   noVp,
   {
     caption: '第 6 景｜出示 VP 付費：KYA 通過後才交給 facilitator 結算（Base Sepolia 測試 USDC，每次 0.01）',
-    note: '憑證的 x402 總額上限 0.02 USDC：前兩次成功，第 3 次累計超額被拒、不送結算',
+    note: '憑證的 x402 總額上限 0.02 USDC：兩筆結算後，下一次累計超額被拒、不送結算',
     run: async (ctx) => {
       await x402(ctx, 'balance');
-      await x402(ctx, 'pay');
+      await x402(ctx, `pay ${LABEL}`);
     },
     hold: 7000,
   },

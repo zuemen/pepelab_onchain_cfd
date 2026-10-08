@@ -113,7 +113,7 @@ node scripts/poc/rwa-poc-status-server.mjs --mount investor=agent/.state/public-
 - [ ] **各錢包 ETH**：`for a in $INV $AGENT $ISSUER 0x5358cf4E0a1409F6B433Dd25Adf8c92bF0821ED8; do echo $a $(cast balance $a -r $R --ether); done`
   - 投資人 ≥ 0.01（目前 0.0299）；代理人 ≥ 0.01（目前 0.03）；發證者 ≥ 0.002（目前 0.01，撤銷用）；keeper ≥ 0.02（目前 0.0999）。
 - [ ] **投資人保證金**：`cast call $EX "freeMargin(address)(uint256)" $INV -r $R` ≥ 100e18（目前 199.92e18）。
-- [ ] **代理人測試 USDC**（x402 用）：`cast call 0x036CbD53842c5426634e7929541eC2318f3dCF7e "balanceOf(address)(uint256)" $AGENT -r $R`（目前 **0**，S6 要先領）。
+- [ ] **代理人測試 USDC**（x402 用）：`cast call 0x036CbD53842c5426634e7929541eC2318f3dCF7e "balanceOf(address)(uint256)" $AGENT -r $R`（2026-10-08 補拍後 19.98；`main` 憑證上限已用滿，重拍實付要先 `setup` 新憑證）。
 - [ ] **乾淨起點**：`isVerified(INV)` = false、`nonces(INV)` 記下來（目前 0）、`nextSessionId()` 記下來（目前 2：#0、#1 已存在，見 §6）。
 - [ ] **清單主機**（§2）在 8787 跑、`curl -i http://localhost:8787/investor/index.json` 有 `Access-Control-Allow-Origin`。
 - [ ] **signal-api**：`http://localhost:4021`，`X402_KYA_MODE=on`（S6 負責；`curl -s localhost:4021/ | head`）。
@@ -226,28 +226,22 @@ BaseScan 連結格式：`https://sepolia.basescan.org/tx/<hash>`。
   簽發 v3 只能用投資人錢包簽 EIP-712（錄影工具的注入錢包、或 SDK `createDelegationCredential`）；錨定可用
   `cast send $ANCHOR "anchor(uint256,bytes32)" $SID <credentialHash> $(acct investor) -r $R`。
 
-### 第 6 景　代理人出示 VP、付 x402 取得訊號（占位，S6 負責）
+### 第 6 景　代理人出示 VP、付 x402 取得訊號
 
-- **操作者**：代理人，CLI（付款客戶端＋`kyaFetch`）。
-- **流程**（指令待 S6 定案後替換）：
-  1. signal-api（終端機 C）：
-
-     ```bash
-     # 占位：實際變數與啟動方式以 S6 為準
-     X402_KYA_MODE=on X402_KYA_ANCHOR=required \
-     SESSION_MANAGER_ADDRESS=0xa60a1dC20E1CBb0cBc869464E35AEBa6ff3acbdd \
-     SESSION_ANCHOR_ADDRESS=0x80269C6FfEbce234d6b24979735D987C8e0e5fBD \
-     PAY_TO=0xC7F9Bd7591601E68A1874Bfe69C0d5b75bc5eFBE \
-     VC_STATUS_DIR=$PWD/agent/.state/public-status/vc \
-     <S6 的啟動指令>   # http://localhost:4021
-     ```
-  2. 不帶 VP 付費 → 403 `kya_presentation_required`（付款不送出）。
-  3. 帶 VP（`AGENT_AUTH_VC_PATH=agent/.state/poc/delegation-v3.json`）→ 200，回應標頭 `X-Agent-KYA-Spend: total=…`；`/sessions` 的 x402 花費進度條前進。
-  4. 超過憑證 x402 總額 → 403 `kya_spend_limit_exceeded`。
-- **預期畫面**：終端機三次呼叫的狀態碼與原因代碼；x402 結算交易（若走真實 facilitator）。
+- **操作者**：代理人，CLI（付款客戶端＋`kyaFetch`），細節見 [`X402_KYA.md`](X402_KYA.md)。
+- **流程**：
+  1. signal-api（終端機 C）：`bash scripts/poc/rwa-poc-x402.sh server`（port 4021；`X402_KYA_MODE=on`、錨定 required、
+     真 facilitator `x402.org`、`PAY_TO`＝收款錢包 `0xC7F9…eFBE`；session manager 與錨定合約位址從部署紀錄讀，不手打）。
+  2. 不帶 VP 付費：`rwa-poc-x402.sh call main novp` → 403 `kya_presentation_required`（付款不送出）。
+  3. 帶 VP 實付：`rwa-poc-x402.sh pay` → 每次 0.01 測試 USDC，回應標頭 `X-Agent-KYA-Spend: total=…`，印出結算 tx；
+     呼叫到累計超過憑證上限 0.02 為止 → 403 `kya_spend_limit_exceeded`（不送結算、不扣款）。
+- **預期畫面**：終端機的狀態碼、原因代碼、`X-PAYMENT-RESPONSE` 的結算 tx 與 BaseScan 連結、代理人 USDC 餘額 20 → 19.98。
 - **旁白**：「代理人買訊號時，除了付款，還要出示由自己簽名的憑證呈現。賣方在收錢之前確認：付款人就是被授權的代理人、授權還有效、鏈上 session 和錨定都對得上、而且沒有超過投資人給的付費上限。」
-  （若結算是模擬 facilitator，要加一句「這一段的結算是模擬的，沒有錢移動」。）
-- **交易**：無。彩排時代理人測試 USDC 為 0：不帶 VP → 403 `kya_presentation_required`；`lowcap` 帶 VP → 403 `kya_spend_limit_exceeded`；`main` 帶 VP → KYA 通過、facilitator 回 402 `invalid_exact_evm_insufficient_balance`。實付待入金後補拍（字幕已照實說明）。
+- **交易**（2026-10-08 補拍，Base Sepolia 真 USDC）：
+  [`0x2b9fa83c…`](https://sepolia.basescan.org/tx/0x2b9fa83cccf278fa6fa7d70314eca68461a84304b3ad19798da91fe4d9283911)、
+  [`0xba9d7d2e…`](https://sepolia.basescan.org/tx/0xba9d7d2ea945d0ef24ba2cd0fe13da6fad796888bf8e416c4eedf158a43e7d27)（皆 status 1）。
+  中間有一次 facilitator 回 402、沒有扣款，KYA 花費帳也退回，片中字幕照實說明；超額被拒是同一個 server 行程的續段。
+  入金前的彩排（2026-10-07）：不帶 VP → 403；`lowcap` 帶 VP → 403 `kya_spend_limit_exceeded`；`main` 帶 VP → KYA 通過、facilitator 回 402 餘額不足。
 - **備援**：`bash scripts/poc/agent-delegation-demo.sh`（本機 anvil、模擬 facilitator，13 項已在 2026-10-06 實測）的錄影，明確標示是本機模擬。
 
 ### 第 7 景　代理人在 session 上限內下單、超額被拒
@@ -395,23 +389,31 @@ node postprocess.mjs --main out/<完整版>.json --frames     # → out/PepeLab-
   其餘畫面（字幕、結果、tx）原速保留，不剪任何片段。
 - 字幕在畫面底部置中，不蓋頁首的錢包地址與網路徽章。
 
-### 補拍第 6 景（代理人領到測試 USDC 之後）
+### 補拍第 6 景（2026-10-08 已完成）
 
-只重錄 x402 這一段（`scenes/scene6-x402.mjs` 的 `scene6Paid`：不帶 VP 被拒 → `rwa-poc-x402.sh pay` 帶 VP 實付兩次成功 → 第 3 次累計超額 403），再插回成片：
+只重錄 x402 這一段，再插回成片。2026-10-08 實際用的指令：
 
 ```bash
 bash scripts/poc/rwa-poc-x402.sh balance          # 代理人 USDC ≥ 0.02（atomic 20000）
-# signal-api 的 KYA 花費帳是 memory：補拍前重啟 server 讓 main 那張憑證從 0 開始計（S6：rwa-poc-x402.sh server）
+# signal-api 的 KYA 花費帳是 memory：補拍前全新啟動 server，讓 main 那張憑證從 0 開始計（rwa-poc-x402.sh server）
 cd scripts/poc/video
-node record.mjs --scenes scenes/rwa-poc-scene6-pay.mjs --base http://localhost:4173 --no-sign
-node postprocess.mjs --main out/<完整版>.json --replace-scene 6=out/rwa-poc-scene6-pay-<時間>.json --frames
+node record.mjs --scenes scenes/rwa-poc-scene6-pay.mjs --base http://localhost:4173 --no-sign        # 不帶 VP 被拒＋pay 實付
+node record.mjs --scenes scenes/rwa-poc-scene6-overlimit.mjs --base http://localhost:4173 --no-sign  # 同一個 server 行程：超額被拒
+node postprocess.mjs --main out/rwa-poc-full-2026-10-07T03-01-02.json \
+  --replace-scene 6=out/rwa-poc-scene6-pay-2026-10-08T12-31-54.json+out/rwa-poc-scene6-overlimit-2026-10-08T12-33-29.json \
+  --resume-at 268.3 --frames
 ```
 
-- `--replace-scene 6=…` 把主影片裡字幕以「第 6 景」開頭的那幾步整段換成補拍（從補拍的第一步到結尾），其餘不動；片尾卡的第 6 景摘要改成「實付成功、累計超額被拒」，並列出結算交易。
+- `--replace-scene 6=a.json+b.json` 把主影片裡字幕以「第 6 景」開頭的那幾步整段換成補拍，多段依序串接，其餘不動。
+  片尾卡的第 6 景摘要改成「實付成功、累計超額被拒」，並列出結算交易。
+- `--resume-at`：接回主影片時從哪一秒開始。第 7 景開頭約 2.7 秒，終端機還停在被換掉的舊第 6 景（餘額 0、402），所以從終端機清畫面那一刻（268.3 秒）接回。
+  新版 `record.mjs` 會把清畫面時間記在 JSON 的 `termClearsMs`，之後的錄影由後製自動找，不用手動指定。
 - 這一段只有 CLI（終端機分頁），不需要前端送交易；`--no-sign` 讓注入錢包拒絕任何簽章。結算交易 hash 由 `rwa-poc-x402.sh` 印成 `tx 0x…`，會自動記進 JSON。
-- 補拍後把結算交易填回本文第 6 景與 §8。
+- 後製輸出 `out/PepeLab-RWA-SSI-PoC-final.mp4`（7 分 41 秒，不進版控），交付時另存為 `PepeLab-RWA-SSI-PoC-final-2026-10-08.mp4`。
+- **`main` 的上限已在鏈上用滿**：帶 VP 的呼叫（`pay`、`call main vp`、兩支第 6 景劇本）在 signal-api 重啟後會被本機已付帳 `agent/.state/rwa-poc/x402/main.spent.json` 擋下、不送出（同一個 server 行程內由伺服端回 403）。
+  要重拍請先 `rwa-poc-x402.sh setup main2 20000 20000`，再以 `POC_X402_LABEL=main2 node record.mjs --scenes scenes/rwa-poc-scene6-pay.mjs …` 錄；現在 `pay` 會自己付到伺服端超額被拒（中途遇 402 則停下、不重試），不需要續段。
 
-## 8. 實跑紀錄（2026-10-07 03:01 UTC，成片所用的完整錄影，1920×1080）
+## 8. 實跑紀錄（2026-10-07 03:01 UTC 完整錄影＋2026-10-08 12:31 UTC 第 6 景補拍，1920×1080）
 
 | 景 | 結果 | 交易 |
 |---|---|---|
@@ -420,7 +422,7 @@ node postprocess.mjs --main out/<完整版>.json --replace-scene 6=out/rwa-poc-s
 | 3 提交 | 晶片「簽章有效／合格投資人／未撤銷／發證者受信任」，上鏈後顯示已具資格 | [`0x95080cd3…`](https://sepolia.basescan.org/tx/0x95080cd3f85604bebc8fc17793da899d2975c9aa9b431b575ec31a22f258a4b7) |
 | 4 開倉 | sGOLD 多單 20、1 倍，部位 #8 | [`0xac0f19bb…`](https://sepolia.basescan.org/tx/0xac0f19bb55d9dbbf28daff39b80d1026f24c2d8ce6eb51bd59f692b0de3f0860) |
 | 5 委託 | session #6（30／60／1 倍／24 小時／sGOLD），v3 簽發、錨定 | [`0xe53319fe…`](https://sepolia.basescan.org/tx/0xe53319fe9df64190cf9697d4542470c154d1e8a6ebf87a4e1f6566def1adae6a)、[`0xa7e9c1c6…`](https://sepolia.basescan.org/tx/0xa7e9c1c6ee3ca8e2a8985f192996e21a8fdd83fe810bb68271d68fed5c2567ae) |
-| 6 x402 | 403 `kya_presentation_required`；403 `kya_spend_limit_exceeded`；402 餘額不足（KYA 已通過） | — |
+| 6 x402（2026-10-08 補拍） | 不帶 VP 403 `kya_presentation_required`；帶 VP 實付兩筆各 0.01（中間一次 facilitator 402、未扣款）；累計超額 403 `kya_spend_limit_exceeded` | [`0x2b9fa83c…`](https://sepolia.basescan.org/tx/0x2b9fa83cccf278fa6fa7d70314eca68461a84304b3ad19798da91fe4d9283911)、[`0xba9d7d2e…`](https://sepolia.basescan.org/tx/0xba9d7d2ea945d0ef24ba2cd0fe13da6fad796888bf8e416c4eedf158a43e7d27) |
 | 7 代理人 | 15 成功（部位 #9）；50 模擬 `MarginExceedsPerTradeCap()` | [`0xfb041d2d…`](https://sepolia.basescan.org/tx/0xfb041d2d701c23aa6d07da11119c10477d3d082ae5ac603d5e4ac49f7b0b4799) |
 | 8 休市 | sAAPL `assetMode = 1`；前端顯示休市訊息；鏈上 `AssetNotActive(sAAPL, 1)` | [`0x2e14a086…`](https://sepolia.basescan.org/tx/0x2e14a086864650e7355f27eda72844b72c0420f26a9d046bec13a98d243e4bca)（status 0） |
 | 9 撤銷 | 清單 sequence 4＋鏈上 revoke；前端「已撤銷」；投資人與代理人模擬 `NotKycVerified`；兩筆平倉成功 | [`0xe778adf8…`](https://sepolia.basescan.org/tx/0xe778adf8400abca775494fd7c93a89ebcc0ce47b6ad8bbec1e38af2f1aad6854)、[`0x2f40295e…`](https://sepolia.basescan.org/tx/0x2f40295e09eff3b475e493f98f3b7ff8d47c3874c8ea082f35000bb9cc30bf07)、[`0x2d0f620c…`](https://sepolia.basescan.org/tx/0x2d0f620c904a8c7590dac301369a9489a8ccdf762fe1a857d9e3a6ff48089f0e) |

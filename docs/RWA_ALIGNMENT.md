@@ -242,7 +242,7 @@ Pyth 有 `Equity.US.<代號>/USD` 與 `Metal.XAU/USD`（ADR-013 §2.5，以 Herm
   檢查發證者信任與撤銷，不存個資；設計見 [`SSI_RWA_ACCESS.md`](SSI_RWA_ACCESS.md)），在 PoC 租戶由部署腳本接到交易所（`requiredType` = `QUALIFIED_INVESTOR`）。
   PoC 錄影實跑：未持證開 sGOLD 被拒（`NotKycVerified`，status 0）→ 提交憑證後開倉成功 → 撤銷後投資人與其 AI 代理人新開倉都被拒（以 `cast call` 模擬驗證，回 `NotKycVerified`）、既有部位兩筆平倉成功（鏈上交易）。
   延伸：AI 代理人委託憑證 v3、`SessionCredentialAnchor` 錨定與 x402 KYA（#270、#285，[`SSI_AGENT_DELEGATION.md`](SSI_AGENT_DELEGATION.md)）也已在同一租戶驗證，
-  x402 帶憑證實付一筆尚待代理人錢包入測試 USDC（[`tenants/rwa-poc/X402_KYA.md`](tenants/rwa-poc/X402_KYA.md)）。
+  x402 帶憑證實付已在 2026-10-08 以 Base Sepolia 測試 USDC 完成兩筆、累計超過憑證上限後被拒（[`tenants/rwa-poc/X402_KYA.md`](tenants/rwa-poc/X402_KYA.md)）。
   限制：發證者是 PoC 團隊自己的測試錢包，沒有做真實的身分審查；撤銷狀態清單主機在本機。
 
 #### ⑥ 碳資料來源可驗證（附帶建議）

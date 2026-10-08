@@ -124,6 +124,8 @@ async function main() {
     id: appOverlay.id,
   };
   const timeline = [{ view: 'app', t: Date.now() }];
+  // 終端機清畫面的時間點：後製插入補拍後接回主影片時，用來跳過還停在上一景的終端機畫面
+  const termClears = [];
   let view = 'app';
   async function show(next) {
     if (view === next) return;
@@ -156,7 +158,10 @@ async function main() {
     showApp: () => show('app'),
     /** 切到終端機分頁；title 會清空畫面並換標題列。 */
     async showTerminal(title) {
-      if (title !== undefined) await term.clear(title);
+      if (title !== undefined) {
+        await term.clear(title);
+        termClears.push(Date.now());
+      }
       await show('term');
     },
     /** 在終端機分頁執行指令，輸出逐行入鏡；`tx 0x…` 自動記進 JSON 並顯示在字幕列。 */
@@ -220,6 +225,7 @@ async function main() {
   record.address = wallet.address;
   record.timeline = timeline.map((x) => ({ view: x.view, at: new Date(x.t).toISOString() }));
   record.t0Ms = timeline[0].t;
+  record.termClearsMs = termClears;
   record.endMs = endT;
   for (const e of record.steps) e.startMs = Date.parse(e.timestamp);
 
