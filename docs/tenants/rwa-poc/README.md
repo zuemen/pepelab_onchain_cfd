@@ -22,7 +22,7 @@
 支援撤銷、不存個資）；9 檔參照真實資產的標的（8 檔美股／ETF 與 sGOLD）在鏈上標成 RWA；逐資產模式 Active／ReduceOnly／Halted 由 keeper 以
 marketOperator 身分依行事曆切換。代理人委託由租戶的 `AgentSessionManager` 執行鏈上上限，另部署 `SessionCredentialAnchor` 把委託憑證雜湊錨定到 session。
 保證金結算幣沿用平台既有的測試幣 MockUSDC（`deploy/tenants/rwa-poc.json` 的 `shared.settlementToken`），與現役部署共用，不受 PoC 金鑰控制。
-鏈下部分全部跑在本機：keeper（推價與休市切換）、signal-api（x402 KYA）、前端（`yarn dev --mode rwa-poc`）、撤銷狀態清單主機。
+鏈下部分有兩種跑法：本機（signal-api、前端 `yarn dev --mode rwa-poc`），或線上 Vercel（[`ONLINE.md`](ONLINE.md)）。推價由租戶的 GitHub Actions keeper 負責。
 
 設計細節：[`docs/SSI_RWA_ACCESS.md`](../../SSI_RWA_ACCESS.md)（VC 准入）、[`docs/SSI_AGENT_DELEGATION.md`](../../SSI_AGENT_DELEGATION.md)（委託憑證與 KYA）、
 [`docs/RWA_TRANSPARENCY.md`](../../RWA_TRANSPARENCY.md)（`/rwa`、`/oracle`、`/solvency`）、[`docs/TENANT_DEPLOYMENT.md`](../../TENANT_DEPLOYMENT.md)（租戶部署流程）。
@@ -107,7 +107,7 @@ S3 上線當下那次 `VerifyTenant` 是加 `TENANT_PRIVILEGE_SCAN_REQUIRED=true
 - **sAAPL 交易時段**：keeper 在美股正規盤以外、以及收盤前 3 小時就切 ReduceOnly，台灣白天 sAAPL 不能開新倉。成片主線改用 sGOLD（只在週末切），sAAPL 用來示範休市（[`RUNBOOK.md`](RUNBOOK.md)）。
 - **sGOLD 槓桿 1 倍**：sGOLD 碳分級 3 級，交易所槓桿上限 1 倍。
 - **signal-api 綁所有網卡**：`index.ts` 沒有 hostname 設定，會監聽 `*:4021`，同一區網的機器也連得到。錄影時用可信任的網路，或以本機防火牆擋掉 4021 的對外連線。
-- **全部服務在本機**：前端、signal-api、狀態清單主機都是 localhost；狀態清單網址寫在 VC 裡，是本機位址。沒有 Vercel preview。租戶自己的 GitHub Actions keeper（`keeper-rwa-poc.yml`）已產生，environment `keeper-rwa-poc` 與 secret 已設好（2026-10-09），合併後開始執行（[`RUNBOOK.md`](RUNBOOK.md)）。
+- **線上版與本機版並存**：線上前端與 signal-api 在 Vercel（[`ONLINE.md`](ONLINE.md)，撤銷狀態清單放在本 repo 的 `vc-status/`）；本機版照 [`RUNBOOK.md`](RUNBOOK.md)。推價由 GitHub Actions keeper（`keeper-rwa-poc.yml`）負責，本機 keeper 腳本不要同時跑。
 - **未在 BaseScan 驗證原始碼**：需要 BaseScan API key，尚未設定。
 - **合約未經外部稽核**：`VCKycRegistry`、`SessionCredentialAnchor` 是新合約，只經過 repo 內的對抗式審查與測試。
 - **前端小限制**：終端機資產列的鎖頭圖示只看靜態表，sGOLD 不顯示鎖頭，但下單面板仍會擋（[`FRONTEND.md`](FRONTEND.md)）。

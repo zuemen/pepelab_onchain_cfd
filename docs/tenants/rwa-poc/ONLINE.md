@@ -9,6 +9,15 @@
 
 兩個專案都連到本 repo；`vercel.json` 的 `git.deploymentEnabled` 讓 master 自動部署。
 
+**只改環境變數時**，git 觸發的部署會被 `scripts/vercel-ignore-build.sh` 判定「沒有變更」而取消，`vercel redeploy` 也會
+（而且 redeploy 沿用舊 commit）。要讓新環境變數生效，從 master 匯出乾淨檔案，用 CLI 直接部署：
+
+```bash
+D=$(mktemp -d) && git archive origin/master | tar -x -C "$D" && cd "$D"
+vercel link --yes --project pepelab-rwa-poc-signal-api && vercel deploy --prod --yes
+rm -rf .vercel && vercel link --yes --project pepelab-rwa-poc && vercel deploy --prod --yes
+```
+
 ## 前端環境變數（Production）
 
 `VITE_TENANT=rwa-poc`、`VITE_SIGNAL_API_URL=https://pepelab-rwa-poc-signal-api.vercel.app`、`VITE_SHOW_PERPETUALS=1`、
@@ -45,3 +54,20 @@ GitHub raw 的 CDN 快取約 5 分鐘，加上 checker 預設 60 秒快取，**�
 - **`settled:true` 只代表「已排入佇列」**：Upstash 一設，記帳 ledger 也啟用，付費 `/signals` 會入列到獨立 DB 的
   `x402:settlement:queue`，但沒有結算 worker 處理它（平台 worker 用平台的 DB），所以不會有分潤上鏈。付款本身照常直接付到 `PAY_TO`。
 - `/oracle` 等唯讀端點讀的是平台合約位址（與本機版相同）。
+
+## 驗收紀錄（2026-10-09）
+
+master `e7140b7`，兩個專案以上面的 CLI 方式部署，皆 Ready。
+
+| 項目 | 結果 |
+|---|---|
+| 前端 `/`、`/rwa`、`/oracle`、`/solvency`、`/credentials` | HTTP 200 |
+| signal-api `/healthz` | `ok` |
+| 無效輸入 `/signals/` | 400，在付費牆之前擋下、未收費 |
+| 新憑證 `main2` | session #7 [`0xbec5…c132`](https://sepolia.basescan.org/tx/0xbec53f1f995866d9e71f257f55aebccc2f4e6943ed2adde598d207e063e1c132)、錨定 [`0xd36d…2087`](https://sepolia.basescan.org/tx/0xd36de0a7d52e028f860cfd105cb81375c77699d73b8e2a6bf121b3feb9202087) |
+| 不帶 VP | 403 `kya_presentation_required` |
+| 帶 VP 付 0.01 測試 USDC | 200，結算 [`0xe2cd…f55a`](https://sepolia.basescan.org/tx/0xe2cd099618cc81037c81afe25418734ae8fb27c2d56e6d9b937b64d9e1d4f55a)；`X-Agent-KYA-Spend: total=10000`（花費帳寫入 Upstash） |
+
+driver 指向線上：在 s6 worktree 的 `agent/` 以 `RWA_POC_SIGNAL_API=https://pepelab-rwa-poc-signal-api.vercel.app`
+`RWA_POC_RPC_URL=https://base-sepolia-rpc.publicnode.com` 跑 `npx tsx examples/rwa-poc-x402.ts call <label> <vp|novp> 1`
+（`rwa-poc-x402.sh pay` 只檢查本機 `localhost:4021`）。
