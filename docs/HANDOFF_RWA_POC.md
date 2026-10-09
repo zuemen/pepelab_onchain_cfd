@@ -157,7 +157,7 @@ PoC 錢包（部署者與 2026-10-06 新建的 admin／risk／guardian／keeper�
 ### 3.4 只有使用者能做、但不擋 PoC 的事
 
 - GitHub environment／secret、branch protection、Cloudflare Worker（`docs/OWNER_ACTIONS.md`）。
-- Vercel 線上環境變數（signal-api 的 `PAY_TO`、`X402_KYA_MODE`、新位址）。
+- Vercel 線上環境變數（signal-api 的 `PAY_TO`、`X402_KYA_MODE`、新位址）。（2026-10-09 已設好，見 `tenants/rwa-poc/ONLINE.md`）
 - 舊部署：外洩地址仍控制 Sepolia 舊合約與 Base 的 3 顆 adapter（keeper 已不用）；凍結腳本 `docs/RUNBOOK_FREEZE_LEGACY.md` 要使用者明確授權才能用外洩金鑰執行。
 - 現役舊合約的 owner `0x27C2…A585` 金鑰（找到才能升級現役合約；PoC 不需要）。
 
@@ -233,15 +233,18 @@ S0–S8 全部完成。S6 的 x402 帶憑證實付與 S7 第 6 景補拍在 2026
 中間有一次 facilitator 回 402、未扣款，KYA 花費帳也退回；細節見 [`X402_KYA.md`](tenants/rwa-poc/X402_KYA.md) §4 (c)。
 
 **`main` 憑證的上限 0.02 已在鏈上用滿**：帶 VP 對它付款會被本機已付帳（`agent/.state/rwa-poc/x402/main.spent.json`，只在 s6 worktree）擋下。
-要再示範實付，先 `bash scripts/poc/rwa-poc-x402.sh setup main2 20000 20000`，再 `pay main2`。代理人還有 19.98 測試 USDC。
+`main2` 憑證（session #7，上限 0.02）已在 2026-10-09 線上驗收時付過一筆 0.01，還剩 0.01。要再示範兩筆到超額被拒，
+另建一張：`bash scripts/poc/rwa-poc-x402.sh setup main3 20000 20000`。代理人還有 19.97 測試 USDC。
+
+### 線上版（2026-10-09 完成）
+
+- 前端 <https://pepelab-rwa-poc.vercel.app> 與 signal-api <https://pepelab-rwa-poc-signal-api.vercel.app>（x402 KYA 收費）已上線，
+  設定、部署方式與驗收紀錄見 [`ONLINE.md`](tenants/rwa-poc/ONLINE.md)。
+- 租戶 GitHub Actions keeper（`keeper-rwa-poc.yml`）已上線，每 15 分鐘推價；本機 keeper 腳本已停，**兩者不要同時跑**（撞 nonce），
+  見 [`RUNBOOK.md`](tenants/rwa-poc/RUNBOOK.md)「GitHub Actions keeper」。`TENANT_RPC_URL` 用 publicnode（`sepolia.base.org` 擋 CI 機房 IP）。
 
 ### 尚未完成、不擋 PoC 的事
 
 - BaseScan 原始碼驗證：全部 26 個合約已在 Blockscout 與 Sourcify 驗證（`docs/tenants/rwa-poc/DEPLOYMENT.md`「原始碼驗證」）；BaseScan 只差使用者自己設定 `ETHERSCAN_API_KEY` 後跑 `bash scripts/poc/rwa-poc-verify.sh`。
-- Vercel preview 與線上 signal-api 環境變數（需要使用者的 Vercel 權限）；目前 PoC 全部在本機執行。
-- 租戶自己的 GitHub Actions keeper：**進行中**。`.github/workflows/keeper-rwa-poc.yml` 已由範本產生、keeper-trigger 的
-  `WORKFLOW_FILES` 已加入（未重新 `wrangler deploy`），CI 檢查全過；本機以相同環境 `DRY_RUN` 一輪 `failed=0`。
-  2026-10-09 environment `keeper-rwa-poc` 已建立（Deployment branches 只允許 `master`），並放好
-  `TENANT_KEEPER_PRIVATE_KEY`（＝keystore `pepelab-rwa-keeper` 的私鑰，與本機腳本同一把）與 `TENANT_RPC_URL`。剩下：
-  合併 → `gh workflow run keeper-rwa-poc.yml` 實跑一輪。之後本機腳本與 Actions 不要同時跑（撞 nonce），見
-  [`RUNBOOK.md`](tenants/rwa-poc/RUNBOOK.md)「GitHub Actions keeper」。
+- keeper-trigger 的 `WORKFLOW_FILES` 已加入 `keeper-rwa-poc.yml`，但還沒重新 `wrangler deploy`（不影響 cron 排程）。
+- 線上 signal-api 的已知限制（撤銷狀態每實例一份、結算佇列沒有 worker）見 `ONLINE.md`。
