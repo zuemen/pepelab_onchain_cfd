@@ -18,38 +18,65 @@
 
 ## 合約
 
-| 合約 | 位址 | 建立交易 |
-|---|---|---|
-| ExchangeOpsLib | `0x2faa5382d118aa9e5e4d50040e02efbfb72ebfaf` | [0xbef037c8…](https://sepolia.basescan.org/tx/0xbef037c8abfc68329c301d784a76a9798681355f409ac22ab15013258e496d59) |
-| GuardedOracle | `0x249a6ce5b467a4f44dc6378be313d681b2c4358a` | [0x936b6d89…](https://sepolia.basescan.org/tx/0x936b6d89d5ad34b6bf988ac9feda4fd5ee6db8ebb1d9132212e0fea022550580) |
-| ESGRegistryV2 | `0x91ccbbbcef651c2b1e57117a5b0decde23de572b` | [0xaa5cc94e…](https://sepolia.basescan.org/tx/0xaa5cc94e189a8675227f648c10a6b150ee7ece5ecda0ae866f3570fba60534df) |
-| VCKycRegistry | `0x3869405c4641c72e5f01ead9ced69139b4d830bd` | [0x2281de25…](https://sepolia.basescan.org/tx/0x2281de25ab4578b056f97af5eb6468e7803da661c63c460ffc3adaaad8e09a85) |
-| InsuranceVault | `0x792f0b2072cb3c65d618c50ae31c7802b8909035` | [0x61e29045…](https://sepolia.basescan.org/tx/0x61e2904523c8dd3ebd51e6d6ed39ab83b5e226d836b870f76218fc3b57246c01) |
-| InsuranceSeeder | `0xae18a14e91973b5ecd0abd0c3c334538defcd555` | [0x76cd632a…](https://sepolia.basescan.org/tx/0x76cd632a72ad75918d6201870b13a062f94193f62d0c1de0f9013a87f863c557) |
-| FeeRouter | `0x622a4c0afd20105c5be28fa5e39d3808ffb065df` | [0x9003e468…](https://sepolia.basescan.org/tx/0x9003e4680b7d17e9971bd479f8d6b21762fbbbc5c8c9f54afdeca411e598ce7b) |
-| TraderStake | `0x2a7be6faccb9b00337ff52712430c835cced1034` | [0x06207587…](https://sepolia.basescan.org/tx/0x062075871ea674b4e97bf6ee62cf6e95a63f687a06cf51b3c64ad09310ead4a7) |
-| PerpetualExchange | `0xbb7f8059ed5450889c745f5c1f458cb1290fa96b` | [0x34fa022c…](https://sepolia.basescan.org/tx/0x34fa022c2c42243fe5ebebaf2568fc8e522b1bad994a9b0a3ad4e685828a933b) |
-| StrategyRegistry | `0x2a1a974ba8ed424cd6acf035a17a88c1816eece9` | [0xb24cb062…](https://sepolia.basescan.org/tx/0xb24cb062dfe2fef4b8d4a0d9b6b145809c1e2fbc5e1044b0dcd8e42c6f0b1610) |
-| CopyTracker | `0x48e770d50e7c1ac2f0c098a70b28bd5e641cdd0a` | [0x558ef309…](https://sepolia.basescan.org/tx/0x558ef30901327e0dc52f597a95c496ff76ca7496df67dce2b3f79ae0ba56d893) |
-| AgentSessionManager | `0xa60a1dc20e1cbb0cbc869464e35aeba6ff3acbdd` | [0xbed3ea08…](https://sepolia.basescan.org/tx/0xbed3ea08f01ee207025075833edf7e3787d488221fe4f24e819a55c2215971df) |
-| AssetVaultV2_5 | `0x6a6a20176e480985ea90f717d5c64898be0ffce9` | [0xeab8c347…](https://sepolia.basescan.org/tx/0xeab8c34748de60020342ff2a17a140392bd7fab1f28ec0a2a1680772fab2f359) |
-| ERC1967Proxy | `0x9e77476bb4fe36259e729628cf4a38f54107720b` | [0x808469ae…](https://sepolia.basescan.org/tx/0x808469ae8508c861902ce95bc63a2d80308719613f0f574015025fea35006596) |
-| SyntheticAssetV2 | `0x17792ed0e52688cdfa5698ffc3a09531634b61af` | [0x50c88d6e…](https://sepolia.basescan.org/tx/0x50c88d6e14ceb75a9e601244a8d4c371c1dffd7dfef9ffaefb7fe48e174ccd44) |
-| SyntheticAssetV2 | `0x79e05b58980eecd7096e6acdf073439ba827a74a` | [0xacff0d49…](https://sepolia.basescan.org/tx/0xacff0d49f7987d4712b4087b23303987621be4ab992062974410794c6d66f25c) |
-| SyntheticAssetV2 | `0xda3e3096198c587dd5ce1d3c96057a3cbeb37dc8` | [0x7a867538…](https://sepolia.basescan.org/tx/0x7a867538735e580f8f290828d53aa07efc95bd310d60a01795079aef172d9c59) |
-| SyntheticAssetV2 | `0x5d544ee95a2a71cb9d612238b9e1fc83b01a2c7e` | [0xca890dca…](https://sepolia.basescan.org/tx/0xca890dca59a8ef0dcf019e52da430e3dceca6e048402334d97a5f66ef37396f6) |
-| SyntheticAssetV2 | `0x0bcee6225bca305881412edc9fdab17434f74e8a` | [0x51240dff…](https://sepolia.basescan.org/tx/0x51240dfff5d19cd6341a2026096edbd5a8de0e12426f28c2b8a8f9b7faa74b2d) |
-| SyntheticAssetV2 | `0xbc2755b55462af20ae73acaabc30b6bc5f5db2f5` | [0xba28e74f…](https://sepolia.basescan.org/tx/0xba28e74f052fa46f14bd3a623567d9679424c075e6fca6a09a912fb13d2044b2) |
-| SyntheticAssetV2 | `0xe4981caf202c43ea9df9bfc5ff059bdd7b5fde7a` | [0x81465b02…](https://sepolia.basescan.org/tx/0x81465b02b562f15f7f75f63e4d843fd44069085b2e2812aff508b3ce0cfa43de) |
-| SyntheticAssetV2 | `0x631551d7695b16155cdbd5d9f8e394b65ca50620` | [0x05fd8bc6…](https://sepolia.basescan.org/tx/0x05fd8bc6ccbb39f91257748ac1ee2e8f714909932bdeebf8f1ed8ca25f147568) |
-| SyntheticAssetV2 | `0xd00b097fed3b82a7fd316f42dc42a188b8ef6672` | [0x829f9320…](https://sepolia.basescan.org/tx/0x829f9320b9684d89a1bb48fa759acf39695b4a7019eb1a9f913580df4170d767) |
-| SyntheticAssetV2 | `0xd0fb912e3fcc9bd9f1dc78a52007b88953670a34` | [0xf6018018…](https://sepolia.basescan.org/tx/0xf60180181e7a2a179b00a4526e1148da5efc1c92929dc518037a8a507abf5a6e) |
-| SyntheticAssetV2 | `0xfde7ff38174c43c1b788f634113beb7c32747cf6` | [0x87249d6a…](https://sepolia.basescan.org/tx/0x87249d6ae9cd627865b79338c0fdb9dbec527b61c6404a234f6a6a83bc8652b3) |
-| SessionCredentialAnchor | `0x80269C6FfEbce234d6b24979735D987C8e0e5fBD` | [0xd11baa7a…](https://sepolia.basescan.org/tx/0xd11baa7a68fa18b2eacf626838599e8de1af12a18cd36cdc3a00ec1b49592c94) |
+| 合約 | 位址 | 建立交易 | 已驗證原始碼 |
+|---|---|---|---|
+| ExchangeOpsLib | `0x2faa5382d118aa9e5e4d50040e02efbfb72ebfaf` | [0xbef037c8…](https://sepolia.basescan.org/tx/0xbef037c8abfc68329c301d784a76a9798681355f409ac22ab15013258e496d59) | [Blockscout](https://base-sepolia.blockscout.com/address/0x2faa5382d118aa9e5e4d50040e02efbfb72ebfaf?tab=contract) · [Sourcify](https://repo.sourcify.dev/84532/0x2faa5382d118aa9e5e4d50040e02efbfb72ebfaf) |
+| GuardedOracle | `0x249a6ce5b467a4f44dc6378be313d681b2c4358a` | [0x936b6d89…](https://sepolia.basescan.org/tx/0x936b6d89d5ad34b6bf988ac9feda4fd5ee6db8ebb1d9132212e0fea022550580) | [Blockscout](https://base-sepolia.blockscout.com/address/0x249a6ce5b467a4f44dc6378be313d681b2c4358a?tab=contract) · [Sourcify](https://repo.sourcify.dev/84532/0x249a6ce5b467a4f44dc6378be313d681b2c4358a) |
+| ESGRegistryV2 | `0x91ccbbbcef651c2b1e57117a5b0decde23de572b` | [0xaa5cc94e…](https://sepolia.basescan.org/tx/0xaa5cc94e189a8675227f648c10a6b150ee7ece5ecda0ae866f3570fba60534df) | [Blockscout](https://base-sepolia.blockscout.com/address/0x91ccbbbcef651c2b1e57117a5b0decde23de572b?tab=contract) · [Sourcify](https://repo.sourcify.dev/84532/0x91ccbbbcef651c2b1e57117a5b0decde23de572b) |
+| VCKycRegistry | `0x3869405c4641c72e5f01ead9ced69139b4d830bd` | [0x2281de25…](https://sepolia.basescan.org/tx/0x2281de25ab4578b056f97af5eb6468e7803da661c63c460ffc3adaaad8e09a85) | [Blockscout](https://base-sepolia.blockscout.com/address/0x3869405c4641c72e5f01ead9ced69139b4d830bd?tab=contract) · [Sourcify](https://repo.sourcify.dev/84532/0x3869405c4641c72e5f01ead9ced69139b4d830bd) |
+| InsuranceVault | `0x792f0b2072cb3c65d618c50ae31c7802b8909035` | [0x61e29045…](https://sepolia.basescan.org/tx/0x61e2904523c8dd3ebd51e6d6ed39ab83b5e226d836b870f76218fc3b57246c01) | [Blockscout](https://base-sepolia.blockscout.com/address/0x792f0b2072cb3c65d618c50ae31c7802b8909035?tab=contract) · [Sourcify](https://repo.sourcify.dev/84532/0x792f0b2072cb3c65d618c50ae31c7802b8909035) |
+| InsuranceSeeder | `0xae18a14e91973b5ecd0abd0c3c334538defcd555` | [0x76cd632a…](https://sepolia.basescan.org/tx/0x76cd632a72ad75918d6201870b13a062f94193f62d0c1de0f9013a87f863c557) | [Blockscout](https://base-sepolia.blockscout.com/address/0xae18a14e91973b5ecd0abd0c3c334538defcd555?tab=contract) · [Sourcify](https://repo.sourcify.dev/84532/0xae18a14e91973b5ecd0abd0c3c334538defcd555) |
+| FeeRouter | `0x622a4c0afd20105c5be28fa5e39d3808ffb065df` | [0x9003e468…](https://sepolia.basescan.org/tx/0x9003e4680b7d17e9971bd479f8d6b21762fbbbc5c8c9f54afdeca411e598ce7b) | [Blockscout](https://base-sepolia.blockscout.com/address/0x622a4c0afd20105c5be28fa5e39d3808ffb065df?tab=contract) · [Sourcify](https://repo.sourcify.dev/84532/0x622a4c0afd20105c5be28fa5e39d3808ffb065df) |
+| TraderStake | `0x2a7be6faccb9b00337ff52712430c835cced1034` | [0x06207587…](https://sepolia.basescan.org/tx/0x062075871ea674b4e97bf6ee62cf6e95a63f687a06cf51b3c64ad09310ead4a7) | [Blockscout](https://base-sepolia.blockscout.com/address/0x2a7be6faccb9b00337ff52712430c835cced1034?tab=contract) · [Sourcify](https://repo.sourcify.dev/84532/0x2a7be6faccb9b00337ff52712430c835cced1034) |
+| PerpetualExchange | `0xbb7f8059ed5450889c745f5c1f458cb1290fa96b` | [0x34fa022c…](https://sepolia.basescan.org/tx/0x34fa022c2c42243fe5ebebaf2568fc8e522b1bad994a9b0a3ad4e685828a933b) | [Blockscout](https://base-sepolia.blockscout.com/address/0xbb7f8059ed5450889c745f5c1f458cb1290fa96b?tab=contract) · [Sourcify](https://repo.sourcify.dev/84532/0xbb7f8059ed5450889c745f5c1f458cb1290fa96b) |
+| StrategyRegistry | `0x2a1a974ba8ed424cd6acf035a17a88c1816eece9` | [0xb24cb062…](https://sepolia.basescan.org/tx/0xb24cb062dfe2fef4b8d4a0d9b6b145809c1e2fbc5e1044b0dcd8e42c6f0b1610) | [Blockscout](https://base-sepolia.blockscout.com/address/0x2a1a974ba8ed424cd6acf035a17a88c1816eece9?tab=contract) · [Sourcify](https://repo.sourcify.dev/84532/0x2a1a974ba8ed424cd6acf035a17a88c1816eece9) |
+| CopyTracker | `0x48e770d50e7c1ac2f0c098a70b28bd5e641cdd0a` | [0x558ef309…](https://sepolia.basescan.org/tx/0x558ef30901327e0dc52f597a95c496ff76ca7496df67dce2b3f79ae0ba56d893) | [Blockscout](https://base-sepolia.blockscout.com/address/0x48e770d50e7c1ac2f0c098a70b28bd5e641cdd0a?tab=contract) · [Sourcify](https://repo.sourcify.dev/84532/0x48e770d50e7c1ac2f0c098a70b28bd5e641cdd0a) |
+| AgentSessionManager | `0xa60a1dc20e1cbb0cbc869464e35aeba6ff3acbdd` | [0xbed3ea08…](https://sepolia.basescan.org/tx/0xbed3ea08f01ee207025075833edf7e3787d488221fe4f24e819a55c2215971df) | [Blockscout](https://base-sepolia.blockscout.com/address/0xa60a1dc20e1cbb0cbc869464e35aeba6ff3acbdd?tab=contract) · [Sourcify](https://repo.sourcify.dev/84532/0xa60a1dc20e1cbb0cbc869464e35aeba6ff3acbdd) |
+| AssetVaultV2_5 | `0x6a6a20176e480985ea90f717d5c64898be0ffce9` | [0xeab8c347…](https://sepolia.basescan.org/tx/0xeab8c34748de60020342ff2a17a140392bd7fab1f28ec0a2a1680772fab2f359) | [Blockscout](https://base-sepolia.blockscout.com/address/0x6a6a20176e480985ea90f717d5c64898be0ffce9?tab=contract) · [Sourcify](https://repo.sourcify.dev/84532/0x6a6a20176e480985ea90f717d5c64898be0ffce9) |
+| ERC1967Proxy | `0x9e77476bb4fe36259e729628cf4a38f54107720b` | [0x808469ae…](https://sepolia.basescan.org/tx/0x808469ae8508c861902ce95bc63a2d80308719613f0f574015025fea35006596) | [Blockscout](https://base-sepolia.blockscout.com/address/0x9e77476bb4fe36259e729628cf4a38f54107720b?tab=contract) · [Sourcify](https://repo.sourcify.dev/84532/0x9e77476bb4fe36259e729628cf4a38f54107720b) |
+| SyntheticAssetV2 | `0x17792ed0e52688cdfa5698ffc3a09531634b61af` | [0x50c88d6e…](https://sepolia.basescan.org/tx/0x50c88d6e14ceb75a9e601244a8d4c371c1dffd7dfef9ffaefb7fe48e174ccd44) | [Blockscout](https://base-sepolia.blockscout.com/address/0x17792ed0e52688cdfa5698ffc3a09531634b61af?tab=contract) · [Sourcify](https://repo.sourcify.dev/84532/0x17792ed0e52688cdfa5698ffc3a09531634b61af) |
+| SyntheticAssetV2 | `0x79e05b58980eecd7096e6acdf073439ba827a74a` | [0xacff0d49…](https://sepolia.basescan.org/tx/0xacff0d49f7987d4712b4087b23303987621be4ab992062974410794c6d66f25c) | [Blockscout](https://base-sepolia.blockscout.com/address/0x79e05b58980eecd7096e6acdf073439ba827a74a?tab=contract) · [Sourcify](https://repo.sourcify.dev/84532/0x79e05b58980eecd7096e6acdf073439ba827a74a) |
+| SyntheticAssetV2 | `0xda3e3096198c587dd5ce1d3c96057a3cbeb37dc8` | [0x7a867538…](https://sepolia.basescan.org/tx/0x7a867538735e580f8f290828d53aa07efc95bd310d60a01795079aef172d9c59) | [Blockscout](https://base-sepolia.blockscout.com/address/0xda3e3096198c587dd5ce1d3c96057a3cbeb37dc8?tab=contract) · [Sourcify](https://repo.sourcify.dev/84532/0xda3e3096198c587dd5ce1d3c96057a3cbeb37dc8) |
+| SyntheticAssetV2 | `0x5d544ee95a2a71cb9d612238b9e1fc83b01a2c7e` | [0xca890dca…](https://sepolia.basescan.org/tx/0xca890dca59a8ef0dcf019e52da430e3dceca6e048402334d97a5f66ef37396f6) | [Blockscout](https://base-sepolia.blockscout.com/address/0x5d544ee95a2a71cb9d612238b9e1fc83b01a2c7e?tab=contract) · [Sourcify](https://repo.sourcify.dev/84532/0x5d544ee95a2a71cb9d612238b9e1fc83b01a2c7e) |
+| SyntheticAssetV2 | `0x0bcee6225bca305881412edc9fdab17434f74e8a` | [0x51240dff…](https://sepolia.basescan.org/tx/0x51240dfff5d19cd6341a2026096edbd5a8de0e12426f28c2b8a8f9b7faa74b2d) | [Blockscout](https://base-sepolia.blockscout.com/address/0x0bcee6225bca305881412edc9fdab17434f74e8a?tab=contract) · [Sourcify](https://repo.sourcify.dev/84532/0x0bcee6225bca305881412edc9fdab17434f74e8a) |
+| SyntheticAssetV2 | `0xbc2755b55462af20ae73acaabc30b6bc5f5db2f5` | [0xba28e74f…](https://sepolia.basescan.org/tx/0xba28e74f052fa46f14bd3a623567d9679424c075e6fca6a09a912fb13d2044b2) | [Blockscout](https://base-sepolia.blockscout.com/address/0xbc2755b55462af20ae73acaabc30b6bc5f5db2f5?tab=contract) · [Sourcify](https://repo.sourcify.dev/84532/0xbc2755b55462af20ae73acaabc30b6bc5f5db2f5) |
+| SyntheticAssetV2 | `0xe4981caf202c43ea9df9bfc5ff059bdd7b5fde7a` | [0x81465b02…](https://sepolia.basescan.org/tx/0x81465b02b562f15f7f75f63e4d843fd44069085b2e2812aff508b3ce0cfa43de) | [Blockscout](https://base-sepolia.blockscout.com/address/0xe4981caf202c43ea9df9bfc5ff059bdd7b5fde7a?tab=contract) · [Sourcify](https://repo.sourcify.dev/84532/0xe4981caf202c43ea9df9bfc5ff059bdd7b5fde7a) |
+| SyntheticAssetV2 | `0x631551d7695b16155cdbd5d9f8e394b65ca50620` | [0x05fd8bc6…](https://sepolia.basescan.org/tx/0x05fd8bc6ccbb39f91257748ac1ee2e8f714909932bdeebf8f1ed8ca25f147568) | [Blockscout](https://base-sepolia.blockscout.com/address/0x631551d7695b16155cdbd5d9f8e394b65ca50620?tab=contract) · [Sourcify](https://repo.sourcify.dev/84532/0x631551d7695b16155cdbd5d9f8e394b65ca50620) |
+| SyntheticAssetV2 | `0xd00b097fed3b82a7fd316f42dc42a188b8ef6672` | [0x829f9320…](https://sepolia.basescan.org/tx/0x829f9320b9684d89a1bb48fa759acf39695b4a7019eb1a9f913580df4170d767) | [Blockscout](https://base-sepolia.blockscout.com/address/0xd00b097fed3b82a7fd316f42dc42a188b8ef6672?tab=contract) · [Sourcify](https://repo.sourcify.dev/84532/0xd00b097fed3b82a7fd316f42dc42a188b8ef6672) |
+| SyntheticAssetV2 | `0xd0fb912e3fcc9bd9f1dc78a52007b88953670a34` | [0xf6018018…](https://sepolia.basescan.org/tx/0xf60180181e7a2a179b00a4526e1148da5efc1c92929dc518037a8a507abf5a6e) | [Blockscout](https://base-sepolia.blockscout.com/address/0xd0fb912e3fcc9bd9f1dc78a52007b88953670a34?tab=contract) · [Sourcify](https://repo.sourcify.dev/84532/0xd0fb912e3fcc9bd9f1dc78a52007b88953670a34) |
+| SyntheticAssetV2 | `0xfde7ff38174c43c1b788f634113beb7c32747cf6` | [0x87249d6a…](https://sepolia.basescan.org/tx/0x87249d6ae9cd627865b79338c0fdb9dbec527b61c6404a234f6a6a83bc8652b3) | [Blockscout](https://base-sepolia.blockscout.com/address/0xfde7ff38174c43c1b788f634113beb7c32747cf6?tab=contract) · [Sourcify](https://repo.sourcify.dev/84532/0xfde7ff38174c43c1b788f634113beb7c32747cf6) |
+| SessionCredentialAnchor | `0x80269C6FfEbce234d6b24979735D987C8e0e5fBD` | [0xd11baa7a…](https://sepolia.basescan.org/tx/0xd11baa7a68fa18b2eacf626838599e8de1af12a18cd36cdc3a00ec1b49592c94) | [Blockscout](https://base-sepolia.blockscout.com/address/0x80269c6ffebce234d6b24979735d987c8e0e5fbd?tab=contract) · [Sourcify](https://repo.sourcify.dev/84532/0x80269c6ffebce234d6b24979735d987c8e0e5fbd) |
 
 - `ERC1967Proxy` 是 `AssetVaultV2`（UUPS），實作是 `AssetVaultV2_5`（紀錄的 `AssetVaultV2Impl`）。
 - `SyntheticAssetV2` 依序為 sAAPL、sTSLA、sNVDA、sMSFT、sGOOGL、sICLN、sESGU、sBOND、sGOLD、sETH、sBTC（位址見部署紀錄 `tokens`）。
 - `SessionCredentialAnchor` 由部署者另外部署（無 admin），指向本租戶的 `AgentSessionManager` `0xa60a1dC20E1CBb0cBc869464E35AEBa6ff3acbdd`。
+
+## 原始碼驗證
+
+全部 26 個合約（含 library `ExchangeOpsLib`、UUPS proxy `ERC1967Proxy` 與其實作 `AssetVaultV2_5`、11 檔 `SyntheticAssetV2`、
+`VCKycRegistry`、`SessionCredentialAnchor`）在 **Blockscout**（<https://base-sepolia.blockscout.com>）與 **Sourcify**
+都已驗證（2026-10-09，以兩邊的 API 查回確認）：
+
+| 驗證器 | 結果 |
+|---|---|
+| Blockscout | 26／26 完整比對（`is_fully_verified`）；proxy 頁面已連到實作 `AssetVaultV2_5` |
+| Sourcify | 25／26 `exact_match`（連 metadata hash 都一致，送出的就是部署當時那份原始碼）；`ERC1967Proxy` 為 `match`（部分比對） |
+| BaseScan | 未驗證：只差使用者設定 `ETHERSCAN_API_KEY` 後跑下方腳本 |
+
+`ERC1967Proxy` 在 Sourcify 的 `match` 是部署當下（2026-10-06 23:58 UTC）就存在的紀錄；用同一份原始碼重送時，Sourcify 的驗證工作
+本身算出 `exact_match`（本機 solc 0.8.36 編出的 metadata hash 也與鏈上一致），但 Sourcify 回 `already_verified`、不取代舊紀錄。
+Blockscout 對同一個 proxy 是完整比對。上表每列的連結即驗證後的原始碼頁。
+
+```bash
+bash scripts/poc/rwa-poc-verify.sh --check   # 只查三家驗證器的狀態（不送東西）
+bash scripts/poc/rwa-poc-verify.sh           # Blockscout＋Sourcify；有 ETHERSCAN_API_KEY 時再加 BaseScan（Etherscan V2）
+```
+
+- 只送原始碼，不送鏈上交易、不需要私鑰；冪等（已完整驗證的跳過），結果以各驗證器 API 查回的為準。
+- 合約、位址、建立交易、library 與部署 commit 都從 broadcast 讀；`GuardedOracle`、`AgentSessionManager` 在部署之後改過，
+  腳本會在暫時的 git worktree 取出部署時的 commit（`1c0e509`／`88ee4ed`）編譯後再送。
+- Blockscout／Sourcify 送的是由編譯產物 metadata 重建的 standard JSON：`forge verify-contract` 會精簡 remappings，
+  metadata hash 因此對不上，只能拿到部分比對。
 
 ## 部署後設定
 
