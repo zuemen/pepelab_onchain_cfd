@@ -1,0 +1,26 @@
+{
+  "@context": [
+    "https://www.w3.org/ns/credentials/v2",
+    "https://pepelab.xyz/credentials/agent-authorization-status/v1"
+  ],
+  "type": [
+    "AgentCredentialStatusList"
+  ],
+  "issuer": "did:pkh:eip155:84532:0xebAFE53877ad3B691664d8cb0b34874CE1240194",
+  "sequence": 1,
+  "issuedAt": 1791334598,
+  "validUntil": 1793926598,
+  "revokedBefore": 0,
+  "revoked": [],
+  "proof": {
+    "type": "EthereumEip712Signature2021",
+    "created": "2026-10-07T00:56:38.000Z",
+    "proofPurpose": "assertionMethod",
+    "verificationMethod": "did:pkh:eip155:84532:0xebAFE53877ad3B691664d8cb0b34874CE1240194#blockchainAccountId",
+    "proofValue": "0xb3c2fdadd248537f96e52d1847f5296192864030fd8666d906054e35f989f6e02dcfe6b1b6f1cb09bca37107044aa983332079af2d68ec3d41e2f7916c1c14f51c",
+    "eip712Domain": {
+      "version": "2",
+      "verifyingContract": "0xa60a1dC20E1CBb0cBc869464E35AEBa6ff3acbdd"
+    }
+  }
+}
