@@ -107,7 +107,7 @@ S3 上線當下那次 `VerifyTenant` 是加 `TENANT_PRIVILEGE_SCAN_REQUIRED=true
 - **sAAPL 交易時段**：keeper 在美股正規盤以外、以及收盤前 3 小時就切 ReduceOnly，台灣白天 sAAPL 不能開新倉。成片主線改用 sGOLD（只在週末切），sAAPL 用來示範休市（[`RUNBOOK.md`](RUNBOOK.md)）。
 - **sGOLD 槓桿 1 倍**：sGOLD 碳分級 3 級，交易所槓桿上限 1 倍。
 - **signal-api 綁所有網卡**：`index.ts` 沒有 hostname 設定，會監聽 `*:4021`，同一區網的機器也連得到。錄影時用可信任的網路，或以本機防火牆擋掉 4021 的對外連線。
-- **全部服務在本機**：前端、signal-api、狀態清單主機都是 localhost；狀態清單網址寫在 VC 裡，是本機位址。沒有 Vercel preview。租戶自己的 GitHub Actions keeper（`keeper-rwa-poc.yml`）已產生，要等 environment `keeper-rwa-poc` 的 secret 設好、合併後才會執行（[`RUNBOOK.md`](RUNBOOK.md)）。
+- **全部服務在本機**：前端、signal-api、狀態清單主機都是 localhost；狀態清單網址寫在 VC 裡，是本機位址。沒有 Vercel preview。租戶自己的 GitHub Actions keeper（`keeper-rwa-poc.yml`）已產生，environment `keeper-rwa-poc` 與 secret 已設好（2026-10-09），合併後開始執行（[`RUNBOOK.md`](RUNBOOK.md)）。
 - **未在 BaseScan 驗證原始碼**：需要 BaseScan API key，尚未設定。
 - **合約未經外部稽核**：`VCKycRegistry`、`SessionCredentialAnchor` 是新合約，只經過 repo 內的對抗式審查與測試。
 - **前端小限制**：終端機資產列的鎖頭圖示只看靜態表，sGOLD 不顯示鎖頭，但下單面板仍會擋（[`FRONTEND.md`](FRONTEND.md)）。

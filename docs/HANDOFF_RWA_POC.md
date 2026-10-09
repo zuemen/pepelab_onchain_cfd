@@ -241,7 +241,7 @@ S0–S8 全部完成。S6 的 x402 帶憑證實付與 S7 第 6 景補拍在 2026
 - Vercel preview 與線上 signal-api 環境變數（需要使用者的 Vercel 權限）；目前 PoC 全部在本機執行。
 - 租戶自己的 GitHub Actions keeper：**進行中**。`.github/workflows/keeper-rwa-poc.yml` 已由範本產生、keeper-trigger 的
   `WORKFLOW_FILES` 已加入（未重新 `wrangler deploy`），CI 檢查全過；本機以相同環境 `DRY_RUN` 一輪 `failed=0`。
-  2026-10-09 查詢時 environment `keeper-rwa-poc` **還不存在**（secret 也就還沒放）。剩下：建 environment 並放
-  `TENANT_KEEPER_PRIVATE_KEY`（＝keystore `pepelab-rwa-keeper` 的私鑰，與本機腳本同一把）與 `TENANT_RPC_URL` →
+  2026-10-09 environment `keeper-rwa-poc` 已建立（Deployment branches 只允許 `master`），並放好
+  `TENANT_KEEPER_PRIVATE_KEY`（＝keystore `pepelab-rwa-keeper` 的私鑰，與本機腳本同一把）與 `TENANT_RPC_URL`。剩下：
   合併 → `gh workflow run keeper-rwa-poc.yml` 實跑一輪。之後本機腳本與 Actions 不要同時跑（撞 nonce），見
   [`RUNBOOK.md`](tenants/rwa-poc/RUNBOOK.md)「GitHub Actions keeper」。
