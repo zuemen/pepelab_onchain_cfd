@@ -389,7 +389,7 @@ TENANT=<id> TENANT_RECORD=cache/tenants/<id>.deployed.json TENANT_PRIVILEGE_SCAN
 ## 6. 已知缺口
 
 - **收費模式待決**：base fee＋租戶 markup 的數字與收取方式（鏈上需要新版 FeeRouter）。在定案前沒有任何租戶能標成 `deployed`。
-- **沒有任何專屬租戶真的廣播過**：腳本只在單元測試、Base Sepolia fork 測試與本機 anvil fork 上跑過。
+- **只有一個專屬租戶真的廣播過**：`rwa-poc` 於 2026-10-07 在 Base Sepolia 以 `DeployTenant.s.sol` 廣播（見 `docs/tenants/rwa-poc/DEPLOYMENT.md`）。其他路徑（例如 Base 主網、第二個租戶、升級既有租戶）仍只在單元測試、Base Sepolia fork 測試與本機 anvil fork 上跑過。
 - **前端只能連 Base Sepolia 的專屬部署**；Base 主網需要錢包切換、RPC、CSP、區塊瀏覽器連結的設定。
 - **專屬租戶的前端沒有逐頁走查過**（沒有可瀏覽的專屬部署）。見 ADR 0009 增補的 Consequences。
 - **ESGRegistryV2 只有「每租戶專屬」一種**；ADR-008 允許租戶明確選擇共用平台登錄的選項沒有實作。

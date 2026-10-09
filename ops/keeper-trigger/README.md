@@ -54,7 +54,7 @@ Worker 本身**不持有任何鏈上金鑰**，對任何 HTTP 請求都回 404�
 
 ### 每個可 dispatch 的 workflow 被觸發時的最壞後果
 
-以 `grep -l workflow_dispatch .github/workflows/*` 列出，共 9 支：
+以 `grep -l workflow_dispatch .github/workflows/*` 列出（2026-10-09 共 16 支）。下表分析了其中 10 支；`contract-size.yml`、`cutover-rehearsal.yml`、`monitoring-fixture.yml`、`release-status-refresh.yml`、`risk-model.yml`、`tenant-verify.yml` 是後來新增的，**尚未**逐一分析最壞後果：
 
 | workflow | 持有的 secret | inputs | 最壞後果（token 外洩時） |
 |---|---|---|---|
