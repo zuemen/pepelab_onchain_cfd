@@ -38,8 +38,11 @@ const root = join(here, "..");
 const YAML = await loadYaml();
 const REAL = readWorkflowDir(join(root, ".github/workflows"));
 const repoTk = loadTenantKeeperContext(root);
-/** bank-a 是已登記的專屬租戶的情境。 */
-const tk = (tenants = ["bank-a"]) => ({ ...repoTk, tenants });
+/**
+ * bank-a 是已登記的專屬租戶的情境。repo 裡真的已登記的專屬租戶（例如 rwa-poc）一律保留：
+ * REAL 含有它們產生出來的 keeper workflow，拿掉就會把真實檔案誤判成「未登記」。
+ */
+const tk = (tenants = ["bank-a"]) => ({ ...repoTk, tenants: [...new Set([...repoTk.tenants, ...tenants])] });
 const gen = (id = "bank-a") => ({ name: `keeper-${id}.yml`, text: renderTenantKeeper(repoTk.templateText, id) });
 const guards = (extra, tenants) => checkWorkflows([...REAL, ...extra], YAML, { tenantKeeper: tk(tenants) }).problems;
 const some = (problems, re) =>

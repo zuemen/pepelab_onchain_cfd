@@ -85,7 +85,7 @@ node scripts/gen-tenant-keeper.mjs <id> --check  # 比對現有檔案
 - `scripts/check-addresses.mjs`：帶 `KEEPER_TENANT: <id>` 的 job 必須綁 `keeper-<id>`、`concurrency.group` 含 `<id>`；workflow 裡出現的任何位址都以租戶的登記比對。
 - 兩支檢查對同一份產生出來的 workflow 必須同時通過（`scripts/tenant-keeper.test.mjs` 釘住）。
 
-這次**沒有**新增任何實際的租戶 keeper workflow：目前沒有專屬租戶。
+目前唯一的實際租戶 keeper workflow 是 `keeper-rwa-poc.yml`（專屬租戶 `rwa-poc`，2026-10-09 產生）。
 
 **為什麼不用 matrix。** 一支檔案服務所有租戶，一次改壞就停掉所有租戶的價格，而 ADR-008 把「共用程式的缺陷」列為跨租戶事故。範本＋逐檔比對讓每個租戶各有一支檔案（各自的排程、失敗、告警），而內容仍然只有一個來源。
 
@@ -93,7 +93,7 @@ node scripts/gen-tenant-keeper.mjs <id> --check  # 比對現有檔案
 
 ### 1.4 外部觸發器與健檢
 
-- **觸發器**：GitHub 排程的實際間隔是 68–169 分鐘（範本固定名目 15 分鐘；`deploy/tenants/<id>.json` 的 `keeper.cron` 目前只是參考值，不會代入 workflow）。要讓 [`ops/keeper-trigger`](../ops/keeper-trigger/README.md) 的 Worker 也照顧租戶的 keeper，把 `keeper-<id>.yml` 加進 `wrangler.toml` 的 `WORKFLOW_FILES`（逗號分隔）後重新 `wrangler deploy`。各支獨立判斷，一支觸發失敗不影響其他支。
+- **觸發器**：GitHub 排程的實際間隔是 68–169 分鐘（範本固定名目 15 分鐘；`deploy/tenants/<id>.json` 的 `keeper.cron` 目前只是參考值，不會代入 workflow）。要讓 [`ops/keeper-trigger`](../ops/keeper-trigger/README.md) 的 Worker 也照顧租戶的 keeper，把 `keeper-<id>.yml` 加進 `wrangler.toml` 的 `WORKFLOW_FILES`（逗號分隔）後重新 `wrangler deploy`（`keeper-rwa-poc.yml` 已加進 repo 的設定）。各支獨立判斷，一支觸發失敗不影響其他支。
 - **健檢**：`oracle-health.yml` 目前只看平台的 oracle 與 exchange。**租戶沒有健檢**——keeper 連續失敗時不會有人被通知（每天的 `tenant-verify.yml` 只驗接線與參數，價格過期只 WARN）。試點租戶上線前要為它加一個健檢（建議同樣做成範本），或接受「只有 keeper 自己的紅燈」這個監控水準並寫進租戶的服務條款。
 - **監控頁**：前端 `AgentMonitorPage` 的「過期」欄在專屬租戶上以價格時間戳對照 6 小時判斷（與 exchange、金庫一致），不問 oracle 的 `isStale()`——租戶 oracle 的 `maxPriceAge` 是 0，`isStale()` 永遠回 false。平台部署照舊用 `isStale()`。
 

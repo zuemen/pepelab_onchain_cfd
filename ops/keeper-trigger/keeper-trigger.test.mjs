@@ -132,10 +132,13 @@ test("tick：一個 workflow dispatch 失敗不影響另一個，最後仍丟錯
   assert.ok(posts.some((u) => u.includes("base-sepolia-keeper")), "另一個仍有觸發");
 });
 
-test("wrangler.toml 照顧兩條鏈的 keeper", async () => {
-  const { readFileSync } = await import("node:fs");
+test("wrangler.toml 照顧兩條鏈的平台 keeper 與專屬租戶 rwa-poc 的 keeper", async () => {
+  const { existsSync, readFileSync } = await import("node:fs");
   const toml = readFileSync(new URL("./wrangler.toml", import.meta.url), "utf8");
-  assert.match(toml, /WORKFLOW_FILES = "base-sepolia-keeper\.yml,price-keeper\.yml"/);
+  assert.match(toml, /WORKFLOW_FILES = "base-sepolia-keeper\.yml,price-keeper\.yml,keeper-rwa-poc\.yml"/);
+  // 清單裡的每一支都必須真的存在（打錯檔名時 Worker 每 20 分鐘都會失敗）。
+  const files = workflowsOf({ WORKFLOW_FILES: toml.match(/WORKFLOW_FILES = "([^"]+)"/)[1] });
+  for (const f of files) assert.ok(existsSync(new URL(`../../.github/workflows/${f}`, import.meta.url)), f);
 });
 
 // ───────────── GitHub App installation token ─────────────
