@@ -393,7 +393,7 @@ TENANT=<id> TENANT_RECORD=cache/tenants/<id>.deployed.json TENANT_PRIVILEGE_SCAN
 - **前端只能連 Base Sepolia 的專屬部署**；Base 主網需要錢包切換、RPC、CSP、區塊瀏覽器連結的設定。
 - **專屬租戶的前端沒有逐頁走查過**（沒有可瀏覽的專屬部署）。見 ADR 0009 增補的 Consequences。
 - **ESGRegistryV2 只有「每租戶專屬」一種**；ADR-008 允許租戶明確選擇共用平台登錄的選項沒有實作。
-- **keeper**：租戶 workflow 由範本產生（`node scripts/gen-tenant-keeper.mjs <id>`），但 keeper 程式在只有一顆 GuardedOracle 的租戶上沒有實跑過；租戶沒有健檢。見 `TENANT_OPERATIONS.md` §1。
+- **keeper**：租戶 workflow 由範本產生（`node scripts/gen-tenant-keeper.mjs <id>`）。keeper 程式（`agent/keeper/run.ts`）已在只有一顆 GuardedOracle 的租戶上實跑過：`rwa-poc` 以本機腳本 `scripts/poc/rwa-poc-keeper.sh --once` 送出一輪 `available=11 wrote=11 failed=0`，同一輪也以 marketOperator 切了休市（交易見 `docs/tenants/rwa-poc/DEPLOYMENT.md`「營運驗收」）。**沒實跑過的是 workflow 本身**：`keeper-rwa-poc.yml` 已產生，要等 environment `keeper-rwa-poc` 與 secret 設好、合併後才會第一次執行（包括 funding crank，本機腳本不做）。租戶沒有健檢。見 `TENANT_OPERATIONS.md` §1。
 - **主網**：平台在 Base 主網沒有共用元件，結算幣也還沒決定（原生 USDC 是 6 位小數，不能用）；設定檢查今天擋下所有主網設定。
 - **時間窗限速是整顆 oracle 一組參數**：`GuardedOracle` 每檔資產各有自己的時間窗狀態，但長度與上限只有一組，所以設定檔也只有一組（改成每檔不同要改 `contracts/src`）。
 - **agent 端（signal-api、MCP server、Telegram bot）讀的是平台的合約**，每租戶一個 Vercel 專案今天只能隔離收款。見 `TENANT_OPERATIONS.md` §2.2。

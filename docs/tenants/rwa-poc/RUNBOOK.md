@@ -1,7 +1,8 @@
 # RWA PoC 營運手冊：keeper 推價與休市切換
 
 本機跑 RWA PoC 租戶（`rwa-poc`，Base Sepolia）的價格 keeper，以及手動切換休市模式。錢包與角色見 [`WALLETS.md`](WALLETS.md)。
-平台的 keeper 是 GitHub Actions 排程；PoC 租戶目前沒有自己的 workflow，錄影或展示期間在本機跑這裡的腳本。
+平台的 keeper 是 GitHub Actions 排程；PoC 租戶的 workflow `keeper-rwa-poc.yml` 已由範本產生（見下方「GitHub Actions keeper」），
+但要等 environment 與 secret 設好、合併進 master 之後才會排程執行。在那之前，錄影或展示期間在本機跑這裡的腳本。
 
 ## 前提
 
@@ -37,6 +38,40 @@ bash scripts/poc/rwa-poc-keeper.sh --no-market-operator  # 不自動切休市
 可調的環境變數只有：`KEEPER_RPC_URL`（預設 `https://sepolia.base.org`）、`POC_TENANT`（預設 `rwa-poc`）、
 `POC_KEEPER_ACCOUNT`（預設 `pepelab-rwa-keeper`）、`POC_KEEPER_INTERVAL`（預設 60，最少 15）。
 
+## GitHub Actions keeper（`keeper-rwa-poc.yml`）
+
+`.github/workflows/keeper-rwa-poc.yml` 由範本產生（`node scripts/gen-tenant-keeper.mjs rwa-poc`），**不要手改**：
+`scripts/check-workflow-guards.mjs` 會重新產生並逐位元比對。位址同樣只由 `ops/tenant-keeper/load-env.mjs` 從登記檔讀，
+workflow 裡沒有任何位址。做的事與本機腳本相同（核對參考來源、核對金鑰地址＝`roles.keeper`、餘額檢查、推價、
+休市切換），另外多了熔斷告警 issue 與 funding crank（`settleFunding`，本機腳本不做）。
+
+| 項目 | 值 |
+|---|---|
+| GitHub environment | **`keeper-rwa-poc`**（名稱固定，CI 會檢查；Deployment branches 只允許 `master`；不要設 required reviewers／wait timer） |
+| environment secret | `TENANT_KEEPER_PRIVATE_KEY`（keeper 私鑰）、`TENANT_RPC_URL`（Base Sepolia RPC）。**不要**放在 repo 層級 |
+| 排程 | 名目 `*/15`（GitHub 實際 68–169 分鐘）；`ops/keeper-trigger` 的 Worker 已把它列進 `WORKFLOW_FILES`（重新 `wrangler deploy` 之後生效），超過 15 分鐘沒跑就補觸發 |
+| heartbeat | 用 `keeper/run.ts` 預設 900 秒（本機腳本是 240 秒）；休市切換預設開啟 |
+| concurrency | `keeper-key-rwa-poc`（不與平台 keeper 排隊） |
+
+步驟與理由見 [`docs/TENANT_OPERATIONS.md`](../../TENANT_OPERATIONS.md) §1.2–§1.4。**先建 environment、先放 secret，再合併 workflow**：
+GitHub 遇到不存在的 environment 會自動建一個沒有保護的同名 environment；secret 沒放時 workflow 第一步就會失敗。
+
+手動觸發一輪（合併進 master 之後才可用；`workflow_dispatch` 只認預設分支上的檔案）：
+
+```bash
+gh workflow run keeper-rwa-poc.yml
+gh run list --workflow keeper-rwa-poc.yml --limit 3
+```
+
+> **本機腳本與 Actions 不要同時跑——兩者是同一把 keeper 金鑰。**
+> 兩邊在送交易前都核對金鑰推出的地址必須等於 `deploy/tenants/rwa-poc.json` 的 `roles.keeper`（本機用 keystore
+> `pepelab-rwa-keeper`，Actions 用 `TENANT_KEEPER_PRIVATE_KEY`），而 `roles.keeper` 只有一個，所以
+> `TENANT_KEEPER_PRIVATE_KEY` 必然就是 keystore `pepelab-rwa-keeper` 裡的那把私鑰。同一個地址從兩個行程同時送交易會撞
+> nonce（`nonce too low`／`replacement transaction underpriced`），這一輪就會 `failed>0`。
+> 要在本機跑（例如錄影時要 `--no-market-operator`），先到 repo → Actions → Keeper (rwa-poc) → **Disable workflow**
+> （或 `gh workflow disable keeper-rwa-poc.yml`），並確認沒有執行中的 run；跑完再 `gh workflow enable keeper-rwa-poc.yml`。
+> 停用期間 keeper-trigger Worker 的 dispatch 會被 GitHub 拒絕（Worker log 會出現這支的錯誤，屬預期），不會繞過停用。
+
 ## 休市切換
 
 keeper 預設會自動切換（`agent/keeper/operator.ts`）：
@@ -68,4 +103,4 @@ exchange 與註冊資產同樣經 `load-env.mjs` 讀；資產必須是 `rwa-poc`
   寫入分級之後才會放寬（見 `docs/TENANT_DEPLOYMENT.md`）。見證者是 PoC 團隊自己，展示時要照實說明。
 - 價格超過 exchange 的 `maxPriceAge`（6 小時）會擋開倉。錄影前先 `--once` 跑一輪確認。
 - 公開 RPC 偶爾 DNS 失敗或 nonce 快取不準。換 `KEEPER_RPC_URL` 到另一個 Base Sepolia 節點即可；keeper 每輪自己管 nonce。
-- 這裡不做 funding 結算（`settleFunding`）。展示不需要；要做時參考 `ops/tenant-keeper/keeper.template.yml` 的 funding crank。
+- 本機腳本不做 funding 結算（`settleFunding`）。展示不需要；GitHub Actions keeper（`keeper-rwa-poc.yml`）每輪會做。

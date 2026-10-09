@@ -1,0 +1,243 @@
+name: Keeper (rwa-poc)
+
+# 專屬租戶 rwa-poc 的 keeper（ADR-008）。
+#
+# 這支檔案由 ops/tenant-keeper/keeper.template.yml 產生：
+#   node scripts/gen-tenant-keeper.mjs rwa-poc
+# **不要手改。** scripts/check-workflow-guards.mjs 會以範本重新產生一次並逐位元比對，
+# 任何一個字不同（含註解與空白）都會紅燈；要改行為就改範本（範本整檔 sha256 是釘選的）。
+#
+# 與平台的 base-sepolia-keeper.yml 做同樣的事（寫價、熔斷告警、funding crank），差別：
+#   - 金鑰：只用 environment「keeper-rwa-poc」的 secret（TENANT_KEEPER_PRIVATE_KEY、
+#     TENANT_RPC_URL）。名稱刻意與平台的 KEEPER_PRIVATE_KEY 不同：environment 沒放這個
+#     secret 時，GitHub 會退回 repo 層級的同名 secret——不同名就不可能退回平台的金鑰。
+#     另外「金鑰就是這個租戶的 keeper」由下面的步驟在送任何交易之前核對；核對沒通過，
+#     後面每一個 step 都不執行（每個帶 if: 的 step 都明確要求 keycheck 成功，不靠預設行為）。
+#   - 私鑰只放在需要它的 step 的 env（核對、寫價、crank），不放在 job 層級；npm ci 加
+#     --ignore-scripts，依賴樹的 install script 不會在持有私鑰的 job 裡執行；foundry 釘版本。
+#   - 參考來源（relay）：設定檔的 shared.referenceSource 必須等於租戶 oracle 鏈上的
+#     referenceSource()，不相等就停（設定檔被改、鏈上被改都一樣），不會中繼未經核對的來源。
+#   - 位址：不寫在這裡。執行期由 ops/tenant-keeper/load-env.mjs 從已審查的部署登記
+#     （frontend/src/contracts/deployments/rwa-poc.json、deploy/tenants/rwa-poc.json）讀出。
+#   - nonce：自己的 concurrency group，不與平台的 keeper 排隊（不同金鑰＝不同 nonce 序列）。
+#
+# 排程是名目 15 分鐘（GitHub 排程實際 68–169 分鐘，見 base-sepolia-keeper.yml）；要更密就把
+# 這支檔名加進 ops/keeper-trigger 的 WORKFLOW_FILES（docs/TENANT_OPERATIONS.md §1.4）。
+on:
+  schedule:
+    - cron: '*/15 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  # 熔斷時開／關 issue（keeper/alert-run.ts）。GITHUB_TOKEN 只在告警 step 經 GH_TOKEN 取得。
+  issues: write
+
+concurrency:
+  group: keeper-key-rwa-poc
+  cancel-in-progress: false
+
+jobs:
+  keep:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment:
+      name: keeper-rwa-poc
+      deployment: false
+    env:
+      KEEPER_TENANT: rwa-poc
+      KEEPER_CHAIN: base-sepolia
+      KEEPER_RPC_URL: ${{ secrets.TENANT_RPC_URL }}
+      # 部分失敗容忍度：失敗筆數 / 有價可寫筆數 超過這個百分比就讓 job 失敗。
+      MAX_FAIL_PCT: "30"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Fail fast when secrets are missing
+        env:
+          KEEPER_PRIVATE_KEY: ${{ secrets.TENANT_KEEPER_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -z "${KEEPER_RPC_URL:-}" ] || [ -z "${KEEPER_PRIVATE_KEY:-}" ]; then
+            echo "::error::environment keeper-${KEEPER_TENANT} 缺少 TENANT_RPC_URL 或 TENANT_KEEPER_PRIVATE_KEY —— 喂價無法運作。"
+            exit 1
+          fi
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: agent/package-lock.json
+
+      # 位址只來自已審查的登記檔；不是 dedicated、不是已部署、格式不對都在這裡失敗。
+      - name: Load tenant contracts from the deployment registry
+        run: |
+          set -euo pipefail
+          node ops/tenant-keeper/load-env.mjs "$KEEPER_TENANT" > "$RUNNER_TEMP/tenant.env"
+          cat "$RUNNER_TEMP/tenant.env"
+          cat "$RUNNER_TEMP/tenant.env" >> "$GITHUB_ENV"
+
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@908c540300062bd5a7e473851cdb4282204cee09 # v1.9.1
+        with:
+          version: v1.8.0
+
+      # 中繼的參考來源必須就是租戶 oracle 鏈上設定的那一個（設定為 none 時鏈上必須是零位址）。
+      - name: Relay source matches the on-chain referenceSource
+        id: relaycheck
+        run: |
+          set -euo pipefail
+          ZERO="0x$(printf '%040d' 0)"  # 範本不寫任何位址字面值
+          WANT=$(echo "${KEEPER_RELAY_SOURCE:-$ZERO}" | tr '[:upper:]' '[:lower:]')
+          if [ "$KEEPER_ORACLE_KIND" = "guarded" ]; then
+            GOT=$(cast call "$KEEPER_ORACLE_ADDRESS" "referenceSource()(address)" --rpc-url "$KEEPER_RPC_URL" | tr '[:upper:]' '[:lower:]')
+          else
+            GOT=$ZERO
+          fi
+          if ! [[ "$GOT" =~ ^0x[0-9a-f]{40}$ ]] || [ "$GOT" != "$WANT" ]; then
+            echo "::error::設定檔的 shared.referenceSource（$WANT）與租戶 oracle 鏈上的 referenceSource()（$GOT）不一致。不中繼、不送任何交易。"
+            exit 1
+          fi
+          echo "relay source $WANT = on-chain referenceSource ✓"
+
+      # 送任何交易之前：金鑰推出來的地址必須就是這個租戶的 roles.keeper。
+      - name: Keeper key belongs to this tenant
+        id: keycheck
+        env:
+          KEEPER_PRIVATE_KEY: ${{ secrets.TENANT_KEEPER_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          ADDR=$(cast wallet address --private-key "$KEEPER_PRIVATE_KEY")
+          if [ "$(echo "$ADDR" | tr '[:upper:]' '[:lower:]')" != "$(echo "$KEEPER_EXPECTED_ADDRESS" | tr '[:upper:]' '[:lower:]')" ]; then
+            echo "::error::TENANT_KEEPER_PRIVATE_KEY 的地址 $ADDR 不是租戶 ${KEEPER_TENANT} 的 roles.keeper（$KEEPER_EXPECTED_ADDRESS）。不送任何交易。"
+            exit 1
+          fi
+          echo "keeper $ADDR = roles.keeper ✓"
+
+      - name: Warn before the tank runs dry
+        run: |
+          set -euo pipefail
+          BAL=$(cast balance "$KEEPER_EXPECTED_ADDRESS" --rpc-url "$KEEPER_RPC_URL")
+          ETH=$(cast from-wei "$BAL")
+          echo "keeper $KEEPER_EXPECTED_ADDRESS 餘額 $ETH ETH"
+          if [ "$(echo "$ETH < 0.02" | bc -l)" = "1" ]; then
+            echo "::warning::keeper 餘額只剩 $ETH ETH。請補 gas，否則喂價會停。"
+          fi
+          if [ "$(echo "$ETH < 0.002" | bc -l)" = "1" ]; then
+            echo "::error::keeper 餘額 $ETH ETH，不足以送出交易。這是喂價失敗的原因，不是 RPC 或程式問題。"
+            exit 1
+          fi
+
+      - name: Install agent deps
+        working-directory: agent
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
+      - name: Refresh prices
+        id: refresh
+        working-directory: agent
+        env:
+          KEEPER_PRIVATE_KEY: ${{ secrets.TENANT_KEEPER_PRIVATE_KEY }}
+          KEEPER_REPORT_PATH: ${{ runner.temp }}/keeper-report.json
+          KEEPER_REFUSED_PATH: ${{ runner.temp }}/keeper-refused.txt
+          KEEPER_NONCE_PATH: ${{ runner.temp }}/keeper-next-nonce
+        run: |
+          set -uo pipefail
+          npx tsx keeper/run.ts 2>&1 | tee /tmp/keeper.log
+          STATUS=${PIPESTATUS[0]}
+          if [ "$STATUS" -ne 0 ]; then
+            echo "::error::keeper/run.ts 以非零狀態結束（exit $STATUS）。"
+            exit "$STATUS"
+          fi
+          # 與 base-sepolia-keeper.yml 相同的部分失敗門檻。
+          SUMMARY=$(grep -E '^available=[0-9]+ .*failed=[0-9]+$' /tmp/keeper.log | tail -1 || true)
+          if [ -z "$SUMMARY" ]; then
+            echo "::error::找不到 keeper 摘要行 —— 輸出格式已改變，這個門檻已失效，請修正範本。"
+            exit 1
+          fi
+          AVAILABLE=$(echo "$SUMMARY" | sed -n 's/.*available=\([0-9]*\).*/\1/p')
+          FAILED=$(echo "$SUMMARY" | sed -n 's/.*failed=\([0-9]*\).*/\1/p')
+          echo "keeper 摘要：$SUMMARY"
+          if [ "$AVAILABLE" -gt 0 ] && [ "$FAILED" -gt 0 ]; then
+            PCT=$(( FAILED * 100 / AVAILABLE ))
+            echo "寫入失敗率 ${PCT}%（門檻 ${MAX_FAIL_PCT}%）"
+            if [ "$PCT" -gt "${MAX_FAIL_PCT}" ]; then
+              echo "::error::${AVAILABLE} 個資產中有 ${FAILED} 個寫入失敗（${PCT}% > ${MAX_FAIL_PCT}%）。喂價已部分失效，不要當成成功。"
+              exit 1
+            fi
+          fi
+
+      - name: Alert on price circuit breaker
+        if: ${{ !cancelled() && steps.relaycheck.outcome == 'success' && steps.keycheck.outcome == 'success' && (steps.refresh.outcome == 'success' || steps.refresh.outcome == 'failure') }}
+        working-directory: agent
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEALTH_REPORT_PATH: ${{ runner.temp }}/keeper-report.json
+          ALERT_TITLE: "[keeper] rwa-poc 價格熔斷"
+          ALERT_CLOSE_AFTER: "4"
+        run: npx tsx keeper/alert-run.ts
+
+      # 只結算這個租戶註冊的資產（FUNDING_SYMBOLS 來自 deploy/tenants/rwa-poc.json）。
+      - name: Crank settleFunding
+        if: ${{ !cancelled() && steps.relaycheck.outcome == 'success' && steps.keycheck.outcome == 'success' }}
+        env:
+          KEEPER_PRIVATE_KEY: ${{ secrets.TENANT_KEEPER_PRIVATE_KEY }}
+        run: |
+          set -uo pipefail
+          INTERVAL=$(cast call "$EXCHANGE" "FUNDING_INTERVAL()(uint256)" --rpc-url "$KEEPER_RPC_URL" | awk '{print $1}')
+          if ! [ "${INTERVAL:-}" -gt 0 ] 2>/dev/null; then
+            echo "::error::讀不到 FUNDING_INTERVAL —— RPC 或 EXCHANGE 位址有問題。"
+            exit 1
+          fi
+          NOW=$(date -u +%s)
+          RPC_NONCE=$(cast nonce "$KEEPER_EXPECTED_ADDRESS" --block pending --rpc-url "$KEEPER_RPC_URL" 2>/dev/null || true)
+          LOCAL_NONCE=""
+          NONCE_FILE="${RUNNER_TEMP}/keeper-next-nonce"
+          if [ -f "$NONCE_FILE" ]; then LOCAL_NONCE=$(tr -d '[:space:]' < "$NONCE_FILE"); fi
+          if ! [[ "$RPC_NONCE" =~ ^[0-9]+$ ]]; then RPC_NONCE=""; fi
+          if ! [[ "$LOCAL_NONCE" =~ ^[0-9]+$ ]]; then LOCAL_NONCE=""; fi
+          if [ -z "$RPC_NONCE" ] && [ -z "$LOCAL_NONCE" ]; then
+            echo "::error::讀不到 keeper 的 nonce（RPC 失敗且沒有 $NONCE_FILE）。"
+            exit 1
+          fi
+          NONCE=${RPC_NONCE:-$LOCAL_NONCE}
+          if [ -n "$LOCAL_NONCE" ] && [ "$LOCAL_NONCE" -gt "$NONCE" ]; then NONCE=$LOCAL_NONCE; fi
+          REFUSED_FILE="${RUNNER_TEMP}/keeper-refused.txt"
+          if [ ! -f "$REFUSED_FILE" ]; then
+            echo "::error::找不到 $REFUSED_FILE（喂價 step 未完成），本輪不 crank funding。"
+            exit 1
+          fi
+          FAILURES=0
+          for SYM in $FUNDING_SYMBOLS; do
+            if grep -qx "$SYM" "$REFUSED_FILE"; then
+              echo "::warning::$SYM: 本輪價格被熔斷拒寫，跳過 settleFunding（不以錯誤舊價結算）。"
+              continue
+            fi
+            KEY=$(cast keccak "$SYM")
+            LAST=$(cast call "$EXCHANGE" "lastFundingUpdateAt(bytes32)(uint256)" "$KEY" \
+                     --rpc-url "$KEEPER_RPC_URL" 2>/dev/null | awk '{print $1}')
+            if ! [ "${LAST:-}" -ge 0 ] 2>/dev/null; then
+              echo "::error::$SYM: 讀不到 lastFundingUpdateAt —— 這是呼叫失敗，不是「時間未到」。"
+              FAILURES=$((FAILURES + 1))
+              continue
+            fi
+            DUE=$((LAST + INTERVAL))
+            if [ "$NOW" -lt "$DUE" ]; then
+              echo "$SYM: funding interval 尚未到期（還有 $((DUE - NOW))s），略過。"
+              continue
+            fi
+            if OUT=$(cast send "$EXCHANGE" "settleFunding(bytes32)" "$KEY" \
+                       --rpc-url "$KEEPER_RPC_URL" --private-key "$KEEPER_PRIVATE_KEY" \
+                       --nonce "$NONCE" 2>&1); then
+              echo "$SYM: funding settled (nonce ${NONCE})"
+              NONCE=$((NONCE + 1))
+            else
+              echo "::error::$SYM: settleFunding 已到期卻失敗 —— $(echo "$OUT" | tr '\n' ' ' | cut -c1-300)"
+              FAILURES=$((FAILURES + 1))
+            fi
+          done
+          if [ "$FAILURES" -gt 0 ]; then
+            echo "::error::settleFunding 有 ${FAILURES} 個資產失敗。"
+            exit 1
+          fi

@@ -16,7 +16,7 @@
 
 `.github/workflows/base-sepolia-keeper.yml` 名目上每 15 分鐘跑一次，但 GitHub 排程是 best-effort：實測間隔 68–169 分鐘，2026-09-30 甚至 4.5 小時沒有執行。交易所的 `maxPriceAge` 是 6 小時，所以只要一次寫價失敗再遇上排程延遲，資產就會過期、無法交易（當天 sBTC 就是這樣）。
 
-這個 Worker 每 20 分鐘用 Cloudflare 的 cron 檢查一次 `WORKFLOW_FILES` 裡的每一支 keeper（預設 `base-sepolia-keeper.yml` 與 Ethereum Sepolia 的 `price-keeper.yml`；後者在 2026-10-01 同樣因排程節流而過期，見 #208）；某支 keeper 超過 15 分鐘沒有執行、而且目前沒有排隊或執行中的 run，才觸發它一次 `workflow_dispatch`。各支獨立判斷，一支觸發失敗不影響其他支。GitHub 排程仍然保留，兩者並存。keeper 在不需要寫價時不會送交易，多跑一次只花 Actions 分鐘數（公開 repo 免費）。
+這個 Worker 每 20 分鐘用 Cloudflare 的 cron 檢查一次 `WORKFLOW_FILES` 裡的每一支 keeper（預設 `base-sepolia-keeper.yml` 與 Ethereum Sepolia 的 `price-keeper.yml`；後者在 2026-10-01 同樣因排程節流而過期，見 #208。另有專屬租戶 rwa-poc 的 `keeper-rwa-poc.yml`）；某支 keeper 超過 15 分鐘沒有執行、而且目前沒有排隊或執行中的 run，才觸發它一次 `workflow_dispatch`。各支獨立判斷，一支觸發失敗不影響其他支。GitHub 排程仍然保留，兩者並存。keeper 在不需要寫價時不會送交易，多跑一次只花 Actions 分鐘數（公開 repo 免費）。
 
 Worker 本身**不持有任何鏈上金鑰**，對任何 HTTP 請求都回 404（`workers_dev = false`、`preview_urls = false`，不產生公開網址）。它唯一的憑證是一個權限為 **Actions: Read and write** 的 GitHub 憑證：擁有者本人的 fine-grained PAT，或 GitHub App 的私鑰（Worker 用它換一小時的 installation token，見「改用 GitHub App」）。兩種憑證能做的事相同，都比「觸發 keeper」多很多，下面逐項寫明。
 
@@ -61,6 +61,7 @@ Worker 本身**不持有任何鏈上金鑰**，對任何 HTTP 請求都回 404�
 | `admin-base-sepolia.yml` | `KEEPER_PRIVATE_KEY`（MockOracle owner） | target／function（白名單含 `transferOwnership`、`updatePrice`、`addAsset`、`mint`）／args | **修正前**：攻擊者可指定 inputs，以 owner 身分轉移 MockOracle 所有權或改價格。**修正後**：拆成三個 job。`precheck` 不綁 environment、不碰任何 secret、沒有 token 權限，在核准之前檢查 ref 是 master、是第一次執行、觸發者（`github.actor` 與 `github.triggering_actor`）是 repo 擁有者本人（`github.repository_owner`）；不符就失敗，後面兩個 job 被略過，**不會產生待核准的請求**。`approve`（`needs: precheck`）綁 `environment: admin-approval`（不放 secret），要等 required reviewer 在 GitHub 上核准才開始，再由 gate 重複 precheck 的三項檢查，並確認 environment 真的有 reviewers。`admin-call`（`needs: approve`）才從 `keeper` environment 取私鑰、才進與 keeper 共用的 concurrency group，第一個 step 再做一次同樣的三項檢查；其中拒絕 `run_attempt != 1` 的理由是：只重跑 admin-call 會沿用已核准的 approve，等於重播已核准的呼叫。等核准期間不占 group，所以待核准的 admin run（包括攻擊者 dispatch 的）不會卡住 keeper 排程（審查 H2）。**殘留風險**：舊分支上的舊版 admin workflow 沒有綁 environment。只要 repo 層級還有 `KEEPER_PRIVATE_KEY`，dispatch 到舊分支，或重跑修正前的舊 run，都繞得過審核。所以必須完成下面第 4 步，把 repo 層級的 secret 刪掉 |
 | `base-sepolia-keeper.yml` | `KEEPER_PRIVATE_KEY`、RPC | 無 | 多跑幾次：不需要寫價時不送交易，與 admin 共用 concurrency group 而會排隊。指定舊分支時會跑舊版 keeper 程式，最壞是寫價失敗或多花測試網 gas。取消或停用它會讓價格過期 |
 | `price-keeper.yml`（Sepolia） | `KEEPER_PRIVATE_KEY`、RPC | 無 | 同上（Sepolia 鏈） |
+| `keeper-rwa-poc.yml`（專屬租戶 rwa-poc） | environment `keeper-rwa-poc` 的 `TENANT_KEEPER_PRIVATE_KEY`、`TENANT_RPC_URL` | 無 | 同 `base-sepolia-keeper.yml`，對象是租戶自己的合約。與本機 `scripts/poc/rwa-poc-keeper.sh` 是同一把金鑰，兩邊同時跑會撞 nonce |
 | `x402-settlement-worker.yml` | `FEE_SETTLEMENT_PRIVATE_KEY`、Upstash token | 無 | 佇列提早結算，本身無害。指定舊分支時會以舊版結算程式使用這把金鑰，其中包括還沒有 P0 收款守門的版本 |
 | `oracle-health.yml` | RPC（無私鑰），`issues: write` | 無 | 多開或多留言告警 issue。**被停用時價格過期不會有人知道** |
 | `agent-ci.yml`、`contracts-ci.yml`、`frontend-ci.yml`、`consistency.yml` | 無 | 無 | `contents: read`、沒有 secrets，後果只有 Actions 分鐘數（公開 repo 免費） |
@@ -261,7 +262,7 @@ Worker 的程式不會替你建立 App。先完成「部署前必做」第 1–5
 
 ## 調整
 
-`wrangler.toml` 的 `[vars]`：`WORKFLOW_FILES`（逗號分隔，預設兩支 keeper；舊的單一 `WORKFLOW_FILE` 仍相容，`WORKFLOW_FILES` 優先）、`MIN_GAP_SEC`（預設 900）、`WORKFLOW_REF`（預設 master）、`GITHUB_APP_ID` 與 `GITHUB_APP_INSTALLATION_ID`（改用 GitHub App 時才設，見上方）。cron 間隔改 `[triggers] crons`。
+`wrangler.toml` 的 `[vars]`：`WORKFLOW_FILES`（逗號分隔，目前是兩支平台 keeper 加上租戶 `keeper-rwa-poc.yml`；舊的單一 `WORKFLOW_FILE` 仍相容，`WORKFLOW_FILES` 優先）、`MIN_GAP_SEC`（預設 900）、`WORKFLOW_REF`（預設 master）、`GITHUB_APP_ID` 與 `GITHUB_APP_INSTALLATION_ID`（改用 GitHub App 時才設，見上方）。cron 間隔改 `[triggers] crons`。
 
 ## 測試
 
