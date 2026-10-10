@@ -72,3 +72,6 @@ scripts/.log-*.txt
 
 # PoC 錄影產出（影片、JSON 紀錄、失敗截圖）
 scripts/poc/video/out/
+
+# Claude Code 的 agent worktree（本機暫存）
+.claude/worktrees/
