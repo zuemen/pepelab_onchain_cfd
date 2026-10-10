@@ -102,7 +102,8 @@ S3 上線當下那次 `VerifyTenant` 是加 `TENANT_PRIVILEGE_SCAN_REQUIRED=true
 - **測試網**：全部在 Base Sepolia。保證金是沿用平台既有的測試幣 MockUSDC（與現役部署共用，不受 PoC 金鑰控制），不是真錢；保險金庫只有部署時的 1 USDC 種子。部位是合成 CFD 曝險，背後沒有任何實體股票或黃金。
 - **發證者與見證者是自己的測試錢包**：合格投資人 VC 的發證者、ESG 碳分級的 attestor 都由 PoC 團隊控制，不是持牌 KYC 機構或第三方驗證機構；「合格投資人」只是示範身分，沒有做真實的身分審查。
 - **參考價**：價格由本機 keeper 從公開行情寫入；oracle 沒有獨立參考來源（`referenceSource: none`），寫價只受 `GuardedOracle` 的單次上限與時間窗限制。
-- **KYA 花費帳在記憶體**：`X402_KYA_SPEND_STORE=memory`，signal-api 重啟後歸零；VP 防重放集合同樣在記憶體（舊付款仍會被 EIP-3009 nonce 擋下）。
+- **本機版的 KYA 花費帳在記憶體**：`rwa-poc-x402.sh server` 用 `X402_KYA_SPEND_STORE=memory`，signal-api 重啟後歸零；VP 防重放集合同樣在記憶體（舊付款仍會被 EIP-3009 nonce 擋下）；撤銷驗證端狀態是本機檔案。線上版（[`ONLINE.md`](ONLINE.md)）三者都存在租戶自己的 Upstash、跨實例共用（[ADR-021](../../ADR-021-signal-api-shared-state.md)）。
+- **x402 沒有分潤**：本租戶沒有 x402 FeeRouter 也不收費，signal-api 以 `X402_SETTLEMENT_MODE=off` 執行：付款直接進 `PAY_TO`，回應 `settled:false`＋`revenue_sharing_off`（ADR-021 §3）。
 - **x402 第 6 景是補拍**：實付在 2026-10-08 另錄後插回成片（其餘 9 景是 2026-10-07 的一次完整錄影）；實付過程中有一次 facilitator 回 402、未扣款，片中照實呈現。結算走公開 facilitator `x402.org`，不是自己營運的結算服務。
 - **sAAPL 交易時段**：keeper 在美股正規盤以外、以及收盤前 3 小時就切 ReduceOnly，台灣白天 sAAPL 不能開新倉。成片主線改用 sGOLD（只在週末切），sAAPL 用來示範休市（[`RUNBOOK.md`](RUNBOOK.md)）。
 - **sGOLD 槓桿 1 倍**：sGOLD 碳分級 3 級，交易所槓桿上限 1 倍。

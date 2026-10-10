@@ -40232,6 +40232,16 @@ function isCredentialRevoked(res, view) {
 function stateKey(verifyingContract, issuer) {
   return `${verifyingContract.toLowerCase()}|${issuer.toLowerCase()}`;
 }
+function parseIssuerStatusState(e) {
+  const s = e;
+  if (!s || typeof s !== "object" || !isSafeUint(s.sequence) || typeof s.digest !== "string" || !isSafeUint(s.revokedBefore) || !Array.isArray(s.revoked) || !s.revoked.every((x) => typeof x === "string")) {
+    throw new Error("vc status \u7D00\u9304\u683C\u5F0F\u4E0D\u7B26");
+  }
+  return s;
+}
+function mergeIssuerStatusState(cur, list2, nowSec) {
+  return merge(cur ?? void 0, list2, nowSec);
+}
 function merge(cur, list2, nowSec) {
   if (!cur) {
     return {
@@ -40285,11 +40295,7 @@ function readStateFile(file) {
   }
   const s = JSON.parse(raw2);
   if (s?.version !== 1 || !s.issuers || typeof s.issuers !== "object") throw new Error("vc status \u72C0\u614B\u6A94\u683C\u5F0F\u4E0D\u7B26");
-  for (const e of Object.values(s.issuers)) {
-    if (!isSafeUint(e?.sequence) || typeof e.digest !== "string" || !isSafeUint(e.revokedBefore) || !Array.isArray(e.revoked)) {
-      throw new Error("vc status \u7D00\u9304\u683C\u5F0F\u4E0D\u7B26");
-    }
-  }
+  for (const e of Object.values(s.issuers)) parseIssuerStatusState(e);
   return s;
 }
 function fileStatusStateStore(file, opts = {}) {
@@ -40529,7 +40535,7 @@ function createVcStatusChecker(o) {
     if (f2.kind === "none") return { kind: "none", fetchedAt: nowMs };
     const v = verifyStatusList(f2.doc, { now: nowMs, expectedIssuer: issuer, expectedVerifyingContract: vcAddr });
     if (!v.valid) return { ok: false, status: "unknown", reasonCode: v.reasonCode, message: v.reason };
-    const a = o.store.accept(key, v.list, Math.floor(nowMs / 1e3));
+    const a = await o.store.accept(key, v.list, Math.floor(nowMs / 1e3));
     if (!a.ok) return { ok: false, status: "unknown", reasonCode: a.reasonCode, message: a.message };
     return { kind: "list", list: v.list, fetchedAt: nowMs };
   }
@@ -40552,7 +40558,7 @@ function createVcStatusChecker(o) {
       const key = stateKey(vcAddr, issuer);
       let known;
       try {
-        known = o.store.get(key);
+        known = await o.store.get(key);
       } catch {
         return unknown(action, "STATUS_STATE_UNREADABLE", "VC \u72C0\u614B\u6A94\u7121\u6CD5\u8B80\u53D6\u6216\u683C\u5F0F\u4E0D\u7B26", { jti });
       }
@@ -40595,7 +40601,7 @@ function createVcStatusChecker(o) {
         if (entry.kind !== "none") break;
         let after;
         try {
-          after = o.store.get(key);
+          after = await o.store.get(key);
         } catch {
           return unknown(action, "STATUS_STATE_UNREADABLE", "VC \u72C0\u614B\u6A94\u7121\u6CD5\u8B80\u53D6\u6216\u683C\u5F0F\u4E0D\u7B26", { jti });
         }
@@ -40623,7 +40629,7 @@ function createVcStatusChecker(o) {
       }
       let merged;
       try {
-        merged = o.store.get(key);
+        merged = await o.store.get(key);
       } catch {
         return unknown(action, "STATUS_STATE_UNREADABLE", "VC \u72C0\u614B\u6A94\u7121\u6CD5\u8B80\u53D6\u6216\u683C\u5F0F\u4E0D\u7B26", { jti });
       }
@@ -40683,6 +40689,11 @@ function readPolicyFromEnv(env = process.env) {
 }
 var memo = null;
 var injectedStore = null;
+var injectSeq = 0;
+function setVcStatusStateStore(store, describe = "injected") {
+  injectedStore = store ? { id: ++injectSeq, store, describe } : null;
+  memo = null;
+}
 function defaultVcStatusChecker() {
   const url = process.env.VC_STATUS_URL?.trim() || "";
   const dir = defaultStatusDir();
@@ -61338,6 +61349,130 @@ function deriveIdempotencyKeyV2(paymentResponseHeader, paymentPayload) {
 }
 var CONDITION_TTL_SEC = 2 * 60 * 60;
 
+// src/settlementMode.ts
+var REVENUE_SHARING_OFF_ERROR = "revenue_sharing_off\uFF1A\u672C\u90E8\u7F72\u6C92\u6709\u5206\u6F64\u7D50\u7B97\u76EE\u6A19\uFF08X402_SETTLEMENT_MODE=off\uFF09\u3002\u6B3E\u9805\u5DF2\u7531 facilitator \u76F4\u63A5\u4ED8\u5230 payTo\uFF1B\u6C92\u6709\u6392\u5165\u5206\u6F64\u4F47\u5217\uFF0C\u4E5F\u4E0D\u6703\u6709\u5206\u6F64\u4EA4\u6613\u4E0A\u93C8";
+var warnedInvalid = false;
+function resolveX402SettlementMode(env = process.env) {
+  const raw2 = env.X402_SETTLEMENT_MODE?.trim().toLowerCase();
+  if (!raw2 || raw2 === "queue") return "queue";
+  if (raw2 === "off") return "off";
+  if (!warnedInvalid) {
+    warnedInvalid = true;
+    console.error(`::error::[x402] X402_SETTLEMENT_MODE=${raw2} \u7121\u6CD5\u8FA8\u8B58\uFF08\u53EA\u63A5\u53D7 queue\uFF0Foff\uFF09\uFF0C\u7167 queue \u8655\u7406`);
+  }
+  return "queue";
+}
+function isRevenueSharingOff(env = process.env) {
+  return resolveX402SettlementMode(env) === "off";
+}
+function revenueModelWithoutSharing(payTo, facilitatorUrl) {
+  return `x402 \u4ED8\u6B3E\u76F4\u63A5\u9032 payTo\uFF08${payTo}\uFF09\uFF0C\u9019\u7B46 EIP-3009 \u4EA4\u6613\u7531 facilitator\uFF08${facilitatorUrl}\uFF09\u9001\u51FA\u4E26\u652F\u4ED8 gas\u3002\u672C\u90E8\u7F72\u6C92\u6709\u5206\u6F64\u7D50\u7B97\u76EE\u6A19\uFF08X402_SETTLEMENT_MODE=off\uFF09\uFF1A\u4E0D\u6392\u5165\u5206\u6F64\u4F47\u5217\u3001\u4E0D\u6703\u6709 FeeRouter \u5206\u6F64\u4EA4\u6613\uFF0C\u4ED8\u8CBB\u56DE\u61C9\u7684 settled \u4E00\u5F8B\u70BA false\uFF0CsettleError \u4EE5 revenue_sharing_off \u958B\u982D\u8AAA\u660E\u3002`;
+}
+async function recordUnknownSettlementUnlessOff(record, deps = {}) {
+  if (isRevenueSharingOff(deps.env)) {
+    console.warn(`[x402v2] settlement_unknown\uFF08X402_SETTLEMENT_MODE=off\uFF1A\u4E0D\u5165\u5C0D\u5E33\u4F47\u5217\uFF09\uFF1A${JSON.stringify(record)}`);
+    return "skipped";
+  }
+  return (deps.record ?? recordUnknownSettlement)(record);
+}
+
+// src/vcStatusStore.ts
+var VC_STATUS_KV_PREFIX = "vc:status:";
+var DEFAULT_CAS_ATTEMPTS = 8;
+var VC_STATUS_CAS_SCRIPT = `-- pepelab:vcstatus_cas
+if (redis.call('GET', KEYS[1]) or '') ~= ARGV[1] then
+  return 0
+end
+redis.call('SET', KEYS[1], ARGV[2])
+redis.call('SET', KEYS[2], ARGV[3])
+return 1`;
+function upstashCreds(env = process.env) {
+  const url = env.UPSTASH_REDIS_REST_URL?.trim();
+  const token = env.UPSTASH_REDIS_REST_TOKEN?.trim();
+  return url && token ? { url, token } : null;
+}
+var upstashRestCommand = async (cmd) => {
+  const c = upstashCreds();
+  if (!c) throw new Error("VC \u72C0\u614B\u5171\u4EAB\u5132\u5B58\u9700\u8981 UPSTASH_REDIS_REST_URL / UPSTASH_REDIS_REST_TOKEN");
+  const res = await fetch(c.url, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${c.token}`, "Content-Type": "application/json" },
+    body: JSON.stringify(cmd)
+  });
+  const body = await res.json();
+  if (!res.ok || body.error) throw new Error(`Upstash ${cmd[0]} \u5931\u6557\uFF1A${body.error ?? res.statusText}`);
+  return body.result;
+};
+function upstashVcStatusStateStore(o = {}) {
+  const command2 = o.command ?? upstashRestCommand;
+  const prefix = o.prefix ?? VC_STATUS_KV_PREFIX;
+  const attempts = Math.max(1, Math.floor(o.maxAttempts ?? DEFAULT_CAS_ATTEMPTS));
+  const verKey = (k) => `${prefix}ver:${k}`;
+  const stateKeyOf = (k) => `${prefix}state:${k}`;
+  async function read(key) {
+    const r = await command2(["MGET", verKey(key), stateKeyOf(key)]);
+    const [ver, raw2] = Array.isArray(r) ? r : [null, null];
+    if (ver == null && raw2 == null) return { ver: "", state: null };
+    if (ver == null || raw2 == null || !/^[1-9][0-9]{0,14}$/.test(ver)) {
+      throw new Error("vc status \u5171\u4EAB\u72C0\u614B\u4E0D\u4E00\u81F4\uFF08\u7248\u672C\u865F\u8207\u72C0\u614B\u7F3A\u4E00\u6216\u7248\u672C\u865F\u683C\u5F0F\u4E0D\u7B26\uFF09");
+    }
+    return { ver, state: parseIssuerStatusState(JSON.parse(raw2)) };
+  }
+  return {
+    async get(key) {
+      return (await read(key)).state;
+    },
+    async accept(key, list2, nowSec) {
+      for (let i = 0; i < attempts; i++) {
+        let snap;
+        try {
+          snap = await read(key);
+        } catch (e) {
+          return { ok: false, reasonCode: "STATUS_STATE_UNREADABLE", message: `VC \u5171\u4EAB\u72C0\u614B\u7121\u6CD5\u8B80\u53D6\u6216\u683C\u5F0F\u4E0D\u7B26\uFF08fail-closed\uFF09\uFF1A${e?.message ?? e}` };
+        }
+        const r = mergeIssuerStatusState(snap.state, list2, nowSec);
+        if (!r.ok || r.state === snap.state) return r;
+        const next = String(Number(snap.ver || "0") + 1);
+        let won;
+        try {
+          won = Number(await command2(["EVAL", VC_STATUS_CAS_SCRIPT, 2, verKey(key), stateKeyOf(key), snap.ver, next, JSON.stringify(r.state)])) === 1;
+        } catch (e) {
+          return { ok: false, reasonCode: "STATUS_STATE_WRITE_FAILED", message: `VC \u5171\u4EAB\u72C0\u614B\u7121\u6CD5\u5BEB\u5165\uFF08fail-closed\uFF09\uFF1A${e?.message ?? e}` };
+        }
+        if (won) return r;
+      }
+      return {
+        ok: false,
+        reasonCode: "STATUS_STATE_LOCK_FAILED",
+        message: `VC \u5171\u4EAB\u72C0\u614B\u5BEB\u5165\u7AF6\u722D\uFF1Acompare-and-set \u9023\u7E8C ${attempts} \u6B21\u88AB\u6436\u5148\uFF08fail-closed\uFF09`
+      };
+    }
+  };
+}
+var warnedInvalid2 = false;
+function resolveVcStatusStateStoreMode(env = process.env) {
+  const raw2 = env.VC_STATUS_STATE_STORE?.trim().toLowerCase();
+  if (raw2 === "upstash" || raw2 === "file") return raw2;
+  if (raw2 && !warnedInvalid2) {
+    warnedInvalid2 = true;
+    console.error(`::error::[vc-status] VC_STATUS_STATE_STORE=${raw2} \u7121\u6CD5\u8FA8\u8B58\uFF08\u53EA\u63A5\u53D7 upstash\uFF0Ffile\uFF09\uFF0C\u6539\u7528\u9810\u8A2D\uFF08\u6709 Upstash \u8A2D\u5B9A\u5C31\u5171\u7528\uFF09`);
+  }
+  return upstashCreds(env) ? "upstash" : "file";
+}
+var installed = null;
+function installVcStatusStateStore(env = process.env, o = {}) {
+  if (resolveVcStatusStateStoreMode(env) === "upstash") {
+    installed = upstashVcStatusStateStore(o);
+    setVcStatusStateStore(installed, "upstash");
+    return "upstash\uFF08\u8DE8\u5BE6\u4F8B\u5171\u7528\uFF09";
+  }
+  if (installed) {
+    setVcStatusStateStore(null);
+    installed = null;
+  }
+  return `\u55AE\u6A5F\u6A94\u6848 ${defaultStatusStatePath()}\uFF08\u591A\u5BE6\u4F8B\u90E8\u7F72\u8ACB\u8A2D Upstash\uFF09`;
+}
+
 // ../node_modules/@x402/core/dist/esm/chunk-N4QXZG2Z.mjs
 var NonEmptyString = external_exports.string().min(1);
 var Any = external_exports.record(external_exports.unknown());
@@ -66412,13 +66547,13 @@ for i = 1, 2 do
   end
 end
 return 1`;
-function upstashCreds() {
+function upstashCreds2() {
   const url = process.env.UPSTASH_REDIS_REST_URL?.trim();
   const token = process.env.UPSTASH_REDIS_REST_TOKEN?.trim();
   return url && token ? { url, token } : null;
 }
 async function upstash(cmd) {
-  const c = upstashCreds();
+  const c = upstashCreds2();
   if (!c) throw new Error("KYA \u82B1\u8CBB\u5E33\u9700\u8981 UPSTASH_REDIS_REST_URL / UPSTASH_REDIS_REST_TOKEN");
   const res = await fetch(c.url, {
     method: "POST",
@@ -67506,7 +67641,9 @@ async function applyLedgerRecording(entry, res, paymentHeader, protocol = "v1") 
   }
   let settleError;
   let queued = false;
-  if (!isLedgerEnabled()) {
+  if (isRevenueSharingOff()) {
+    settleError = REVENUE_SHARING_OFF_ERROR;
+  } else if (!isLedgerEnabled()) {
     settleError = "settlement disabled\uFF1A\u672A\u8A2D\u5B9A UPSTASH_REDIS_REST_URL / UPSTASH_REDIS_REST_TOKEN\uFF08\u50C5\u4FDD\u7559\u93C8\u4E0B\u5E33\u52D9 /revenue\uFF09";
   } else {
     try {
@@ -67564,9 +67701,10 @@ function kyaFromEnv(defaultProvider) {
   const rpc = process.env.KYA_RPC_URL?.trim();
   const chainProvider = rpc ? new ethers_exports.JsonRpcProvider(rpc, void 0, { batchMaxCount: 1 }) : defaultProvider;
   const spend = process.env.X402_KYA_SPEND_STORE?.trim().toLowerCase() === "memory" ? memoryKyaSpendStore() : upstashKyaSpendStore();
+  const vcState = installVcStatusStateStore();
   if (config3.mode === "on") {
     console.error(
-      `[kya] X402_KYA_MODE=on\uFF1A\u4ED8\u8CBB\u7AEF\u9EDE\u8981\u6C42 X-Agent-Presentation\uFF08v3 \u59D4\u8A17\u6191\u8B49\uFF09\uFF1B\u9328\u5B9A ${config3.anchor}\uFF1Bsession manager ${config3.sessionManager ?? "\uFF08\u672A\u8A2D\u5B9A\u2192\u4ED8\u8CBB\u7AEF\u9EDE 503\uFF09"}\uFF1B\u82B1\u8CBB\u5E33 ${spend.describe}`
+      `[kya] X402_KYA_MODE=on\uFF1A\u4ED8\u8CBB\u7AEF\u9EDE\u8981\u6C42 X-Agent-Presentation\uFF08v3 \u59D4\u8A17\u6191\u8B49\uFF09\uFF1B\u9328\u5B9A ${config3.anchor}\uFF1Bsession manager ${config3.sessionManager ?? "\uFF08\u672A\u8A2D\u5B9A\u2192\u4ED8\u8CBB\u7AEF\u9EDE 503\uFF09"}\uFF1B\u82B1\u8CBB\u5E33 ${spend.describe}\uFF1B\u64A4\u92B7\u9A57\u8B49\u7AEF\u72C0\u614B ${vcState}`
     );
   }
   return createKyaGate({ config: config3, chain: providerKyaChainReader(chainProvider), spend });
@@ -67669,7 +67807,7 @@ function createApp(opts = {}) {
           settleStarted.add(c.req.raw);
         },
         onSettlementUnknown: async (record) => {
-          if (await recordUnknownSettlement(record) === "overflow") {
+          if (await recordUnknownSettlementUnlessOff(record) === "overflow") {
             console.error("[x402v2] settlement_unknown list full: record persisted to x402:settlement:unknown:manual (reason overflow)");
           }
         },
@@ -67750,7 +67888,7 @@ function createApp(opts = {}) {
       },
       // 誠實描述金流：x402 的付款直接進 payTo，70/20/10 是平台事後另外送的一筆
       // 交易。把兩者寫成同一件事會讓讀者以為買方付的那筆錢就是被分潤的那筆錢。
-      revenueModel: `x402 \u4ED8\u6B3E\u76F4\u63A5\u9032 payTo\uFF08${payTo}\uFF09\uFF0C\u9019\u7B46 EIP-3009 \u4EA4\u6613\u7531 facilitator\uFF08${FACILITATOR_URL}\uFF09\u9001\u51FA\u4E26\u652F\u4ED8 gas\u300270/20/10 \u5206\u6F64\u662F\u5E73\u53F0\u53E6\u5916\u7684\u4E00\u7B46 FeeRouter.routeExternalRevenue \u4EA4\u6613\uFF0C\u7531\u7D50\u7B97\u9322\u5305\uFF08FEE_SETTLEMENT_PRIVATE_KEY\uFF09\u9001\u51FA\u4E26\u652F\u4ED8 gas\uFF0C\u7D2F\u8A08\u53EF\u65BC /revenue \u67E5\u8A62\u3002\u5169\u8005\u662F\u4E0D\u540C\u7684\u5169\u7B46\u4EA4\u6613\u30022026-09-17 \u8D77\u5206\u6F64\u6539\u70BA\u975E\u540C\u6B65\uFF1A\u56DE\u61C9\u88E1\u7684 settled \u4EE3\u8868\u300C\u5DF2\u6392\u5165\u7D50\u7B97\u4F47\u5217\u300D\uFF0C\u4E0D\u4EE3\u8868\u5DF2\u7D93\u4E0A\u93C8\uFF1B\u7531\u55AE\u4E00 worker \u5B9A\u671F\u53D6\u51FA\uFF0C\u6BCF\u7B46\u5404\u9001\u4E00\u7B46\u4EA4\u6613\uFF08\u898B docs/KNOWN_LIMITATIONS.md \xA714\u3001docs/COST_MODEL.md\uFF09\u3002`,
+      revenueModel: isRevenueSharingOff() ? revenueModelWithoutSharing(payTo, FACILITATOR_URL) : `x402 \u4ED8\u6B3E\u76F4\u63A5\u9032 payTo\uFF08${payTo}\uFF09\uFF0C\u9019\u7B46 EIP-3009 \u4EA4\u6613\u7531 facilitator\uFF08${FACILITATOR_URL}\uFF09\u9001\u51FA\u4E26\u652F\u4ED8 gas\u300270/20/10 \u5206\u6F64\u662F\u5E73\u53F0\u53E6\u5916\u7684\u4E00\u7B46 FeeRouter.routeExternalRevenue \u4EA4\u6613\uFF0C\u7531\u7D50\u7B97\u9322\u5305\uFF08FEE_SETTLEMENT_PRIVATE_KEY\uFF09\u9001\u51FA\u4E26\u652F\u4ED8 gas\uFF0C\u7D2F\u8A08\u53EF\u65BC /revenue \u67E5\u8A62\u3002\u5169\u8005\u662F\u4E0D\u540C\u7684\u5169\u7B46\u4EA4\u6613\u30022026-09-17 \u8D77\u5206\u6F64\u6539\u70BA\u975E\u540C\u6B65\uFF1A\u56DE\u61C9\u88E1\u7684 settled \u4EE3\u8868\u300C\u5DF2\u6392\u5165\u7D50\u7B97\u4F47\u5217\u300D\uFF0C\u4E0D\u4EE3\u8868\u5DF2\u7D93\u4E0A\u93C8\uFF1B\u7531\u55AE\u4E00 worker \u5B9A\u671F\u53D6\u51FA\uFF0C\u6BCF\u7B46\u5404\u9001\u4E00\u7B46\u4EA4\u6613\uFF08\u898B docs/KNOWN_LIMITATIONS.md \xA714\u3001docs/COST_MODEL.md\uFF09\u3002`,
       endpoints: {
         "GET /signals/:trader": { price: `$${PRICE_SIGNALS}`, paid: true, desc: "trader \u7E3E\u6548 + \u958B\u5009\u5EFA\u8B70" },
         "GET /oracle/:asset": { price: `$${PRICE_ORACLE}`, paid: true, desc: "\u6C7A\u7B56\u7D1A\u5FEB\u7167\uFF1A\u50F9\u683C / funding / OI \u5931\u8861 / \u9810\u4F30\u6E05\u7B97\u50F9 / edge \u5EFA\u8B70\uFF08long\xB7short\xB7no_trade\uFF09\u3002\u8207 /signals \u4E00\u6A23\uFF1A\u6536\u5230\u6B3E\u5F8C\u628A\u5206\u6F64\u8A18\u9032\u7D50\u7B97\u4F47\u5217\uFF0C\u56DE\u61C9\u5E36 settled\uFF08\u662F\u5426\u6210\u529F\u6392\u5165\u4F47\u5217\uFF0C\u4E0D\u4EE3\u8868\u5DF2\u4E0A\u93C8\uFF09" },

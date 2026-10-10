@@ -283,15 +283,50 @@ export type AcceptResult =
   | { ok: true; state: IssuerStatusState }
   | { ok: false; reasonCode: "STATUS_LIST_REPLAYED" | "STATUS_LIST_EQUIVOCATION" | StateFailure; message: string };
 
-/** 驗證端持久狀態。鍵 = `${verifyingContract}|${issuer}`（小寫）。 */
+/**
+ * 驗證端持久狀態。鍵 = `${verifyingContract}|${issuer}`（小寫）。
+ * 檔案／記憶體版是同步的；共享儲存（例如 signal-api 的 Upstash 版，ADR-021）是非同步的——
+ * 呼叫端一律 `await`。
+ */
 export interface StatusStateStore {
-  /** 讀不到（檔案壞掉等）丟錯；沒有紀錄回 null。 */
-  get(key: string): IssuerStatusState | null;
-  accept(key: string, list: VerifiedStatusList, nowSec: number): AcceptResult;
+  /** 讀不到（檔案壞掉、KV 連不上等）丟錯（或 reject）；沒有紀錄回 null。 */
+  get(key: string): IssuerStatusState | null | Promise<IssuerStatusState | null>;
+  /** 合併規則見 mergeIssuerStatusState；實作不丟錯，失敗以 ok:false（StateFailure）回報。 */
+  accept(key: string, list: VerifiedStatusList, nowSec: number): AcceptResult | Promise<AcceptResult>;
 }
 
 export function stateKey(verifyingContract: string, issuer: string): string {
   return `${verifyingContract.toLowerCase()}|${issuer.toLowerCase()}`;
+}
+
+/**
+ * 驗一筆持久化的 IssuerStatusState（檔案或 KV 讀回來的 JSON）。格式不符丟錯——呼叫端視為
+ * STATUS_STATE_UNREADABLE（寫入拒絕），不當成「沒有紀錄」。
+ */
+export function parseIssuerStatusState(e: unknown): IssuerStatusState {
+  const s = e as Partial<IssuerStatusState> | null;
+  if (
+    !s ||
+    typeof s !== "object" ||
+    !isSafeUint(s.sequence) ||
+    typeof s.digest !== "string" ||
+    !isSafeUint(s.revokedBefore) ||
+    !Array.isArray(s.revoked) ||
+    !s.revoked.every((x) => typeof x === "string")
+  ) {
+    throw new Error("vc status 紀錄格式不符");
+  }
+  return s as IssuerStatusState;
+}
+
+/**
+ * 防重放＋撤銷不復活的合併規則（所有儲存共用，含 ADR-021 的共享儲存）：
+ *   - sequence 比已接受的小 → STATUS_LIST_REPLAYED（高水位只升不降）；
+ *   - sequence 相同、digest 不同 → STATUS_LIST_EQUIVOCATION；相同 → 原狀態（回傳同一個物件＝不用寫）；
+ *   - sequence 較大 → 取代，revokedBefore 取最大值、revoked 取聯集（sticky）。
+ */
+export function mergeIssuerStatusState(cur: IssuerStatusState | null | undefined, list: VerifiedStatusList, nowSec: number): AcceptResult {
+  return merge(cur ?? undefined, list, nowSec);
 }
 
 function merge(cur: IssuerStatusState | undefined, list: VerifiedStatusList, nowSec: number): AcceptResult {
@@ -367,11 +402,7 @@ function readStateFile(file: string): StatusStateFile {
   }
   const s = JSON.parse(raw);
   if (s?.version !== 1 || !s.issuers || typeof s.issuers !== "object") throw new Error("vc status 狀態檔格式不符");
-  for (const e of Object.values(s.issuers) as IssuerStatusState[]) {
-    if (!isSafeUint(e?.sequence) || typeof e.digest !== "string" || !isSafeUint(e.revokedBefore) || !Array.isArray(e.revoked)) {
-      throw new Error("vc status 紀錄格式不符");
-    }
-  }
+  for (const e of Object.values(s.issuers)) parseIssuerStatusState(e);
   return s as StatusStateFile;
 }
 
@@ -782,7 +813,7 @@ export function createVcStatusChecker(o: VcStatusCheckerOptions): VcStatusChecke
     if (f.kind === "none") return { kind: "none", fetchedAt: nowMs };
     const v = verifyStatusList(f.doc, { now: nowMs, expectedIssuer: issuer, expectedVerifyingContract: vcAddr });
     if (!v.valid) return { ok: false, status: "unknown", reasonCode: v.reasonCode, message: v.reason };
-    const a = o.store.accept(key, v.list, Math.floor(nowMs / 1000));
+    const a = await o.store.accept(key, v.list, Math.floor(nowMs / 1000));
     if (!a.ok) return { ok: false, status: "unknown", reasonCode: a.reasonCode, message: a.message };
     return { kind: "list", list: v.list, fetchedAt: nowMs };
   }
@@ -808,7 +839,7 @@ export function createVcStatusChecker(o: VcStatusCheckerOptions): VcStatusChecke
       // 1) 已知的撤銷優先（sticky）：來源掛了也照樣拒絕被撤銷的憑證。
       let known: IssuerStatusState | null;
       try {
-        known = o.store.get(key);
+        known = await o.store.get(key);
       } catch {
         return unknown(action, "STATUS_STATE_UNREADABLE", "VC 狀態檔無法讀取或格式不符", { jti });
       }
@@ -857,7 +888,7 @@ export function createVcStatusChecker(o: VcStatusCheckerOptions): VcStatusChecke
         // 快取的「沒有」可能只是比別的 process 接受新清單還早 → 先丟掉快取重取一次。
         let after: IssuerStatusState | null;
         try {
-          after = o.store.get(key);
+          after = await o.store.get(key);
         } catch {
           return unknown(action, "STATUS_STATE_UNREADABLE", "VC 狀態檔無法讀取或格式不符", { jti });
         }
@@ -887,7 +918,7 @@ export function createVcStatusChecker(o: VcStatusCheckerOptions): VcStatusChecke
       // 以 sticky 狀態（含本份清單與之前看過的所有撤銷）判斷。
       let merged: IssuerStatusState | null;
       try {
-        merged = o.store.get(key);
+        merged = await o.store.get(key);
       } catch {
         return unknown(action, "STATUS_STATE_UNREADABLE", "VC 狀態檔無法讀取或格式不符", { jti });
       }
@@ -969,7 +1000,8 @@ let injectSeq = 0;
  * 注入共享的驗證端狀態儲存（審查 L1）。預設是單機檔案：多副本／serverless／短暫磁碟部署時，各實例的
  * 高水位、sticky 撤銷與同號異文偵測**互不相通**。這種部署必須在啟動時注入一個共享實作
  * （例如以 Redis／Upstash 實作 StatusStateStore：`get` 讀、`accept` 以 compare-and-set 寫）。
- * 傳 null 回到預設檔案。本 repo 只提供介面與檔案／記憶體實作。
+ * 傳 null 回到預設檔案。shared 只提供介面與檔案／記憶體實作；signal-api 在設了 Upstash 時
+ * 自動注入它的 Upstash 版（signal-api/src/vcStatusStore.ts，ADR-021）。
  */
 export function setVcStatusStateStore(store: StatusStateStore | null, describe = "injected"): void {
   injectedStore = store ? { id: ++injectSeq, store, describe } : null;

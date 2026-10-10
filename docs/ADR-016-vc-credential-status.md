@@ -216,6 +216,8 @@ JSON 文件（`CredentialStatusList`）帶 `issuer`（did:pkh）、上述欄位�
 實例 1 已拒絕的舊清單。多副本、serverless 或短暫磁碟部署時，必須在啟動時以 `setVcStatusStateStore(store)` 注入共享的
 `StatusStateStore`（`get` 讀、`accept` 以 compare-and-set 寫，例如 Upstash）。本次只提供介面與檔案／記憶體實作；
 預設檢查器建立時會在 stderr 印出來源與狀態儲存（含「單機」提示）。
+（2026-10-10 更新：`get`／`accept` 可以回傳 Promise；signal-api 在 KYA 開啟且有 Upstash 時自動注入 Upstash 版，
+`VC_STATUS_STATE_STORE=upstash|file` 可強制。見 [`ADR-021`](ADR-021-signal-api-shared-state.md) §2。）
 
 ## 5. 不做 signal-api 端點的理由
 
