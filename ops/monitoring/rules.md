@@ -10,8 +10,8 @@
 > - 「**部署版不發此事件**」：合約已部署，但鏈上那一版不發這個事件（前端 ABI 來自 master 原始碼，比部署版新）。
 >   這些事件**現在不會響**；有對應 setter 的由「狀態」規則每輪讀 getter 比對。依據是 [`deployed.json`](deployed.json)（唯讀 RPC 抓的 runtime bytecode，CI 離線比對 topic0）。
 
-共 **59** 條規則：運作中 45 條（事件 30、狀態 13、HTTP 2），部署版不發此事件 13 條，待部署 1 條。鏈：base-sepolia（84532）。
-已部署 bytecode 快照：區塊 47569485（2026-10-02）。
+共 **59** 條規則：運作中 46 條（事件 31、狀態 13、HTTP 2），部署版不發此事件 12 條，待部署 1 條。鏈：base-sepolia（84532）。
+已部署 bytecode 快照：區塊 47937890（2026-10-10）。
 
 ## 總表
 
@@ -25,7 +25,7 @@
 | [`kyc-verifier-changed`](#kyc-verifier-changed) KYC 驗證者變更 | 權限 | 事件 | SEV-2 | 部署版不發此事件 | 每一筆 | [§1](../../docs/INCIDENT_RESPONSE.md#1-嚴重度分級) [§3](../../docs/INCIDENT_RESPONSE.md#3-暫停與凍結現行部署能做什麼) |
 | [`exchange-wiring-changed`](#exchange-wiring-changed) 交易所資金接線變更 | x402／FeeRouter 設定 | 事件 | SEV-1 | 運作中 | 每一筆 | [§1](../../docs/INCIDENT_RESPONSE.md#1-嚴重度分級) [§3](../../docs/INCIDENT_RESPONSE.md#3-暫停與凍結現行部署能做什麼) |
 | [`insurance-wiring-changed`](#insurance-wiring-changed) 保險金庫接線變更 | x402／FeeRouter 設定 | 事件 | SEV-1 | 部署版不發此事件 | 每一筆 | [§1](../../docs/INCIDENT_RESPONSE.md#1-嚴重度分級) [§3](../../docs/INCIDENT_RESPONSE.md#3-暫停與凍結現行部署能做什麼) |
-| [`feerouter-config-changed`](#feerouter-config-changed) FeeRouter 設定變更（含 x402 分潤路由） | x402／FeeRouter 設定 | 事件 | SEV-2 | 部署版不發此事件 | 每一筆 | [§1](../../docs/INCIDENT_RESPONSE.md#1-嚴重度分級) [§3](../../docs/INCIDENT_RESPONSE.md#3-暫停與凍結現行部署能做什麼) |
+| [`feerouter-config-changed`](#feerouter-config-changed) FeeRouter 設定變更（含 x402 分潤路由） | x402／FeeRouter 設定 | 事件 | SEV-2 | 運作中 | 每一筆 | [§1](../../docs/INCIDENT_RESPONSE.md#1-嚴重度分級) [§3](../../docs/INCIDENT_RESPONSE.md#3-暫停與凍結現行部署能做什麼) |
 | [`insurance-wiring`](#insurance-wiring) 保險金庫接線被改 | x402／FeeRouter 設定 | 狀態 | SEV-1 | 運作中 | 任一 getter 的讀值 ≠ 預期位址 | [§1](../../docs/INCIDENT_RESPONSE.md#1-嚴重度分級) [§3](../../docs/INCIDENT_RESPONSE.md#3-暫停與凍結現行部署能做什麼) |
 | [`feerouter-wiring`](#feerouter-wiring) FeeRouter 接線被改（含 x402 分潤路由） | x402／FeeRouter 設定 | 狀態 | SEV-1 | 運作中 | 任一 getter 的讀值 ≠ 預期位址 | [§1](../../docs/INCIDENT_RESPONSE.md#1-嚴重度分級) [§3](../../docs/INCIDENT_RESPONSE.md#3-暫停與凍結現行部署能做什麼) |
 | [`core-wiring`](#core-wiring) 核心合約接線與前端設定不一致 | x402／FeeRouter 設定 | 狀態 | SEV-1 | 運作中 | 任一 getter 的讀值 ≠ 預期位址 | [§1](../../docs/INCIDENT_RESPONSE.md#1-嚴重度分級) [§3](../../docs/INCIDENT_RESPONSE.md#3-暫停與凍結現行部署能做什麼) |
@@ -131,7 +131,7 @@ Ownable 合約的 owner 被轉移。未經排程的轉移等同特權金鑰外�
 | PerpetualExchange（ABI `PerpetualExchange`） | addresses.ts BASE_SEPOLIA.PerpetualExchange | `0x827eA0c62a32e995927101259042F8A27D99124D` |
 | InsuranceVault（ABI `InsuranceVault`） | addresses.ts BASE_SEPOLIA.InsuranceVault | `0xB364E2e3e1e7a2b033eF03a4ACceF42066F3D812` |
 | FeeRouter（ABI `FeeRouter`） | addresses.ts BASE_SEPOLIA.FeeRouter | `0x00f6cf0113399a7A451c7f85fe094a28092d3e0c` |
-| X402FeeRouter（ABI `FeeRouter`） | x402.ts X402_FEE_ROUTER[84532] | `0x29e5732AC62254d9b92A1C7d3F38EbFA8809B57d` |
+| X402FeeRouter（ABI `FeeRouter`） | x402.ts X402_FEE_ROUTER[84532] | `0x780E18146Bc77E50c3e5EcaED913FC31F62c0f6A` |
 | MockOracle（ABI `MockOracle`） | addresses.ts BASE_SEPOLIA.MockOracle | `0xeD90c4F3B48213888870C1FC8486921Cb0990Aa3` |
 | AggregatorOracle（ABI `AggregatorOracleAdapter`） | addresses.ts BASE_SEPOLIA_ORACLE_SHOWCASE.AggregatorOracle | `0x8215158642350a3f329aB9597186d21f957A813D` |
 | ChainlinkAdapter（ABI `ChainlinkOracleAdapter`） | addresses.ts BASE_SEPOLIA_ORACLE_SHOWCASE.ChainlinkAdapter | `0x37DC7b70899BFfB17949366a5b6a86203C428E2f` |
@@ -268,16 +268,16 @@ InsuranceVault 的 exchange（唯一能呼叫 bailout 的地址）或 FeeRouter 
 
 ### feerouter-config-changed
 
-**FeeRouter 設定變更（含 x402 分潤路由）**｜x402／FeeRouter 設定｜事件｜SEV-2｜部署版不發此事件
+**FeeRouter 設定變更（含 x402 分潤路由）**｜x402／FeeRouter 設定｜事件｜SEV-2｜運作中
 
-V1 FeeRouter 與 x402 FeeRouter（官方 USDC）的 exchange／copyTracker 被改。**已部署的兩顆 FeeRouter 有 setExchange／setCopyTracker，但不發這兩個事件**，所以這條事件規則現在不會響；接線變更由狀態規則 feerouter-wiring 每輪讀 getter 比對。重新部署並更新 deployed.json 後改為 active。
+V1 FeeRouter 與 x402 FeeRouter（官方 USDC）的 exchange／copyTracker 被改。x402 FeeRouter 已於 2026-10-10 以目前原始碼重新部署（0x780E…0f6A），會發 ExchangeSet／CopyTrackerSet，所以這條規則改為 active。**平台 V1 FeeRouter 仍是舊部署，不會發這兩個事件**（events 的 notDeployed 已標明），它的變更只能靠狀態規則 feerouter-wiring 每輪讀 getter 抓；第 5 步重新部署後移除 notDeployed。
 
 | 合約 | 位址來源 | 位址 |
 |---|---|---|
-| FeeRouter | addresses.ts BASE_SEPOLIA.FeeRouter（`0x00f6cf0113399a7A451c7f85fe094a28092d3e0c`）；部署版不發此事件，事件宣告於 `contracts/src/FeeRouter.sol` | — |
-| X402FeeRouter | x402.ts X402_FEE_ROUTER[84532]（`0x29e5732AC62254d9b92A1C7d3F38EbFA8809B57d`）；部署版不發此事件，事件宣告於 `contracts/src/FeeRouter.sol` | — |
+| FeeRouter（ABI `FeeRouter`） | addresses.ts BASE_SEPOLIA.FeeRouter | `0x00f6cf0113399a7A451c7f85fe094a28092d3e0c` |
+| X402FeeRouter（ABI `FeeRouter`） | x402.ts X402_FEE_ROUTER[84532] | `0x780E18146Bc77E50c3e5EcaED913FC31F62c0f6A` |
 
-- 事件：`ExchangeSet(address)`、`CopyTrackerSet(address)`
+- 事件：`ExchangeSet(address)`（**部署版不發此事件**：FeeRouter；平台 V1 FeeRouter 是舊部署，bytecode 不含這個事件；x402 FeeRouter（2026-10-10 重新部署）會發）、`CopyTrackerSet(address)`（**部署版不發此事件**：FeeRouter；平台 V1 FeeRouter 是舊部署，bytecode 不含這個事件；x402 FeeRouter（2026-10-10 重新部署）會發）
 - 門檻：每一筆
 - 處置：[INCIDENT_RESPONSE「1. 嚴重度分級」](../../docs/INCIDENT_RESPONSE.md#1-嚴重度分級)、[INCIDENT_RESPONSE「3. 暫停與凍結：現行部署能做什麼」](../../docs/INCIDENT_RESPONSE.md#3-暫停與凍結現行部署能做什麼)
 - 相關：[RUNBOOK_KEY_ROTATION.md「6.2 x402 payTo / platformTreasury」](../../docs/RUNBOOK_KEY_ROTATION.md#62-x402-payto--platformtreasury)
@@ -306,7 +306,7 @@ V1 FeeRouter 與 x402 FeeRouter（官方 USDC）的 exchange／copyTracker 被�
 | 合約 | 位址來源 | 位址 |
 |---|---|---|
 | FeeRouter（ABI `FeeRouter`） | addresses.ts BASE_SEPOLIA.FeeRouter | `0x00f6cf0113399a7A451c7f85fe094a28092d3e0c` |
-| X402FeeRouter（ABI `FeeRouter`） | x402.ts X402_FEE_ROUTER[84532] | `0x29e5732AC62254d9b92A1C7d3F38EbFA8809B57d` |
+| X402FeeRouter（ABI `FeeRouter`） | x402.ts X402_FEE_ROUTER[84532] | `0x780E18146Bc77E50c3e5EcaED913FC31F62c0f6A` |
 
 - 預期：`FeeRouter.exchange()` = `PerpetualExchange`（`0x827eA0c62a32e995927101259042F8A27D99124D`）
 - 預期：`FeeRouter.copyTracker()` = `CopyTracker`（`0xC9e91f7D36e910C58042164032c625427b23CCB2`）
@@ -315,7 +315,7 @@ V1 FeeRouter 與 x402 FeeRouter（官方 USDC）的 exchange／copyTracker 被�
 - 預期：`X402FeeRouter.exchange()` = 零位址
 - 預期：`X402FeeRouter.copyTracker()` = 零位址
 - 預期：`X402FeeRouter.insuranceVault()` = 鏈上快照 `0xc7afe2064106a608e0e21bfbf9aff89b0ead7b9f`（x402 FeeRouter 部署時指定的保險金收款地址（immutable），前端設定沒有這個位址）
-- 預期：`X402FeeRouter.platformTreasury()` = 鏈上快照 `0xe80a81360608c1342e66743f70a00f75d792eb93`（immutable；x402.ts 註明這是待更換的 treasury，重新部署 X402FeeRouter 時位址與快照一起換）
+- 預期：`X402FeeRouter.platformTreasury()` = 鏈上快照 `0x27c21324d101e867e0634bf2ebe3f9dcf3aca585`（immutable；x402.ts 註明這是待更換的 treasury，重新部署 X402FeeRouter 時位址與快照一起換）
 - 門檻：任一 getter 的讀值 ≠ 預期位址
 - 處置：[INCIDENT_RESPONSE「1. 嚴重度分級」](../../docs/INCIDENT_RESPONSE.md#1-嚴重度分級)、[INCIDENT_RESPONSE「3. 暫停與凍結：現行部署能做什麼」](../../docs/INCIDENT_RESPONSE.md#3-暫停與凍結現行部署能做什麼)
 
@@ -698,7 +698,7 @@ x402 FeeRouter（官方 USDC）的平台手續費提領，稽核通知。
 
 | 合約 | 位址來源 | 位址 |
 |---|---|---|
-| X402FeeRouter（ABI `FeeRouter`） | x402.ts X402_FEE_ROUTER[84532] | `0x29e5732AC62254d9b92A1C7d3F38EbFA8809B57d` |
+| X402FeeRouter（ABI `FeeRouter`） | x402.ts X402_FEE_ROUTER[84532] | `0x780E18146Bc77E50c3e5EcaED913FC31F62c0f6A` |
 
 - 事件：`PlatformFeesWithdrawn(address,uint256,uint256)`
 - 門檻：每一筆（`FEE_WITHDRAW_ALERT_USDC`（預設 0 USDC））；金額 6 位小數（USDC）

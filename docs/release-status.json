@@ -1,6 +1,6 @@
 {
  "$comment": "由 node scripts/check-deployment-status.mjs 產生（唯讀 RPC），不要手改；docs/RELEASE_STATUS.md 是這份 JSON 的渲染結果。",
- "generatedAt": "2026-10-07",
+ "generatedAt": "2026-10-10",
  "compiler": "0.8.36",
  "denylistSize": 1,
  "chains": {
@@ -8,7 +8,7 @@
    "name": "Base Sepolia",
    "role": "正式測試網（交易、agent session、x402 都在這條鏈）",
    "rpc": "https://sepolia.base.org",
-   "block": 47788376,
+   "block": 47938324,
    "components": [
     {
      "id": "PerpetualExchange",
@@ -95,8 +95,8 @@
      "id": "GuardedOracle",
      "label": "強化 oracle（多 keeper、偏離上限）",
      "merged": {
-      "pr": null,
-      "commit": "f6c6548",
+      "pr": 288,
+      "commit": "eda801d",
       "date": "2026-10-07"
      },
      "sourceDigest": "fa62b027fb377e1e",
@@ -221,21 +221,16 @@
       "commit": "fa99346",
       "date": "2026-09-30"
      },
-     "sourceDigest": "a317d308e0328762",
+     "sourceDigest": "5cb3ce90b42529e5",
      "addresses": [
       {
        "key": "X402FeeRouter",
-       "address": "0x29e5732AC62254d9b92A1C7d3F38EbFA8809B57d"
+       "address": "0x780E18146Bc77E50c3e5EcaED913FC31F62c0f6A"
       }
      ],
-     "status": "behind",
-     "detail": "與原始碼現行版不一致：長度不同（鏈上 2879 B，原始碼 2984 B）",
-     "leaked": [
-      {
-       "what": "platformTreasury()",
-       "holder": "0xe80a…eb93"
-      }
-     ],
+     "status": "equal",
+     "detail": "完全一致",
+     "leaked": [],
      "reads": [
       {
        "fn": "owner()",
@@ -244,8 +239,8 @@
       },
       {
        "fn": "platformTreasury()",
-       "value": "0xe80a…eb93",
-       "leaked": true
+       "value": "0x27c21324d101e867e0634bf2ebe3f9dcf3aca585",
+       "leaked": false
       }
      ],
      "snapshot": "same",
@@ -258,14 +253,14 @@
       ],
       "note": "2026-06-15 部署驗證與 2026-06-15～07-15 四筆 routeExternalRevenue 實際結算 tx；x402 v2 從未實付（docs/ADR-010-x402-v2-migration.md）"
      },
-     "matched": null
+     "matched": "FeeRouter.sol:FeeRouter"
     },
     {
      "id": "AgentSessionManager",
      "label": "agent session（自主交易授權）",
      "merged": {
-      "pr": null,
-      "commit": "8d5199c",
+      "pr": 288,
+      "commit": "eda801d",
       "date": "2026-10-07"
      },
      "sourceDigest": "4b8e2ce30503f238",
@@ -1067,8 +1062,8 @@
      "id": "AggregatorOracle",
      "label": "Chainlink＋Pyth 聚合 oracle（展示用，keeper 的參考來源）",
      "merged": {
-      "pr": null,
-      "commit": "f6c6548",
+      "pr": 288,
+      "commit": "eda801d",
       "date": "2026-10-07"
      },
      "sourceDigest": "e890861913737254",
@@ -1080,17 +1075,12 @@
      ],
      "status": "behind",
      "detail": "與原始碼現行版不一致：長度不同（鏈上 1700 B，原始碼 2765 B）",
-     "leaked": [
-      {
-       "what": "owner()",
-       "holder": "0xe80a…eb93"
-      }
-     ],
+     "leaked": [],
      "reads": [
       {
        "fn": "owner()",
-       "value": "0xe80a…eb93",
-       "leaked": true
+       "value": "0x27c21324d101e867e0634bf2ebe3f9dcf3aca585",
+       "leaked": false
       }
      ],
      "snapshot": "same",
@@ -1106,8 +1096,8 @@
      "id": "ChainlinkAdapter",
      "label": "Chainlink 轉接",
      "merged": {
-      "pr": null,
-      "commit": "d729e20",
+      "pr": 288,
+      "commit": "eda801d",
       "date": "2026-10-07"
      },
      "sourceDigest": "62f172d3bcb2675b",
@@ -1119,17 +1109,12 @@
      ],
      "status": "behind",
      "detail": "與原始碼現行版不一致：長度不同（鏈上 1419 B，原始碼 2863 B）",
-     "leaked": [
-      {
-       "what": "owner()",
-       "holder": "0xe80a…eb93"
-      }
-     ],
+     "leaked": [],
      "reads": [
       {
        "fn": "owner()",
-       "value": "0xe80a…eb93",
-       "leaked": true
+       "value": "0x27c21324d101e867e0634bf2ebe3f9dcf3aca585",
+       "leaked": false
       }
      ],
      "snapshot": "same",
@@ -1158,17 +1143,12 @@
      ],
      "status": "behind",
      "detail": "與原始碼現行版不一致：長度不同（鏈上 1500 B，原始碼 2281 B）",
-     "leaked": [
-      {
-       "what": "owner()",
-       "holder": "0xe80a…eb93"
-      }
-     ],
+     "leaked": [],
      "reads": [
       {
        "fn": "owner()",
-       "value": "0xe80a…eb93",
-       "leaked": true
+       "value": "0x27c21324d101e867e0634bf2ebe3f9dcf3aca585",
+       "leaked": false
       }
      ],
      "snapshot": "same",
@@ -1282,7 +1262,7 @@
    "name": "Sepolia",
    "role": "legacy 展示鏈（不是產品路徑；合約未做金鑰輪替）",
    "rpc": "https://ethereum-sepolia-rpc.publicnode.com",
-   "block": 11860403,
+   "block": 11885339,
    "components": [
     {
      "id": "PerpetualExchange",
@@ -1301,17 +1281,12 @@
      ],
      "status": "behind",
      "detail": "與原始碼現行版不一致：長度不同（鏈上 18015 B，原始碼 23911 B）",
-     "leaked": [
-      {
-       "what": "owner()",
-       "holder": "0xe80a…eb93"
-      }
-     ],
+     "leaked": [],
      "reads": [
       {
        "fn": "owner()",
-       "value": "0xe80a…eb93",
-       "leaked": true
+       "value": "0x0000000000000000000000000000000000000000",
+       "leaked": false
       },
       {
        "fn": "guardian()",
@@ -1373,8 +1348,8 @@
      "id": "GuardedOracle",
      "label": "強化 oracle（多 keeper、偏離上限）",
      "merged": {
-      "pr": null,
-      "commit": "f6c6548",
+      "pr": 288,
+      "commit": "eda801d",
       "date": "2026-10-07"
      },
      "sourceDigest": "fa62b027fb377e1e",
@@ -1386,35 +1361,22 @@
      ],
      "status": "behind",
      "detail": "與原始碼現行版不一致：長度不同（鏈上 3620 B，原始碼 8457 B）",
-     "leaked": [
-      {
-       "what": "DEFAULT_ADMIN_ROLE",
-       "holder": "0xe80a…eb93"
-      },
-      {
-       "what": "KEEPER_ROLE",
-       "holder": "0xe80a…eb93"
-      },
-      {
-       "what": "GUARDIAN_ROLE",
-       "holder": "0xe80a…eb93"
-      }
-     ],
+     "leaked": [],
      "reads": [
       {
        "fn": "hasRole(DEFAULT_ADMIN_ROLE, 0xe80a…eb93)",
-       "value": true,
-       "leaked": true
+       "value": false,
+       "leaked": false
       },
       {
        "fn": "hasRole(KEEPER_ROLE, 0xe80a…eb93)",
-       "value": true,
-       "leaked": true
+       "value": false,
+       "leaked": false
       },
       {
        "fn": "hasRole(GUARDIAN_ROLE, 0xe80a…eb93)",
-       "value": true,
-       "leaked": true
+       "value": false,
+       "leaked": false
       }
      ],
      "snapshot": null,
@@ -1443,17 +1405,12 @@
      ],
      "status": "behind",
      "detail": "與原始碼現行版不一致：長度不同（鏈上 8378 B，原始碼 4641 B）",
-     "leaked": [
-      {
-       "what": "owner()",
-       "holder": "0xe80a…eb93"
-      }
-     ],
+     "leaked": [],
      "reads": [
       {
        "fn": "owner()",
-       "value": "0xe80a…eb93",
-       "leaked": true
+       "value": "0x0000000000000000000000000000000000000000",
+       "leaked": false
       }
      ],
      "snapshot": null,
@@ -1484,10 +1441,6 @@
      "detail": "與原始碼現行版不一致：長度不同（鏈上 5423 B，原始碼 2984 B）",
      "leaked": [
       {
-       "what": "owner()",
-       "holder": "0xe80a…eb93"
-      },
-      {
        "what": "platformTreasury()",
        "holder": "0xe80a…eb93"
       }
@@ -1495,8 +1448,8 @@
      "reads": [
       {
        "fn": "owner()",
-       "value": "0xe80a…eb93",
-       "leaked": true
+       "value": "0x0000000000000000000000000000000000000000",
+       "leaked": false
       },
       {
        "fn": "platformTreasury()",
@@ -1530,17 +1483,12 @@
      ],
      "status": "behind",
      "detail": "與原始碼現行版不一致：長度不同（鏈上 6743 B，原始碼 2970 B）",
-     "leaked": [
-      {
-       "what": "owner()",
-       "holder": "0xe80a…eb93"
-      }
-     ],
+     "leaked": [],
      "reads": [
       {
        "fn": "owner()",
-       "value": "0xe80a…eb93",
-       "leaked": true
+       "value": "0x0000000000000000000000000000000000000000",
+       "leaked": false
       }
      ],
      "snapshot": null,
@@ -1630,17 +1578,12 @@
      ],
      "status": "behind",
      "detail": "與原始碼現行版不一致：長度不同（鏈上 4119 B，原始碼 4454 B）",
-     "leaked": [
-      {
-       "what": "owner()",
-       "holder": "0xe80a…eb93"
-      }
-     ],
+     "leaked": [],
      "reads": [
       {
        "fn": "owner()",
-       "value": "0xe80a…eb93",
-       "leaked": true
+       "value": "0x0000000000000000000000000000000000000000",
+       "leaked": false
       },
       {
        "fn": "verifiers(0xe80a…eb93)",
@@ -1673,17 +1616,12 @@
      ],
      "status": "behind",
      "detail": "與原始碼現行版不一致：長度不同（鏈上 5327 B，原始碼 2159 B）",
-     "leaked": [
-      {
-       "what": "owner()",
-       "holder": "0xe80a…eb93"
-      }
-     ],
+     "leaked": [],
      "reads": [
       {
        "fn": "owner()",
-       "value": "0xe80a…eb93",
-       "leaked": true
+       "value": "0x0000000000000000000000000000000000000000",
+       "leaked": false
       }
      ],
      "snapshot": null,
@@ -1712,35 +1650,22 @@
      ],
      "status": "behind",
      "detail": "與原始碼現行版不一致：長度不同（鏈上 8968 B，原始碼 11838 B）",
-     "leaked": [
-      {
-       "what": "DEFAULT_ADMIN_ROLE",
-       "holder": "0xe80a…eb93"
-      },
-      {
-       "what": "RISK_ROLE",
-       "holder": "0xe80a…eb93"
-      },
-      {
-       "what": "PAUSER_ROLE",
-       "holder": "0xe80a…eb93"
-      }
-     ],
+     "leaked": [],
      "reads": [
       {
        "fn": "hasRole(DEFAULT_ADMIN_ROLE, 0xe80a…eb93)",
-       "value": true,
-       "leaked": true
+       "value": false,
+       "leaked": false
       },
       {
        "fn": "hasRole(RISK_ROLE, 0xe80a…eb93)",
-       "value": true,
-       "leaked": true
+       "value": false,
+       "leaked": false
       },
       {
        "fn": "hasRole(PAUSER_ROLE, 0xe80a…eb93)",
-       "value": true,
-       "leaked": true
+       "value": false,
+       "leaked": false
       }
      ],
      "snapshot": null,
@@ -1798,82 +1723,8 @@
      ],
      "status": "equal",
      "detail": "程式碼一致；只有 CBOR metadata（原始碼文字雜湊）不同",
-     "leaked": [
-      {
-       "what": "sBTC.DEFAULT_ADMIN_ROLE",
-       "holder": "0xe80a…eb93"
-      },
-      {
-       "what": "sETH.DEFAULT_ADMIN_ROLE",
-       "holder": "0xe80a…eb93"
-      },
-      {
-       "what": "sAAPL.DEFAULT_ADMIN_ROLE",
-       "holder": "0xe80a…eb93"
-      },
-      {
-       "what": "sTSLA.DEFAULT_ADMIN_ROLE",
-       "holder": "0xe80a…eb93"
-      },
-      {
-       "what": "sGOLD.DEFAULT_ADMIN_ROLE",
-       "holder": "0xe80a…eb93"
-      },
-      {
-       "what": "sBOND.DEFAULT_ADMIN_ROLE",
-       "holder": "0xe80a…eb93"
-      },
-      {
-       "what": "sNVDA.DEFAULT_ADMIN_ROLE",
-       "holder": "0xe80a…eb93"
-      },
-      {
-       "what": "sMSFT.DEFAULT_ADMIN_ROLE",
-       "holder": "0xe80a…eb93"
-      }
-     ],
-     "reads": [
-      {
-       "fn": "sBTC.hasRole(DEFAULT_ADMIN_ROLE, 0xe80a…eb93)",
-       "value": true,
-       "leaked": true
-      },
-      {
-       "fn": "sETH.hasRole(DEFAULT_ADMIN_ROLE, 0xe80a…eb93)",
-       "value": true,
-       "leaked": true
-      },
-      {
-       "fn": "sAAPL.hasRole(DEFAULT_ADMIN_ROLE, 0xe80a…eb93)",
-       "value": true,
-       "leaked": true
-      },
-      {
-       "fn": "sTSLA.hasRole(DEFAULT_ADMIN_ROLE, 0xe80a…eb93)",
-       "value": true,
-       "leaked": true
-      },
-      {
-       "fn": "sGOLD.hasRole(DEFAULT_ADMIN_ROLE, 0xe80a…eb93)",
-       "value": true,
-       "leaked": true
-      },
-      {
-       "fn": "sBOND.hasRole(DEFAULT_ADMIN_ROLE, 0xe80a…eb93)",
-       "value": true,
-       "leaked": true
-      },
-      {
-       "fn": "sNVDA.hasRole(DEFAULT_ADMIN_ROLE, 0xe80a…eb93)",
-       "value": true,
-       "leaked": true
-      },
-      {
-       "fn": "sMSFT.hasRole(DEFAULT_ADMIN_ROLE, 0xe80a…eb93)",
-       "value": true,
-       "leaked": true
-      }
-     ],
+     "leaked": [],
+     "reads": [],
      "snapshot": null,
      "acceptance": {
       "status": "未驗收",
@@ -1944,17 +1795,12 @@
      ],
      "status": "equal",
      "detail": "程式碼一致；只有 CBOR metadata（原始碼文字雜湊）不同",
-     "leaked": [
-      {
-       "what": "owner()",
-       "holder": "0xe80a…eb93"
-      }
-     ],
+     "leaked": [],
      "reads": [
       {
        "fn": "owner()",
-       "value": "0xe80a…eb93",
-       "leaked": true
+       "value": "0x0000000000000000000000000000000000000000",
+       "leaked": false
       }
      ],
      "snapshot": null,
@@ -2110,17 +1956,12 @@
      ],
      "status": "behind",
      "detail": "與原始碼現行版不一致：長度不同（鏈上 6898 B，原始碼 4994 B）",
-     "leaked": [
-      {
-       "what": "owner()",
-       "holder": "0xe80a…eb93"
-      }
-     ],
+     "leaked": [],
      "reads": [
       {
        "fn": "owner()",
-       "value": "0xe80a…eb93",
-       "leaked": true
+       "value": "0x0000000000000000000000000000000000000000",
+       "leaked": false
       }
      ],
      "snapshot": null,
@@ -2149,17 +1990,12 @@
      ],
      "status": "behind",
      "detail": "與原始碼現行版不一致：長度不同（鏈上 11242 B，原始碼 6820 B）",
-     "leaked": [
-      {
-       "what": "owner()",
-       "holder": "0xe80a…eb93"
-      }
-     ],
+     "leaked": [],
      "reads": [
       {
        "fn": "owner()",
-       "value": "0xe80a…eb93",
-       "leaked": true
+       "value": "0x0000000000000000000000000000000000000000",
+       "leaked": false
       }
      ],
      "snapshot": null,
@@ -2188,17 +2024,12 @@
      ],
      "status": "behind",
      "detail": "與原始碼現行版不一致：長度不同（鏈上 4321 B，原始碼 2456 B）",
-     "leaked": [
-      {
-       "what": "owner()",
-       "holder": "0xe80a…eb93"
-      }
-     ],
+     "leaked": [],
      "reads": [
       {
        "fn": "owner()",
-       "value": "0xe80a…eb93",
-       "leaked": true
+       "value": "0x0000000000000000000000000000000000000000",
+       "leaked": false
       }
      ],
      "snapshot": null,
@@ -2227,17 +2058,12 @@
      ],
      "status": "behind",
      "detail": "與原始碼現行版不一致：長度不同（鏈上 7204 B，原始碼 3353 B）",
-     "leaked": [
-      {
-       "what": "owner()",
-       "holder": "0xe80a…eb93"
-      }
-     ],
+     "leaked": [],
      "reads": [
       {
        "fn": "owner()",
-       "value": "0xe80a…eb93",
-       "leaked": true
+       "value": "0x0000000000000000000000000000000000000000",
+       "leaked": false
       }
      ],
      "snapshot": null,
@@ -2266,17 +2092,12 @@
      ],
      "status": "behind",
      "detail": "與原始碼現行版不一致：長度不同（鏈上 3645 B，原始碼 1531 B）",
-     "leaked": [
-      {
-       "what": "owner()",
-       "holder": "0xe80a…eb93"
-      }
-     ],
+     "leaked": [],
      "reads": [
       {
        "fn": "owner()",
-       "value": "0xe80a…eb93",
-       "leaked": true
+       "value": "0x0000000000000000000000000000000000000000",
+       "leaked": false
       }
      ],
      "snapshot": null,
@@ -2305,17 +2126,12 @@
      ],
      "status": "behind",
      "detail": "與原始碼現行版不一致：長度不同（鏈上 5692 B，原始碼 3498 B）",
-     "leaked": [
-      {
-       "what": "owner()",
-       "holder": "0xe80a…eb93"
-      }
-     ],
+     "leaked": [],
      "reads": [
       {
        "fn": "owner()",
-       "value": "0xe80a…eb93",
-       "leaked": true
+       "value": "0x0000000000000000000000000000000000000000",
+       "leaked": false
       }
      ],
      "snapshot": null,
@@ -2377,17 +2193,12 @@
      ],
      "status": "behind",
      "detail": "與原始碼現行版不一致：長度不同（鏈上 2814 B，原始碼 2901 B）",
-     "leaked": [
-      {
-       "what": "owner()",
-       "holder": "0xe80a…eb93"
-      }
-     ],
+     "leaked": [],
      "reads": [
       {
        "fn": "owner()",
-       "value": "0xe80a…eb93",
-       "leaked": true
+       "value": "0x0000000000000000000000000000000000000000",
+       "leaked": false
       }
      ],
      "snapshot": null,
@@ -2435,11 +2246,11 @@
    "id": "signal-api",
    "label": "x402 付費 API（Vercel）",
    "merged": {
-    "pr": null,
-    "commit": "290a408",
+    "pr": 290,
+    "commit": "737d6bf",
     "date": "2026-10-07"
    },
-   "sourceDigest": "6406f3050732b650",
+   "sourceDigest": "d2c9b7c758e947db",
    "deployed": "已部署：Vercel 分支網域（agent/sdk/src/signalApi.ts 的 SIGNAL_API_TESTNET_URL）；健康與付費端點狀態由 scripts/post-deploy-smoke.mjs 檢查",
    "acceptance": {
     "status": "部分驗收",
@@ -2455,8 +2266,8 @@
    "id": "keeper",
    "label": "寫價 keeper（GitHub Actions 排程）",
    "merged": {
-    "pr": null,
-    "commit": "9ce1b75",
+    "pr": 288,
+    "commit": "eda801d",
     "date": "2026-10-07"
    },
    "sourceDigest": "623dfbc31b50cb04",
@@ -2472,11 +2283,11 @@
    "id": "keeper-trigger",
    "label": "keeper 觸發 Worker（Cloudflare）",
    "merged": {
-    "pr": 216,
-    "commit": "281102f",
-    "date": "2026-10-02"
+    "pr": 295,
+    "commit": "2676d04",
+    "date": "2026-10-09"
    },
-   "sourceDigest": "14246582cb055e99",
+   "sourceDigest": "7f5a4cf33b1928ca",
    "deployed": "未部署（ops/keeper-trigger/README.md「現況」，2026-10-02）",
    "acceptance": {
     "status": "未驗收",
@@ -2493,7 +2304,7 @@
     "commit": "281102f",
     "date": "2026-10-02"
    },
-   "sourceDigest": "6aaa8a78ccf98cbd",
+   "sourceDigest": "ec872ec2ab860ee4",
    "deployed": "未部署（ops/monitoring/README.md；2026-10-01 只做過唯讀試跑）",
    "acceptance": {
     "status": "未驗收",
