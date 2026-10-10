@@ -318,11 +318,14 @@ test("H2：審查發現的原狀（insurance／feerouter 接線事件規則是 a
       delete c.source;
       c.abi = abi;
     }
+    // feerouter-config-changed 已是 active（x402 FeeRouter 2026-10-10 重新部署後會發）；拿掉平台
+    // V1 FeeRouter 的 notDeployed 標記，就回到「舊部署不發、規則對它永遠不會響」的原狀。
+    for (const ev of r.events ?? []) delete ev.notDeployed;
   }
   const p = problemsOf(cfg).join("\n");
   assert.match(p, /insurance-wiring-changed：ExchangeSet\(address\) 的 topic0 不在 InsuranceVault 已部署的 bytecode 裡/);
   assert.match(p, /insurance-wiring-changed：沒有任何一個事件出現在已部署的 bytecode 裡/);
-  assert.match(p, /feerouter-config-changed：CopyTrackerSet\(address\) 的 topic0 不在 X402FeeRouter 已部署的 bytecode 裡/);
+  assert.match(p, /feerouter-config-changed：CopyTrackerSet\(address\) 的 topic0 不在 FeeRouter 已部署的 bytecode 裡/);
 });
 
 test("H2：pending-deploy 規則的事件其實已在部署版 → 錯（該改 active）", () => {
