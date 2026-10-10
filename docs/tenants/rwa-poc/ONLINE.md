@@ -31,9 +31,10 @@ build 會檢查：專屬租戶必須有自己的 signal-api，且該網址要在
 
 | 變數 | 值 | 說明 |
 |---|---|---|
-| `UPSTASH_REDIS_REST_URL`／`TOKEN` | Vercel Marketplace 的 Upstash `pepelab-rwa-poc-kya`（sin1、免費、不淘汰） | **獨立 DB，不是平台的**。KYA 花費帳與防重放跨實例共用 |
+| `UPSTASH_REDIS_REST_URL`／`TOKEN` | Vercel Marketplace 的 Upstash `pepelab-rwa-poc-kya`（sin1、免費、不淘汰） | **獨立 DB，不是平台的**。KYA 花費帳、防重放與撤銷驗證端狀態（ADR-021）跨實例共用 |
 | `VC_STATUS_URL` | `https://raw.githubusercontent.com/zuemen/pepelab_onchain_cfd/master/docs/tenants/rwa-poc/vc-status` | 撤銷狀態清單（本目錄 `vc-status/`，有簽章的公開資料） |
-| `VC_STATUS_STATE_PATH` | `/tmp/vc-status-state.json` | 驗證端狀態（見下方限制） |
+| `X402_SETTLEMENT_MODE` | `off` | **待擁有者新增**（ADR-021 §5）。本租戶沒有分潤結算目標：付費回應 `settled:false`＋`revenue_sharing_off`，不入結算佇列 |
+| `VC_STATUS_STATE_PATH` | `/tmp/vc-status-state.json` | 設了 Upstash 後**不再使用**（撤銷驗證端狀態改存 Upstash，`VC_STATUS_STATE_STORE` 不設＝自動），可留可刪 |
 | `BASE_SEPOLIA_RPC_URL`、`KYA_RPC_URL` | `https://base-sepolia-rpc.publicnode.com` | `sepolia.base.org` 會擋雲端機房 IP |
 | `CORS_ALLOWED_ORIGINS` | `https://pepelab-rwa-poc.vercel.app` | |
 | `SIGNAL_API_PUBLIC_URL` | `https://pepelab-rwa-poc-signal-api.vercel.app` | |
@@ -48,11 +49,26 @@ GitHub raw 的 CDN 快取約 5 分鐘，加上 checker 預設 60 秒快取，**�
 
 ## 已知限制（PoC 可接受）
 
-- **撤銷驗證端狀態是每個 Vercel 實例各自一份**（`/tmp`，signal-api 沒有注入共享的 `setVcStatusStateStore`）。
-  防回滾（sequence 高水位）與 sticky 撤銷只在同一個暖實例內成立；冷啟動的實例會接受任何仍在 `validUntil` 內、簽章正確的舊版清單。
-  撤銷的保證因此等於「master 上目前的清單」。正式上線前要注入共享儲存（Upstash）。
-- **`settled:true` 只代表「已排入佇列」**：Upstash 一設，記帳 ledger 也啟用，付費 `/signals` 會入列到獨立 DB 的
-  `x402:settlement:queue`，但沒有結算 worker 處理它（平台 worker 用平台的 DB），所以不會有分潤上鏈。付款本身照常直接付到 `PAY_TO`。
+2026-10-10 以 [ADR-021](../../ADR-021-signal-api-shared-state.md) 處理了上線時列的兩項。程式合併進 master 之後，**線上仍要等擁有者完成下面的設定、以上面的 CLI 方式重新部署才生效**。
+
+- ~~撤銷驗證端狀態是每個 Vercel 實例各自一份~~ → **已改**：KYA 開啟且有 Upstash 時，signal-api 自動注入共享的
+  `StatusStateStore`（`signal-api/src/vcStatusStore.ts`，compare-and-set）。sequence 高水位、同號異文偵測與 sticky
+  撤銷跨實例成立：冷啟動的實例也會拒絕舊清單、已知撤銷在來源掛掉時照樣拒絕。KV 故障時付費端點回
+  `503 kya_status_unverified`（fail-closed）。不需要新增環境變數，重新部署即生效；部署後 log 的 KYA 那一行應寫
+  「撤銷驗證端狀態 upstash（跨實例共用）」。
+- ~~`settled:true` 只代表「已排入佇列」~~ → **已改**：本租戶沒有分潤結算目標（沒有綁官方 USDC 的 x402 FeeRouter、
+  沒有結算金鑰、收費模式 0／0、`/signals` 的 trader 是平台的；租戶結算 worker 也還不支援，見 ADR-021 §3.1），所以不做租戶
+  worker，改為 `X402_SETTLEMENT_MODE=off`：付費回應 `settled:false`，`settleError` 以 `revenue_sharing_off：` 開頭，
+  不入 `x402:settlement:queue`，`GET /` 的 `revenueModel` 不再提 70/20/10。付款本身照常直接付到 `PAY_TO`。
+  **擁有者要在 Vercel 新增 `X402_SETTLEMENT_MODE=off` 並以上面的 CLI 方式重新部署**；在那之前線上仍會回 `settled:true`
+  並入列（舊行為）。之前已入列的項目不會被處理，可以清掉（ADR-021 §5 第 4 點）。
+
+仍然存在的：
+
+- **撤銷仍靠清單主機誠實回答「有沒有清單」**（ADR-016 §7.1）：共享狀態只讓「任一實例看過」的清單跨實例生效；
+  從沒有實例看過的簽發者，主機回 404 就被當成沒有撤銷。撤銷生效最多延遲約 6 分鐘（上面「撤銷憑證」）。
+- **共享撤銷狀態多 2–4 次 Upstash 往返**：每個付費請求多讀 2 次，快取過期時再多 2 次（同區域約 5–20 ms／次）。
+- **刪掉 Upstash 的 `vc:status:*` key＝忘記高水位與 sticky 撤銷**（等同刪狀態檔）。這個 DB 是「不淘汰」，不要手動清它們。
 - `/oracle` 等唯讀端點讀的是平台合約位址（與本機版相同）。
 
 ## 驗收紀錄（2026-10-09）

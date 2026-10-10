@@ -948,7 +948,7 @@ components:
           description: true 代表分潤已排入結算佇列，**不代表已上鏈**
         settleError:
           type: string
-          description: 未排入佇列的原因（例如佇列未設定、入列失敗、/oracle 未設定受益人）
+          description: 未排入佇列的原因（例如佇列未設定、入列失敗、/oracle 未設定受益人；本部署沒有分潤結算目標時以 `revenue_sharing_off` 開頭，見 X402_SETTLEMENT_MODE）
         data: {}
     Discovery:
       type: object

@@ -51,6 +51,7 @@ bash scripts/poc/rwa-poc-x402.sh status-list [label…]       # 投資人簽發�
 | `SESSION_MANAGER_ADDRESS` / `SESSION_ANCHOR_ADDRESS` | 上表兩個合約 |
 | `KYA_RPC_URL`、`BASE_SEPOLIA_RPC_URL` | `https://sepolia.base.org`（可用 `RWA_POC_RPC_URL` 覆寫） |
 | `X402_KYA_SPEND_STORE` | `memory`（本機沒有 Upstash） |
+| `X402_SETTLEMENT_MODE` | `off`（本租戶沒有分潤結算目標：回應 `settled:false`＋`revenue_sharing_off`，見 [ADR-021](../../ADR-021-signal-api-shared-state.md) §3） |
 | `VC_STATUS_DIR` | `agent/.state/rwa-poc/vc-status`（ADR-016 狀態清單目錄，第一次啟動時 `init`，已被 gitignore） |
 | `CORS_ALLOWED_ORIGINS` | `http://localhost:5173,http://localhost:4173` |
 | `X402_FACILITATOR_URL` / `X402_PROTOCOL` | `https://x402.org/facilitator` / `v1` |
