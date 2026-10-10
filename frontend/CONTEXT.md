@@ -153,6 +153,10 @@ _Avoid_: verifier, reviewer, rater, auditor
 How far the Attestations for one asset sit from each other. A first-class figure shown on screen rather than an error to be averaged away, because rating agencies disagreeing about the same company is the condition this platform exists to make visible.
 _Avoid_: variance, error, spread, confidence
 
+**Simulated Carbon Credit (模擬碳權)**:
+The token `CarbonRetirement` buys and burns with a fixed share of platform fees ([ADR-022](../docs/ADR-022-carbon-retirement-splitter.md), root `docs/`). Minted by this project on a testnet, issued by no registry, standing for no real reduction or removal — burning it offsets nothing, and the purchase price goes to a project-controlled seller. The fee routing and the irreversible burn are real; the credit is not. Every screen that shows a retirement says 模擬碳權 next to it, in a disclosure that cannot be collapsed and does not depend on any chain read: hiding it would turn the one real-world-impact claim on the platform into a false one.
+_Avoid_: carbon offset, offsetting, carbon neutral, any wording that lets a retired tonne read as a real one
+
 ### Allocation and sharing
 
 Allocation/Adopt is a Simple Mode concept and names a genuinely unleveraged product — buying the same spot token mix a publisher holds, snapshot-style, via `AssetVaultV2_4.mint`. It is a different product from the leveraged CFD position-copying `CopyTracker` already implements; [ADR 0007](../docs/ADR-007-allocation-adoption-is-a-new-unleveraged-product.md) (root `docs/`) is why the two are kept apart rather than merged under one name — reusing CopyTracker's leverage under Allocation's spot-sounding language would let a Simple Mode user take on leverage risk in a screen that is barred from ever saying "leverage" or "liquidation." CopyTracker's existing mechanism lives in Expert Mode only, under its own honest trading-desk words (Trader, Copy, Follow, Position) — Expert Mode isn't bound by this section's `_Avoid_` lists.

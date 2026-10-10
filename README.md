@@ -107,6 +107,17 @@ Sepolia 的合約**未做金鑰輪替**（見 [`docs/RUNBOOK_KEY_ROTATION.md`](d
   移交給 Timelock 的治理腳本（[`docs/GOVERNANCE_HANDOVER.md`](docs/GOVERNANCE_HANDOVER.md)）、
   `AssetVaultV2_5`、`GuardedOracle` 的時間窗累積偏離上限。相關限制見 `docs/KNOWN_LIMITATIONS.md` #27–#29。
 
+### 3.3 碳權退役（#105，僅原始碼、尚未部署）
+
+**被銷毀的碳權是模擬的。** `MockCarbonCredit` 是本專案在測試網自行鑄造的代幣，不是任何碳權登錄機構
+核發的碳權，不對應任何真實的減碳或移除量，銷毀它不抵銷任何真實排放；買入款項付給本專案控制的模擬賣方
+地址，沒有流向任何真實的碳權專案。真實的是**架構**：`FeeRouter` 的平台收款人換成 `PlatformFeeSplitter`，
+平台份額中合約寫死的比例自動撥給 `CarbonRetirement`，它用這筆預算買入碳權並在同一筆交易裡銷毀，發出
+`CarbonRetired(amount, tonnesCO2e, timestamp)`。`FeeRouter` 原始碼與 70/20/10 不變。合約的 `name()`、
+`SIMULATED`、`DISCLOSURE` 與 ESG 頁的退役區塊都帶同一句聲明。設計見
+[`docs/ADR-022-carbon-retirement-splitter.md`](docs/ADR-022-carbon-retirement-splitter.md)；
+部署腳本 `contracts/script/DeployCarbonRetirement.s.sol` 尚未執行，前端在沒有設定位址時不顯示退役區塊。
+
 ## 4. 商業版功能旗標（前端）
 
 定義在 [`frontend/src/lib/pepefi/featureFlags.ts`](frontend/src/lib/pepefi/featureFlags.ts)。旗標只控制畫面，
@@ -130,6 +141,7 @@ Sepolia 的合約**未做金鑰輪替**（見 [`docs/RUNBOOK_KEY_ROTATION.md`](d
   - 合約**沒有第三方安全稽核**。`docs/audit/` 內是內部審查與靜態分析紀錄，不等於稽核。
   - 合約 owner 為**單一 EOA**，沒有 multisig，也沒有 timelock。
   - 交易所讀取的價格由 keeper 金鑰寫入 `MockOracle`，屬於受信任的中繼，不是去中心化預言機。
+  - 碳權退役（#105，未部署）銷毀的是本專案自行鑄造的模擬碳權，不是真實碳權，不抵銷任何真實排放。
   - `AssetVaultV2` 為非足額抵押的合成曝險。
   - x402 FeeRouter 需以新的 treasury 重新部署（使用者待辦）。
 
@@ -181,6 +193,7 @@ npm run mcp-server      # 本機啟動 MCP server（stdio）
 | [`docs/COMPLIANCE_BOUNDARY.md`](docs/COMPLIANCE_BOUNDARY.md) | 我方與客戶的合規責任邊界（草案） |
 | [`docs/RISK_WATERFALL.md`](docs/RISK_WATERFALL.md) | 損失吸收順序（草案） |
 | [`docs/CARBON_METHODOLOGY.md`](docs/CARBON_METHODOLOGY.md) | 碳分級方法與資料品質（草案） |
+| [`docs/ADR-022-carbon-retirement-splitter.md`](docs/ADR-022-carbon-retirement-splitter.md) | 碳權退役（提案、未部署）：平台收款人換成分流合約、FeeRouter 不改；被銷毀的是**模擬碳權** |
 | [`docs/INCIDENT_RESPONSE.md`](docs/INCIDENT_RESPONSE.md) | 事故應變（草案） |
 | [`docs/ADR-009-monitoring.md`](docs/ADR-009-monitoring.md)、[`ops/monitoring/rules.md`](ops/monitoring/rules.md) | 鏈上監控方案決策與監控規則清單（部署見 [`ops/monitoring/README.md`](ops/monitoring/README.md)） |
 | [`docs/ADR-012-junior-buffer-tranches.md`](docs/ADR-012-junior-buffer-tranches.md) | 上主網前設計（提案）：分層保險金庫（租戶 junior／外部 senior）與鏈下對沖介面 |
