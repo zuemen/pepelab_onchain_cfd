@@ -101,14 +101,14 @@ S3 上線當下那次 `VerifyTenant` 是加 `TENANT_PRIVILEGE_SCAN_REQUIRED=true
 
 - **測試網**：全部在 Base Sepolia。保證金是沿用平台既有的測試幣 MockUSDC（與現役部署共用，不受 PoC 金鑰控制），不是真錢；保險金庫只有部署時的 1 USDC 種子。部位是合成 CFD 曝險，背後沒有任何實體股票或黃金。
 - **發證者與見證者是自己的測試錢包**：合格投資人 VC 的發證者、ESG 碳分級的 attestor 都由 PoC 團隊控制，不是持牌 KYC 機構或第三方驗證機構；「合格投資人」只是示範身分，沒有做真實的身分審查。
-- **參考價**：價格由本機 keeper 從公開行情寫入；oracle 沒有獨立參考來源（`referenceSource: none`），寫價只受 `GuardedOracle` 的單次上限與時間窗限制。
+- **參考價**：價格由 GitHub Actions keeper（`keeper-rwa-poc.yml`）從公開行情寫入；oracle 沒有獨立參考來源（`referenceSource: none`），寫價只受 `GuardedOracle` 的單次上限與時間窗限制。
 - **KYA 花費帳在記憶體**：`X402_KYA_SPEND_STORE=memory`，signal-api 重啟後歸零；VP 防重放集合同樣在記憶體（舊付款仍會被 EIP-3009 nonce 擋下）。
 - **x402 第 6 景是補拍**：實付在 2026-10-08 另錄後插回成片（其餘 9 景是 2026-10-07 的一次完整錄影）；實付過程中有一次 facilitator 回 402、未扣款，片中照實呈現。結算走公開 facilitator `x402.org`，不是自己營運的結算服務。
 - **sAAPL 交易時段**：keeper 在美股正規盤以外、以及收盤前 3 小時就切 ReduceOnly，台灣白天 sAAPL 不能開新倉。成片主線改用 sGOLD（只在週末切），sAAPL 用來示範休市（[`RUNBOOK.md`](RUNBOOK.md)）。
 - **sGOLD 槓桿 1 倍**：sGOLD 碳分級 3 級，交易所槓桿上限 1 倍。
 - **signal-api 綁所有網卡**：`index.ts` 沒有 hostname 設定，會監聽 `*:4021`，同一區網的機器也連得到。錄影時用可信任的網路，或以本機防火牆擋掉 4021 的對外連線。
 - **線上版與本機版並存**：線上前端與 signal-api 在 Vercel（[`ONLINE.md`](ONLINE.md)，撤銷狀態清單放在本 repo 的 `vc-status/`）；本機版照 [`RUNBOOK.md`](RUNBOOK.md)。推價由 GitHub Actions keeper（`keeper-rwa-poc.yml`）負責，本機 keeper 腳本不要同時跑。
-- **未在 BaseScan 驗證原始碼**：需要 BaseScan API key，尚未設定。
+- **未在 BaseScan 驗證原始碼**：Blockscout 與 Sourcify 已全部驗證（#294）；BaseScan 需要 API key，尚未設定（設好 `ETHERSCAN_API_KEY` 後跑 `rwa-poc-verify.sh`）。
 - **合約未經外部稽核**：`VCKycRegistry`、`SessionCredentialAnchor` 是新合約，只經過 repo 內的對抗式審查與測試。
 - **前端小限制**：終端機資產列的鎖頭圖示只看靜態表，sGOLD 不顯示鎖頭，但下單面板仍會擋（[`FRONTEND.md`](FRONTEND.md)）。
 - **金庫代幣可轉讓**：本租戶 `deployVault: true`，AssetVaultV2 的合成代幣是一般 ERC-20（[`docs/RWA_ALIGNMENT.md`](../../RWA_ALIGNMENT.md) C4）。
