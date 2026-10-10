@@ -15,6 +15,7 @@ import { t, interpolate } from 'src/locales';
 import { ASSET_META } from 'src/lib/pepefi/assetMeta';
 import { assetDisplayName } from 'src/lib/pepefi/assetName';
 import ESGBadge from 'src/components/pepefi/ESGBadge';
+import CarbonRetirementCard from 'src/components/pepefi/CarbonRetirementCard';
 import Skeleton from 'src/components/pepefi/Skeleton';
 
 import Box from '@mui/material/Box';
@@ -348,6 +349,12 @@ export default function ESGPage() {
         )}
       </Card>
       )}
+
+      {/* ── 碳權退役紀錄（#105，ADR-022）──────────────────────────────────────
+          接在見證碳等級後面：上面講碳排怎麼決定成本，這裡講手續費的一部分被拿去做什麼。
+          退役的是**模擬碳權**，聲明在元件裡、不可收合。沒有設定退役合約位址時元件回 null，
+          不留任何「尚未部署」提示（同上方見證碳等級的處理）。 */}
+      <CarbonRetirementCard />
 
       {/* ── B (left) + C (right) ─────────────────────────────────────────────── */}
       <Grid container spacing={3} alignItems="flex-start">
