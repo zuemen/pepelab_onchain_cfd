@@ -138,6 +138,7 @@ export interface PaidEnvelope<T> {
   ok: true;
   /** true = 分潤已排入結算佇列，**不代表已上鏈**。 */
   settled: boolean;
+  /** 未排入的原因。以 `revenue_sharing_off` 開頭＝該部署沒有分潤結算目標（X402_SETTLEMENT_MODE=off），款項直接進 payTo。 */
   settleError?: string;
   data: T;
 }

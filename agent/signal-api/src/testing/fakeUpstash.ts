@@ -1,5 +1,5 @@
 // 測試用的假 Upstash REST：記憶體內的 list + string，支援 worker 用到的指令子集
-// （RPUSH / LMOVE / LREM / LLEN / LPOP / GET / SET [NX] [EX] / DEL / INCR / EXPIRE / EVAL 的幾支固定腳本）。
+// （RPUSH / LMOVE / LREM / LLEN / LPOP / GET / MGET / SET [NX] [EX] / DEL / INCR / EXPIRE / EVAL 的幾支固定腳本）。
 // 只給離線測試用，不會被打包進 Vercel bundle（vercel-entry 不 import 它）。
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
@@ -156,6 +156,13 @@ export async function startFakeUpstash(): Promise<FakeUpstash> {
             const v = Number(strings.get(key) ?? "0");
             if (v > 0) strings.set(key, String(Math.max(0, v - a)));
           }
+          return ok(1);
+        }
+        // vcStatusStore.ts 的 compare-and-set（GET 不存在＝""；語意與 Lua 逐行相同）。
+        if (script.startsWith("-- pepelab:vcstatus_cas")) {
+          if ((strings.get(KEYS[0]) ?? "") !== ARGV[0]) return ok(0);
+          strings.set(KEYS[0], ARGV[1]);
+          strings.set(KEYS[1], ARGV[2]);
           return ok(1);
         }
         if (script.startsWith("-- pepelab:unknown_move")) {

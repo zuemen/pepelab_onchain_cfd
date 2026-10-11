@@ -258,7 +258,7 @@ export async function checkInvestorCredentialStatus(
 
   let known: IssuerStatusState | null;
   try {
-    known = deps.store.get(key);
+    known = await deps.store.get(key);
   } catch {
     return unknown("STATUS_STATE_UNREADABLE", "狀態檔無法讀取或格式不符");
   }
@@ -285,7 +285,12 @@ export async function checkInvestorCredentialStatus(
   });
   if (!v.valid) return unknown(v.reasonCode, v.reason);
   const { chainId: _c, ...list } = v.list;
-  const a = deps.store.accept(key, list, Math.floor(nowMs / 1000));
+  let a: Awaited<ReturnType<StatusStateStore["accept"]>>;
+  try {
+    a = await deps.store.accept(key, list, Math.floor(nowMs / 1000));
+  } catch {
+    return unknown("STATUS_STATE_WRITE_FAILED", "狀態無法寫入");
+  }
   if (!a.ok) return unknown(a.reasonCode, a.message);
   if (isCredentialRevoked(view, a.state) || isCredentialRevoked(view, list)) {
     return { ok: false, status: "revoked", reasonCode: "VC_REVOKED", message: `憑證已被發證者撤銷（清單 sequence ${a.state.sequence}）`, listSequence: a.state.sequence };

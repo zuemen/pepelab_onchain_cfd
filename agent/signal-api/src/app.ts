@@ -47,9 +47,15 @@ import {
   authorizationMarkerKey,
   deriveIdempotencyKey,
   deriveIdempotencyKeyV2,
-  recordUnknownSettlement,
   type LedgerEntry,
 } from "./ledger.ts";
+import {
+  REVENUE_SHARING_OFF_ERROR,
+  isRevenueSharingOff,
+  recordUnknownSettlementUnlessOff,
+  revenueModelWithoutSharing,
+} from "./settlementMode.ts";
+import { installVcStatusStateStore } from "./vcStatusStore.ts";
 import {
   createX402V2,
   decodePaymentSignature,
@@ -430,7 +436,10 @@ export async function applyLedgerRecording(
   }
   let settleError: string | undefined;
   let queued = false;
-  if (!isLedgerEnabled()) {
+  if (isRevenueSharingOff()) {
+    // 本部署沒有分潤結算目標（X402_SETTLEMENT_MODE=off，ADR-021）：不入列，回應照實說明。
+    settleError = REVENUE_SHARING_OFF_ERROR;
+  } else if (!isLedgerEnabled()) {
     settleError =
       "settlement disabled：未設定 UPSTASH_REDIS_REST_URL / UPSTASH_REDIS_REST_TOKEN" +
       "（僅保留鏈下帳務 /revenue）";
@@ -550,11 +559,13 @@ function kyaFromEnv(defaultProvider: ethers.ContractRunner): KyaGate | null {
   const chainProvider = rpc ? new ethers.JsonRpcProvider(rpc, undefined, { batchMaxCount: 1 }) : defaultProvider;
   // 預設與記帳同一個 Upstash（多實例共用）；X402_KYA_SPEND_STORE=memory 只給單機開發。
   const spend = process.env.X402_KYA_SPEND_STORE?.trim().toLowerCase() === "memory" ? memoryKyaSpendStore() : upstashKyaSpendStore();
+  // 撤銷檢查的驗證端狀態：有 Upstash 就跨實例共用（ADR-021），否則單機檔案。
+  const vcState = installVcStatusStateStore();
   // mode=invalid 時 resolveKyaConfig 已印過 ::error::；這裡不能再印「=on」讓人以為有開。
   if (config.mode === "on") {
     console.error(
       `[kya] X402_KYA_MODE=on：付費端點要求 X-Agent-Presentation（v3 委託憑證）；錨定 ${config.anchor}；` +
-        `session manager ${config.sessionManager ?? "（未設定→付費端點 503）"}；花費帳 ${spend.describe}`,
+        `session manager ${config.sessionManager ?? "（未設定→付費端點 503）"}；花費帳 ${spend.describe}；撤銷驗證端狀態 ${vcState}`,
     );
   }
   return createKyaGate({ config, chain: providerKyaChainReader(chainProvider), spend });
@@ -699,7 +710,7 @@ export function createApp(opts: CreateAppOptions = {}): Hono<{ Variables: AppVar
         onSettlementUnknown: async (record) => {
           // Full list: the row is persisted to the manual list (not dropped) and the worker
           // raises ::error:: on the overflow counter. Still worth a loud line here.
-          if ((await recordUnknownSettlement(record)) === "overflow") {
+          if ((await recordUnknownSettlementUnlessOff(record)) === "overflow") {
             console.error("[x402v2] settlement_unknown list full: record persisted to x402:settlement:unknown:manual (reason overflow)");
           }
         },
@@ -816,8 +827,9 @@ export function createApp(opts: CreateAppOptions = {}): Hono<{ Variables: AppVar
       },
       // 誠實描述金流：x402 的付款直接進 payTo，70/20/10 是平台事後另外送的一筆
       // 交易。把兩者寫成同一件事會讓讀者以為買方付的那筆錢就是被分潤的那筆錢。
-      revenueModel:
-        `x402 付款直接進 payTo（${payTo}），這筆 EIP-3009 交易由 facilitator（${FACILITATOR_URL}）` +
+      revenueModel: isRevenueSharingOff()
+        ? revenueModelWithoutSharing(payTo, FACILITATOR_URL)
+        : `x402 付款直接進 payTo（${payTo}），這筆 EIP-3009 交易由 facilitator（${FACILITATOR_URL}）` +
         `送出並支付 gas。70/20/10 分潤是平台另外的一筆 FeeRouter.routeExternalRevenue 交易，` +
         `由結算錢包（FEE_SETTLEMENT_PRIVATE_KEY）送出並支付 gas，累計可於 /revenue 查詢。` +
         `兩者是不同的兩筆交易。` +

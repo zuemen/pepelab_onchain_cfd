@@ -73,6 +73,7 @@ case "$cmd" in
       BASE_SEPOLIA_RPC_URL="$RPC" KYA_RPC_URL="$RPC" \
       PAY_TO="$PAY_TO" \
       X402_KYA_MODE=on X402_KYA_ANCHOR=required X402_KYA_SPEND_STORE=memory \
+      X402_SETTLEMENT_MODE=off \
       SESSION_MANAGER_ADDRESS="$MANAGER" SESSION_ANCHOR_ADDRESS="$ANCHOR" \
       VC_STATUS_DIR="$STATE/vc-status" VC_STATUS_STATE_PATH="$STATE/vc-status-state.json" \
       CORS_ALLOWED_ORIGINS="http://localhost:5173,http://localhost:4173" \

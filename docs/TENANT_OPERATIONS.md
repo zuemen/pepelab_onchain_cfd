@@ -136,6 +136,7 @@ keeper 程式（`agent/keeper/`）是為平台的組合寫的：exchange 讀 Moc
 | `X402_FEE_ROUTER` | 租戶自己的 x402 FeeRouter | 以 `contracts/script/DeployX402Router.s.sol` 部署，`TREASURY`＝租戶的 treasury（`platformTreasury` 是 immutable）。部署後把位址加進前端登記檔的 `contracts.X402FeeRouter` |
 | `UPSTASH_REDIS_REST_URL`／`_TOKEN` | 租戶自己的 Redis database | 結算佇列不共用：共用佇列等於讓 A 的 worker 結算 B 的收入 |
 | `ORACLE_BENEFICIARY_ADDRESS` | 租戶指定 | `/oracle` 收入的 70% 受益人 |
+| `X402_SETTLEMENT_MODE` | 沒有結算 worker 時 `off` | 預設 `queue`：有 Upstash 就把分潤入列並回 `settled:true`。租戶結算 worker 目前不支援（下面），所以租戶的 Upstash 只給 KYA 用時**必須**設 `off`，否則佇列沒人處理、回應卻說已排入結算（[ADR-021](ADR-021-signal-api-shared-state.md) §3） |
 | `CORS_ALLOWED_ORIGINS`、`SIGNAL_API_PUBLIC_URL`、`SIGNAL_API_URL_ALLOWLIST` | 租戶的網域 | — |
 
 前端這一側：租戶的 Vercel 專案**必須**設 `VITE_SIGNAL_API_URL` 指向租戶的 signal-api。專屬租戶（`kind: "dedicated"`）沒設、或設成平台的 signal-api，`vite build` 直接失敗——不會悄悄退回平台的 signal-api（那會讓租戶的使用者看到平台 exchange 的訊號、funding 與新鮮度）。平台與示範租戶的行為不變。`vite build` 另外檢查這個網址在 `frontend/vercel.json` 的 CSP `connect-src` 裡，不在就讓 build 失敗——所以新增租戶的 signal-api 網域要先改 `vercel.json`。
