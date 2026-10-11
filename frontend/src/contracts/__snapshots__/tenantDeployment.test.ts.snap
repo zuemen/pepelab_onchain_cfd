@@ -153,7 +153,7 @@ exports[`platform deployment (default tenant) > pins every address the default b
   "x402FeeRouter": {
     "11155111": null,
     "31337": null,
-    "84532": "0x29e5732AC62254d9b92A1C7d3F38EbFA8809B57d",
+    "84532": "0x780E18146Bc77E50c3e5EcaED913FC31F62c0f6A",
   },
 }
 `;

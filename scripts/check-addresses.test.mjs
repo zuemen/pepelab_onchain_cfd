@@ -38,7 +38,7 @@ test("含錯誤位址的 fixture 必須以非零結束並列出每一個錯", ()
     "run: 裡對 Sepolia exchange 的 cast send 要依鏈抓出來");
   assert.match(out, /0x32A19D04ef2ca5A7DA02Df39419729fA745749A1（jobs\.keep\.steps\.with\.address） —— .*chain 84532/,
     "with: 帶 Sepolia 位址要依鏈抓出來");
-  assert.match(out, /X402_FEE_ROUTER=0xeD90c4F3B48213888870C1FC8486921Cb0990Aa3 —— chain 84532 的 X402FeeRouter 應為 0x29e5732A/,
+  assert.match(out, /X402_FEE_ROUTER=0xeD90c4F3B48213888870C1FC8486921Cb0990Aa3 —— chain 84532 的 X402FeeRouter 應為 0x780E1814/,
     "X402_FEE_ROUTER 填成 MockOracle 要抓出來");
   assert.match(out, /8 個位址與 frontend\/src\/contracts 不一致/);
   // 正確的兩個 GuardedOracle（含 Sepolia 專用那顆）不得誤報。
@@ -85,7 +85,7 @@ test("前端設定解析：兩條鏈的核心角色與 session manager", () => {
   assert.equal(chains["84532"].roles.AssetVaultV2, "0x916D7Fc399d9afd23BAa113E2c2Cc601341ff10a");
   assert.equal(chains["84532"].roles.AgentSessionManager, "0xdF9C1E53523568709f65Afe3C4AD2E6a6D99d14B");
   assert.equal(chains["11155111"].roles.GuardedOracle, "0x32A19D04ef2ca5A7DA02Df39419729fA745749A1");
-  assert.equal(chains["84532"].roles.X402FeeRouter, "0x29e5732AC62254d9b92A1C7d3F38EbFA8809B57d");
+  assert.equal(chains["84532"].roles.X402FeeRouter, "0x780E18146Bc77E50c3e5EcaED913FC31F62c0f6A");
   assert.notEqual(chains["84532"].roles.X402FeeRouter, chains["84532"].roles.FeeRouter, "x402 router ≠ V1 FeeRouter");
 });
 
@@ -118,7 +118,7 @@ test("agent/.env.example 也要與設定來源一致（複審 Low）", () => {
   const bad = join(here, "fixtures/check-addresses/bad.env.example");
   const r = spawnSync(process.execPath, [script, "--env", bad], { encoding: "utf8" });
   assert.equal(r.status, 1, r.stdout);
-  assert.match(r.stdout, /X402_FEE_ROUTER=0xeD90.*X402FeeRouter 應為 0x29e5732A/);
+  assert.match(r.stdout, /X402_FEE_ROUTER=0xeD90.*X402FeeRouter 應為 0x780E1814/);
   assert.match(r.stdout, /PERP_ADDRESS=0xEf75.*PerpetualExchange 應為 0x827eA0c6/);
   assert.doesNotMatch(r.stdout, /SESSION_MANAGER_ADDRESS|X402_SETTLEMENT_TOKEN|:2 /, "正確的鍵、前端不管的鍵、註解都不報");
   assert.match(r.stdout, /2 個位址與 frontend\/src\/contracts 不一致/);
@@ -127,7 +127,7 @@ test("agent/.env.example 也要與設定來源一致（複審 Low）", () => {
 test("--print 給 workflow 做執行期斷言", () => {
   const ok = spawnSync(process.execPath, [script, "--print", "84532", "X402FeeRouter"], { encoding: "utf8" });
   assert.equal(ok.status, 0);
-  assert.equal(ok.stdout.trim(), "0x29e5732AC62254d9b92A1C7d3F38EbFA8809B57d");
+  assert.equal(ok.stdout.trim(), "0x780E18146Bc77E50c3e5EcaED913FC31F62c0f6A");
   const bad = spawnSync(process.execPath, [script, "--print", "84532", "NoSuchRole"], { encoding: "utf8" });
   assert.equal(bad.status, 1);
 });

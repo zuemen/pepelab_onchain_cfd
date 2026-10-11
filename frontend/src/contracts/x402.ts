@@ -15,12 +15,10 @@
 //   • pages/pepefi/X402DocsPage.tsx 直接 import 這裡。
 //   • agent/.env.example 的 X402_FEE_ROUTER 也由 check-addresses.mjs 比對這裡。
 //
-// 2026-09-29 唯讀核對：0x29e5…B57d.usdc() == 0x036CbD53842c5426634e7929541eC2318f3dCF7e。
-//
-// ⚠ 這顆的 treasury 是外洩地址，待使用者用新 treasury 重新部署。
-//   platformTreasury 是 immutable，只能以 contracts/script/DeployX402Router.s.sol 帶新的
-//   treasury 重新部署，再把新位址改在這裡（與 repository variable X402_FEE_ROUTER）。
-//   在那之前結算 worker 的 payoutPreflight 會拒跑（見 agent/.env.example）。
+// 2026-10-10 重新部署（OWNER_ACTIONS 第 4 步）：舊 router 0x29e5…B57d 的 platformTreasury 是外洩地址
+// （immutable），已由金庫 owner 斷開。新 router 讀回：usdc() == 0x036CbD53842c5426634e7929541eC2318f3dCF7e、
+// platformTreasury() == 0x27C2…A585、insuranceVault() == 0xc7Af…7B9f（沿用舊 x402 金庫，已存 1 USDC 種子）、
+// exchange()／copyTracker() == 0。repository variable X402_FEE_ROUTER 已同步。
 export const X402_FEE_ROUTER: Record<number, string> = {
-  84532: '0x29e5732AC62254d9b92A1C7d3F38EbFA8809B57d',
+  84532: '0x780E18146Bc77E50c3e5EcaED913FC31F62c0f6A',
 }

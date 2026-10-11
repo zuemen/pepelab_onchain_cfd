@@ -199,7 +199,7 @@
         {
           "ref": "X402FeeRouter",
           "abi": "FeeRouter",
-          "address": "0x29e5732AC62254d9b92A1C7d3F38EbFA8809B57d"
+          "address": "0x780E18146Bc77E50c3e5EcaED913FC31F62c0f6A"
         },
         {
           "ref": "MockOracle",
@@ -774,24 +774,28 @@
       "title": "FeeRouter 設定變更（含 x402 分潤路由）",
       "category": "x402／FeeRouter 設定",
       "kind": "event",
-      "status": "pending-deploy",
+      "status": "active",
       "severity": "SEV-2",
-      "description": "V1 FeeRouter 與 x402 FeeRouter（官方 USDC）的 exchange／copyTracker 被改。**已部署的兩顆 FeeRouter 有 setExchange／setCopyTracker，但不發這兩個事件**，所以這條事件規則現在不會響；接線變更由狀態規則 feerouter-wiring 每輪讀 getter 比對。重新部署並更新 deployed.json 後改為 active。",
+      "description": "V1 FeeRouter 與 x402 FeeRouter（官方 USDC）的 exchange／copyTracker 被改。x402 FeeRouter 已於 2026-10-10 以目前原始碼重新部署（0x780E…0f6A），會發 ExchangeSet／CopyTrackerSet，所以這條規則改為 active。**平台 V1 FeeRouter 仍是舊部署，不會發這兩個事件**（events 的 notDeployed 已標明），它的變更只能靠狀態規則 feerouter-wiring 每輪讀 getter 抓；第 5 步重新部署後移除 notDeployed。",
       "contracts": [
         {
           "ref": "FeeRouter",
-          "source": "contracts/src/FeeRouter.sol",
-          "address": null
+          "abi": "FeeRouter",
+          "address": "0x00f6cf0113399a7A451c7f85fe094a28092d3e0c"
         },
         {
           "ref": "X402FeeRouter",
-          "source": "contracts/src/FeeRouter.sol",
-          "address": null
+          "abi": "FeeRouter",
+          "address": "0x780E18146Bc77E50c3e5EcaED913FC31F62c0f6A"
         }
       ],
       "events": [
         {
           "sig": "ExchangeSet(address)",
+          "notDeployed": [
+            "FeeRouter"
+          ],
+          "note": "平台 V1 FeeRouter 是舊部署，bytecode 不含這個事件；x402 FeeRouter（2026-10-10 重新部署）會發",
           "topic0": "0x1b3baff3cd6acb01bcbb187b5b9cb66fabc651693fc14e518c71feeddf4f864b",
           "inputs": [
             {
@@ -803,6 +807,10 @@
         },
         {
           "sig": "CopyTrackerSet(address)",
+          "notDeployed": [
+            "FeeRouter"
+          ],
+          "note": "平台 V1 FeeRouter 是舊部署，bytecode 不含這個事件；x402 FeeRouter（2026-10-10 重新部署）會發",
           "topic0": "0x784a563dd1eca667244c2b0d2815d35bd69d026835117e5341f742420433ca0e",
           "inputs": [
             {
@@ -885,7 +893,7 @@
           "ref": "X402FeeRouter",
           "abi": "FeeRouter",
           "as": "x402",
-          "address": "0x29e5732AC62254d9b92A1C7d3F38EbFA8809B57d"
+          "address": "0x780E18146Bc77E50c3e5EcaED913FC31F62c0f6A"
         }
       ],
       "calls": [
@@ -962,7 +970,7 @@
           },
           "note": "immutable；x402.ts 註明這是待更換的 treasury，重新部署 X402FeeRouter 時位址與快照一起換",
           "selector": "0xe138818c",
-          "expected": "0xe80a81360608c1342e66743f70a00f75d792eb93"
+          "expected": "0x27c21324d101e867e0634bf2ebe3f9dcf3aca585"
         }
       ],
       "runbook": [
@@ -2565,7 +2573,7 @@
         {
           "ref": "X402FeeRouter",
           "abi": "FeeRouter",
-          "address": "0x29e5732AC62254d9b92A1C7d3F38EbFA8809B57d"
+          "address": "0x780E18146Bc77E50c3e5EcaED913FC31F62c0f6A"
         }
       ],
       "events": [

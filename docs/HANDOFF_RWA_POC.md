@@ -123,8 +123,8 @@ PoC 錢包（部署者與 2026-10-06 新建的 admin／risk／guardian／keeper�
 | 地址 | 角色 | 私鑰在哪 | 2026-10-06 20:10 餘額 | 能不能用 |
 |---|---|---|---|---|
 | `0xF52D…49eE` | **PoC 新部署者**（部署整套；DeployTenant 結束時把所有權交給 PoC admin，自己不留任何權限） | 加密 keystore，使用者以隨身碟搬移 | Base Sepolia 0.8 ETH（從 Sepolia 跨鏈，L1 tx `0x8f5d12fa09f24e605b9a96269ef4ca9acc441abe169dccca5cf3404e685ca0e7`，已入帳） | **用這把部署 PoC** |
-| `0x27C21324D101e867E0634bf2ebe3F9Dcf3ACA585` | 現役舊合約 owner | 不在任何一台電腦上（使用者自己的錢包） | Base Sepolia 0.090 | PoC 不需要 |
-| `0x540aecd37e7a7885824e7b7e996ebddfb842ef17` | 現役 keeper（推價） | 只在 GitHub secret `KEEPER_PRIVATE_KEY` | Base Sepolia 0.147、Sepolia 0.424 | 由 GitHub Actions 使用，PoC 不動它 |
+| `0x27C21324D101e867E0634bf2ebe3F9Dcf3ACA585` | 現役舊合約 owner | 本機 `contracts/.env.rotation`（明文，2026-08-07）；2026-10-10 已匯入加密 keystore `pepelab-owner` | Base Sepolia 0.090 | 2026-10-10 用於第 3 步凍結與第 4 步 x402 FeeRouter 重新部署 |
+| `0x540aecd37e7a7885824e7b7e996ebddfb842ef17` | 現役 keeper（推價） | GitHub repo 層級 secret `KEEPER_PRIVATE_KEY`；本機 `contracts/.env.roles` 的 `KEEPER_PK` 也有同一把（2026-10-10 核對地址相符） | Base Sepolia 0.147、Sepolia 0.424 | 由 GitHub Actions 使用，PoC 不動它 |
 | `0xE80A81360608C1342e66743F70a00f75d792Eb93` | **已外洩**的舊部署者 | 舊電腦 `contracts/.env` | Base Sepolia 0.0099、Sepolia 約 1.4（已轉出 0.8） | **只能用來凍結舊部署或轉出測試幣**；新合約絕不可用它 |
 
 ### 3.1 開始前就要準備好
