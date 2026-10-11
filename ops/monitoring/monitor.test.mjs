@@ -861,10 +861,15 @@ test("H2：接線 getter 讀取失敗 → 算監控自身錯誤；其他已讀�
 });
 
 test("H2：部署版不發的事件不在 active 規則裡；現行設定的 active 事件規則都不含全數未部署的事件", () => {
-  for (const id of ["insurance-wiring-changed", "feerouter-config-changed", "kyc-verifier-changed"]) {
+  for (const id of ["insurance-wiring-changed", "kyc-verifier-changed"]) {
     assert.equal(ruleOf(id).status, "pending-deploy", id);
     assert.ok(ruleOf(id).contracts.every((c) => c.address === null));
   }
+  // x402 FeeRouter 2026-10-10 以目前原始碼重新部署，會發 ExchangeSet／CopyTrackerSet → active；
+  // 平台 V1 FeeRouter 仍是舊部署，事件上以 notDeployed 標明。
+  const feeCfg = ruleOf("feerouter-config-changed");
+  assert.equal(feeCfg.status, "active");
+  assert.ok(feeCfg.events.every((e) => Array.isArray(e.notDeployed) && e.notDeployed.includes("FeeRouter")));
   for (const id of ["insurance-wiring", "feerouter-wiring"]) {
     assert.equal(ruleOf(id).status, "active");
     assert.equal(ruleOf(id).severity, "SEV-1");

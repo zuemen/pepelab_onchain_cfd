@@ -107,7 +107,7 @@ node scripts/poc/rwa-poc-status-server.mjs --mount investor=agent/.state/public-
 每次正式錄之前逐項打勾（數字是 2026-10-07 00:54 UTC 讀回的值，錄影當天重讀）：
 
 - [ ] **時段**：sGOLD 主線在平日（見 §1）；確認 `cast call $EX "assetMode(bytes32)(uint8)" $GOLD -r $R` = 0、`$AAPL` = 1（台灣白天）。
-- [ ] **keeper 在跑**：終端機 B `bash scripts/poc/rwa-poc-keeper.sh`（乾跑一輪 `failed=0` 後才進迴圈；每 60 秒一輪、heartbeat 240 秒）。
+- [ ] **keeper 在跑**：推價現在由 GitHub Actions keeper（`keeper-rwa-poc.yml`）負責，確認最近一次 run 成功即可。**不要再開本機 keeper**，兩者同時跑會用同一把金鑰撞 nonce；只有線上 keeper 停用時才改開終端機 B `bash scripts/poc/rwa-poc-keeper.sh`（乾跑一輪 `failed=0` 後才進迴圈；每 60 秒一輪、heartbeat 240 秒）。
 - [ ] **價格新鮮**：11 檔都在 5 分鐘內寫過（keeper log 的 `wrote=`），遠小於交易所 `maxPriceAge` 6 小時；`/oracle` 頁看更新時間。
 - [ ] **清算寬限期已過**（部署後 30 分鐘；已過）。
 - [ ] **各錢包 ETH**：`for a in $INV $AGENT $ISSUER 0x5358cf4E0a1409F6B433Dd25Adf8c92bF0821ED8; do echo $a $(cast balance $a -r $R --ether); done`
@@ -119,7 +119,7 @@ node scripts/poc/rwa-poc-status-server.mjs --mount investor=agent/.state/public-
 - [ ] **signal-api**：`http://localhost:4021`，`X402_KYA_MODE=on`（S6 負責；`curl -s localhost:4021/ | head`）。
 - [ ] **前端**：`scripts/poc/rwa-poc-frontend.sh --status-url http://localhost:8787/vc` → `cd frontend && yarn dev --mode rwa-poc`；
   `/credentials` 顯示合格投資人憑證面板（不是舊的 submitKYC 表單）。
-- [ ] **錄影工具**：`scripts/poc/video`（目前在 `feat/rwa-poc-video` 分支）`npm install`、`npx playwright install chromium`；
+- [ ] **錄影工具**：`scripts/poc/video`（#284 已合併進 master）`npm install`、`npx playwright install chromium`；
   正式錄要加 `--allow-tx`，否則交易一律被攔。先不加 `--allow-tx` 排練一次。
 - [ ] **殼層乾淨**：`agent/` 的程式會自動讀 `agent/.env`（`@pepelab/shared/autoload-env`）。錄影用的終端機確認沒有 `AGENT_PRIVATE_KEY`、
   `ISSUER_PRIVATE_KEY`、`SUBMITTER_PRIVATE_KEY`；舊電腦的 `.env` 不要放進來。部署與錄影一律使用專用 keystore，不使用 repo 內任何 `.env` 金鑰。
@@ -208,7 +208,7 @@ BaseScan 連結格式：`https://sepolia.basescan.org/tx/<hash>`。
   1. 先記下 `cast call $MGR "nextSessionId()(uint256)" -r $R`（新 session 的編號）。
   2. 「建立 Session」：Agent 地址 `0xB4e3C19D91B85e5ca22721CE3a7E127146322ef7`（**不要**按「產生 agent 金鑰」）、單筆上限 30、總預算 60、
      最大槓桿 1（sGOLD 上限就是 1 倍）、有效期限 24 小時、允許標的只勾 sGOLD →「建立 Session」。
-  3. 自動開啟「委託授權憑證 v3」：x402 每期間上限 0.02、期間 1 小時、總額上限 0.03（S6 的金額待定）、允許端點保留預設 →「以錢包簽發 v3」（EIP-712 簽名，不是交易）。
+  3. 自動開啟「委託授權憑證 v3」：x402 每期間上限 0.02、期間 1 小時、總額上限 0.03（S6 實付用的是 `main` 憑證：上限 0.02 USDC、單價 0.01，見 [`X402_KYA.md`](X402_KYA.md)）、允許端點保留預設 →「以錢包簽發 v3」（EIP-712 簽名，不是交易）。
   4. 「錨定到鏈上」→ 狀態變「已錨定」。
   5. 下載憑證 JSON（給第 6、7 景的代理人用），存成 `agent/.state/poc/delegation-v3.json`。
 - **預期畫面**：「Session 已建立 ✓」；我的 Session 表多一列（花費 0 / 60、單筆 30、槓桿 1、到期）；v3 視窗顯示代理人 DID、簽發者 DID、

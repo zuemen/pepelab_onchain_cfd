@@ -99,7 +99,7 @@ export const REQUIRED_RULES = {
   "kyc-verifier-changed": ["SEV-2", "pending-deploy", "a0699690843f2dac33afdfd940dcf336151409ca2484fce32f746559a9b59856"],
   "exchange-wiring-changed": ["SEV-1", "active", "ccb08201fca6ece947c84dc10cec73596dbd2ff0c62ce18d5513913b596e4922"],
   "insurance-wiring-changed": ["SEV-1", "pending-deploy", "e19d5e91e842124fca33ea1c953fea7ad088744739c69d9de80be9ada5181356"],
-  "feerouter-config-changed": ["SEV-2", "pending-deploy", "90d2109a7b733053c95f50f73f74b1e289df5d9f80162bada77a8efc3fb80c4a"],
+  "feerouter-config-changed": ["SEV-2", "active", "c63d3b4dc57a756379882b88c995157a1a150475ac958d628c5cdf3e7bc4b3c0"],
   "insurance-wiring": ["SEV-1", "active", "25b90b1bacb9f7824292a324f30b0e38acc31f0804c5f0844c8e0d003837394f"],
   "feerouter-wiring": ["SEV-1", "active", "eeaff5fa6b357e09352609a40f8cbba8ae5819b9a54871861f24e96d0aef739b"],
   "core-wiring": ["SEV-1", "active", "9ca3f119fdb8ce10197000521708eb733b19ced04930976daba48a22d5f96100"],

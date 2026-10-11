@@ -29,6 +29,11 @@ interface ImportMetaEnv {
   readonly VITE_VC_STATUS_URL?: string;
   /** 撤銷 v3 委託憑證時，把簽好的 ADR-016 狀態清單 POST 到這裡；沒設就下載交給營運方。 */
   readonly VITE_VC_STATUS_PUBLISH_URL?: string;
+  /**
+   * CarbonRetirement（模擬碳權退役，#105）位址，見 src/contracts/carbonRetirement.ts。
+   * 沒設、且該檔的 per-chain 表也沒有時，ESG 頁的退役區塊整塊不顯示。
+   */
+  readonly VITE_CARBON_RETIREMENT?: string;
 }
 
 /**

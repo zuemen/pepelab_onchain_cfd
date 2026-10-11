@@ -23,6 +23,30 @@ export const esg: Catalog['esg'] = {
     loading: 'Reading attestations…',
   },
 
+  /** 見 `../zh-TW/esg.ts`。 */
+  retirement: {
+    title: 'Carbon Credit Retirements',
+    lead: 'A fixed share of the platform fee, hard-coded in the contract, is routed to the retirement contract, which buys carbon credits and burns them in the same transaction. Every retirement is an irreversible record anyone can check on chain.',
+    simulatedChip: 'Simulated credits',
+    disclaimerTitle: 'Simulated carbon credits: no real carbon is removed here',
+    disclaimer:
+      'The credits retired here are simulated (mtCO2e), minted by this platform on a testnet. They were not issued by any carbon-credit registry, correspond to no real reduction or removal, and burning them offsets no real greenhouse-gas emissions. The purchase price is paid to a simulated seller address the platform controls and reaches no real carbon project. Only the mechanism is real: fees are routed at a ratio fixed in the contract, and a retirement cannot be undone.',
+    totalTonnes: 'Retired to date (simulated)',
+    tonnesUnit: '{n} t CO₂e',
+    totalSpent: 'Spent on credits to date',
+    budget: 'Budget awaiting retirement',
+    count: 'Retirements',
+    recentTitle: 'Recent retirements',
+    column: {
+      time: 'Time',
+      tonnes: 'Amount (simulated)',
+      amount: 'Cost',
+    },
+    empty: 'No retirements yet.',
+    failed: 'Could not read the retirement records — cannot confirm right now. This does not mean "nothing retired".',
+    loading: 'Reading retirement records…',
+  },
+
   title: '🌱 ESG Asset Explorer',
   subtitle: 'Environmental · Social · Governance — 11 synthetic assets, on-chain registry',
 

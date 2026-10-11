@@ -1,4 +1,4 @@
-# 交接：RWA ＋ SSI 正式 PoC（2026-10-08 更新）
+# 交接：RWA ＋ SSI 正式 PoC（2026-10-10 更新）
 
 給下一台電腦／下一個 session 接手用。目標是把 PepeLab 做成**標準的 RWA 衍生品平台 PoC**：SSI（可驗證憑證）真正接上 RWA 准入與 AI 代理人委託，部署到 Base Sepolia 新的一套合約，達到**可以錄 PoC 影片**的程度。
 
@@ -44,11 +44,8 @@
 
 ### 還開著的 PR
 
-RWA PoC 相關的 PR 都已合併（#286 錄影、#287 文件收尾，2026-10-07）。第 6 節的指令都在 master。
-
-| PR | 分支 | 內容 |
-|---|---|---|
-| #293 | `feat/rwa-poc-x402-paid` | x402 帶憑證實付（S6、S7 收尾）、driver 的本機已付帳與 402 鏈上核對、後製多段補拍；合併後 S0–S8 全部完成 |
+無。RWA PoC 相關的 PR 全部已合併：#293 x402 帶憑證實付（2026-10-08，S0–S8 全部完成），以及之後的 #294 原始碼驗證、#295 GitHub Actions keeper、#296 線上部署、#297 線上驗收紀錄（2026-10-09）。第 6 節的指令都在 master。
+剩餘待辦的總盤點見 [`BACKLOG_AUDIT_2026-10-10.md`](BACKLOG_AUDIT_2026-10-10.md)。
 
 ---
 
@@ -58,7 +55,7 @@ RWA PoC 相關的 PR 都已合併（#286 錄影、#287 文件收尾，2026-10-07
 
 | 階段 | 做什麼 | 驗收標準（全部成立才算完成） | 預估 | 需要使用者 | 狀態 |
 |---|---|---|---|---|---|
-| **S0 環境** | clone、`git submodule update --init --recursive`、裝相依（frontend `yarn install`、agent `npm ci`）、讀交接與相關文件 | `forge build` 成功；`yarn --cwd frontend test` 與 `npm test`（agent）各跑一次全過；`gh auth status` 是 zuemen | 0.5–1 h | 裝工具、`gh auth login`（見第 3 節） | ✅ 完成（2026-10-06：forge 1302 測試、frontend 1222、agent 全過；gh 登入待使用者） |
+| **S0 環境** | clone、`git submodule update --init --recursive`、裝相依（frontend `yarn install`、agent `npm ci`）、讀交接與相關文件 | `forge build` 成功；`yarn --cwd frontend test` 與 `npm test`（agent）各跑一次全過；`gh auth status` 是 zuemen | 0.5–1 h | 裝工具、`gh auth login`（見第 3 節） | ✅ 完成（2026-10-06：forge 1302 測試、frontend 1222、agent 全過；gh 已以 zuemen 登入） |
 | **S1 #270** | 合 master 解衝突 → 另一個 agent 對抗式審查（合約權限、VP 重放與綁定、花費累計原子性與退回、x402 v1／v2、fail-closed、揭露）→ 修正 → 複審 | CI 全綠、審查無未解的高中風險、已合併 | 2–4 h | 無 | ✅ 完成（2026-10-07：#270、#278 PR-1、#279 PR-2 皆經對抗式審查→修正→複審、CI 全綠後合併） |
 | **S2 部署金鑰** | 已在舊電腦建立加密 keystore `pepelab-rwa-deployer`（`0xF52D…49eE`）並跨鏈入金 0.8 ETH。新電腦只要確認使用者已把 keystore 與密碼檔放好（第 3.0 節） | `cast wallet address --account pepelab-rwa-deployer --password-file ~/.foundry/pepelab-rwa-deployer.password` 等於 `0xF52D…49eE`；餘額 ≥ 0.5 ETH | 0.1 h | **複製 keystore 與密碼檔**（第 3.0 節） | ✅ 已確認（keystore 地址 0xF52D…49eE、0.8 ETH） |
 | **S3 部署整套** | 用 `DeployTenant.s.sol` 部署 master 版整套到 Base Sepolia；部署 `VCKycRegistry`、`SessionCredentialAnchor`；接 `setKycRegistry`、`setRwaAsset`（含黃金）、marketOperator、guardian；寫入碳分級見證；先模擬再廣播 | 部署紀錄 JSON 進 repo；`post-deploy-smoke.mjs` 對新部署無 FAIL（外洩地址檢查必須全 PASS）；合約原始碼驗證（Blockscout／Sourcify 不需金鑰；BaseScan 要 API key） | 3–5 h | 可選：BaseScan API key | ✅ 完成（2026-10-07：DeployTenant 164 筆、VerifyTenant 真鏈 131 ok／權限歷史掃描通過、smoke 32 PASS；發證者、attestor、11 檔碳分級、SessionCredentialAnchor 完成；見 `docs/tenants/rwa-poc/DEPLOYMENT.md`；原始碼驗證：26 個合約在 Blockscout／Sourcify 都已驗證（Blockscout 全部完整比對；Sourcify 25 個 exact_match、proxy 為 match）；BaseScan 只差使用者設定 `ETHERSCAN_API_KEY` 後跑 `bash scripts/poc/rwa-poc-verify.sh`） |
@@ -126,8 +123,8 @@ PoC 錢包（部署者與 2026-10-06 新建的 admin／risk／guardian／keeper�
 | 地址 | 角色 | 私鑰在哪 | 2026-10-06 20:10 餘額 | 能不能用 |
 |---|---|---|---|---|
 | `0xF52D…49eE` | **PoC 新部署者**（部署整套；DeployTenant 結束時把所有權交給 PoC admin，自己不留任何權限） | 加密 keystore，使用者以隨身碟搬移 | Base Sepolia 0.8 ETH（從 Sepolia 跨鏈，L1 tx `0x8f5d12fa09f24e605b9a96269ef4ca9acc441abe169dccca5cf3404e685ca0e7`，已入帳） | **用這把部署 PoC** |
-| `0x27C21324D101e867E0634bf2ebe3F9Dcf3ACA585` | 現役舊合約 owner | 不在任何一台電腦上（使用者自己的錢包） | Base Sepolia 0.090 | PoC 不需要 |
-| `0x540aecd37e7a7885824e7b7e996ebddfb842ef17` | 現役 keeper（推價） | 只在 GitHub secret `KEEPER_PRIVATE_KEY` | Base Sepolia 0.147、Sepolia 0.424 | 由 GitHub Actions 使用，PoC 不動它 |
+| `0x27C21324D101e867E0634bf2ebe3F9Dcf3ACA585` | 現役舊合約 owner | 本機 `contracts/.env.rotation`（明文，2026-08-07）；2026-10-10 已匯入加密 keystore `pepelab-owner` | Base Sepolia 0.090 | 2026-10-10 用於第 3 步凍結與第 4 步 x402 FeeRouter 重新部署 |
+| `0x540aecd37e7a7885824e7b7e996ebddfb842ef17` | 現役 keeper（推價） | GitHub repo 層級 secret `KEEPER_PRIVATE_KEY`；本機 `contracts/.env.roles` 的 `KEEPER_PK` 也有同一把（2026-10-10 核對地址相符） | Base Sepolia 0.147、Sepolia 0.424 | 由 GitHub Actions 使用，PoC 不動它 |
 | `0xE80A81360608C1342e66743F70a00f75d792Eb93` | **已外洩**的舊部署者 | 舊電腦 `contracts/.env` | Base Sepolia 0.0099、Sepolia 約 1.4（已轉出 0.8） | **只能用來凍結舊部署或轉出測試幣**；新合約絕不可用它 |
 
 ### 3.1 開始前就要準備好
