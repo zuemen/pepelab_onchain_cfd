@@ -32,7 +32,7 @@ exports[`default tenant is the current production site, unchanged > matches the 
   ],
   "flagsWithNoEnv": {
     "copyTrading": false,
-    "gamefi": false,
+    "gamefi": true,
     "pepeRewards": false,
     "showLeverage": false,
     "showPerpetuals": false,

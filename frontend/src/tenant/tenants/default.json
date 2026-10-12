@@ -31,7 +31,7 @@
     "links": []
   },
   "features": {
-    "gamefi": { "allowed": true, "default": false },
+    "gamefi": { "allowed": true, "default": true },
     "pepeRewards": { "allowed": true, "default": false },
     "copyTrading": { "allowed": true, "default": false },
     "showLeverage": { "allowed": true, "default": false },
