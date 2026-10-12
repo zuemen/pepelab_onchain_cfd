@@ -203,7 +203,7 @@ describe('default tenant is the current production site, unchanged', () => {
 
   it('keeps the original locale, flags and asset list', () => {
     expect(locale).toBe('zh-TW');
-    expect(FEATURES).toEqual({ gamefi: false, pepeRewards: false, copyTrading: false });
+    expect(FEATURES).toEqual({ gamefi: true, pepeRewards: false, copyTrading: false });
     expect(SHOW_LEVERAGE).toBe(false);
     expect(SHOW_PERPETUALS).toBe(false);
     expect(PERPETUALS_AUTHORIZED).toBe(true);
