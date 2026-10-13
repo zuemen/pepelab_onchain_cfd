@@ -1,0 +1,4 @@
+# 釘版本讓數字可重現。numpy 2.3 起支援 Python 3.14。
+numpy==2.3.4
+pandas==2.3.3
+pytest==9.1.1
