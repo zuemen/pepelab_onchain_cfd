@@ -2,19 +2,20 @@
 
 ## 快速部署（本地 Anvil）
 
-確認 Anvil 已在 `http://localhost:8545` 執行，然後在專案根目錄執行：
-
 ```bash
-anvil &          # 若尚未啟動
-bash deploy-anvil.sh
+anvil &
+cd contracts && forge script script/DeployLocalDemo.s.sol:DeployLocalDemo \
+  --rpc-url http://127.0.0.1:8545 \
+  --private-key 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80 --broadcast
+cd ../agent && npx tsx heroes/writeAddresses.ts
 ```
 
-腳本會依序：
-1. `forge build` — 編譯所有合約
-2. `forge script Deploy.s.sol --broadcast` — 部署到本地節點
-3. 解析 broadcast JSON，取出各合約地址
-4. 將 ABI JSON 複製到 `frontend/src/contracts/abi/`
-5. 產生 `frontend/src/contracts/addresses.ts`
+`DeployLocalDemo` 只能在 chainId 31337 執行：平台整套合約、11 個資產、開啟碳定價。
+`writeAddresses.ts` 把位址寫回 `frontend/src/contracts/addresses.ts` 的本機鏈區塊，並輸出
+`heroes/out/addresses.json`。要連同模擬交易者的歷史一起建出來，用 `scripts/heroes-replay.sh`
+（見 `heroes/README.md`）。
+
+根目錄的 `deploy-anvil.sh`／`seed-anvil.sh` 已過時，執行會直接中止。
 
 ---
 
