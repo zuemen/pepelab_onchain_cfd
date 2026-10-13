@@ -1,4 +1,10 @@
 #!/usr/bin/env bash
+# 已過時（2026-10）：這支腳本配的是只有 4 個資產的 Deploy.s.sol，而且會把
+# frontend/src/contracts/addresses.ts 的本機鏈區塊寫回只有 7 個欄位的舊格式（型別檢查會失敗）。
+# 本機部署請改用 contracts/script/DeployLocalDemo.s.sol + agent/heroes/writeAddresses.ts，
+# 或直接跑 scripts/heroes-replay.sh。見 heroes/README.md。
+echo "deploy-anvil.sh／seed-anvil.sh 已過時，請改用 scripts/heroes-replay.sh（見 heroes/README.md）" >&2
+exit 1
 # seed-anvil.sh — populate Anvil with demo traders after deploy-anvil.sh
 set -euo pipefail
 
