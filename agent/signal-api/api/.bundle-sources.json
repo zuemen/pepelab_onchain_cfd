@@ -1,5 +1,5 @@
 {
-  "digest": "e98f2c72e9cea9bc",
+  "digest": "9a46b83c45f784da",
   "files": {
     "agent/shared/src/abis.ts": "872c3136604d6584",
     "agent/shared/src/addresses.ts": "a6cb279048c58a4b",
@@ -39,7 +39,7 @@
     "agent/signal-api/src/vcStatusStore.ts": "18a5be7f15b1e01f",
     "agent/signal-api/src/vercel-entry.ts": "1efb6cf837c1969a",
     "agent/signal-api/src/x402v2.ts": "dd358a98d573349d",
-    "frontend/src/contracts/addresses.ts": "7a54b03417d45519",
+    "frontend/src/contracts/addresses.ts": "82489dee4f090e6e",
     "frontend/src/contracts/agentAuth.ts": "d19d95c704483834",
     "frontend/src/contracts/agentAuthStatus.ts": "d57952ae24541705",
     "frontend/src/contracts/agentDelegation.ts": "48bdb46646ea1404",
