@@ -139,6 +139,60 @@ def window_stats(trades: list[Trade], end_ts: int, days: int) -> dict:
     }
 
 
+# 單日 95% VaR（%）的分級門檻：超過幾道門檻，風險分數就是 1 + 幾。
+# 參考 eToro 以 VaR 為基礎的 1–10 風險分數；門檻是我們自訂的，不是 eToro 的公式。
+RISK_BANDS = (0.25, 0.5, 1.0, 1.5, 2.0, 3.0, 4.0, 6.0, 10.0)
+
+
+def risk_score(equity: pd.Series) -> int | None:
+    """1（很低）到 10（極高），看最近 365 天的日報酬。不到 30 個日報酬不打分。"""
+    returns = equity.pct_change().dropna().iloc[-365:]
+    if len(returns) < 30:
+        return None
+    var = max(0.0, -float(returns.quantile(0.05))) * 100
+    return 1 + sum(1 for band in RISK_BANDS if var > band)
+
+
+def worst_loss_pct(equity: pd.Series, days: int) -> float:
+    """最差的連續 days 天報酬，以正數表示損失；從沒虧過就是 0。"""
+    if len(equity) <= days:
+        return 0.0
+    change = equity / equity.shift(days) - 1.0
+    return round(max(0.0, -float(change.min())) * 100, 2)
+
+
+def profitable_weeks_pct(equity: pd.Series) -> float | None:
+    """每隔 7 天取一點，上漲的週數占比。不到兩週時為 None。"""
+    changes = equity.iloc[::7].pct_change().dropna()
+    if changes.empty:
+        return None
+    return round(float((changes > 0).mean()) * 100, 1)
+
+
+def top_assets(trades: list[Trade], k: int = 3) -> list[dict]:
+    counts: dict[str, int] = {}
+    for t in trades:
+        counts[t.asset] = counts.get(t.asset, 0) + 1
+    total = sum(counts.values())
+    ranked = sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))[:k]
+    return [{"asset": a, "trades": n, "sharePct": round(n / total * 100, 1)} for a, n in ranked]
+
+
+def follower_history(events: list[dict], trader: str, months: list[str]) -> list[dict]:
+    """每個月底的跟隨中人數：跟隨 +1、取消 −1。來自鏈上的 TraderFollowed／TraderUnfollowed。"""
+    trader = trader.lower()
+    delta: dict[str, int] = {}
+    for e in events:
+        if e["name"] in ("TraderFollowed", "TraderUnfollowed") and e["args"]["trader"].lower() == trader:
+            month = _date(e["timestamp"]).strftime("%Y-%m")
+            delta[month] = delta.get(month, 0) + (1 if e["name"] == "TraderFollowed" else -1)
+    out, running = [], 0
+    for month in months:
+        running += delta.get(month, 0)
+        out.append({"month": month, "followers": running})
+    return out
+
+
 def _esg_score(legs: list[dict]) -> int | None:
     total = sum(l["weightBps"] for l in legs)
     if total == 0:
@@ -160,6 +214,7 @@ def _sparkline(equity: pd.Series, points: int = 60) -> list[float]:
 def build_outputs(doc: dict, prices: pd.DataFrame) -> tuple[dict, dict[str, dict]]:
     start, end = (dt.date.fromisoformat(doc["range"][k]) for k in ("from", "to"))
     days = [d for d in prices.index if start <= d <= end]
+    months = sorted({d.strftime("%Y-%m") for d in days})
     end_ts = int(dt.datetime(end.year, end.month, end.day, tzinfo=dt.timezone.utc).timestamp()) + DAY
     summaries, details = [], {}
     for trader in doc["traders"]:
@@ -195,6 +250,15 @@ def build_outputs(doc: dict, prices: pd.DataFrame) -> tuple[dict, dict[str, dict
                           "leverage": l["leverage"]} for l in latest],
             "esgCorrelation": _correlation(equity, prices.loc[days, "sESGU"]),
             "avgHoldDays": round(sum(t.close_ts - t.open_ts for t in closed) / len(closed) / DAY, 1) if closed else None,
+            "riskScore": risk_score(equity),
+            "worstDayLossPct": worst_loss_pct(equity, 1),
+            "worstWeekLossPct": worst_loss_pct(equity, 7),
+            "maxDrawdown1yPct": round(max_drawdown_pct(equity.iloc[-365:]), 2),
+            "profitableWeeksPct": profitable_weeks_pct(equity),
+            "tradesPerWeek": round(len(trades) / max(len(days) / 7, 1), 2),
+            "topAssets": top_assets(trades),
+            "followerHistory": follower_history(doc["events"], address, months),
+            "activeSince": strategies[0]["date"] if strategies else None,
             "strategies": strategies,
             "trades": [{
                 "positionId": t.position_id, "asset": t.asset, "isLong": t.is_long, "leverage": t.leverage,

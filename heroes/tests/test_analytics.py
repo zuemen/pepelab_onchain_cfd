@@ -5,7 +5,8 @@ import pandas as pd
 import pytest
 
 from herolab.analytics import (
-    build_outputs, build_trades, equity_curve, max_drawdown_pct, monthly_returns, net_pnl, sharpe, window_stats,
+    build_outputs, build_trades, equity_curve, follower_history, max_drawdown_pct, monthly_returns, net_pnl,
+    profitable_weeks_pct, risk_score, sharpe, top_assets, window_stats, worst_loss_pct,
 )
 from herolab.assets import ASSETS
 
@@ -129,3 +130,59 @@ def test_outputs_follow_the_published_schema():
     assert detail["strategies"][0]["tx"] == "0xpub"
     assert detail["exposure"][0] == {"asset": "sETH", "weightPct": 50.0, "isLong": True, "leverage": 1}
     assert [p["equity"] for p in detail["equityCurve"]] == [999.0, 1049.0, 1104.0]
+    assert detail["activeSince"] == "2024-10-01"
+    assert detail["riskScore"] is None  # 只有 3 天
+    assert detail["tradesPerWeek"] == 1.0
+    assert detail["topAssets"] == [{"asset": "sETH", "trades": 1, "sharePct": 100.0}]
+    assert detail["followerHistory"] == [{"month": "2024-10", "followers": 0}]
+    assert detail["worstDayLossPct"] == 0.0 and detail["maxDrawdown1yPct"] == 0.0
+    assert detail["profitableWeeksPct"] is None
+
+
+def series(values):
+    return pd.Series(values, index=[dt.date(2024, 10, 1) + dt.timedelta(days=i) for i in range(len(values))])
+
+
+def test_risk_score_grades_the_one_day_95_percent_var():
+    assert risk_score(series([100.0] * 40)) == 1  # 從不波動
+    swings = [100.0]
+    for i in range(60):
+        swings.append(swings[-1] * (1.025 if i % 2 else 0.975))
+    # 單日 95% VaR ≈ 2.5%：超過 0.25／0.5／1／1.5／2 五道門檻 → 6
+    assert risk_score(series(swings)) == 6
+    assert risk_score(series([100.0] * 20)) is None  # 不到 30 個日報酬，不打分
+
+
+def test_worst_loss_is_reported_as_a_positive_loss():
+    assert worst_loss_pct(series([100.0, 90.0, 99.0, 80.0]), 1) == pytest.approx(19.19, abs=0.01)
+    assert worst_loss_pct(series([100.0, 90.0, 99.0, 80.0]), 2) == pytest.approx(11.11, abs=0.01)
+    assert worst_loss_pct(series([100.0, 101.0, 102.0]), 1) == 0.0
+    assert worst_loss_pct(series([100.0, 90.0]), 7) == 0.0  # 期間比資料長
+
+
+def test_profitable_weeks_compare_every_seventh_day():
+    values = [100.0] * 15
+    values[7], values[14] = 110.0, 105.0  # 第一週 +10%、第二週 -4.5%
+    assert profitable_weeks_pct(series(values)) == 50.0
+    assert profitable_weeks_pct(series([100.0] * 5)) is None
+
+
+def test_top_assets_rank_by_number_of_positions():
+    trades = build_trades(
+        [opened(1, D0, asset="sETH"), opened(2, D0, asset="sBTC"), opened(3, D0, asset="sETH")], OWNER
+    )
+    assert top_assets(trades) == [
+        {"asset": "sETH", "trades": 2, "sharePct": 66.7},
+        {"asset": "sBTC", "trades": 1, "sharePct": 33.3},
+    ]
+
+
+def test_follower_history_is_a_running_count_per_month():
+    def follow(kind, ts):
+        return {"name": kind, "block": 0, "logIndex": 0, "timestamp": ts, "tx": "0x",
+                "args": {"follower": "0x1", "trader": OWNER}}
+    nov = D0 + 31 * 86400
+    events = [follow("TraderFollowed", D0), follow("TraderFollowed", D0 + 86400), follow("TraderUnfollowed", nov)]
+    assert follower_history(events, OWNER.lower(), ["2024-10", "2024-11", "2024-12"]) == [
+        {"month": "2024-10", "followers": 2}, {"month": "2024-11", "followers": 1}, {"month": "2024-12", "followers": 1},
+    ]
