@@ -471,3 +471,43 @@ describe('matchesSearch', () => {
     expect(matchesSearch(trader, 'beta')).toBe(false)
   })
 })
+
+describe('sorting by the simulated-trader figures', () => {
+  const window = { pnlUsd: 0, marginUsd: 0, volumeUsd: 0, wins: 0, trades: 0 }
+  const withHero = (address: string, totalReturnPct: number, maxDrawdownPct: number, sharpe: number): TraderCard => ({
+    ...buildTraderCard(
+      { address, displayName: address, allocs: [], followerCount: 0n, reputation: null, stake: null, totalSlashed: null },
+      emptyAggregates,
+    ),
+    hero: {
+      address, name: address, rule: 'buy_hold', totalReturnPct, maxDrawdownPct, sharpe,
+      winRatePct: null, closedTrades: 0, esgScore: null, window7d: window, window30d: window, sparkline: [],
+    },
+  })
+  const steady = withHero('0xa', 10, 5, 2.0)
+  const wild = withHero('0xb', 40, 35, 0.8)
+  const plain = buildTraderCard(
+    { address: '0xc', displayName: 'no data', allocs: [], followerCount: 0n, reputation: null, stake: null, totalSlashed: null },
+    emptyAggregates,
+  )
+  const order = (key: 'return' | 'drawdown' | 'sharpe') =>
+    [plain, steady, wild].sort(makeTraderComparator(key, () => null)).map((t) => t.address)
+
+  it('puts the highest return first', () => {
+    expect(order('return')).toEqual(['0xb', '0xa', '0xc'])
+  })
+
+  it('puts the shallowest drawdown first', () => {
+    expect(order('drawdown')).toEqual(['0xa', '0xb', '0xc'])
+  })
+
+  it('puts the best risk-adjusted return first', () => {
+    expect(order('sharpe')).toEqual(['0xa', '0xb', '0xc'])
+  })
+
+  it('keeps a trader without the data last rather than treating it as zero', () => {
+    const losing = withHero('0xd', -20, 50, -1.5)
+    expect([plain, losing].sort(makeTraderComparator('return', () => null)).map((t) => t.address)).toEqual(['0xd', '0xc'])
+    expect([plain, losing].sort(makeTraderComparator('sharpe', () => null)).map((t) => t.address)).toEqual(['0xd', '0xc'])
+  })
+})

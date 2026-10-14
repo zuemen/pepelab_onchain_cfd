@@ -135,7 +135,7 @@ describe('PepeLab brand elements do not leak into another tenant', () => {
     for (const rel of [
       'pages/pepefi/TraderProfilePage.tsx',
       'pages/pepefi/TraderDashboard.tsx',
-      'pages/pepefi/MarketplacePage.tsx',
+      'components/pepefi/TraderLeaderboard.tsx',
       'pages/pepefi/CopyPage.tsx',
       'components/pepefi/Podium.tsx',
     ]) {

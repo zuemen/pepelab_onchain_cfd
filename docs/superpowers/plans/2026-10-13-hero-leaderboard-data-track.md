@@ -1935,6 +1935,12 @@ git commit -m "feat(heroes): 本機鏈回放與事件匯出（#309）"
   "exposure": [{ "asset": "sBTC", "weightPct": 50, "isLong": true, "leverage": 1 }],
   "esgCorrelation": 0.41,
   "avgHoldDays": 23.5,
+  "riskScore": 6,
+  "worstDayLossPct": 4.1, "worstWeekLossPct": 9.8, "maxDrawdown1yPct": 12.3,
+  "profitableWeeksPct": 58.3, "tradesPerWeek": 1.4,
+  "topAssets": [{ "asset": "sBTC", "trades": 12, "sharePct": 40.0 }],
+  "followerHistory": [{ "month": "2024-10", "followers": 2 }],
+  "activeSince": "2024-10-01",
   "strategies": [{ "date": "2024-10-01", "versionId": 0, "tx": "0x…",
                    "legs": [{ "asset": "sBTC", "weightBps": 5000, "isLong": true, "leverage": 1 }] }],
   "trades": [{ "positionId": 1, "asset": "sBTC", "isLong": true, "leverage": 1, "marginUsd": 4950.0,
@@ -1944,7 +1950,7 @@ git commit -m "feat(heroes): 本機鏈回放與事件匯出（#309）"
 }
 ```
 
-金額是美元浮點數、百分比是 0–100 的數字、時間是 Unix 秒。`winRatePct`、`esgScore`、`esgCorrelation` 算不出來時是 `null`。未平倉的部位，`closeTx`／`closeTime`／`closePrice`／`pnlUsd`／`grossPnlUsd` 是 `null`。視窗以 `range.to` 那天結束時往回算。`pnlUsd` 是淨額（平倉取回金額 − 保證金 − 開倉手續費），`grossPnlUsd` 是事件裡的價差損益。
+金額是美元浮點數、百分比是 0–100 的數字、時間是 Unix 秒。`winRatePct`、`esgScore`、`esgCorrelation`、`riskScore`、`profitableWeeksPct`、`activeSince` 算不出來時是 `null`。`riskScore` 到 `activeSince` 這九個欄位參考 eToro 的交易者統計頁，定義見 Step 4c。未平倉的部位，`closeTx`／`closeTime`／`closePrice`／`pnlUsd`／`grossPnlUsd` 是 `null`。視窗以 `range.to` 那天結束時往回算。`pnlUsd` 是淨額（平倉取回金額 − 保證金 − 開倉手續費），`grossPnlUsd` 是事件裡的價差損益。
 
 - [ ] **Step 1: 寫失敗測試**
 
@@ -2287,6 +2293,172 @@ def build_outputs(doc: dict, prices: pd.DataFrame) -> tuple[dict, dict[str, dict
 
 Run: `pytest tests/test_analytics.py -v`
 Expected: 8 passed
+
+- [ ] **Step 4a: 寫風險與交易統計的失敗測試**
+
+參考 eToro 交易者統計頁的「風險」「交易」「其他」三張卡：風險分數 1–10、各期間最大損失、獲利週數比例、每週交易數、最常交易的資產、跟單人數的變化、開始交易的日期。
+
+`heroes/tests/test_analytics.py`，在檔案開頭的匯入改成：
+
+```python
+from herolab.analytics import (
+    build_outputs, build_trades, equity_curve, follower_history, max_drawdown_pct, monthly_returns, net_pnl,
+    profitable_weeks_pct, risk_score, sharpe, top_assets, window_stats, worst_loss_pct,
+)
+```
+
+在檔案最後加：
+
+```python
+def series(values):
+    return pd.Series(values, index=[dt.date(2024, 10, 1) + dt.timedelta(days=i) for i in range(len(values))])
+
+
+def test_risk_score_grades_the_one_day_95_percent_var():
+    assert risk_score(series([100.0] * 40)) == 1  # 從不波動
+    swings = [100.0]
+    for i in range(60):
+        swings.append(swings[-1] * (1.025 if i % 2 else 0.975))
+    # 單日 95% VaR ≈ 2.5%：超過 0.25／0.5／1／1.5／2 五道門檻 → 6
+    assert risk_score(series(swings)) == 6
+    assert risk_score(series([100.0] * 20)) is None  # 不到 30 個日報酬，不打分
+
+
+def test_worst_loss_is_reported_as_a_positive_loss():
+    assert worst_loss_pct(series([100.0, 90.0, 99.0, 80.0]), 1) == pytest.approx(19.19, abs=0.01)
+    assert worst_loss_pct(series([100.0, 90.0, 99.0, 80.0]), 2) == pytest.approx(11.11, abs=0.01)
+    assert worst_loss_pct(series([100.0, 101.0, 102.0]), 1) == 0.0
+    assert worst_loss_pct(series([100.0, 90.0]), 7) == 0.0  # 期間比資料長
+
+
+def test_profitable_weeks_compare_every_seventh_day():
+    values = [100.0] * 15
+    values[7], values[14] = 110.0, 105.0  # 第一週 +10%、第二週 -4.5%
+    assert profitable_weeks_pct(series(values)) == 50.0
+    assert profitable_weeks_pct(series([100.0] * 5)) is None
+
+
+def test_top_assets_rank_by_number_of_positions():
+    trades = build_trades(
+        [opened(1, D0, asset="sETH"), opened(2, D0, asset="sBTC"), opened(3, D0, asset="sETH")], OWNER
+    )
+    assert top_assets(trades) == [
+        {"asset": "sETH", "trades": 2, "sharePct": 66.7},
+        {"asset": "sBTC", "trades": 1, "sharePct": 33.3},
+    ]
+
+
+def test_follower_history_is_a_running_count_per_month():
+    def follow(kind, ts):
+        return {"name": kind, "block": 0, "logIndex": 0, "timestamp": ts, "tx": "0x",
+                "args": {"follower": "0x1", "trader": OWNER}}
+    nov = D0 + 31 * 86400
+    events = [follow("TraderFollowed", D0), follow("TraderFollowed", D0 + 86400), follow("TraderUnfollowed", nov)]
+    assert follower_history(events, OWNER.lower(), ["2024-10", "2024-11", "2024-12"]) == [
+        {"month": "2024-10", "followers": 2}, {"month": "2024-11", "followers": 1}, {"month": "2024-12", "followers": 1},
+    ]
+```
+
+再把 `test_outputs_follow_the_published_schema` 最後加上：
+
+```python
+    assert detail["activeSince"] == "2024-10-01"
+    assert detail["riskScore"] is None  # 只有 3 天
+    assert detail["tradesPerWeek"] == 1.0
+    assert detail["topAssets"] == [{"asset": "sETH", "trades": 1, "sharePct": 100.0}]
+    assert detail["followerHistory"] == [{"month": "2024-10", "followers": 0}]
+    assert detail["worstDayLossPct"] == 0.0 and detail["maxDrawdown1yPct"] == 0.0
+    assert detail["profitableWeeksPct"] is None
+```
+
+- [ ] **Step 4b: 跑測試確認失敗**
+
+Run: `pytest tests/test_analytics.py -v`
+Expected: FAIL，`ImportError: cannot import name 'follower_history'`
+
+- [ ] **Step 4c: 實作統計函式**
+
+`heroes/herolab/analytics.py`，在 `window_stats` 之後加：
+
+```python
+# 單日 95% VaR（%）的分級門檻：超過幾道門檻，風險分數就是 1 + 幾。
+# 參考 eToro 以 VaR 為基礎的 1–10 風險分數；門檻是我們自訂的，不是 eToro 的公式。
+RISK_BANDS = (0.25, 0.5, 1.0, 1.5, 2.0, 3.0, 4.0, 6.0, 10.0)
+
+
+def risk_score(equity: pd.Series) -> int | None:
+    """1（很低）到 10（極高），看最近 365 天的日報酬。不到 30 個日報酬不打分。"""
+    returns = equity.pct_change().dropna().iloc[-365:]
+    if len(returns) < 30:
+        return None
+    var = max(0.0, -float(returns.quantile(0.05))) * 100
+    return 1 + sum(1 for band in RISK_BANDS if var > band)
+
+
+def worst_loss_pct(equity: pd.Series, days: int) -> float:
+    """最差的連續 days 天報酬，以正數表示損失；從沒虧過就是 0。"""
+    if len(equity) <= days:
+        return 0.0
+    change = equity / equity.shift(days) - 1.0
+    return round(max(0.0, -float(change.min())) * 100, 2)
+
+
+def profitable_weeks_pct(equity: pd.Series) -> float | None:
+    """每隔 7 天取一點，上漲的週數占比。不到兩週時為 None。"""
+    changes = equity.iloc[::7].pct_change().dropna()
+    if changes.empty:
+        return None
+    return round(float((changes > 0).mean()) * 100, 1)
+
+
+def top_assets(trades: list[Trade], k: int = 3) -> list[dict]:
+    counts: dict[str, int] = {}
+    for t in trades:
+        counts[t.asset] = counts.get(t.asset, 0) + 1
+    total = sum(counts.values())
+    ranked = sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))[:k]
+    return [{"asset": a, "trades": n, "sharePct": round(n / total * 100, 1)} for a, n in ranked]
+
+
+def follower_history(events: list[dict], trader: str, months: list[str]) -> list[dict]:
+    """每個月底的跟隨中人數：跟隨 +1、取消 −1。來自鏈上的 TraderFollowed／TraderUnfollowed。"""
+    trader = trader.lower()
+    delta: dict[str, int] = {}
+    for e in events:
+        if e["name"] in ("TraderFollowed", "TraderUnfollowed") and e["args"]["trader"].lower() == trader:
+            month = _date(e["timestamp"]).strftime("%Y-%m")
+            delta[month] = delta.get(month, 0) + (1 if e["name"] == "TraderFollowed" else -1)
+    out, running = [], 0
+    for month in months:
+        running += delta.get(month, 0)
+        out.append({"month": month, "followers": running})
+    return out
+```
+
+在 `build_outputs` 裡，`days = …` 那一行後面加：
+
+```python
+    months = sorted({d.strftime("%Y-%m") for d in days})
+```
+
+在 `details[address.lower()] = { … }` 裡，`"avgHoldDays": …,` 那一行後面加：
+
+```python
+            "riskScore": risk_score(equity),
+            "worstDayLossPct": worst_loss_pct(equity, 1),
+            "worstWeekLossPct": worst_loss_pct(equity, 7),
+            "maxDrawdown1yPct": round(max_drawdown_pct(equity.iloc[-365:]), 2),
+            "profitableWeeksPct": profitable_weeks_pct(equity),
+            "tradesPerWeek": round(len(trades) / max(len(days) / 7, 1), 2),
+            "topAssets": top_assets(trades),
+            "followerHistory": follower_history(doc["events"], address, months),
+            "activeSince": strategies[0]["date"] if strategies else None,
+```
+
+- [ ] **Step 4d: 跑測試確認通過**
+
+Run: `pytest tests/test_analytics.py -v`
+Expected: 13 passed
 
 - [ ] **Step 5: 寫產出 CLI**
 
