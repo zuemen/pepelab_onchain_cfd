@@ -5,6 +5,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { ethers } from "ethers";
 import { COPY_ABI, EXCHANGE_ABI, KYC_ABI, ORACLE_ABI, REGISTRY_ABI, STAKE_ABI, USDC_ABI } from "./abi.ts";
 import { planHedge, planOpens, shouldLiquidate, type LegPlan } from "./plan.ts";
+import { receiptOf } from "./receipt.ts";
 
 const RPC = process.env.HEROES_RPC_URL ?? "http://127.0.0.1:8545";
 // Anvil 的預設助記詞。公開的測試金鑰，只能用在本機鏈。
@@ -59,27 +60,11 @@ const usd = (amount: number) => BigInt(amount) * E18;
 const stats = { sent: 0, failed: 0, failures: [] as string[], skipped: [] as string[] };
 type Receipt = ethers.TransactionReceipt | null;
 
-/**
- * 直接輪詢收據，不用 response.wait()：wait() 第一次查不到收據時會改等「下一個區塊」，
- * 而 automine 的 Anvil 上只有回放自己在送交易——沒有下一個區塊，回放就永遠卡住（實際發生過）。
- */
-async function receiptOf(hash: string): Promise<ethers.TransactionReceipt> {
-  for (let i = 0; i < 1200; i++) {
-    const receipt = await provider.getTransactionReceipt(hash);
-    if (receipt) {
-      if (receipt.status !== 1) throw new Error(`reverted: ${hash}`);
-      return receipt;
-    }
-    await new Promise((resolve) => setTimeout(resolve, 50));
-  }
-  throw new Error(`no receipt after 60s: ${hash}`);
-}
-
 /** 送一筆交易並等它上鏈。失敗只記錄、不中斷——結束時由失敗比例決定這趟回放算不算數。 */
 async function send(label: string, tx: () => Promise<ethers.ContractTransactionResponse>): Promise<Receipt> {
   stats.sent += 1;
   try {
-    return await receiptOf((await tx()).hash);
+    return await receiptOf(provider, (await tx()).hash);
   } catch (e) {
     stats.failed += 1;
     if (stats.failures.length < 50) stats.failures.push(`${label}: ${(e as Error).message.slice(0, 160)}`);
