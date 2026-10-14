@@ -318,7 +318,7 @@ export const matchesSearch = (trader: Pick<TraderCard, 'displayName' | 'address'
   return trader.displayName.toLowerCase().includes(needle) || trader.address.toLowerCase().includes(needle);
 };
 
-/** 排行榜排序鍵——跟 MarketplacePage 的排序下拉、可點欄頭共用同一組。 */
+/** 排行榜排序鍵——跟 TraderLeaderboard 的排序下拉、可點欄頭共用同一組。 */
 export type LeaderboardSortKey =
   | 'score' | 'pnl' | 'reputation' | 'followers' | 'volume' | 'stake' | 'esg'
   | 'return' | 'drawdown' | 'sharpe';
@@ -357,7 +357,7 @@ export const makeTraderComparator = (
     case 'drawdown':   primary = cmpOptionalNumber(a.hero?.maxDrawdownPct, b.hero?.maxDrawdownPct, 'asc'); break;
     case 'sharpe':     primary = cmpOptionalNumber(a.hero?.sharpe, b.hero?.sharpe, 'desc'); break;
     case 'score':
-    default:          primary = b.score.total - a.score.total; break;
+    default:           primary = b.score.total - a.score.total; break;
   }
   return primary !== 0 ? primary : b.score.total - a.score.total;
 };
