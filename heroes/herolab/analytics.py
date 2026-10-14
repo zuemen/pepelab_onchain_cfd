@@ -1,7 +1,8 @@
 """鏈上事件 → 每位交易者的績效資料。
 
 一律從事件算，不從排程算：每個數字都要追溯得到一筆鏈上交易。
-淨值在部位未平倉期間只反映價格變動；借款費與資金費率在平倉時才實現（併入取回金額）。
+未平倉部位的估值與 PerpetualExchange.getPositionValue 相同：價差損益，扣掉平倉手續費與至今的借款費。
+資金費率不估（鏈上的資金費率指數不在事件裡），平倉時才實現、併入取回金額。
 """
 from __future__ import annotations
 
@@ -13,6 +14,7 @@ import numpy as np
 import pandas as pd
 
 from .assets import esg_composite
+from .schedule import day_timestamp
 
 E18 = 10**18
 DAY = 86_400
@@ -30,6 +32,8 @@ class Trade:
     open_ts: int
     open_tx: str
     open_fee: float
+    fee_bps: int
+    borrow_bps_per_hour: int
     close_ts: int | None = None
     close_tx: str | None = None
     close_amount: float | None = None
@@ -51,11 +55,12 @@ def build_trades(events: list[dict], owner: str) -> list[Trade]:
     for e in events:
         a = e["args"]
         if e["name"] == "PositionOpened" and a["owner"].lower() == owner:
-            margin, leverage = _usd(a["margin"]), int(a["leverage"])
+            margin, leverage, fee_bps = _usd(a["margin"]), int(a["leverage"]), int(a["tradingFeeBps"])
             trades[a["positionId"]] = Trade(
                 position_id=int(a["positionId"]), asset=a["asset"], is_long=bool(a["isLong"]), leverage=leverage,
                 margin=margin, entry_price=_usd(a["entryPrice"]), open_ts=e["timestamp"], open_tx=e["tx"],
-                open_fee=margin * leverage * int(a["tradingFeeBps"]) / 10_000,
+                open_fee=margin * leverage * fee_bps / 10_000, fee_bps=fee_bps,
+                borrow_bps_per_hour=int(a["borrowFeeBpsPerHour"]),
             )
         elif e["name"] == "PositionClosed" and a["positionId"] in trades:
             t = trades[a["positionId"]]
@@ -71,7 +76,18 @@ def net_pnl(t: Trade) -> float:
     return t.close_amount - t.margin - t.open_fee
 
 
+def open_value(t: Trade, price: float, at_ts: int) -> float:
+    """與 getPositionValue 相同：保證金 + 價差損益 − 平倉手續費 − 借款費（只對借來的部分、按整小時計），不低於 0。"""
+    move = price / t.entry_price - 1.0
+    pnl = t.margin * t.leverage * (move if t.is_long else -move)
+    close_fee = t.margin * t.leverage * t.fee_bps / 10_000
+    hours = max(at_ts - t.open_ts, 0) // 3600
+    borrow_fee = t.margin * (t.leverage - 1) * t.borrow_bps_per_hour * hours / 10_000
+    return max(t.margin + pnl - close_fee - borrow_fee, 0.0)
+
+
 def equity_curve(capital: float, trades: list[Trade], prices: pd.DataFrame, days: list[dt.date]) -> pd.Series:
+    """每天以回放當日的區塊時間（21:00 UTC）估值。"""
     values = []
     for day in days:
         cash, marks = capital, 0.0
@@ -82,8 +98,7 @@ def equity_curve(capital: float, trades: list[Trade], prices: pd.DataFrame, days
             if t.close_ts is not None and _date(t.close_ts) <= day:
                 cash += t.close_amount
             else:
-                move = float(prices.at[day, t.asset]) / t.entry_price - 1.0
-                marks += max(t.margin * (1.0 + t.leverage * (move if t.is_long else -move)), 0.0)
+                marks += open_value(t, float(prices.at[day, t.asset]), day_timestamp(day))
         values.append(cash + marks)
     return pd.Series(values, index=days)
 

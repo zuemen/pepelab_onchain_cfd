@@ -11,6 +11,8 @@ export const EXCHANGE_ABI = [
   "function freeMargin(address) view returns (uint256)",
   "function getUserPositions(address) view returns (uint256[])",
   "function getPositionValue(uint256) view returns (uint256)",
+  // Position 結構的完整欄位順序（contracts/src/PerpetualExchange.sol）。費率在開倉時凍結，以這裡讀到的為準。
+  "function getPosition(uint256) view returns (tuple(uint256 id, address owner, bytes32 asset, bool isLong, uint256 entryPrice, uint256 margin, uint256 leverage, uint256 openedAt, uint256 closedAt, int256 realizedPnL, bool isOpen, address copiedFrom, int256 entryFundingIndex, uint16 tradingFeeBps, uint16 borrowFeeBpsPerHour, uint8 carbonTier))",
   "function tradingFeeBpsForAsset(bytes32) view returns (uint256)",
   "function maintenanceMarginBpsForAsset(bytes32) view returns (uint256)",
   "function depositMargin(uint256 amount)",

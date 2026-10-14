@@ -20,11 +20,12 @@ def wei(x):
     return str(int(Fraction(str(x)) * E18))
 
 
-def opened(pid, ts, asset="sETH", is_long=True, margin=500.0, leverage=1, entry=100.0, fee_bps=10, owner=OWNER):
+def opened(pid, ts, asset="sETH", is_long=True, margin=500.0, leverage=1, entry=100.0, fee_bps=10, borrow_bps=0,
+           owner=OWNER):
     return {"name": "PositionOpened", "block": pid, "logIndex": 0, "timestamp": ts, "tx": f"0xopen{pid}",
             "args": {"positionId": str(pid), "owner": owner, "asset": asset, "isLong": is_long,
                      "entryPrice": wei(entry), "margin": wei(margin), "leverage": str(leverage),
-                     "tradingFeeBps": str(fee_bps)}}
+                     "tradingFeeBps": str(fee_bps), "borrowFeeBpsPerHour": str(borrow_bps)}}
 
 
 def closed(pid, ts, gross, close_amount, owner=OWNER):
@@ -56,7 +57,15 @@ def test_trades_pair_an_open_with_its_close_and_ignore_other_owners():
 
 def test_equity_marks_open_positions_to_the_days_price_and_books_fees():
     equity = equity_curve(1000.0, build_trades(EVENTS, OWNER), PRICES, DAYS)
-    assert list(equity.round(4)) == [999.5, 1049.5, 1104.0]
+    assert list(equity.round(4)) == [999.0, 1049.0, 1104.0]
+
+
+def test_an_open_position_is_valued_like_get_position_value():
+    # 5 倍、價格不動：先扣平倉手續費 500 × 5 × 10 bps = 2.5，
+    # 再扣借來的 2000 每小時 1 bps 的借款費：每天 4.8
+    events = [opened(1, D0, leverage=5, fee_bps=10, borrow_bps=1)]
+    equity = equity_curve(1000.0, build_trades(events, OWNER), prices([100.0] * 3), DAYS)
+    assert list(equity.round(4)) == [995.0, 990.2, 985.4]
 
 
 def test_a_short_gains_when_the_price_falls_and_leverage_multiplies_it():
@@ -114,9 +123,9 @@ def test_outputs_follow_the_published_schema():
     assert summary["winRatePct"] == 100.0 and summary["closedTrades"] == 1
     # ESG：(53 × 5000 + 80 × 3000 + 81 × 2000) / 10000 = 66.7 → 67
     assert summary["esgScore"] == 67
-    assert summary["sparkline"] == [999.5, 1049.5, 1104.0]
+    assert summary["sparkline"] == [999.0, 1049.0, 1104.0]
     detail = details[OWNER.lower()]
     assert detail["trades"][0]["pnlUsd"] == 104.0 and detail["trades"][0]["closePrice"] == 121.0
     assert detail["strategies"][0]["tx"] == "0xpub"
     assert detail["exposure"][0] == {"asset": "sETH", "weightPct": 50.0, "isLong": True, "leverage": 1}
-    assert [p["equity"] for p in detail["equityCurve"]] == [999.5, 1049.5, 1104.0]
+    assert [p["equity"] for p in detail["equityCurve"]] == [999.0, 1049.0, 1104.0]

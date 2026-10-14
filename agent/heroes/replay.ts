@@ -225,7 +225,12 @@ async function main(): Promise<void> {
         args[input.name] = input.name === "asset" ? symbolOf.get(value)
           : typeof value === "bigint" ? value.toString() : value;
       });
-      if (parsed.name === "PositionOpened") args.tradingFeeBps = feeBps[args.asset as string].toString();
+      if (parsed.name === "PositionOpened") {
+        // 開倉時凍結的費率：分析估算未平倉部位的價值時要扣平倉手續費與借款費
+        const position = await exchange.getPosition(parsed.args.positionId);
+        args.tradingFeeBps = position.tradingFeeBps.toString();
+        args.borrowFeeBpsPerHour = position.borrowFeeBpsPerHour.toString();
+      }
       if (parsed.name === "StrategyPublished") {
         const [legs] = await registry.getStrategyVersion(parsed.args.trader, parsed.args.versionId);
         args.legs = legs.map((l: { asset: string; weight: bigint; isLong: boolean; leverage: bigint }) => ({
