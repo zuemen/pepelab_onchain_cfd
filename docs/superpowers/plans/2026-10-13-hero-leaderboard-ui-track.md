@@ -1563,11 +1563,11 @@ git commit -m "feat(frontend): 交易者排行榜顯示模擬交易者的累積�
 ### Task B6: 交易者個人頁的績效、策略版本與部位列表
 
 **Files:**
-- Create: `frontend/src/components/pepefi/hero/HeroPerformance.tsx`, `frontend/src/components/pepefi/hero/HeroTrades.tsx`
-- Modify: `frontend/src/pages/pepefi/TraderProfilePage.tsx`, `frontend/src/locales/zh-TW/traderProfile.ts`, `frontend/src/locales/en/traderProfile.ts`
+- Create: `frontend/src/components/pepefi/hero/HeroPerformance.tsx`, `frontend/src/components/pepefi/hero/HeroTrades.tsx`, `frontend/src/components/pepefi/hero/HeroRiskStats.tsx`
+- Modify: `frontend/src/lib/pepefi/heroData.ts`, `frontend/src/lib/pepefi/heroData.test.ts`, `frontend/src/pages/pepefi/TraderProfilePage.tsx`, `frontend/src/locales/zh-TW/traderProfile.ts`, `frontend/src/locales/en/traderProfile.ts`
 
 **Interfaces:**
-- Consumes: `fetchHeroDetail`、`HeroDetail`、`HeroTrade`、`fSignedPct`、`fDrawdown`、`fRatio`、`fUsd`（Task B3）；`t.marketplace.hero.disclosure`（Task B5）；`StatCard`（既有，props：`title`、`value`、`sub?`、`valueColor?`）；`explorerTx(hash, chainId): string | null`（`src/lib/pepefi/explorer`，本機鏈回 null）
+- Consumes: #320 產出的詳細檔，含九個風險與交易統計欄位（見 Step 4a）；`fetchHeroDetail`、`HeroDetail`、`HeroTrade`、`fSignedPct`、`fDrawdown`、`fRatio`、`fUsd`（Task B3）；`t.marketplace.hero.disclosure`（Task B5）；`StatCard`（既有，props：`title`、`value`、`sub?`、`valueColor?`）；`explorerTx(hash, chainId): string | null`（`src/lib/pepefi/explorer`，本機鏈回 null）
 
 - [ ] **Step 1: 加顯示文字**
 
@@ -2096,6 +2096,226 @@ import { fetchHeroDetail, type HeroDetail } from 'src/lib/pepefi/heroData'
           {hero && <HeroTrades hero={hero} provider={wallet.provider} chainId={wallet.chainId} />}
 ```
 
+- [ ] **Step 4a: 績效資料加上風險與交易統計（型別、驗證、測試）**
+
+#320 的詳細檔多了九個欄位（參考 eToro 交易者統計頁）：`riskScore`（1–10，可能是 `null`）、`worstDayLossPct`、`worstWeekLossPct`、`maxDrawdown1yPct`、`profitableWeeksPct`（可能是 `null`）、`tradesPerWeek`、`topAssets`（`{ asset, trades, sharePct }[]`）、`followerHistory`（`{ month, followers }[]`）、`activeSince`（日期字串或 `null`）。
+
+`frontend/src/lib/pepefi/heroData.ts`，在 `HeroDetail` 介面的 `avgHoldDays: number | null` 後面加：
+
+```ts
+  /** 1–10，最近 365 天日報酬的 95% 單日 VaR 分級；資料不足 30 天時為 null。 */
+  riskScore: number | null
+  /** 以下三個是正數表示的損失百分比。 */
+  worstDayLossPct: number
+  worstWeekLossPct: number
+  maxDrawdown1yPct: number
+  profitableWeeksPct: number | null
+  tradesPerWeek: number
+  topAssets: { asset: string; trades: number; sharePct: number }[]
+  followerHistory: { month: string; followers: number }[]
+  activeSince: string | null
+```
+
+`parseHeroDetail` 裡，`if (!isNumOrNull(record.esgCorrelation) || !isNumOrNull(record.avgHoldDays)) return null` 的後面加：
+
+```ts
+  if (!isNumOrNull(record.riskScore) || !isNumOrNull(record.profitableWeeksPct)) return null
+  if (!['worstDayLossPct', 'worstWeekLossPct', 'maxDrawdown1yPct', 'tradesPerWeek'].every((k) => isNum(record[k]))) return null
+  if (!Array.isArray(record.topAssets) || !Array.isArray(record.followerHistory)) return null
+  if (record.activeSince !== null && typeof record.activeSince !== 'string') return null
+```
+
+`frontend/src/lib/pepefi/heroData.test.ts`，把 `const detail = { … }` 裡的 `esgCorrelation: 0.41, avgHoldDays: 23.5, strategies: [], trades: [],` 換成：
+
+```ts
+  esgCorrelation: 0.41, avgHoldDays: 23.5,
+  riskScore: 6, worstDayLossPct: 4.1, worstWeekLossPct: 9.8, maxDrawdown1yPct: 12.3,
+  profitableWeeksPct: 58.3, tradesPerWeek: 1.4,
+  topAssets: [{ asset: 'sBTC', trades: 12, sharePct: 40 }],
+  followerHistory: [{ month: '2024-10', followers: 2 }],
+  activeSince: '2024-10-01',
+  strategies: [], trades: [],
+```
+
+在 `describe('parseHeroDetail', …)` 裡加一個案例：
+
+```ts
+  it('refuses a detail file from before the risk statistics existed', () => {
+    const older: Record<string, unknown> = { ...detail }
+    delete older.riskScore
+    expect(parseHeroDetail(older, ADDR)).toBeNull()
+    expect(parseHeroDetail({ ...detail, riskScore: null, profitableWeeksPct: null, activeSince: null }, ADDR)).not.toBeNull()
+  })
+```
+
+Run（在 `frontend/` 內）: `yarn vitest run src/lib/pepefi/heroData.test.ts`
+Expected: 18 passed
+
+- [ ] **Step 4b: 風險與交易統計的顯示文字**
+
+`frontend/src/locales/zh-TW/traderProfile.ts`，在 `hero: { … }` 裡 `showMore` 那一行後面加：
+
+```ts
+    riskTitle: '風險與交易統計',
+    riskScore: '風險分數',
+    riskScoreScale: '1 最低、10 最高',
+    riskScoreNote: '依最近一年日報酬的 95% 單日風險值（VaR）分級，參考 eToro 的風險分數；分級門檻是本平台自訂的。',
+    worstDay: '最差單日',
+    worstWeek: '最差一週',
+    drawdown1y: '近一年最大回撤',
+    profitableWeeks: '獲利週數',
+    tradesPerWeek: '每週交易',
+    activeSince: '開始交易',
+    topAssets: '最常交易的資產',
+    topAssetValue: '{asset} {share}%',
+    followersTitle: '跟隨人數',
+```
+
+`frontend/src/locales/en/traderProfile.ts`，同樣的位置加：
+
+```ts
+    riskTitle: 'Risk and trading statistics',
+    riskScore: 'Risk score',
+    riskScoreScale: '1 lowest, 10 highest',
+    riskScoreNote: 'Graded on the one-day 95% value at risk (VaR) of the past year of daily returns, after eToro\'s risk score; the grade thresholds are this platform\'s own.',
+    worstDay: 'Worst day',
+    worstWeek: 'Worst week',
+    drawdown1y: 'Max drawdown, past year',
+    profitableWeeks: 'Profitable weeks',
+    tradesPerWeek: 'Trades per week',
+    activeSince: 'Trading since',
+    topAssets: 'Most traded assets',
+    topAssetValue: '{asset} {share}%',
+    followersTitle: 'Followers',
+```
+
+- [ ] **Step 4c: 風險與交易統計元件**
+
+`frontend/src/components/pepefi/hero/HeroRiskStats.tsx`：
+
+```tsx
+import Box from '@mui/material/Box';
+import Card from '@mui/material/Card';
+import Chip from '@mui/material/Chip';
+import Grid from '@mui/material/Grid';
+import Stack from '@mui/material/Stack';
+import Typography from '@mui/material/Typography';
+import { useTheme } from '@mui/material/styles';
+import { Line, XAxis, YAxis, Tooltip, LineChart, ResponsiveContainer } from 'recharts';
+
+import { t, interpolate } from 'src/locales';
+import StatCard from 'src/components/pepefi/StatCard';
+import { MONO } from 'src/components/pepefi/brandKit';
+import type { HeroDetail } from 'src/lib/pepefi/heroData';
+
+// ----------------------------------------------------------------------
+// 參考 eToro 交易者統計頁的「風險」「交易」「其他」三張卡（issue #309）。數字來自
+// public/data/heroes/<address>.json，由鏈上事件算出；這個元件只畫。
+
+const STAT = { xs: 6, md: 3 };
+const loss = (v: number) => (v === 0 ? '0.0%' : `-${v.toFixed(1)}%`);
+
+function RiskMeter({ score }: { score: number | null }) {
+  const theme = useTheme();
+  const colorOf = (n: number) =>
+    n <= 3 ? theme.palette.success.main : n <= 6 ? theme.palette.warning.main : theme.palette.error.main;
+  return (
+    <Stack direction="row" spacing={0.5} alignItems="center">
+      {Array.from({ length: 10 }, (_, i) => i + 1).map((n) => (
+        <Box
+          key={n}
+          sx={{
+            width: 18, height: 18, borderRadius: 0.5,
+            bgcolor: score !== null && n <= score ? colorOf(score) : 'action.hover',
+          }}
+        />
+      ))}
+      <Typography sx={{ ml: 1, fontFamily: MONO, fontWeight: 'bold' }}>{score ?? '—'}</Typography>
+    </Stack>
+  );
+}
+
+export default function HeroRiskStats({ hero }: { hero: HeroDetail }) {
+  const theme = useTheme();
+  const L = t.traderProfile.hero;
+
+  return (
+    <Card sx={{ p: 3 }}>
+      <Typography variant="subtitle1" sx={{ fontWeight: 'bold', mb: 2 }}>{L.riskTitle}</Typography>
+
+      <Stack spacing={0.5} sx={{ mb: 3 }}>
+        <Stack direction="row" spacing={1} alignItems="baseline">
+          <Typography variant="subtitle2">{L.riskScore}</Typography>
+          <Typography variant="caption" color="text.secondary">{L.riskScoreScale}</Typography>
+        </Stack>
+        <RiskMeter score={hero.riskScore} />
+        <Typography variant="caption" color="text.secondary">{L.riskScoreNote}</Typography>
+      </Stack>
+
+      <Grid container spacing={2} sx={{ mb: 3 }}>
+        <Grid size={STAT}><StatCard title={L.worstDay} value={loss(hero.worstDayLossPct)} /></Grid>
+        <Grid size={STAT}><StatCard title={L.worstWeek} value={loss(hero.worstWeekLossPct)} /></Grid>
+        <Grid size={STAT}><StatCard title={L.drawdown1y} value={loss(hero.maxDrawdown1yPct)} /></Grid>
+        <Grid size={STAT}>
+          <StatCard
+            title={L.profitableWeeks}
+            value={hero.profitableWeeksPct === null ? '—' : `${hero.profitableWeeksPct.toFixed(0)}%`}
+          />
+        </Grid>
+        <Grid size={STAT}><StatCard title={L.tradesPerWeek} value={hero.tradesPerWeek.toFixed(1)} /></Grid>
+        <Grid size={STAT}><StatCard title={L.activeSince} value={hero.activeSince ?? '—'} /></Grid>
+      </Grid>
+
+      {hero.topAssets.length > 0 && (
+        <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap sx={{ mb: 3 }}>
+          <Typography variant="subtitle2" sx={{ mr: 1 }}>{L.topAssets}</Typography>
+          {hero.topAssets.map((a) => (
+            <Chip
+              key={a.asset}
+              size="small"
+              variant="outlined"
+              label={interpolate(L.topAssetValue, { asset: a.asset, share: a.sharePct.toFixed(0) })}
+              sx={{ fontFamily: MONO }}
+            />
+          ))}
+        </Stack>
+      )}
+
+      {hero.followerHistory.length > 1 && (
+        <>
+          <Typography variant="subtitle2" sx={{ mb: 1 }}>{L.followersTitle}</Typography>
+          <Box sx={{ height: 140 }}>
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={hero.followerHistory} margin={{ top: 4, right: 8, bottom: 0, left: 0 }}>
+                <XAxis dataKey="month" tick={{ fontSize: 11 }} minTickGap={24} />
+                <YAxis allowDecimals={false} tick={{ fontSize: 11 }} width={32} />
+                <Tooltip />
+                <Line type="stepAfter" dataKey="followers" stroke={theme.palette.info.main} dot={false} isAnimationActive={false} />
+              </LineChart>
+            </ResponsiveContainer>
+          </Box>
+        </>
+      )}
+    </Card>
+  );
+}
+```
+
+- [ ] **Step 4d: 掛到個人頁**
+
+`frontend/src/pages/pepefi/TraderProfilePage.tsx`，匯入區加：
+
+```tsx
+import HeroRiskStats from 'src/components/pepefi/hero/HeroRiskStats'
+```
+
+把 `{hero && <HeroPerformance hero={hero} />}` 換成：
+
+```tsx
+          {hero && <HeroPerformance hero={hero} />}
+          {hero && <HeroRiskStats hero={hero} />}
+```
+
 - [ ] **Step 5: 型別、lint、測試**
 
 Run（在 `frontend/` 內）: `yarn tsc --noEmit && yarn lint && yarn test`
@@ -2115,22 +2335,26 @@ Expected: 全部通過。`recharts` 的匯入順序若被 lint 的 perfectionist
 8. 被清算的部位（槓桿交易者 Crypto Degen／Low Carbon Lev 最容易有）標示「已清算」。
 9. 跟隨者人數、質押、聲譽照舊顯示（從鏈上讀的）。
 10. 開一個不是模擬交易者的位址（例如展示帳號自己）：沒有揭露文字、沒有績效區塊、頁面其餘部分正常。
+11. 「風險與交易統計」卡：風險分數的格數與數字相同，與詳細檔的 `riskScore` 相符；槓桿交易者（Crypto Degen、Low Carbon Lev）的分數明顯高於買入持有類。
+12. 跟隨人數的走勢線，最後一個點等於上方從鏈上讀到的跟隨者人數；有人取消過跟單的交易者，走勢線要有下降的段落。
 
 - [ ] **Step 7: Commit**
 
 ```bash
 git add frontend/src/components/pepefi/hero frontend/src/pages/pepefi/TraderProfilePage.tsx \
+  frontend/src/lib/pepefi/heroData.ts frontend/src/lib/pepefi/heroData.test.ts \
   frontend/src/locales/zh-TW/traderProfile.ts frontend/src/locales/en/traderProfile.ts
 git commit -m "feat(frontend): 交易者個人頁顯示模擬交易者的淨值、策略版本與可回鏈上核對的部位紀錄（#309）"
 ```
 
 ---
 
-### Task B7: 展示啟動腳本與跟單流程走通
+### Task B7: 展示啟動腳本、跟單防護與跟單流程走通
 
 **Files:**
 - Create: `frontend/.env.heroes`, `scripts/heroes-demo.sh`
-- Modify: `frontend/src/pages/pepefi/CopyPage.tsx`, `frontend/src/locales/zh-TW/copy.ts`, `frontend/src/locales/en/copy.ts`, `heroes/README.md`
+- Create: `frontend/src/lib/pepefi/copyGuards.ts`, `frontend/src/lib/pepefi/copyGuards.test.ts`
+- Modify: `frontend/src/pages/pepefi/CopyPage.tsx`, `frontend/src/pages/pepefi/PortfolioPage.tsx`, `frontend/src/locales/{zh-TW,en}/copy.ts`, `frontend/src/locales/{zh-TW,en}/portfolio.ts`, `heroes/README.md`
 
 **Interfaces:**
 - Consumes: `heroes/out/chain.json`、`heroes/out/addresses.json`（資料線 Task A6）；`agent/heroes/priceTick.ts`（資料線 Task A8）
@@ -2285,6 +2509,409 @@ import { fetchHeroIndex, heroByAddress } from 'src/lib/pepefi/heroData'
 Run（在 `frontend/` 內）: `yarn tsc --noEmit && yarn lint && yarn test`
 Expected: 全部通過。
 
+- [ ] **Step 3a: 跟單防護的失敗測試（參考 eToro CopyTrader）**
+
+eToro 的跟單有最低金額、整筆跟單的停損（Copy Stop-Loss），而且會持續跟著交易者調整。我們的合約不做自動停損、也不做持續跟隨（見 #309），所以在畫面上補三個不用改合約的防護：
+
+1. 跟單金額太小、會有某一檔低於交易所最低保證金時，送出前就擋下並告訴使用者最低要多少。
+2. 交易者發布了新版策略時，在投資組合標示「策略已更新」，並提供一鍵更新：取消舊的跟單、把取回的錢提出來、帶著金額回到跟單頁。
+3. 使用者可以替每筆跟單設停損比例；虧損到了就醒目標示並提供一鍵取消。這是提醒，不是鏈上的停損單，畫面上要講清楚。
+
+`frontend/src/lib/pepefi/copyGuards.test.ts`：
+
+```ts
+import { describe, it, expect } from 'vitest'
+
+import {
+  isOutdated,
+  belowMinimum,
+  readStopLoss,
+  writeStopLoss,
+  stopLossReached,
+  minimumCopyAmount,
+} from './copyGuards'
+
+const E18 = 10n ** 18n
+
+describe('minimum copy amount', () => {
+  it('scales the preview until the smallest leg reaches the exchange minimum, rounded up to whole USDC', () => {
+    // 試算 1,000 時最小一檔 99 → 1000 × 10 / 99 = 101.01… → 102
+    expect(minimumCopyAmount(1000n * E18, [497n * E18, 298n * E18, 99n * E18], 10n * E18)).toBe(102n * E18)
+  })
+
+  it('has nothing to say without a usable preview', () => {
+    expect(minimumCopyAmount(0n, [1n], 10n * E18)).toBeNull()
+    expect(minimumCopyAmount(1000n * E18, [], 10n * E18)).toBeNull()
+    expect(minimumCopyAmount(1000n * E18, [0n, 5n * E18], 10n * E18)).toBeNull()
+  })
+
+  it('flags a preview with any leg under the minimum', () => {
+    expect(belowMinimum([50n * E18, 9n * E18], 10n * E18)).toBe(true)
+    expect(belowMinimum([50n * E18, 10n * E18], 10n * E18)).toBe(false)
+  })
+})
+
+describe('outdated copy', () => {
+  it('is outdated when the trader has published a later version', () => {
+    expect(isOutdated(0n, 3n)).toBe(true)
+    expect(isOutdated(2n, 3n)).toBe(false)
+    expect(isOutdated(0n, 1n)).toBe(false)
+    expect(isOutdated(0n, 0n)).toBe(false)
+  })
+})
+
+describe('stop-loss reminder', () => {
+  it('fires once the loss reaches the threshold', () => {
+    expect(stopLossReached(1000n * E18, 600n * E18, 40)).toBe(true)
+    expect(stopLossReached(1000n * E18, 601n * E18, 40)).toBe(false)
+  })
+
+  it('never fires without a threshold or a basis', () => {
+    expect(stopLossReached(1000n * E18, 0n, null)).toBe(false)
+    expect(stopLossReached(0n, 0n, 40)).toBe(false)
+  })
+
+  it('remembers a threshold per account and copy, and treats anything odd as unset', () => {
+    const data = new Map<string, string>()
+    const storage = {
+      getItem: (k: string) => data.get(k) ?? null,
+      setItem: (k: string, v: string) => { data.set(k, v) },
+      removeItem: (k: string) => { data.delete(k) },
+    }
+    writeStopLoss('0xAbC', 2, 30, storage)
+    expect(readStopLoss('0xabc', 2, storage)).toBe(30)
+    expect(readStopLoss('0xabc', 3, storage)).toBeNull()
+    writeStopLoss('0xabc', 2, null, storage)
+    expect(readStopLoss('0xabc', 2, storage)).toBeNull()
+    data.set('pepefi.copyStopLoss.0xabc.5', 'nonsense')
+    expect(readStopLoss('0xabc', 5, storage)).toBeNull()
+    data.set('pepefi.copyStopLoss.0xabc.6', '99')
+    expect(readStopLoss('0xabc', 6, storage)).toBeNull()
+    expect(readStopLoss('0xabc', 2, null)).toBeNull()
+  })
+})
+```
+
+Run（在 `frontend/` 內）: `yarn vitest run src/lib/pepefi/copyGuards.test.ts`
+Expected: FAIL，`Failed to resolve import "./copyGuards"`
+
+- [ ] **Step 3b: 實作跟單防護**
+
+`frontend/src/lib/pepefi/copyGuards.ts`：
+
+```ts
+// 跟單的三個畫面防護（issue #309，參考 eToro CopyTrader）：最低金額、策略已更新、停損提醒。
+// 純函式，不含 ethers 或 React。合約不做自動停損、也不做持續跟隨，這裡做的都只是
+// 「送出前擋下」與「提醒」，畫面上不能把它說成自動執行。
+
+/**
+ * 跟單金額照比例拆給每一檔，每一檔都要達到交易所的最低保證金，否則整筆 revert。
+ * 拆分（含跟單費與手續費）對金額是線性的，所以用試算出來的最小一檔反推：
+ * 最低金額 = 試算金額 × 最低保證金 ÷ 最小一檔，再往上取到整數 USDC。
+ */
+export function minimumCopyAmount(previewAmount: bigint, portions: bigint[], minMargin: bigint): bigint | null {
+  if (previewAmount <= 0n || portions.length === 0) return null
+  const smallest = portions.reduce((a, b) => (b < a ? b : a))
+  if (smallest <= 0n) return null
+  const raw = (previewAmount * minMargin + smallest - 1n) / smallest
+  const unit = 10n ** 18n
+  return ((raw + unit - 1n) / unit) * unit
+}
+
+export const belowMinimum = (portions: bigint[], minMargin: bigint): boolean =>
+  portions.some((portion) => portion < minMargin)
+
+/** 跟單紀錄綁定的版本，比交易者最新發布的那一版舊。strategyCount 是 getStrategyCount 的值。 */
+export const isOutdated = (recordVersion: bigint, strategyCount: bigint): boolean =>
+  strategyCount > 0n && recordVersion < strategyCount - 1n
+
+/** 目前價值 ≤ 投入 ×（100 − 停損比例）／100。沒有設定（null）永遠不觸發。 */
+export function stopLossReached(initial: bigint, current: bigint, thresholdPct: number | null): boolean {
+  if (thresholdPct === null || initial <= 0n) return false
+  return current * 100n <= initial * BigInt(100 - Math.round(thresholdPct))
+}
+
+export const STOP_LOSS_CHOICES = [20, 30, 40, 50] as const
+
+type StopLossStorage = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>
+
+function browserStorage(): StopLossStorage | null {
+  try {
+    return typeof window === 'undefined' ? null : window.localStorage
+  } catch {
+    return null
+  }
+}
+
+const storageKey = (account: string, index: number) => `pepefi.copyStopLoss.${account.toLowerCase()}.${index}`
+
+/** 只存在這台瀏覽器——這是個人提醒，不是鏈上狀態。讀不到、格式不對都當作沒有設定。 */
+export function readStopLoss(account: string, index: number, storage: StopLossStorage | null = browserStorage()): number | null {
+  try {
+    const raw = storage?.getItem(storageKey(account, index))
+    if (!raw) return null
+    const value = Number(raw)
+    return Number.isInteger(value) && value >= 1 && value <= 95 ? value : null
+  } catch {
+    return null
+  }
+}
+
+export function writeStopLoss(
+  account: string,
+  index: number,
+  thresholdPct: number | null,
+  storage: StopLossStorage | null = browserStorage(),
+): void {
+  try {
+    if (thresholdPct === null) storage?.removeItem(storageKey(account, index))
+    else storage?.setItem(storageKey(account, index), String(thresholdPct))
+  } catch {
+    // 寫不進去（私密視窗、被封鎖）就只是記不住，不影響跟單本身
+  }
+}
+```
+
+Run: `yarn vitest run src/lib/pepefi/copyGuards.test.ts`
+Expected: 7 passed
+
+- [ ] **Step 3c: 跟單頁擋下太小的金額，並接受預填金額**
+
+`frontend/src/locales/zh-TW/copy.ts`，在 `amount: {` 區塊裡最後一個鍵的後面加：
+
+```ts
+    /** 金額太小，有一檔會低於交易所的最低保證金，整筆會失敗。 */
+    belowMinimum: '金額太小：照比例拆分後有一檔低於交易所的最低保證金。這位交易者的策略最少需要 {amount} USDC。',
+```
+
+`frontend/src/locales/en/copy.ts`，同樣的位置加：
+
+```ts
+    belowMinimum: 'Amount too small: once split by weight, one leg falls under the exchange minimum margin. This strategy needs at least {amount} USDC.',
+```
+
+`frontend/src/pages/pepefi/CopyPage.tsx`：
+
+1. 匯入：把 `import { useParams, useNavigate, Link as RouterLink } from 'react-router'` 改成 `import { useParams, useNavigate, useSearchParams, Link as RouterLink } from 'react-router'`，並加上
+
+```tsx
+import { belowMinimum, minimumCopyAmount } from 'src/lib/pepefi/copyGuards'
+```
+
+2. 在元件裡 `useParams` 那一行附近加 `const [searchParams] = useSearchParams()`，並把 `totalMargin` 的 `useState(…)` 初始值改成 `searchParams.get('amount') ?? <原本的初始值>`——從投資組合「更新到最新版」過來時，金額已經帶好。
+
+3. 在其他 `useState` 旁加最低保證金（讀不到時用合約目前的值 10 USDC）：
+
+```tsx
+  // PerpetualExchange.MIN_MARGIN：每一檔部位的最低保證金。讀不到就用合約目前的常數。
+  const [minMargin, setMinMargin] = useState<bigint>(10n * 10n ** 18n)
+  useEffect(() => {
+    if (!contracts) return
+    void (contracts.exchange.MIN_MARGIN() as Promise<bigint>).then(setMinMargin).catch(() => undefined)
+  }, [contracts])
+```
+
+4. 在 `const doApprove = async () => {` 的前面加：
+
+```tsx
+  const tooSmall = preview !== null && belowMinimum(preview.portions, minMargin)
+  const minAmount = preview && tooSmall ? minimumCopyAmount(totalBig, preview.portions, minMargin) : null
+```
+
+5. 在確認區（`t.copy.confirm.snapshotNote` 那個 Alert 的下方）加：
+
+```tsx
+        {tooSmall && (
+          <Alert severity="warning" sx={{ mb: 2 }}>
+            {interpolate(t.copy.amount.belowMinimum, {
+              amount: minAmount === null ? '—' : (minAmount / 10n ** 18n).toString(),
+            })}
+          </Alert>
+        )}
+```
+
+6. 「步驟 1 · 批准」按鈕的 `disabled={…}` 最後加上 `|| tooSmall`；「步驟 2 · 跟隨交易者」按鈕的 `disabled={…}` 也加上 `|| tooSmall`。
+
+- [ ] **Step 3d: 投資組合標示「策略已更新」、一鍵更新、停損提醒**
+
+`frontend/src/locales/zh-TW/portfolio.ts`，在 `page: {` 裡的 `copyColumn: {` 區塊內加一個欄位標題：
+
+```ts
+      stopLoss: '停損提醒',
+```
+
+在 `page: {` 裡（`copyPositions` 那一行附近）加：
+
+```ts
+    copyOutdated: '策略已更新',
+    copyOutdatedHint: '交易者發布了新版策略。你的跟單仍是舊版，不會自動調整。',
+    copyRefresh: '更新到最新版',
+    copyRefreshing: '更新中…',
+    copyRefreshStep: '取消舊的跟單、把取回的 {amount} USDC 提回錢包，接著到跟單頁用同樣金額跟最新版。',
+    stopLossNone: '不提醒',
+    stopLossOption: '虧 {pct}%',
+    stopLossReached: '已達停損',
+    stopLossHint: '停損提醒只存在這個瀏覽器，不會自動平倉；到了請自己按「取消跟單」。',
+```
+
+`frontend/src/locales/en/portfolio.ts`，同樣的位置各加：
+
+```ts
+      stopLoss: 'Stop-loss reminder',
+```
+
+```ts
+    copyOutdated: 'Strategy updated',
+    copyOutdatedHint: 'The trader has published a new strategy version. Your copy is still on the old one and does not adjust by itself.',
+    copyRefresh: 'Move to latest',
+    copyRefreshing: 'Updating…',
+    copyRefreshStep: 'Unfollow the old copy, withdraw the {amount} USDC it returns to your wallet, then copy the latest version with the same amount.',
+    stopLossNone: 'Off',
+    stopLossOption: 'At -{pct}%',
+    stopLossReached: 'Stop-loss reached',
+    stopLossHint: 'The stop-loss reminder lives in this browser only and never closes anything by itself; when it fires, press Unfollow.',
+```
+
+`frontend/src/pages/pepefi/PortfolioPage.tsx`：
+
+1. 匯入：
+
+```tsx
+import Select from '@mui/material/Select'
+import MenuItem from '@mui/material/MenuItem'
+import { isOutdated, readStopLoss, writeStopLoss, stopLossReached, STOP_LOSS_CHOICES } from 'src/lib/pepefi/copyGuards'
+```
+
+（`Select`、`MenuItem`、`Chip`、`Tooltip` 已匯入的就不要重複；缺的補上。）
+
+2. `CopyRec` 介面加兩個欄位：
+
+```ts
+  versionId:     bigint;
+  /** 交易者目前發布過幾版（getStrategyCount）；讀不到時為 null，就不標示「已更新」。 */
+  strategyCount: bigint | null;
+```
+
+3. 讀取跟單紀錄的那段：在 `nameMap` 的迴圈旁，同樣對每位交易者讀版本數：
+
+```ts
+      const countMap: Record<string, bigint | null> = {};
+      await Promise.all(
+        uniqueTraders.map(async ta => {
+          try { countMap[ta] = (await contracts.registry.getStrategyCount(ta)) as bigint; }
+          catch { countMap[ta] = null; }
+        })
+      );
+```
+
+並在 `enriched` 回傳的物件裡加 `versionId: rec.versionId, strategyCount: countMap[rec.trader] ?? null,`。
+
+4. 停損設定的狀態（在其他 `useState` 旁）：
+
+```tsx
+  const [stopLoss, setStopLoss] = useState<Record<number, number | null>>({});
+  useEffect(() => {
+    if (!wallet.address) return;
+    setStopLoss(Object.fromEntries(copyRecs.map(r => [r.index, readStopLoss(wallet.address!, r.index)])));
+  }, [copyRecs, wallet.address]);
+  const changeStopLoss = (index: number, value: number | null) => {
+    if (!wallet.address) return;
+    writeStopLoss(wallet.address, index, value);
+    setStopLoss(prev => ({ ...prev, [index]: value }));
+  };
+```
+
+5. 一鍵更新（放在 `doUnfollow` 後面）。取消跟單後，取回的錢回到交易所的可用保證金，不是錢包；跟單合約是從錢包扣款，所以要先把這筆提回錢包：
+
+```tsx
+  const doRefreshCopy = async (rec: CopyRec) => {
+    if (!contracts || !wallet.address) return;
+    const blocked = unfollowStaleNotice(rec.index);
+    if (blocked) { notify(blocked, false); return; }
+    const key = `refresh_${rec.index}`;
+    setLoad(key, true);
+    try {
+      const before = (await contracts.exchange.freeMargin(wallet.address)) as bigint;
+      await asTx(await contracts.copyTracker.unfollowAndCloseAll(BigInt(rec.index))).wait();
+      const after = (await contracts.exchange.freeMargin(wallet.address)) as bigint;
+      const returned = after > before ? after - before : 0n;
+      if (returned > 0n) {
+        const tx = asTx(await contracts.exchange.withdrawMargin(returned));
+        await tx.wait();
+        notify(interpolate(t.portfolio.page.copyRefreshStep, { amount: f18(returned) }), true, tx.hash);
+      }
+      navigate(`/copy/${rec.trader}?amount=${returned / 10n ** 18n}`);
+    } catch (e) {
+      notify(prettyError(e), false);
+      await fetchAll();
+    } finally { setLoad(key, false); }
+  };
+```
+
+6. 跟單表格：
+   - 欄位標題陣列，在 `actions` 之前加 `{ label: t.portfolio.page.copyColumn.stopLoss, right: false },`。
+   - 交易者那一格，名稱下方加：
+
+```tsx
+                        {rec.strategyCount !== null && isOutdated(rec.versionId, rec.strategyCount) && (
+                          <Tooltip title={t.portfolio.page.copyOutdatedHint}>
+                            <Chip size="small" color="warning" variant="outlined" label={t.portfolio.page.copyOutdated} sx={{ mt: 0.5, height: 20, fontSize: '0.6875rem' }} />
+                          </Tooltip>
+                        )}
+```
+
+   - 報酬那一格，數字下方加：
+
+```tsx
+                        {stopLossReached(rec.initialAmount, rec.currentValue, stopLoss[rec.index] ?? null) && (
+                          <Chip size="small" color="error" label={t.portfolio.page.stopLossReached} sx={{ mt: 0.5, height: 20, fontSize: '0.6875rem' }} />
+                        )}
+```
+
+   - 在操作那一格的**前面**加一格：
+
+```tsx
+                      <TableCell>
+                        <Tooltip title={t.portfolio.page.stopLossHint}>
+                          <Select
+                            size="small"
+                            value={stopLoss[rec.index] ?? ''}
+                            displayEmpty
+                            onChange={e => changeStopLoss(rec.index, e.target.value === '' ? null : Number(e.target.value))}
+                            sx={{ minWidth: 104, fontSize: '0.8125rem' }}
+                          >
+                            <MenuItem value="">{t.portfolio.page.stopLossNone}</MenuItem>
+                            {STOP_LOSS_CHOICES.map(pct => (
+                              <MenuItem key={pct} value={pct}>{interpolate(t.portfolio.page.stopLossOption, { pct })}</MenuItem>
+                            ))}
+                          </Select>
+                        </Tooltip>
+                      </TableCell>
+```
+
+   - 操作那一格，「取消跟單」按鈕前面加（只在策略已更新時出現）：
+
+```tsx
+                        {rec.strategyCount !== null && isOutdated(rec.versionId, rec.strategyCount) && (
+                          <Button
+                            size="small"
+                            variant="outlined"
+                            onClick={() => void doRefreshCopy(rec)}
+                            disabled={busy[`refresh_${rec.index}`] || !!unfStale}
+                            sx={{ mr: 1, fontWeight: 'bold' }}
+                          >
+                            {busy[`refresh_${rec.index}`] ? t.portfolio.page.copyRefreshing : t.portfolio.page.copyRefresh}
+                          </Button>
+                        )}
+```
+
+   - 「取消跟單」按鈕：已達停損時改成 `variant="contained"`，其餘時候 `variant="outlined"`，讓它在需要時最醒目。
+
+- [ ] **Step 3e: 型別、lint、測試**
+
+Run（在 `frontend/` 內）: `yarn tsc --noEmit && yarn lint && yarn test`
+Expected: 全部通過。
+
 - [ ] **Step 4: 把展示步驟寫進說明文件**
 
 `heroes/README.md`，在「## 測試」之前加一節（這個檔由資料線 Task A8 建立；若它還沒合併，先建立只含這一節的檔案，合併時保留兩邊）：
@@ -2333,7 +2960,21 @@ cd frontend && yarn dev --mode heroes  # 終端機二：前端（Windows 上在 
 | 9 | 在 `/portfolio` 取消這筆跟單，在錢包確認 | 跟單從清單消失或標示為已結束；可用保證金增加 |
 | 10 | 對一位策略含股票的交易者（例如 Apple Holder）重複 3–6 | 展示帳號已通過 KYC，不會被擋 |
 | 11 | 對一位使用槓桿的交易者（Low Carbon Lev）重複 3–6 | 成功；部位的槓桿與策略相同 |
+| 13 | 對 Whale Alpha 跟單時金額輸入 50 | 出現「金額太小」並寫出最低金額；兩個按鈕都不能按 |
+| 14 | 在 `/portfolio` 替一筆跟單選「虧 20%」，重新整理頁面 | 設定還在；若目前虧損已超過 20%，報酬欄出現「已達停損」，「取消跟單」變成實心按鈕 |
+| 15 | 讓展示帳號正在跟的交易者發布新版策略（指令在表格下方），重新整理 `/portfolio` | 該筆跟單出現「策略已更新」與「更新到最新版」 |
+| 16 | 按「更新到最新版」，在錢包確認兩筆（取消跟單、提領） | 自動進到跟單頁且金額已填好；照第 5、6 步跟單後，`/portfolio` 只剩一筆、沒有「策略已更新」 |
 | 12 | 用另一個**沒有** KYC 的 Anvil 帳號（例如帳號 (8)，先用水龍頭或 `cast send` 給它測試穩定幣）對 Apple Holder 走到第 4 步 | 確認區顯示需要 KYC，批准與跟隨按鈕不能按 |
+
+第 15 步讓交易者發布新版（以 Whale Alpha 為例；位址從 `frontend/public/data/heroes/index.json` 查，`StrategyRegistry` 從 `heroes/out/addresses.json` 查）：
+
+```bash
+cast rpc anvil_impersonateAccount <交易者位址> --rpc-url http://127.0.0.1:8545
+cast send --unlocked --from <交易者位址> <StrategyRegistry> \
+  "publishStrategy((bytes32,uint256,bool,uint256)[])" \
+  "[($(cast keccak sETH),4000,true,1),($(cast keccak sBOND),3000,true,1),($(cast keccak sICLN),3000,true,1)]" \
+  --rpc-url http://127.0.0.1:8545
+```
 
 任何一步與預期不符：先用 systematic-debugging 找出原因再修，不要繞過。每個修正單獨一個提交；失敗的邏輯若在純函式裡（`src/lib/pepefi/`），先補一個會失敗的測試。把每個問題與修法記在 PR 描述裡。
 
@@ -2342,7 +2983,9 @@ cd frontend && yarn dev --mode heroes  # 終端機二：前端（Windows 上在 
 - [ ] **Step 6: Commit**
 
 ```bash
-git add frontend/.env.heroes scripts/heroes-demo.sh frontend/src/pages/pepefi/CopyPage.tsx \
-  frontend/src/locales/zh-TW/copy.ts frontend/src/locales/en/copy.ts heroes/README.md
+git add frontend/.env.heroes scripts/heroes-demo.sh frontend/src/pages/pepefi/CopyPage.tsx frontend/src/pages/pepefi/PortfolioPage.tsx \
+  frontend/src/lib/pepefi/copyGuards.ts frontend/src/lib/pepefi/copyGuards.test.ts \
+  frontend/src/locales/zh-TW/copy.ts frontend/src/locales/en/copy.ts \
+  frontend/src/locales/zh-TW/portfolio.ts frontend/src/locales/en/portfolio.ts heroes/README.md
 git commit -m "feat(heroes): 本機展示啟動腳本、跟單頁的快照說明與展示步驟（#309）"
 ```
