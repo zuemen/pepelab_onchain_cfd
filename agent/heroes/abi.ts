@@ -15,10 +15,14 @@ export const EXCHANGE_ABI = [
   "function getPosition(uint256) view returns (tuple(uint256 id, address owner, bytes32 asset, bool isLong, uint256 entryPrice, uint256 margin, uint256 leverage, uint256 openedAt, uint256 closedAt, int256 realizedPnL, bool isOpen, address copiedFrom, int256 entryFundingIndex, uint16 tradingFeeBps, uint16 borrowFeeBpsPerHour, uint8 carbonTier))",
   "function tradingFeeBpsForAsset(bytes32) view returns (uint256)",
   "function maintenanceMarginBpsForAsset(bytes32) view returns (uint256)",
+  "function globalLongNotional(bytes32) view returns (uint256)",
+  "function globalShortNotional(bytes32) view returns (uint256)",
   "function depositMargin(uint256 amount)",
   "function openPosition(bytes32 asset, bool isLong, uint256 margin, uint256 leverage) payable returns (uint256)",
   "function closePosition(uint256 positionId)",
   "function liquidatePosition(uint256 positionId)",
+  "function settleFunding(bytes32 asset)",
+  "function lastFundingUpdateAt(bytes32) view returns (uint256)",
 ];
 
 export const REGISTRY_ABI = [

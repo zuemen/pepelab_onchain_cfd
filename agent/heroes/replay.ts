@@ -4,12 +4,16 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { ethers } from "ethers";
 import { COPY_ABI, EXCHANGE_ABI, KYC_ABI, ORACLE_ABI, REGISTRY_ABI, STAKE_ABI, USDC_ABI } from "./abi.ts";
-import { planOpens, shouldLiquidate, type LegPlan } from "./plan.ts";
+import { planHedge, planOpens, shouldLiquidate, type LegPlan } from "./plan.ts";
 
 const RPC = process.env.HEROES_RPC_URL ?? "http://127.0.0.1:8545";
 // Anvil 的預設助記詞。公開的測試金鑰，只能用在本機鏈。
 const MNEMONIC = "test test test test test test test test test test test junk";
 const DEMO_INDEX = 9;
+// 造市帳號：站在模擬交易者與跟隨者淨部位的另一邊，讓資金費率趨近 0（見 plan.ts 的 planHedge）。
+// 不是模擬交易者，不上排行榜，績效資料也不算它。
+const MAKER_INDEX = 1;
+const MAKER_CAPITAL_USD = 100_000_000;
 const E18 = 10n ** 18n;
 
 interface Rebalance { date: string; legs: LegPlan[] }
@@ -84,7 +88,7 @@ async function send(label: string, tx: () => Promise<ethers.ContractTransactionR
 }
 
 // 目前開著的部位（交易者的與跟隨者的都算），清算檢查用。
-const open = new Map<bigint, { asset: string; margin: bigint; leverage: bigint }>();
+const open = new Map<bigint, { owner: string; asset: string; isLong: boolean; margin: bigint; leverage: bigint }>();
 
 function track(receipt: Receipt): void {
   for (const log of receipt?.logs ?? []) {
@@ -92,9 +96,10 @@ function track(receipt: Receipt): void {
     const parsed = exchange.interface.parseLog(log);
     if (parsed?.name === "PositionOpened") {
       open.set(parsed.args.positionId, {
-        asset: symbolOf.get(parsed.args.asset)!, margin: parsed.args.margin, leverage: parsed.args.leverage,
+        owner: parsed.args.owner.toLowerCase(), asset: symbolOf.get(parsed.args.asset)!, isLong: parsed.args.isLong,
+        margin: parsed.args.margin, leverage: parsed.args.leverage,
       });
-    } else if (parsed?.name === "PositionClosed") {
+    } else if (parsed?.name === "PositionClosed" || parsed?.name === "PositionLiquidated") {
       open.delete(parsed.args.positionId);
     }
   }
@@ -115,16 +120,20 @@ async function main(): Promise<void> {
   const traderByIndex = new Map(traders.map((t) => [t.index, t]));
   const followers = schedule.followers.map((f) => ({ ...f, wallet: wallet(f.index) }));
   const demo = wallet(DEMO_INDEX);
+  const maker = wallet(MAKER_INDEX);
 
   // ── 初始化 ────────────────────────────────────────────────────────────────
   // 每個區塊的時間戳固定 +1 秒，兩次回放才會逐筆相同。
   await provider.send("anvil_setBlockTimestampInterval", [1]);
-  const everyone = [...traders.map((t) => t.wallet.address), ...followers.map((f) => f.wallet.address), demo.address];
+  const everyone = [...traders.map((t) => t.wallet.address), ...followers.map((f) => f.wallet.address), demo.address, maker.address];
   for (const address of everyone) await provider.send("anvil_setBalance", [address, ethers.toBeHex(1000n * E18)]);
   for (let i = 0; i < everyone.length; i += 50) {
     await send("kyc", () => kyc.connect(deployer).getFunction("batchVerify")(everyone.slice(i, i + 50)));
   }
   await send("mint demo", () => usdc.connect(deployer).getFunction("mint")(demo.address, usd(100_000)));
+  await send("mint maker", () => usdc.connect(deployer).getFunction("mint")(maker.address, usd(MAKER_CAPITAL_USD)));
+  await send("approve maker", () => usdc.connect(maker).getFunction("approve")(A.PerpetualExchange, usd(MAKER_CAPITAL_USD)));
+  await send("deposit maker", () => exchange.connect(maker).getFunction("depositMargin")(usd(MAKER_CAPITAL_USD)));
 
   // 第一天的時間與價格要先就位，交易者存入與開倉才不會遇到過期報價。
   const executionFee: bigint = await exchange.executionFee();
@@ -149,6 +158,19 @@ async function main(): Promise<void> {
     if (total > 0) await send(`mint follower ${f.index}`, () => usdc.connect(deployer).getFunction("mint")(f.wallet.address, usd(total)));
   }
 
+  // 資金費率每 8 小時結算一次，格線從資產第一次被碰到的時間算起。若讓第一筆開倉決定格線，
+  // 結算點會落在每天 21:00 的換倉時段裡——交易者剛平倉、還沒重開的那幾秒多空最失衡，
+  // 少的那一邊一次領到最多 10 倍費率（小規模回放實測：Whale Alpha 的 sETH 30 天多領 180）。
+  // 這裡先在第一天 17:00 碰一次每個資產（settleFunding 第一次只啟動時鐘），結算點就落在
+  // 01:00／09:00／17:00，換倉時段裡不會結算，結算時的帳本都已被造市帳號拉平。
+  await provider.send("evm_setNextBlockTimestamp", [schedule.days[0].timestamp - 4 * 3600]);
+  for (const symbol of schedule.assets) {
+    if ((await exchange.lastFundingUpdateAt(assetId(symbol))) !== 0n) {
+      throw new Error(`${symbol}: funding clock already started; replay needs a fresh deployment`);
+    }
+    await send(`funding clock ${symbol}`, () => exchange.connect(deployer).getFunction("settleFunding")(assetId(symbol)));
+  }
+
   // ── 逐日 ──────────────────────────────────────────────────────────────────
   for (const [n, day] of schedule.days.entries()) {
     await provider.send("evm_setNextBlockTimestamp", [day.timestamp]);
@@ -162,9 +184,13 @@ async function main(): Promise<void> {
     const values = await chunked(ids, 50, (id) => exchange.getPositionValue(id) as Promise<bigint>);
     for (const [i, id] of ids.entries()) {
       const p = open.get(id)!;
-      if (shouldLiquidate(values[i], p.margin, p.leverage, maintenanceBps[p.asset])) {
-        track(await send(`liquidate ${id}`, () => exchange.connect(deployer).getFunction("liquidatePosition")(id)));
-      }
+      if (!shouldLiquidate(values[i], p.margin, p.leverage, maintenanceBps[p.asset])) continue;
+      // getPositionValue 用的是封頂後的損益，清算閘門用的是結算損益；邊界上兩者會不一致
+      // （完整回放遇過一次 PositionIsHealthy）。先 staticCall 問合約本身，它肯清才送。
+      const liquidate = exchange.connect(deployer).getFunction("liquidatePosition");
+      const accepted = await liquidate.staticCall(id).then(() => true, () => false);
+      if (!accepted) continue;
+      track(await send(`liquidate ${id}`, () => liquidate(id)));
     }
 
     for (const t of traders) {
@@ -212,6 +238,27 @@ async function main(): Promise<void> {
           track(await send(`unfollow ${f.index}->${action.traderIndex}`, () =>
             copy.connect(f.wallet).getFunction("unfollowAndCloseAll")(index)));
         }
+      }
+    }
+    // 一天的換倉與跟單都做完之後，造市帳號把每個資產的多空名目拉平。
+    for (const symbol of schedule.assets) {
+      const id = assetId(symbol);
+      const total = {
+        long: (await exchange.globalLongNotional(id)) as bigint,
+        short: (await exchange.globalShortNotional(id)) as bigint,
+      };
+      const mine = [...open.entries()].filter(([, p]) => p.owner === maker.address.toLowerCase() && p.asset === symbol);
+      const held = { long: 0n, short: 0n };
+      for (const [, p] of mine) held[p.isLong ? "long" : "short"] += p.margin * p.leverage;
+      const order = planHedge(total, held);
+      if (!order) continue;
+      for (const [positionId] of mine) {
+        track(await send(`maker close ${positionId}`, () => exchange.connect(maker).getFunction("closePosition")(positionId)));
+      }
+      if (order.open) {
+        const { isLong, margin } = order.open;
+        track(await send(`maker open ${symbol}`, () =>
+          exchange.connect(maker).getFunction("openPosition")(id, isLong, margin, 1n, { value: executionFee })));
       }
     }
     if (n % 30 === 0) console.log(`${day.date}  open=${open.size}  sent=${stats.sent}  failed=${stats.failed}`);
@@ -263,7 +310,7 @@ async function main(): Promise<void> {
 
   writeFileSync(outPath, JSON.stringify({
     schemaVersion: 1, chainId: 31337, range: { from: schedule.start, to: schedule.end },
-    stats, traders: traderDocs, events,
+    marketMaker: maker.address, stats, traders: traderDocs, events,
   }) + "\n");
 
   const ratio = stats.sent === 0 ? 0 : stats.failed / stats.sent;

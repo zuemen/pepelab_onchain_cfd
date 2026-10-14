@@ -1,7 +1,7 @@
 // 純函式測試：回放怎麼把可用保證金拆給每一檔、什麼時候該清算。
 //   cd agent && npx tsx heroes/plan.test.ts
 import assert from "node:assert";
-import { planOpens, shouldLiquidate, MIN_MARGIN, type LegPlan } from "./plan.ts";
+import { planHedge, planOpens, shouldLiquidate, MIN_MARGIN, type LegPlan } from "./plan.ts";
 
 const E18 = 10n ** 18n;
 const FEES = { sBTC: 100n, sETH: 10n, sESGU: 40n };
@@ -48,5 +48,31 @@ assert.equal(shouldLiquidate(250n * E18, margin, 5n, 500n), true);
 assert.equal(shouldLiquidate(250n * E18 + 1n, margin, 5n, 500n), false);
 assert.equal(shouldLiquidate(0n, margin, 1n, 500n), true);
 assert.equal(shouldLiquidate(900n * E18, margin, 1n, 500n), false);
+
+// ── planHedge：造市帳號把某個資產的多空名目拉平 ──────────────────────────────
+// 交易者淨多 10000、造市帳號還沒有部位：開 10000 的空單
+assert.deepEqual(planHedge({ long: 10_000n * E18, short: 0n }, { long: 0n, short: 0n }), {
+  closeExisting: true, open: { isLong: false, margin: 10_000n * E18 },
+});
+// 已經平衡（失衡 ≤ 1%）就不動，免得每天白付手續費
+assert.equal(planHedge({ long: 10_000n * E18, short: 9_950n * E18 }, { long: 0n, short: 9_950n * E18 }), null);
+// 交易者變成淨空 3000（總多 2000、總空 5000，其中造市帳號的空單 0）：平掉舊的、改開 3000 多單
+assert.deepEqual(planHedge({ long: 2_000n * E18, short: 5_000n * E18 }, { long: 0n, short: 0n }), {
+  closeExisting: true, open: { isLong: true, margin: 3_000n * E18 },
+});
+// 造市帳號的舊空單 8000 已經太多（交易者只剩淨多 5000）：平掉、重開 5000 空單
+assert.deepEqual(planHedge({ long: 5_000n * E18, short: 8_000n * E18 }, { long: 0n, short: 8_000n * E18 }), {
+  closeExisting: true, open: { isLong: false, margin: 5_000n * E18 },
+});
+// 交易者全部平倉、只剩造市帳號自己的部位：平掉，不再開
+assert.deepEqual(planHedge({ long: 0n, short: 4_000n * E18 }, { long: 0n, short: 4_000n * E18 }), {
+  closeExisting: true, open: null,
+});
+// 交易者的淨額低於交易所最低保證金：只平不開
+assert.deepEqual(planHedge({ long: 5n * E18, short: 100n * E18 }, { long: 0n, short: 100n * E18 }), {
+  closeExisting: true, open: null,
+});
+// 完全沒有部位：不動
+assert.equal(planHedge({ long: 0n, short: 0n }, { long: 0n, short: 0n }), null);
 
 console.log("plan.test.ts ✓");

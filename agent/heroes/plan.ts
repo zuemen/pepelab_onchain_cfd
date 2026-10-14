@@ -39,3 +39,39 @@ export function planOpens(free: bigint, legs: LegPlan[], feeBps: Record<string, 
 export function shouldLiquidate(value: bigint, margin: bigint, leverage: bigint, maintenanceBps: bigint): boolean {
   return value <= (margin * leverage * maintenanceBps) / BPS;
 }
+
+export interface Notional {
+  long: bigint;
+  short: bigint;
+}
+
+export interface HedgeOrder {
+  /** 先平掉造市帳號在這個資產上的全部部位。 */
+  closeExisting: boolean;
+  /** 再開一筆 1 倍的反向部位（名目 = 保證金）；null = 不開。 */
+  open: { isLong: boolean; margin: bigint } | null;
+}
+
+/** 多空名目的失衡在這個比例以內就不調整：每 8 小時的資金費率最多 0.75% × 1% ≈ 0.0075%。 */
+export const HEDGE_TOLERANCE_BPS = 100n;
+
+/**
+ * 造市帳號怎麼把一個資產的多空名目拉平。
+ *
+ * 模擬交易者與跟隨者幾乎都做多，沒有對手方時合約的資金費率（失衡越大越高，最高每 8 小時 0.75%）
+ * 會吃掉多單、餵飽少數空單，績效就不再反映價格。造市帳號站在淨部位的另一邊，讓資金費率趨近 0。
+ *
+ * total 是交易所的 globalLong/ShortNotional（含造市帳號），maker 是造市帳號自己的名目。
+ */
+export function planHedge(total: Notional, maker: Notional): HedgeOrder | null {
+  const all = total.long + total.short;
+  if (all === 0n) return null;
+  const residual = total.long > total.short ? total.long - total.short : total.short - total.long;
+  if (residual * BPS <= HEDGE_TOLERANCE_BPS * all) return null;
+  const tradersNet = total.long - maker.long - (total.short - maker.short);
+  const size = tradersNet > 0n ? tradersNet : -tradersNet;
+  return {
+    closeExisting: true,
+    open: size >= MIN_MARGIN ? { isLong: tradersNet < 0n, margin: size } : null,
+  };
+}
