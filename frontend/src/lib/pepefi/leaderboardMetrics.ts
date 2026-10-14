@@ -5,6 +5,8 @@
 // 事件陣列 → volume/pnl/勝率/權益曲線/TraderScore 對照表,再加上逐位交易者
 // 已經抓回來的原始資料 → TraderCard。
 
+import type { HeroSummary } from './heroData'
+
 export interface RawAlloc {
   asset:    string;
   weight:   bigint;
@@ -29,6 +31,8 @@ export interface TraderCard {
   /** 依平倉時序累加的損益。少於 2 筆平倉時為空陣列——沒有方向可言,不畫線。 */
   equityCurve:    bigint[];
   score:          TraderScoreBreakdown;
+  /** 模擬交易者的績效資料；這條鏈沒有、或這個位址不在其中時為 undefined。見 heroData.ts。 */
+  hero?:          HeroSummary;
 }
 
 /** registry.getLatestStrategy() 回傳的原始配置陣列 → RawAlloc[]。 */
@@ -314,9 +318,21 @@ export const matchesSearch = (trader: Pick<TraderCard, 'displayName' | 'address'
   return trader.displayName.toLowerCase().includes(needle) || trader.address.toLowerCase().includes(needle);
 };
 
-/** 排行榜排序鍵——跟 MarketplacePage 的排序下拉、可點欄頭共用同一組。 */
+/** 排行榜排序鍵——跟 TraderLeaderboard 的排序下拉、可點欄頭共用同一組。 */
 export type LeaderboardSortKey =
-  | 'score' | 'pnl' | 'reputation' | 'followers' | 'volume' | 'stake' | 'esg';
+  | 'score' | 'pnl' | 'reputation' | 'followers' | 'volume' | 'stake' | 'esg'
+  | 'return' | 'drawdown' | 'sharpe';
+
+/**
+ * 績效資料才有的數字（累積報酬、最大回撤、Sharpe）。沒有資料的人一律墊底，
+ * 不當成 0——0% 報酬是一個結果，沒有資料不是。
+ */
+const cmpOptionalNumber = (a: number | undefined, b: number | undefined, direction: 'asc' | 'desc'): number => {
+  if (a === undefined && b === undefined) return 0;
+  if (a === undefined) return 1;
+  if (b === undefined) return -1;
+  return direction === 'desc' ? b - a : a - b;
+};
 
 /**
  * 依 sortKey 產生 Array.sort 的比較函式,所有欄位都是「大在前」。
@@ -337,6 +353,9 @@ export const makeTraderComparator = (
     case 'stake':      primary = cmpNullableBigDesc(a.stake, b.stake); break;
     case 'reputation': primary = cmpNullableBigDesc(a.reputation, b.reputation); break;
     case 'esg':        primary = (esgCompositeOf(b) ?? -1) - (esgCompositeOf(a) ?? -1); break;
+    case 'return':     primary = cmpOptionalNumber(a.hero?.totalReturnPct, b.hero?.totalReturnPct, 'desc'); break;
+    case 'drawdown':   primary = cmpOptionalNumber(a.hero?.maxDrawdownPct, b.hero?.maxDrawdownPct, 'asc'); break;
+    case 'sharpe':     primary = cmpOptionalNumber(a.hero?.sharpe, b.hero?.sharpe, 'desc'); break;
     case 'score':
     default:           primary = b.score.total - a.score.total; break;
   }
