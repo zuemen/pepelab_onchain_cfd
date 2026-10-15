@@ -520,7 +520,7 @@ export default function PortfolioPage() {
       // 跟單開的部位不能單獨平倉。以前把整句說明塞在這一格，折成好幾行、每一列都被撐得很高；
       // 改成一個短標籤，完整說明放在滑鼠移上去的提示。
       return (
-        <TableCell align="right" sx={{ whiteSpace: 'nowrap' }}>
+        <TableCell sx={{ whiteSpace: 'nowrap' }}>
           <MuiTooltip title={t.portfolio.close.copyManaged}>
             <Chip size="small" variant="outlined" label={t.portfolio.close.copyManagedShort} sx={{ cursor: 'help', fontSize: '0.75rem' }} />
           </MuiTooltip>
@@ -529,7 +529,7 @@ export default function PortfolioPage() {
     }
     const busyNow = !!busy[`close_${String(row.id)}`];
     return (
-      <TableCell align="right" sx={{ whiteSpace: 'nowrap' }}>
+      <TableCell sx={{ whiteSpace: 'nowrap' }}>
         <Button
           size="small"
           variant="outlined"
@@ -865,16 +865,16 @@ export default function PortfolioPage() {
               <TableHead>
                 <TableRow sx={{ bgcolor: 'background.neutral' }}>
                   {([
-                    // 交易者名稱靠左，其餘欄位一律靠右，標題與內容對齊同一邊。
-                    { label: t.portfolio.page.copyColumn.trader,   right: false },
-                    { label: t.portfolio.page.copyColumn.copiedAt, right: true },
-                    { label: t.portfolio.page.copyColumn.initial,  right: true },
-                    { label: t.portfolio.page.copyColumn.current,  right: true },
-                    { label: t.portfolio.page.copyColumn.return,   right: true },
-                    { label: t.portfolio.page.copyColumn.stopLoss, right: true },
-                    { label: t.portfolio.page.copyColumn.actions,  right: true },
-                  ]).map(({ label, right }) => (
-                    <TableCell key={label} sx={{ color: 'text.secondary', fontWeight: 'bold', fontSize: '0.75rem', py: 1.5, textAlign: right ? 'right' : 'left' }}>
+                    // 所有欄位一律靠左，標題與內容對齊同一邊（簡單與專家模式共用這張表）。
+                    t.portfolio.page.copyColumn.trader,
+                    t.portfolio.page.copyColumn.copiedAt,
+                    t.portfolio.page.copyColumn.initial,
+                    t.portfolio.page.copyColumn.current,
+                    t.portfolio.page.copyColumn.return,
+                    t.portfolio.page.copyColumn.stopLoss,
+                    t.portfolio.page.copyColumn.actions,
+                  ]).map(label => (
+                    <TableCell key={label} sx={{ color: 'text.secondary', fontWeight: 'bold', fontSize: '0.75rem', py: 1.5, whiteSpace: 'nowrap' }}>
                       {label}
                     </TableCell>
                   ))}
@@ -920,16 +920,16 @@ export default function PortfolioPage() {
                           </MuiTooltip>
                         )}
                       </TableCell>
-                      <TableCell sx={{ color: 'text.secondary', fontSize: '0.75rem', textAlign: 'right', whiteSpace: 'nowrap' }}>
+                      <TableCell sx={{ color: 'text.secondary', fontSize: '0.75rem', whiteSpace: 'nowrap' }}>
                         {fDate(rec.copiedAt)}
                       </TableCell>
-                      <TableCell sx={{ fontFamily: MONO, textAlign: 'right' }}>
+                      <TableCell sx={{ fontFamily: MONO }}>
                         {f18(rec.initialAmount)}
                       </TableCell>
-                      <TableCell sx={{ fontFamily: MONO, textAlign: 'right', fontWeight: 'bold' }}>
+                      <TableCell sx={{ fontFamily: MONO, fontWeight: 'bold' }}>
                         {f18(rec.currentValue)}
                       </TableCell>
-                      <TableCell sx={{ fontFamily: MONO, textAlign: 'right', fontWeight: 'bold', color: returnColor(rec.initialAmount, rec.currentValue) }}>
+                      <TableCell sx={{ fontFamily: MONO, fontWeight: 'bold', color: returnColor(rec.initialAmount, rec.currentValue) }}>
                         {returnPct(rec.initialAmount, rec.currentValue)}
                         {stopHit && (
                           <Box>
@@ -937,7 +937,7 @@ export default function PortfolioPage() {
                           </Box>
                         )}
                       </TableCell>
-                      <TableCell sx={{ textAlign: 'right' }}>
+                      <TableCell>
                         <MuiTooltip title={t.portfolio.page.stopLossHint}>
                           <Select<number | ''>
                             size="small"
@@ -953,7 +953,7 @@ export default function PortfolioPage() {
                           </Select>
                         </MuiTooltip>
                       </TableCell>
-                      <TableCell sx={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
+                      <TableCell sx={{ whiteSpace: 'nowrap' }}>
                         {outdated && (
                           <Button
                             size="small"
@@ -997,17 +997,47 @@ export default function PortfolioPage() {
           的空表——而他在這個版本裡根本沒有辦法開出部位。 */}
       {(SHOW_PERPETUALS || positions.length > 0) && (
       <Card sx={{ border: '1px solid', borderColor: 'divider', overflow: 'hidden' }}>
-        <Box sx={{ px: 3, py: 2, borderBottom: '1px solid', borderColor: 'divider', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <Box sx={{ px: 3, py: 2, borderBottom: '1px solid', borderColor: 'divider', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 1.5 }}>
           <Typography variant="subtitle2" sx={{ fontWeight: 'bold', color: 'text.secondary', textTransform: 'uppercase', letterSpacing: 1 }}>
             {mode === 'simple' ? t.portfolio.page.openPositionsSimple : t.portfolio.page.openPositions}
           </Typography>
-          {/* The count lives here now rather than in its own card above a table
-              that already shows every row. */}
-          <Typography variant="caption" color="text.secondary">
-            {mode === 'simple'
-              ? interpolate(t.portfolio.page.openCountSimple, { count: positions.length })
-              : interpolate(FEATURE_COPY_TRADING ? t.portfolio.page.openCount : t.portfolio.page.openCountNoCopy, { count: positions.length })}
-          </Typography>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2.5, flexWrap: 'wrap' }}>
+            {/* 專家模式的表格有十幾欄、要橫向捲動，總計放在表格最底下那一列時，「總計」兩字在最左邊、
+                數字在最右邊，捲到哪一邊都只看得到一半。所以總計放在這裡，不用捲動就看得到。
+                簡單模式只有四欄，總計照舊放在表格最後一列。 */}
+            {mode === 'expert' && positions.length > 0 && (
+              <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 2, flexWrap: 'wrap', fontFamily: MONO, fontSize: '0.8125rem' }}>
+                <Typography component="span" variant="caption" sx={{ fontWeight: 'bold', color: 'text.primary' }}>
+                  {t.portfolio.page.total}
+                </Typography>
+                <Box component="span" sx={{ whiteSpace: 'nowrap' }}>
+                  <Typography component="span" variant="caption" color="text.secondary">{t.portfolio.column.value} </Typography>
+                  <Box component="span" sx={{ fontWeight: 'bold', color: 'text.primary' }}>
+                    {positionsValueTotal === null ? '—' : f18(positionsValueTotal)}
+                  </Box>
+                </Box>
+                <Box component="span" sx={{ whiteSpace: 'nowrap' }}>
+                  <Typography component="span" variant="caption" color="text.secondary">{t.portfolio.column.unrealizedPnl} </Typography>
+                  <Box component="span" sx={{ fontWeight: 'bold', color: pnlColor(unrealisedPnl) }}>
+                    {unrealisedPnl === null ? '—' : fPnL(unrealisedPnl)}
+                  </Box>
+                </Box>
+                <Box component="span" sx={{ whiteSpace: 'nowrap' }}>
+                  <Typography component="span" variant="caption" color="text.secondary">{t.portfolio.column.accruedFunding} </Typography>
+                  <Box component="span" sx={{ color: fundingTotal === null ? 'text.secondary' : fundingTotal < 0n ? 'success.main' : 'error.main' }}>
+                    {fundingTotal === null ? '—' : fPnL(-fundingTotal)}
+                  </Box>
+                </Box>
+              </Box>
+            )}
+            {/* The count lives here now rather than in its own card above a table
+                that already shows every row. */}
+            <Typography variant="caption" color="text.secondary">
+              {mode === 'simple'
+                ? interpolate(t.portfolio.page.openCountSimple, { count: positions.length })
+                : interpolate(FEATURE_COPY_TRADING ? t.portfolio.page.openCount : t.portfolio.page.openCountNoCopy, { count: positions.length })}
+            </Typography>
+          </Box>
         </Box>
 
         {positionsUnread > 0 && (
@@ -1032,7 +1062,7 @@ export default function PortfolioPage() {
                       {columnLabelForMode(key, 'simple')}
                     </TableCell>
                   ))}
-                  <TableCell align="right" sx={{ color: 'text.secondary', fontWeight: 'bold', fontSize: '0.75rem', py: 1.5 }}>
+                  <TableCell sx={{ color: 'text.secondary', fontWeight: 'bold', fontSize: '0.75rem', py: 1.5 }}>
                     {t.portfolio.close.column}
                   </TableCell>
                 </TableRow>
@@ -1160,34 +1190,19 @@ export default function PortfolioPage() {
                       ) : SHORT_ADDR(row.copiedFrom)}
                     </TableCell>
                     )}
-                    <TableCell sx={{ fontFamily: MONO, fontWeight: 'bold', fontSize: '0.8125rem', color: pnlColor(row.unrealizedPnL) }}>
+                    <TableCell sx={{ fontFamily: MONO, fontWeight: 'bold', fontSize: '0.8125rem', whiteSpace: 'nowrap', color: pnlColor(row.unrealizedPnL) }}>
                       {row.unrealizedPnL === null ? <NoFigure status={row.status} /> : fPnL(row.unrealizedPnL)}
                     </TableCell>
-                    <TableCell sx={{ fontFamily: MONO, fontSize: '0.75rem', color: row.accruedFunding === null || row.accruedFunding === 0n ? 'text.secondary' : row.accruedFunding < 0n ? 'success.main' : 'error.main' }}>
+                    <TableCell sx={{ fontFamily: MONO, fontSize: '0.75rem', whiteSpace: 'nowrap', color: row.accruedFunding === null || row.accruedFunding === 0n ? 'text.secondary' : row.accruedFunding < 0n ? 'success.main' : 'error.main' }}>
                       {row.accruedFunding === null || row.accruedFunding === 0n ? '—' : fPnL(-row.accruedFunding)}
                     </TableCell>
-                    <TableCell sx={{ fontFamily: MONO, fontWeight: 'bold', fontSize: '0.8125rem', color: pnlColor(row.unrealizedPnL) }}>
+                    <TableCell sx={{ fontFamily: MONO, fontWeight: 'bold', fontSize: '0.8125rem', whiteSpace: 'nowrap', color: pnlColor(row.unrealizedPnL) }}>
                       {row.currentValue === null ? <NoFigure status={row.status} /> : f18(row.currentValue)}
                     </TableCell>
                     {renderCloseCell(row)}
                   </TableRow>
                 ))}
               </TableBody>
-              <tfoot style={{ borderTop: '1px solid rgba(255,255,255,0.08)' }}>
-                <TableRow sx={{ bgcolor: 'background.neutral' }}>
-                  <TableCell colSpan={showCopiedFrom ? 9 : 8} sx={{ fontWeight: 'bold', color: 'text.primary' }}>{t.portfolio.page.total}</TableCell>
-                  <TableCell sx={{ fontFamily: MONO, fontWeight: 'bold', color: pnlColor(unrealisedPnl) }}>
-                    {unrealisedPnl === null ? '—' : fPnL(unrealisedPnl)}
-                  </TableCell>
-                  <TableCell sx={{ fontFamily: MONO, fontSize: '0.75rem', color: fundingTotal === null ? 'text.secondary' : fundingTotal < 0n ? 'success.main' : 'error.main' }}>
-                    {fundingTotal === null ? '—' : fPnL(-fundingTotal)}
-                  </TableCell>
-                  <TableCell sx={{ fontFamily: MONO, fontWeight: 'bold', color: 'text.primary' }}>
-                    {positionsValueTotal === null ? '—' : f18(positionsValueTotal)}
-                  </TableCell>
-                  <TableCell />
-                </TableRow>
-              </tfoot>
             </Table>
           </TableContainer>
         )}
