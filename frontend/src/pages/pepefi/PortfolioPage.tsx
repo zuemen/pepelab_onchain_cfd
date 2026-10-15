@@ -1028,7 +1028,7 @@ export default function PortfolioPage() {
             {[
               {
                 label: mode === 'simple' ? columnLabelForMode('value', 'simple') : t.portfolio.column.value,
-                value: positionsValueTotal === null ? '—' : f18(positionsValueTotal),
+                value: positionsValueTotal === null ? '—' : `${f18(positionsValueTotal)} ${STABLE_LABEL}`,
                 color: 'text.primary',
               },
               {
