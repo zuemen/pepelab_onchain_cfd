@@ -68,3 +68,29 @@ describe('synthetic-asset disclosure copy', () => {
     expect(tickers.some((s) => enAll.includes(s)), `${category}: ${tickers.join(',')}`).toBe(true);
   });
 });
+
+// 模擬交易者的揭露（issue #309）。排行榜與個人頁共用這一句；同樣只鎖事實陳述，不鎖措辭。
+describe('simulated-trader disclosure copy', () => {
+  const zh = LOCALES['zh-TW'].catalog.marketplace.hero.disclosure;
+  const en = LOCALES.en.catalog.marketplace.hero.disclosure;
+
+  it('zh-TW states simulated, program-operated, real historical prices, local chain, not a real person, on-chain trades, off-chain stats', () => {
+    for (const must of ['模擬交易者', '程式', '真實歷史價格', '本機鏈', '不是真人', '鏈上交易', '鏈下']) {
+      expect(zh, must).toContain(must);
+    }
+  });
+
+  it('en states the same facts', () => {
+    for (const must of [
+      'Simulated traders',
+      'program',
+      'real historical prices',
+      'local chain',
+      'not the record of a real person',
+      'on-chain transaction',
+      'off-chain',
+    ]) {
+      expect(en, must).toContain(must);
+    }
+  });
+});

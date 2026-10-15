@@ -40,6 +40,14 @@ import {
   type ClosedEvent,
   type LeaderboardSortKey,
 } from 'src/lib/pepefi/leaderboardMetrics';
+import {
+  fetchHeroIndex,
+  heroByAddress,
+  applyHeroSummary,
+  fSignedPct,
+  fDrawdown,
+  fRatio,
+} from 'src/lib/pepefi/heroData';
 
 import Box from '@mui/material/Box';
 import Container from '@mui/material/Container';
@@ -154,6 +162,8 @@ export default function TraderLeaderboard() {
   // 7 天的視窗在 Base 上是 379 段 getLogs（公開節點單次上限 1,000 塊），併發 3 實測約
   // 40 秒。骨架屏撐 40 秒看起來像當掉了——把段數進度講出來,等待才是「在做事」。
   const [progress, setProgress] = useState<{ done: number; total: number }>({ done: 0, total: 0 });
+  // 這條鏈有模擬交易者的績效資料時，它的統計期間；null = 沒有，績效欄位走原本的事件掃描。
+  const [heroRange, setHeroRange] = useState<{ from: string; to: string } | null>(null);
   // 重新整理或離開頁面時中止還在跑的掃描，避免舊結果蓋掉新結果、也不再白打 RPC。
   const abortRef = useRef<AbortController | null>(null);
   useEffect(() => () => abortRef.current?.abort(), []);
@@ -168,6 +178,11 @@ export default function TraderLeaderboard() {
     setScanFailedChunks(0);
     setTradersReadFailed(false);
     try {
+      // 有績效資料就不掃事件：本機鏈上「最近 7 天的區塊數」和時間無關，掃出來的數字沒有意義。
+      const heroIndex = await fetchHeroIndex(wallet.chainId);
+      if (ac.signal.aborted) return;
+      setHeroRange(heroIndex?.range ?? null);
+
       const currentBlock = await wallet.provider.getBlockNumber();
       const fromBlock    = scanFromBlock({
         chainId: wallet.chainId,
@@ -187,6 +202,7 @@ export default function TraderLeaderboard() {
       const topicOf  = (name: string) => iface.getEvent(name)!.topicHash;
       const chunks   = chunkRanges(fromBlock, currentBlock).length;
       setProgress({ done: 0, total: chunks });
+      if (heroIndex) setProgress({ done: 0, total: 0 });
       let doneChunks = 0;
       // 已中止的掃描不再回寫進度（新的一輪可能已經在跑）。
       const tick = () => {
@@ -198,18 +214,20 @@ export default function TraderLeaderboard() {
       // 掉的段不能悄悄變成 0 交易量／0 PnL——那會讓排行榜看起來「沒人交易」。
       let failedChunks = 0;
       const [logsRes, addressesRes] = await Promise.allSettled([
-        getLogsChunked(
-          wallet.provider,
-          {
-            address: contracts.exchange.target as string,
-            topics:  [[topicOf('PositionOpened'), topicOf('PositionClosed')]],
-          },
-          fromBlock,
-          currentBlock,
-          tick,
-          () => { failedChunks += 1; },
-          { retries: UI_RETRIES, concurrency: LEADERBOARD_CONCURRENCY, signal: ac.signal },
-        ),
+        heroIndex
+          ? Promise.resolve([])
+          : getLogsChunked(
+              wallet.provider,
+              {
+                address: contracts.exchange.target as string,
+                topics:  [[topicOf('PositionOpened'), topicOf('PositionClosed')]],
+              },
+              fromBlock,
+              currentBlock,
+              tick,
+              () => { failedChunks += 1; },
+              { retries: UI_RETRIES, concurrency: LEADERBOARD_CONCURRENCY, signal: ac.signal },
+            ),
         contracts.registry.getAllTraders() as Promise<string[]>,
       ]);
       if (ac.signal.aborted) return;
@@ -301,13 +319,21 @@ export default function TraderLeaderboard() {
       );
 
       if (ac.signal.aborted) return;
-      setTraders(cards);
+      const heroes = heroIndex ? heroByAddress(heroIndex) : null;
+      setTraders(
+        heroes
+          ? cards.map((card) => {
+              const hero = heroes.get(card.address.toLowerCase());
+              return hero ? applyHeroSummary(card, hero) : card;
+            })
+          : cards,
+      );
     } catch (e) {
       if (ac.signal.aborted || isChunkScanAborted(e)) return;
       console.error('[marketplace fetch]', e);
       setFetchError(e instanceof Error ? e.message.slice(0, 140) : t.marketplace.networkError);
     } finally { if (!ac.signal.aborted) setIsLoading(false); }
-  }, [contracts, wallet.provider]);
+  }, [contracts, wallet.provider, wallet.chainId]);
 
   useEffect(() => { void fetchAll() }, [fetchAll]);
 
@@ -363,12 +389,29 @@ export default function TraderLeaderboard() {
 
   const starTraderCount = visible.filter(isStarTrader).length;
 
+  const usingHeroData = heroRange !== null;
+  // 換到沒有績效資料的鏈時，累積報酬／回撤／Sharpe 三個排序鍵跟著下拉選項一起消失，退回 TraderScore。
+  useEffect(() => {
+    if (!usingHeroData && (sortKey === 'return' || sortKey === 'drawdown' || sortKey === 'sharpe')) {
+      setSortKey('score');
+    }
+  }, [usingHeroData, sortKey]);
+  const volLabel = usingHeroData ? t.marketplace.hero.volLabel : t.marketplace.card.volLabel;
+  const pnlLabel = usingHeroData ? t.marketplace.hero.pnlLabel : t.marketplace.card.pnlLabel;
+
   const sortOptions: Array<{ key: SortKey; label: string }> = [
     { key: 'score', label: t.marketplace.sort.score },
-    { key: 'pnl', label: t.marketplace.sort.pnl },
+    ...(usingHeroData
+      ? ([
+          { key: 'return', label: t.marketplace.hero.sortReturn },
+          { key: 'drawdown', label: t.marketplace.hero.sortDrawdown },
+          { key: 'sharpe', label: t.marketplace.hero.sortSharpe },
+        ] as Array<{ key: SortKey; label: string }>)
+      : []),
+    { key: 'pnl', label: usingHeroData ? t.marketplace.hero.sortPnl : t.marketplace.sort.pnl },
     { key: 'reputation', label: t.marketplace.sort.reputation },
     { key: 'followers', label: t.marketplace.sort.followers },
-    { key: 'volume', label: t.marketplace.sort.volume },
+    { key: 'volume', label: usingHeroData ? t.marketplace.hero.sortVolume : t.marketplace.sort.volume },
     { key: 'stake', label: t.marketplace.sort.stake },
     { key: 'esg', label: t.marketplace.sort.esg },
   ];
@@ -476,6 +519,12 @@ export default function TraderLeaderboard() {
           </IconButton>
         </Box>
       </Box>
+
+      {usingHeroData && (
+        <Alert severity="info" variant="outlined" icon={<Icon icon="solar:test-tube-bold-duotone" width={20} />}>
+          {t.marketplace.hero.disclosure}
+        </Alert>
+      )}
 
       {fetchError && (
         <Alert severity="error">
@@ -587,8 +636,11 @@ export default function TraderLeaderboard() {
                   <TableCell sx={{ position: 'sticky', top: 0, zIndex: 2, bgcolor: 'background.neutral', color: 'text.secondary', fontWeight: 'bold' }}>
                     {t.marketplace.table.strategy}
                   </TableCell>
-                  {sortableHeader('volume', t.marketplace.card.volLabel)}
-                  {sortableHeader('pnl', t.marketplace.card.pnlLabel)}
+                  {usingHeroData && sortableHeader('return', t.marketplace.hero.totalReturn)}
+                  {usingHeroData && sortableHeader('drawdown', t.marketplace.hero.maxDrawdown)}
+                  {usingHeroData && sortableHeader('sharpe', t.marketplace.hero.sharpe)}
+                  {sortableHeader('volume', volLabel)}
+                  {sortableHeader('pnl', pnlLabel)}
                   <TableCell
                     align="right"
                     sx={{ position: 'sticky', top: 0, zIndex: 2, bgcolor: 'background.neutral', color: 'text.secondary', fontWeight: 'bold', whiteSpace: 'nowrap' }}
@@ -706,6 +758,28 @@ export default function TraderLeaderboard() {
                         </Stack>
                       </TableCell>
 
+                      {usingHeroData && (
+                        <>
+                          <TableCell
+                            align="right"
+                            sx={{
+                              fontFamily: MONO,
+                              fontWeight: 'bold',
+                              color: !trader.hero ? 'text.secondary'
+                                : trader.hero.totalReturnPct >= 0 ? 'success.main' : 'error.main',
+                            }}
+                          >
+                            {fSignedPct(trader.hero?.totalReturnPct)}
+                          </TableCell>
+                          <TableCell align="right" sx={{ fontFamily: MONO }}>
+                            {fDrawdown(trader.hero?.maxDrawdownPct)}
+                          </TableCell>
+                          <TableCell align="right" sx={{ fontFamily: MONO }}>
+                            {fRatio(trader.hero?.sharpe)}
+                          </TableCell>
+                        </>
+                      )}
+
                       <TableCell align="right" sx={{ fontFamily: MONO, fontWeight: 'bold' }}>
                         {trader.totalVolume > 0n ? fVol(trader.totalVolume) : '—'}
                       </TableCell>
@@ -816,10 +890,12 @@ export default function TraderLeaderboard() {
               )}
             </Typography>
             <Typography variant="caption" color="text.secondary">
-              {interpolate(t.marketplace.footer.volumeWindow, {
-                blocks: scan.blocks.toLocaleString(),
-                window: fWindow(scan.hours),
-              })}
+              {heroRange
+                ? interpolate(t.marketplace.hero.range, heroRange)
+                : interpolate(t.marketplace.footer.volumeWindow, {
+                    blocks: scan.blocks.toLocaleString(),
+                    window: fWindow(scan.hours),
+                  })}
             </Typography>
           </Box>
         </>
