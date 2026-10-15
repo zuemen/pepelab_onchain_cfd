@@ -105,4 +105,20 @@ export const marketplace: Catalog['marketplace'] = {
     windowHours: '{hours}h',
     windowDays: '{days}d',
   },
+
+  hero: {
+    disclosure:
+      'Simulated traders: the traders below are operated by a program following published rules. Their performance is a replay of real historical prices on a local chain, not the record of a real person. Every open and close is an on-chain transaction; cumulative return, drawdown and the other statistics are computed off-chain from those on-chain events.',
+    range: 'Performance from {from} to {to}; volume, PnL and win rate cover the last 30 days',
+    volLabel: 'Vol 30d',
+    pnlLabel: 'PnL 30d',
+    totalReturn: 'Total return',
+    maxDrawdown: 'Max drawdown',
+    sharpe: 'Sharpe',
+    sortReturn: 'Sort: Total return',
+    sortDrawdown: 'Sort: Max drawdown',
+    sortSharpe: 'Sort: Sharpe',
+    sortVolume: 'Sort: Volume (30d)',
+    sortPnl: 'Sort: PnL (30d)',
+  },
 };

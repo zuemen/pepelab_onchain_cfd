@@ -121,4 +121,25 @@ export const marketplace = {
     windowHours: '{hours} 小時',
     windowDays: '{days} 天',
   },
+
+  /**
+   * 模擬交易者（issue #309）。這條鏈有績效資料時才出現。
+   * disclosure 是固定顯示的揭露：不能收合，也不依賴任何鏈上讀取。
+   */
+  hero: {
+    disclosure:
+      '模擬交易者：以下交易者由程式依公開的規則操作，績效是真實歷史價格在本機鏈上的回放，不是真人的交易紀錄。每一筆開倉與平倉都是鏈上交易；累積報酬、回撤等統計由這些鏈上事件在鏈下算出。',
+    range: '績效統計期間 {from} 至 {to}；交易量、PnL、勝率為最近 30 天',
+    volLabel: '30 日量',
+    pnlLabel: '30 日 PnL',
+    totalReturn: '累積報酬',
+    maxDrawdown: '最大回撤',
+    sharpe: 'Sharpe',
+    sortReturn: '排序：累積報酬',
+    sortDrawdown: '排序：最大回撤',
+    sortSharpe: '排序：Sharpe',
+    /** 有績效資料時交易量與 PnL 是 30 天的視窗，排序下拉也要跟著講 30 天。 */
+    sortVolume: '排序：交易量（30 天）',
+    sortPnl: '排序：PnL（30 天）',
+  },
 };
