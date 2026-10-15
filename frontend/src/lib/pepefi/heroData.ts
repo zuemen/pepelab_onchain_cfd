@@ -221,5 +221,18 @@ export const fDrawdown = (v: Maybe): string => (missing(v) ? '—' : v === 0 ? '
 
 export const fRatio = (v: Maybe): string => (missing(v) ? '—' : v.toFixed(2))
 
+/**
+ * 風險分數的分級門檻：單日 95% VaR（%）每超過一道門檻加 1 級，所以 9 道門檻分出 1–10 級。
+ * 分數本身由資料管線算好（heroes/herolab/analytics.py 的 RISK_BANDS），這裡只用來在量表下
+ * 標出每一級的範圍；兩邊的數字由 heroData.test.ts 檢查必須相同。
+ */
+export const RISK_VAR_BANDS_PCT = [0.25, 0.5, 1, 1.5, 2, 3, 4, 6, 10]
+
+/** 十個級別各自的 VaR 範圍：「≤0.25%」…「≤10%」「>10%」。 */
+export const riskBandLabels = (): string[] => [
+  ...RISK_VAR_BANDS_PCT.map((pct) => `≤${pct}%`),
+  `>${RISK_VAR_BANDS_PCT[RISK_VAR_BANDS_PCT.length - 1]}%`,
+]
+
 export const fUsd = (v: Maybe): string =>
   missing(v) ? '—' : v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })

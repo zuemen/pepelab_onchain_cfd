@@ -16,6 +16,8 @@ import {
   fDrawdown,
   fRatio,
   fUsd,
+  RISK_VAR_BANDS_PCT,
+  riskBandLabels,
   type HeroSummary,
 } from './heroData'
 
@@ -193,5 +195,25 @@ describe('formatting', () => {
     expect([fDrawdown(8.9), fDrawdown(0)]).toEqual(['-8.9%', '0.0%'])
     expect(fRatio(1.214)).toBe('1.21')
     expect([fUsd(1234.5), fUsd(-20)]).toEqual(['1,234.50', '-20.00'])
+  })
+})
+
+// 個人頁在風險分數量表下標出每一級的 VaR 範圍。門檻在資料管線（heroes/herolab/analytics.py 的
+// RISK_BANDS）裡決定分數，畫面上的標示必須是同一組數字，否則格子下的範圍跟分數對不上。
+describe('risk score bands', () => {
+  it('match the bands the data pipeline grades with', () => {
+    const python = fs.readFileSync(
+      path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..', '..', 'heroes', 'herolab', 'analytics.py'),
+      'utf8',
+    )
+    const tuple = /^RISK_BANDS = \(([^)]*)\)/m.exec(python)
+    expect(tuple, 'RISK_BANDS not found in analytics.py').not.toBeNull()
+    expect(RISK_VAR_BANDS_PCT).toEqual(tuple![1].split(',').map((s) => Number(s.trim())))
+  })
+
+  it('labels each of the ten levels with its VaR range', () => {
+    expect(riskBandLabels()).toEqual([
+      '≤0.25%', '≤0.5%', '≤1%', '≤1.5%', '≤2%', '≤3%', '≤4%', '≤6%', '≤10%', '>10%',
+    ])
   })
 })

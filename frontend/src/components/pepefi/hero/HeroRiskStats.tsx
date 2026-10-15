@@ -11,7 +11,7 @@ import { t, interpolate } from 'src/locales';
 import StatCard from 'src/components/pepefi/StatCard';
 import { MONO } from 'src/components/pepefi/brandKit';
 import { FEATURE_COPY_TRADING } from 'src/lib/pepefi/featureFlags';
-import { fDrawdown, type HeroDetail } from 'src/lib/pepefi/heroData';
+import { fDrawdown, riskBandLabels, type HeroDetail } from 'src/lib/pepefi/heroData';
 
 import { lineCursor, tooltipProps } from './chartTooltip';
 
@@ -22,23 +22,44 @@ import { lineCursor, tooltipProps } from './chartTooltip';
 // 六張卡一列三張、排兩整列（一列四張會變成 4＋2、右邊空一塊，日期也會被擠成兩行）。
 const STAT = { xs: 6, md: 4 };
 
+/**
+ * 十格量表撐滿卡片寬度，分數在最右邊；每一格下面標出那一級的單日 VaR 範圍，
+ * 讀的人可以直接對照「這位交易者的 VaR 落在哪一格」。窄螢幕放不下十個標籤時只顯示格子。
+ */
 function RiskMeter({ score }: { score: number | null }) {
   const theme = useTheme();
   const colorOf = (n: number) =>
     n <= 3 ? theme.palette.success.main : n <= 6 ? theme.palette.warning.main : theme.palette.error.main;
+  const labels = riskBandLabels();
   return (
-    <Stack direction="row" spacing={0.5} alignItems="center">
-      {Array.from({ length: 10 }, (_, i) => i + 1).map((n) => (
+    <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(10, minmax(0, 1fr)) auto', columnGap: 0.5, rowGap: 0.5, alignItems: 'center' }}>
+      {labels.map((_, i) => (
         <Box
-          key={n}
-          sx={{
-            width: 18, height: 18, borderRadius: 0.5,
-            bgcolor: score !== null && n <= score ? colorOf(score) : 'action.hover',
-          }}
+          key={`box-${i}`}
+          sx={{ height: 18, borderRadius: 0.5, bgcolor: score !== null && i + 1 <= score ? colorOf(score) : 'action.hover' }}
         />
       ))}
-      <Typography sx={{ ml: 1, fontFamily: MONO, fontWeight: 'bold' }}>{score ?? '—'}</Typography>
-    </Stack>
+      <Typography sx={{ ml: 1.5, fontFamily: MONO, fontWeight: 'bold', fontSize: '1.25rem', lineHeight: 1 }}>
+        {score ?? '—'}
+      </Typography>
+      {labels.map((label, i) => (
+        <Typography
+          key={`label-${i}`}
+          variant="caption"
+          sx={{
+            display: { xs: 'none', sm: 'block' },
+            textAlign: 'center',
+            fontFamily: MONO,
+            fontSize: '0.625rem',
+            color: score === i + 1 ? 'text.primary' : 'text.disabled',
+            fontWeight: score === i + 1 ? 'bold' : 'normal',
+            whiteSpace: 'nowrap',
+          }}
+        >
+          {label}
+        </Typography>
+      ))}
+    </Box>
   );
 }
 
@@ -56,7 +77,11 @@ export default function HeroRiskStats({ hero }: { hero: HeroDetail }) {
           <Typography variant="caption" color="text.secondary">{L.riskScoreScale}</Typography>
         </Stack>
         <RiskMeter score={hero.riskScore} />
-        <Typography variant="caption" color="text.secondary">{L.riskScoreNote}</Typography>
+        <Stack spacing={0.5} sx={{ mt: 1 }}>
+          <Typography variant="caption" color="text.secondary">{L.riskScoreNote}</Typography>
+          <Typography variant="caption" color="text.secondary">{L.riskScoreBands}</Typography>
+          <Typography variant="caption" color="text.secondary">{L.riskScoreReference}</Typography>
+        </Stack>
       </Stack>
 
       {/* 三個損失欄位跟回撤一樣存正數，用同一個 fDrawdown 顯示成損失。 */}

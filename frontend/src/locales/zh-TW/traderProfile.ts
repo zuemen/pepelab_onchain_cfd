@@ -187,7 +187,10 @@ export const traderProfile = {
     riskTitle: '風險與交易統計',
     riskScore: '風險分數',
     riskScoreScale: '1 最低、10 最高',
-    riskScoreNote: '依最近一年日報酬的 95% 單日風險值（VaR）分級，參考 eToro 的風險分數；分級門檻是本平台自訂的。',
+    /** 量表下的三段說明：VaR 是什麼、怎麼分級、對照平台資產的實際級數。 */
+    riskScoreNote: '風險分數看最近一年每天的報酬。把這些日報酬由差到好排好，第 5% 那一天的跌幅叫做「單日 95% 風險值（VaR）」，意思是大約每 20 天會有 1 天跌得比它更多。',
+    riskScoreBands: 'VaR 每超過一道門檻加 1 級，門檻標在上方每一格下面。這組門檻是本平台自訂的：參考 eToro 用 VaR 分 1–10 級的做法，但不是 eToro 的公式。資料不足 30 天的交易者不評分。',
+    riskScoreReference: '用平台資產最近一年（2025-10 至 2026-10）、不加槓桿的價格對照：綠色債券 ETF（sBOND）約 2 級、ESG 美股大盤 ETF（sESGU）約 4 級、AAPL／GOOGL／MSFT、黃金與潔淨能源 ETF（sICLN）約 6 級、BTC 與 NVDA 約 7 級、TSLA 與 ETH 約 8 級。9、10 級通常要用槓桿才會到。',
     worstDay: '最差單日',
     worstWeek: '最差一週',
     drawdown1y: '近一年最大回撤',
