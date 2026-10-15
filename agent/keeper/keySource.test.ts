@@ -1,10 +1,16 @@
 // keeper 金鑰來源（明文 env 或加密 keystore）。keystore 在測試內以隨機錢包產生，不碰任何真的金鑰。
 //   cd agent && npx tsx keeper/keySource.test.ts
 import assert from "node:assert";
+import { join, resolve } from "node:path";
 import { ethers } from "ethers";
 import { keeperKeySpec, loadKeeperWallet, passwordFromFile } from "./keySource.ts";
 
 const HOME = "/home/op";
+// keySource 依執行平台的路徑規則組 keystore 路徑，預期值也用 node:path 組：
+// 正式環境（Linux）就是 /home/op/...，Windows 開發機上則是 \home\op\...。
+const KS_KEEPER = join(HOME, ".foundry", "keystores", "pepelab-rwa-keeper");
+const PW_KEEPER = join(HOME, ".foundry", "pepelab-rwa-keeper.password");
+const KS_PATH = resolve(HOME, "ks", "k.json");
 const PK = "0x" + "11".repeat(32);
 
 // 1. 環境變數解析
@@ -29,16 +35,16 @@ const PK = "0x" + "11".repeat(32);
     {
       spec: {
         kind: "keystore",
-        path: "/home/op/.foundry/keystores/pepelab-rwa-keeper",
-        passwordFile: "/home/op/.foundry/pepelab-rwa-keeper.password",
+        path: KS_KEEPER,
+        passwordFile: PW_KEEPER,
         pathLabel: "KEEPER_KEYSTORE（~/.foundry/keystores 下的名稱）",
-        passwordFileLabel: "/home/op/.foundry/pepelab-rwa-keeper.password",
+        passwordFileLabel: PW_KEEPER,
       },
     },
   );
   assert.deepStrictEqual(
     keeperKeySpec({ KEEPER_KEYSTORE: "~/ks/k.json", KEEPER_KEYSTORE_PASSWORD_FILE: "/etc/pw" }, HOME),
-    { spec: { kind: "keystore", path: "/home/op/ks/k.json", passwordFile: "/etc/pw", pathLabel: "/home/op/ks/k.json", passwordFileLabel: "/etc/pw" } },
+    { spec: { kind: "keystore", path: KS_PATH, passwordFile: "/etc/pw", pathLabel: KS_PATH, passwordFileLabel: "/etc/pw" } },
   );
   const badName = keeperKeySpec({ KEEPER_KEYSTORE: "a b", KEEPER_KEYSTORE_PASSWORD_FILE: "/pw" }, HOME);
   assert.ok("error" in badName && /不是合法/.test(badName.error));

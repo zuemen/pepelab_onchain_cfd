@@ -283,9 +283,10 @@ const vc = await issue();
   const password = "test-only-" + ethers.hexlify(ethers.randomBytes(8));
   const json = ethers.encryptKeystoreJsonSync({ address: w.address, privateKey: w.privateKey }, password, { scrypt: { N: 1 << 10 } });
   const HOME = "/home/op";
+  // keystore 名稱與 ~/ 密碼檔由 keySource 依執行平台的路徑規則展開（Linux 上就是 /home/op/...）。
   const files: Record<string, string> = {
-    "/home/op/.foundry/keystores/pepelab-rwa-issuer": json,
-    "/home/op/.foundry/pepelab-rwa-issuer.password": password + "\n",
+    [path.join(HOME, ".foundry", "keystores", "pepelab-rwa-issuer")]: json,
+    [path.join(HOME, ".foundry", "pepelab-rwa-issuer.password")]: password + "\n",
     "/home/op/wrong.password": "nope\n",
   };
   const read = (p: string) => {
