@@ -95,6 +95,13 @@ const ALLOWED: ReadonlyArray<{ key: string; why: string }> = [
   { key: 'errors.contract.SelfCopyNotAllowed', why: '同上' },
   { key: 'errors.reverted.copy', why: '同上（跟單獎勵領取失敗）' },
   { key: 'lab.noOrder.copy', why: '策略實驗室只在跟單旗標開啟時渲染這一句' },
+  { key: 'feed.types.follow', why: '動態牆在跟單旗標關閉時不列跟隨與取消（FeedPage 的 VISIBLE_TYPES）' },
+  { key: 'feed.types.unfollow', why: '同上' },
+  { key: 'feed.sentence.follow', why: '同上' },
+  { key: 'feed.sentence.followOn', why: '同上' },
+  { key: 'feed.sentence.unfollow', why: '同上' },
+  { key: 'feed.sentence.unfollowOn', why: '同上' },
+  { key: 'feed.item.copy', why: '動態上的跟單鈕只在跟單旗標開啟時渲染（FeedList 的 canCopy）' },
 
   // ── 非使用者畫面 ──
   { key: 'admin.treasury.claim.note', why: '管理員頁（營運方自己看，描述實際的費用分潤模型）' },

@@ -17,6 +17,7 @@ export const nav: Catalog['nav'] = {
     x402: 'x402 Signal API',
     marketplace: 'Marketplace',
     lab: 'Strategy Lab',
+    feed: 'Feed',
     vault: 'Vault',
     history: 'History',
     whale: 'Whale Tracker',

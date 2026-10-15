@@ -77,5 +77,7 @@ export const paths = {
     solvency: '/solvency',
     // 策略實驗室（issue #332）：回測與預測，只在 Expert 模式
     lab: '/lab',
+    // 鏈上動態牆（issue #335），只在 Expert 模式
+    feed: '/feed',
   },
 };

@@ -56,6 +56,7 @@ describe('navDataForMode — simple', () => {
       paths.pepefi.trader,
       paths.pepefi.stake,
       paths.pepefi.lab,
+      paths.pepefi.feed,
     ]) {
       expect(simplePaths, p).not.toContain(p)
     }

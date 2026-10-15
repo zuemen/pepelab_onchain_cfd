@@ -26,6 +26,8 @@ import { fetchHeroDetail, type HeroDetail } from 'src/lib/pepefi/heroData'
 import { followerReaderOf, readActiveFollowers } from 'src/lib/pepefi/activeFollowers'
 import TxProof from 'src/components/pepefi/hero/TxProof'
 import ListDialog, { ExpandListButton } from 'src/components/pepefi/ListDialog'
+import StrategySides from 'src/components/pepefi/feed/StrategySides'
+import TraderFeedSection from 'src/components/pepefi/feed/TraderFeedSection'
 
 import Box from '@mui/material/Box';
 import Container from '@mui/material/Container';
@@ -559,6 +561,12 @@ function TraderProfileView() {
               </Stack>
             )}
           </Card>
+
+          {/* 市場多空比例與這位交易者的最近動態（issue #335）：交易桌的資訊，只在 Expert */}
+          {mode === 'expert' && hasStrategy && (
+            <StrategySides legs={allocs} exchange={contracts?.exchange ?? null} />
+          )}
+          {mode === 'expert' && traderAddr && <TraderFeedSection wallet={wallet} trader={traderAddr} />}
 
           {/* ─── D. Strategy History ───────────────────────────────── */}
           {stratHistory.length > 0 && (
