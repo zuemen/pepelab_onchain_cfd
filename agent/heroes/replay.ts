@@ -5,6 +5,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { ethers } from "ethers";
 import { COPY_ABI, EXCHANGE_ABI, KYC_ABI, ORACLE_ABI, REGISTRY_ABI, STAKE_ABI, USDC_ABI } from "./abi.ts";
 import { planHedge, planOpens, shouldLiquidate, type LegPlan } from "./plan.ts";
+import { localProvider } from "./provider.ts";
 import { receiptOf } from "./receipt.ts";
 
 const RPC = process.env.HEROES_RPC_URL ?? "http://127.0.0.1:8545";
@@ -35,11 +36,8 @@ if (!schedulePath || !addressesPath || !outPath) {
 const schedule: Schedule = JSON.parse(readFileSync(schedulePath, "utf8"));
 const A: Record<string, string> = JSON.parse(readFileSync(addressesPath, "utf8"));
 
-// 固定網路、不批次、不快取：回放是幾萬筆依序送出的交易，預設的 10ms 批次等待會讓它慢上好幾倍。
-const LOCAL = ethers.Network.from(31337);
-const provider = new ethers.JsonRpcProvider(RPC, LOCAL, {
-  staticNetwork: LOCAL, batchMaxCount: 1, cacheTimeout: -1, pollingInterval: 100,
-});
+// 固定網路、不批次、不快取（見 provider.ts）。
+const provider = localProvider(RPC);
 const wallet = (index: number) =>
   ethers.HDNodeWallet.fromPhrase(MNEMONIC, undefined, `m/44'/60'/0'/0/${index}`).connect(provider);
 // 刻意不用 NonceManager：它在 estimateGas 失敗時也會把 nonce 往前推，之後每筆交易都卡住。

@@ -1,6 +1,8 @@
 import type { Theme } from '@mui/material/styles'
 import type { AddressEvent, AddressActivity, AddressEventKind } from 'src/hooks/useAddressActivity'
 
+import { useState } from 'react'
+
 import Box from '@mui/material/Box'
 import Card from '@mui/material/Card'
 import Chip from '@mui/material/Chip'
@@ -20,6 +22,7 @@ import { t, interpolate } from 'src/locales'
 import { explorerTx } from 'src/lib/pepefi/notify'
 import { ASSET_LABEL } from 'src/lib/pepefi/assetMeta'
 import EmptyState from 'src/components/pepefi/EmptyState'
+import ListDialog, { ExpandListButton } from 'src/components/pepefi/ListDialog'
 import { TableSkeleton } from 'src/components/pepefi/Skeleton'
 import { MONO, PEPE, shortAddr } from 'src/components/pepefi/brandKit'
 import { fUsd, timeAgo, fCompact, sideLabel, fSignedUsd } from 'src/lib/pepefi/whale'
@@ -32,6 +35,9 @@ interface Props {
 
 // 這兩張卡從 WhaleTrackerPage 搬過來。它們回答的是「這個人做了什麼」，
 // 屬於 /trader/:address；whale tracker 回答的是「錢往哪流」。
+
+/** 時間軸在卡片上只放最新的這麼多筆；完整的時間軸開在彈窗裡（ListDialog）。 */
+const PREVIEW_EVENTS = 10
 
 const KIND_LABEL: Record<AddressEventKind, string> = {
   PositionOpened:     t.traderProfile.activity.timeline.kind.opened,
@@ -139,6 +145,7 @@ function EventDetail({ event }: { event: AddressEvent }) {
 
 export default function TraderActivity({ activity, chainId, mode }: Props) {
   const { events, positions, scanRange, progress, missing, loading, error, failedChunks } = activity
+  const [expanded, setExpanded] = useState(false)
   // 讀取失敗（整體錯誤或有段落讀不到）時，空的時間軸不能說成「尚無動態」。
   const timelineReadFailed = Boolean(error) || failedChunks > 0
 
@@ -246,11 +253,16 @@ export default function TraderActivity({ activity, chainId, mode }: Props) {
           }}
         >
           <Typography variant="h6" sx={{ fontWeight: 'bold' }}>{t.traderProfile.activity.timeline.title}</Typography>
-          <Typography variant="caption" color="text.secondary" sx={{ fontFamily: MONO }}>
-            {loading && progress
-              ? interpolate(t.traderProfile.activity.timeline.scanning, { done: progress.done, total: progress.total })
-              : rangeText ?? t.traderProfile.activity.timeline.noRange}
-          </Typography>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, flexWrap: 'wrap' }}>
+            <Typography variant="caption" color="text.secondary" sx={{ fontFamily: MONO }}>
+              {loading && progress
+                ? interpolate(t.traderProfile.activity.timeline.scanning, { done: progress.done, total: progress.total })
+                : rangeText ?? t.traderProfile.activity.timeline.noRange}
+            </Typography>
+            {events.length > PREVIEW_EVENTS && (
+              <ExpandListButton count={events.length} onClick={() => setExpanded(true)} />
+            )}
+          </Box>
         </Box>
 
         {loading && progress && progress.total > 0 && (
@@ -274,70 +286,87 @@ export default function TraderActivity({ activity, chainId, mode }: Props) {
               : t.traderProfile.activity.timeline.emptyNone}
           />
         ) : (
-          <TableContainer sx={{ overflowX: 'auto' }}>
-            <Table size="small">
-              <TableHead>
-                <TableRow sx={{ bgcolor: 'background.neutral' }}>
-                  {Object.values(t.traderProfile.activity.timeline.column).map(h => (
-                    <TableCell key={h} sx={{ color: 'text.secondary', fontWeight: 'bold', whiteSpace: 'nowrap' }}>
-                      {h}
-                    </TableCell>
-                  ))}
-                </TableRow>
-              </TableHead>
-              <TableBody>
-                {events.map(e => {
-                  const href = explorerTx(e.txHash, chainId)
-                  return (
-                    <TableRow key={`${e.txHash}-${e.logIndex}`} hover>
-                      <TableCell
-                        sx={{ fontSize: '0.75rem', color: 'text.secondary', whiteSpace: 'nowrap' }}
-                        title={e.timestampExact ? undefined : t.whale.feed.estimatedTime}
-                      >
-                        {e.timestampExact ? '' : '~'}{timeAgo(e.timestamp)}
-                      </TableCell>
-                      <TableCell>
-                        <Chip
-                          label={KIND_LABEL[e.kind]}
-                          size="small"
-                          sx={{
-                            fontWeight: 700,
-                            color:       t => KIND_COLOR[e.kind](t),
-                            bgcolor:     t => alpha(KIND_COLOR[e.kind](t), 0.16),
-                            border:      '1px solid',
-                            borderColor: t => alpha(KIND_COLOR[e.kind](t), 0.24),
-                          }}
-                        />
-                      </TableCell>
-                      <TableCell sx={{ fontSize: '0.8125rem' }}>
-                        <EventDetail event={e} />
-                      </TableCell>
-                      <TableCell>
-                        {href ? (
-                          <Link
-                            href={href}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            title={e.txHash}
-                            aria-label={t.whale.feed.txAria}
-                            sx={{ color: 'success.main', fontWeight: 'bold', textDecoration: 'none' }}
-                          >
-                            ↗
-                          </Link>
-                        ) : (
-                          <Typography variant="caption" sx={{ fontFamily: MONO, color: 'text.secondary' }}>
-                            {e.txHash.slice(0, 8)}…
-                          </Typography>
-                        )}
-                      </TableCell>
-                    </TableRow>
-                  )
-                })}
-              </TableBody>
-            </Table>
-          </TableContainer>
+          <>
+            <TimelineTable rows={events.slice(0, PREVIEW_EVENTS)} chainId={chainId} stickyHeader={false} />
+            <ListDialog
+              open={expanded}
+              onClose={() => setExpanded(false)}
+              title={t.traderProfile.activity.timeline.title}
+              subtitle={rangeText ?? undefined}
+            >
+              <TimelineTable rows={events} chainId={chainId} stickyHeader />
+            </ListDialog>
+          </>
         )}
       </Card>
     </Stack>
+  )
+}
+
+/** 卡片上的預覽與彈窗裡的完整時間軸共用同一張表；彈窗裡標題列固定在上方。 */
+function TimelineTable({ rows, chainId, stickyHeader }: { rows: AddressEvent[]; chainId: number | null; stickyHeader: boolean }) {
+  return (
+    <TableContainer sx={{ overflowX: 'auto' }}>
+      <Table size="small" stickyHeader={stickyHeader}>
+        <TableHead>
+          <TableRow sx={{ bgcolor: 'background.neutral' }}>
+            {Object.values(t.traderProfile.activity.timeline.column).map(h => (
+              <TableCell key={h} sx={{ color: 'text.secondary', fontWeight: 'bold', whiteSpace: 'nowrap', bgcolor: 'background.neutral' }}>
+                {h}
+              </TableCell>
+            ))}
+          </TableRow>
+        </TableHead>
+        <TableBody>
+          {rows.map(e => {
+            const href = explorerTx(e.txHash, chainId)
+            return (
+              <TableRow key={`${e.txHash}-${e.logIndex}`} hover>
+                <TableCell
+                  sx={{ fontSize: '0.75rem', color: 'text.secondary', whiteSpace: 'nowrap' }}
+                  title={e.timestampExact ? undefined : t.whale.feed.estimatedTime}
+                >
+                  {e.timestampExact ? '' : '~'}{timeAgo(e.timestamp)}
+                </TableCell>
+                <TableCell>
+                  <Chip
+                    label={KIND_LABEL[e.kind]}
+                    size="small"
+                    sx={{
+                      fontWeight: 700,
+                      color:       t => KIND_COLOR[e.kind](t),
+                      bgcolor:     t => alpha(KIND_COLOR[e.kind](t), 0.16),
+                      border:      '1px solid',
+                      borderColor: t => alpha(KIND_COLOR[e.kind](t), 0.24),
+                    }}
+                  />
+                </TableCell>
+                <TableCell sx={{ fontSize: '0.8125rem' }}>
+                  <EventDetail event={e} />
+                </TableCell>
+                <TableCell>
+                  {href ? (
+                    <Link
+                      href={href}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      title={e.txHash}
+                      aria-label={t.whale.feed.txAria}
+                      sx={{ color: 'success.main', fontWeight: 'bold', textDecoration: 'none' }}
+                    >
+                      ↗
+                    </Link>
+                  ) : (
+                    <Typography variant="caption" sx={{ fontFamily: MONO, color: 'text.secondary' }}>
+                      {e.txHash.slice(0, 8)}…
+                    </Typography>
+                  )}
+                </TableCell>
+              </TableRow>
+            )
+          })}
+        </TableBody>
+      </Table>
+    </TableContainer>
   )
 }

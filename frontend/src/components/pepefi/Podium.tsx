@@ -34,6 +34,8 @@ interface Props {
   /** 交易者的加權 ESG {分數, 評等},缺資料時回傳 null——由 MarketplacePage 帶著 useESG 的資料算。 */
   esgOf: (trader: TraderCard) => { composite: number; rating: string } | null;
   onScoreClick: (el: HTMLElement, trader: TraderCard) => void;
+  /** 報酬率那格的標籤。有績效資料時它是 30 天的數字，要跟表格的「累積報酬」分清楚。 */
+  returnLabel?: string;
 }
 
 /** 小標籤 + mono 數值的一格統計,三格並排。 */
@@ -68,7 +70,12 @@ function Stat({ label, value, tone }: { label: string; value: string; tone?: 'up
  * 權益曲線(擠成平線)與勝負方塊列(跟勝率重複)都拿掉了,數字本身就是答案。
  * 跟著目前排序走,而不是固定按 TraderScore。交易者少於 3 位時,對應的格子就不畫。
  */
-export default function Podium({ podium, esgOf, onScoreClick }: Props) {
+export default function Podium({
+  podium,
+  esgOf,
+  onScoreClick,
+  returnLabel = t.marketplace.scoreBreakdown.returnLabel,
+}: Props) {
   if (podium.length === 0) return null;
 
   const card = (trader: TraderCard, rank: number) => {
@@ -87,13 +94,22 @@ export default function Podium({ podium, esgOf, onScoreClick }: Props) {
         border: '1px solid',
         borderColor: MEDAL_BORDER[rank - 1],
         boxShadow: MEDAL_GLOW[rank - 1],
+        // 整張卡片都能點進個人頁：見下面名稱連結的 ::after。
+        position: 'relative',
+        transition: 'transform 120ms ease, box-shadow 120ms ease',
+        '&:hover': { transform: 'translateY(-2px)', boxShadow: MEDAL_GLOW[rank - 1].replace('24px', '32px') },
+        '&:hover .podium-trader-name': { textDecoration: 'underline' },
+        '&:has(.podium-profile-link:focus-visible)': { outline: '2px solid', outlineColor: 'primary.main', outlineOffset: 2 },
       }}
     >
-      {/* 身分列——頭貼與名稱是通往個人首頁的連結。 */}
+      {/* 身分列——頭貼與名稱是通往個人頁的連結，它的 ::after 蓋住整張卡片（stretched link），
+          所以點卡片任何地方都進個人頁，而且仍是真的連結（可以 Ctrl+點開新分頁、用 Tab 聚焦）。
+          卡片裡自己能點的東西（策略圖示、TraderScore、跟單按鈕）用 position: relative 疊在它上面。 */}
       <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1 }}>
         <Box
           component={RouterLink}
           to={`/trader/${trader.address}`}
+          className="podium-profile-link"
           sx={{
             display: 'flex',
             alignItems: 'center',
@@ -101,7 +117,8 @@ export default function Podium({ podium, esgOf, onScoreClick }: Props) {
             minWidth: 0,
             textDecoration: 'none',
             color: 'inherit',
-            '&:hover .podium-trader-name': { textDecoration: 'underline' },
+            outline: 'none',
+            '&::after': { content: '""', position: 'absolute', inset: 0 },
           }}
         >
           <Avatar
@@ -132,7 +149,8 @@ export default function Podium({ podium, esgOf, onScoreClick }: Props) {
 
       {/* 策略配置:這個人押什麼、做多還做空——卡片的主角。ESG 評等接在後面,
           跟表格「策略」欄的排法一致。 */}
-      <Box sx={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 1 }}>
+      {/* 疊在卡片連結上面：圖示的提示（資產名稱、權重）要能滑鼠移上去看。 */}
+      <Box sx={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 1, position: 'relative', zIndex: 1, alignSelf: 'flex-start' }}>
         <AllocationRow allocs={trader.allocs} hasStrategy={trader.hasStrategy} size={26} />
         {esg && <ESGBadge composite={esg.composite} rating={esg.rating} size="sm" />}
       </Box>
@@ -143,7 +161,7 @@ export default function Podium({ podium, esgOf, onScoreClick }: Props) {
           穩不穩」的答案,不再另外畫一條擠成平線的曲線或跟勝率重複的方塊列。 */}
       <Stack direction="row" spacing={1}>
         <Stat
-          label={t.marketplace.scoreBreakdown.returnLabel}
+          label={returnLabel}
           value={fReturnPct(trader.score.returnPct)}
           tone={
             trader.score.returnPct === null
@@ -161,7 +179,7 @@ export default function Podium({ podium, esgOf, onScoreClick }: Props) {
         />
         <Stat
           label={t.marketplace.card.followersLabel}
-          value={String(trader.followerCount)}
+          value={trader.followerCount === null ? '—' : String(trader.followerCount)}
         />
       </Stack>
 
@@ -180,7 +198,7 @@ export default function Podium({ podium, esgOf, onScoreClick }: Props) {
             size="small"
             color={scoreChipColor(trader.score.total)}
             onClick={e => onScoreClick(e.currentTarget, trader)}
-            sx={{ fontWeight: 'bold', fontFamily: MONO, cursor: 'pointer' }}
+            sx={{ fontWeight: 'bold', fontFamily: MONO, cursor: 'pointer', position: 'relative', zIndex: 1 }}
           />
         </Box>
         <Typography
@@ -204,7 +222,7 @@ export default function Podium({ podium, esgOf, onScoreClick }: Props) {
           color="primary"
           component={RouterLink}
           to={`/copy/${trader.address}`}
-          sx={{ textTransform: 'none', fontWeight: 'bold', fontSize: '0.75rem' }}
+          sx={{ textTransform: 'none', fontWeight: 'bold', fontSize: '0.75rem', position: 'relative', zIndex: 1 }}
         >
           {t.marketplace.card.copy}
         </Button>

@@ -10,7 +10,9 @@ import { Bar, Cell, Line, XAxis, YAxis, Tooltip, BarChart, LineChart, CartesianG
 import { t, interpolate } from 'src/locales';
 import StatCard from 'src/components/pepefi/StatCard';
 import { MONO } from 'src/components/pepefi/brandKit';
-import { fRatio, fDrawdown, fSignedPct, type HeroDetail } from 'src/lib/pepefi/heroData';
+import { fUsd, fRatio, fDrawdown, fSignedPct, type HeroDetail } from 'src/lib/pepefi/heroData';
+
+import { barCursor, lineCursor, tooltipProps } from './chartTooltip';
 
 // ----------------------------------------------------------------------
 // 模擬交易者的歷史績效（issue #309）。資料來自 public/data/heroes/<address>.json，
@@ -68,31 +70,40 @@ export default function HeroPerformance({ hero }: { hero: HeroDetail }) {
         </Grid>
       </Grid>
 
-      <Card sx={{ p: 3 }}>
+      {/* 圖表卡片底部留白比一般卡片少一點：X 軸標籤本身已經有空間，再加滿 p: 3 會空一大塊。 */}
+      <Card sx={{ p: 3, pb: 2 }}>
         <Typography variant="subtitle2" sx={{ fontWeight: 'bold', mb: 2 }}>{L.equityTitle}</Typography>
         <Box sx={{ height: 280 }}>
           <ResponsiveContainer width="100%" height="100%">
             <LineChart data={hero.equityCurve} margin={{ top: 4, right: 8, bottom: 0, left: 8 }}>
               <CartesianGrid stroke={theme.palette.divider} strokeDasharray="3 3" />
-              <XAxis dataKey="date" tick={{ fontSize: 11 }} minTickGap={48} />
+              <XAxis dataKey="date" tick={{ fontSize: 11 }} minTickGap={48} height={22} tickMargin={4} />
               <YAxis tick={{ fontSize: 11 }} domain={['auto', 'auto']} width={64} />
-              <Tooltip />
+              <Tooltip
+                {...tooltipProps(theme)}
+                cursor={lineCursor(theme)}
+                formatter={(value) => [`${fUsd(Number(value))} USDC`, L.equityTitle]}
+              />
               <Line type="monotone" dataKey="equity" stroke={theme.palette.primary.main} dot={false} strokeWidth={2} isAnimationActive={false} />
             </LineChart>
           </ResponsiveContainer>
         </Box>
-        <Typography variant="caption" color="text.secondary">{L.equityNote}</Typography>
+        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>{L.equityNote}</Typography>
       </Card>
 
-      <Card sx={{ p: 3 }}>
+      <Card sx={{ p: 3, pb: 2 }}>
         <Typography variant="subtitle2" sx={{ fontWeight: 'bold', mb: 2 }}>{L.monthlyTitle}</Typography>
         <Box sx={{ height: 200 }}>
           <ResponsiveContainer width="100%" height="100%">
             <BarChart data={hero.monthlyReturns} margin={{ top: 4, right: 8, bottom: 0, left: 8 }}>
               <CartesianGrid stroke={theme.palette.divider} strokeDasharray="3 3" vertical={false} />
-              <XAxis dataKey="month" tick={{ fontSize: 11 }} minTickGap={24} />
+              <XAxis dataKey="month" tick={{ fontSize: 11 }} minTickGap={24} height={22} tickMargin={4} />
               <YAxis tick={{ fontSize: 11 }} width={48} unit="%" />
-              <Tooltip />
+              <Tooltip
+                {...tooltipProps(theme)}
+                cursor={barCursor(theme)}
+                formatter={(value) => [fSignedPct(Number(value)), L.monthlyTitle]}
+              />
               <Bar dataKey="returnPct" isAnimationActive={false}>
                 {hero.monthlyReturns.map((m) => (
                   <Cell key={m.month} fill={m.returnPct >= 0 ? up : down} />

@@ -39,7 +39,25 @@ export const marketplace: Catalog['marketplace'] = {
     winRate: 'Win Rate',
     esg: 'ESG',
     actions: 'Actions',
-    insufficientSample: 'Insufficient sample',
+    insufficientSample: 'Small sample',
+    unranked: 'Not enough data to be ranked ({rule})',
+    unrankedRuleHistory: 'trading for less than {days} days',
+    unrankedRuleTrades: 'fewer than {count} closed trades',
+
+    tips: {
+      rank: 'Only traders with enough data get a rank (not ranked: {rule}); the rest are listed at the bottom with "—". The top three are on the podium above.',
+      score: 'A 0–100 composite: return (40) + win rate (25) + stake (20) + reputation (15), minus up to 20 if slashed. Return and win rate cover the last {days} days. Click a score for the breakdown.',
+      strategy: 'The strategy version the trader has published now: assets, direction (↑ long, ↓ short), weights and leverage. Copying takes exactly this version.',
+      totalReturn: 'Change in equity over the whole period ({from} to {to}): final equity ÷ starting capital − 1. Equity includes open positions valued at each day\'s price.',
+      maxDrawdown: 'The largest fall in equity from a previous high during the period. -20% means it once lost a fifth from its peak. Closer to 0 is steadier.',
+      sharpe: 'Risk-adjusted return: the average daily return ÷ the standard deviation of daily returns, scaled to a year by √365. Higher means more return for the same volatility; above 1 is generally considered good, and a negative value means the period lost money on average.',
+      volume: 'Notional value of positions opened in the last {days} days (margin × leverage, USDC).',
+      pnl: 'Realised profit and loss of positions closed in the last {days} days (USDC). Open positions are not included.',
+      winRate: 'Share of positions closed in the last {days} days that made money; the number in brackets is how many closed. Fewer than 5 is marked "Small sample" and is indicative only.',
+      followers: 'People currently copying this trader, each counted once. Those who have unfollowed are not included.',
+      stake: 'USDC the trader has staked in the TraderStake contract. When a copier loses 30% or more, half of that loss is slashed (at most half the stake); ⚠ means the trader has been slashed.',
+      esg: 'Weight-averaged ESG composite (0–100) of the assets in the current strategy. Use the "ESG" button above to show only traders at 60 or more.',
+    },
   },
 
   scoreBreakdown: {
@@ -54,7 +72,7 @@ export const marketplace: Catalog['marketplace'] = {
   podium: {
     hiddenIncomplete: 'Some block ranges could not be read, so the 7-day metrics are incomplete; the podium is withheld until a refresh succeeds.',
     heading: '🏆 Top 3 by Current Sort',
-    noneQualified: 'No trader has 5+ closed trades yet, so there are no podium finishers — they\'re still in the table below.',
+    noneQualified: 'No trader qualifies for a rank yet (not ranked: {rule}), so there are no podium finishers — they\'re still in the table below.',
   },
 
   loadFailed: 'Failed to load:',
@@ -118,6 +136,7 @@ export const marketplace: Catalog['marketplace'] = {
     sortReturn: 'Sort: Total return',
     sortDrawdown: 'Sort: Max drawdown',
     sortSharpe: 'Sort: Sharpe',
+    podiumReturn: 'Return 30d',
     sortVolume: 'Sort: Volume (30d)',
     sortPnl: 'Sort: PnL (30d)',
   },

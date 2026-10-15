@@ -118,9 +118,11 @@ def test_outputs_follow_the_published_schema():
                                  {"asset": "sICLN", "weightBps": 2000, "isLong": True, "leverage": 1}]}}],
     }
     index, details = build_outputs(doc, PRICES)
-    assert (index["schemaVersion"], index["chainId"], index["range"]) == (1, 31337, doc["range"])
+    assert (index["schemaVersion"], index["chainId"], index["range"]) == (2, 31337, doc["range"])
     summary = index["traders"][0]
     assert summary["address"] == OWNER and summary["totalReturnPct"] == 10.4
+    # 排行榜用它判斷「交易了多久」、夠不夠資格列入排名，所以放在索引裡，不只在詳細檔
+    assert summary["activeSince"] == "2024-10-01"
     assert summary["winRatePct"] == 100.0 and summary["closedTrades"] == 1
     # ESG：(53 × 5000 + 80 × 3000 + 81 × 2000) / 10000 = 66.7 → 67
     assert summary["esgScore"] == 67

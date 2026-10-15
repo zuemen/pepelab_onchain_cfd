@@ -32,7 +32,7 @@
     "test:signal-api": "tsx signal-api/src/settlement.test.ts && tsx signal-api/src/unknownReconcile.test.ts && tsx signal-api/src/payoutSafety.test.ts && tsx signal-api/src/benchmarks.test.ts && tsx signal-api/src/candlesCache.test.ts && tsx signal-api/src/facilitatorErrors.test.ts && tsx signal-api/src/ledgerFlow.test.ts && tsx signal-api/src/settlementWorker.test.ts && tsx signal-api/src/exposure.test.ts && tsx signal-api/src/x402DefaultGolden.test.ts && tsx signal-api/src/x402v2.test.ts && tsx signal-api/src/kya.test.ts && tsx signal-api/src/vcStatusStore.test.ts && tsx signal-api/src/settlementMode.test.ts && tsx signal-api/src/referencePrices.test.ts && node --test signal-api/src/bundleFingerprint.test.mjs",
     "test:sdk": "tsx sdk/test/addresses.test.ts && tsx sdk/test/abi.test.ts && tsx sdk/test/read.test.ts && tsx sdk/test/write.test.ts && tsx sdk/test/openapi-schema.test.ts && tsx sdk/test/signalApi.test.ts && tsx sdk/test/vc.test.ts && tsx sdk/test/vcStatus.test.ts && tsx sdk/test/delegation.test.ts && tsx sdk/test/live.test.ts",
     "test:issuer": "tsx issuer/issuer.test.ts",
-    "test:heroes": "tsx heroes/plan.test.ts && tsx heroes/addresses.test.ts",
+    "test:heroes": "tsx heroes/plan.test.ts && tsx heroes/addresses.test.ts && tsx heroes/provider.test.ts",
     "//issuer": "合格投資人 VC 發證服務 CLI（docs/SSI_RWA_ACCESS.md）：npm run issuer -- issue|revoke|verify|submit|init …",
     "issuer": "tsx issuer/cli.ts",
     "test:sdk:live": "tsx sdk/test/live.test.ts --live"

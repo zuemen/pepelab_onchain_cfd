@@ -45,6 +45,8 @@ export const common: Catalog['common'] = {
   dialog: {
     cancel: 'Cancel',
     confirm: 'Confirm',
+    expandList: 'Show all {count}',
+    close: 'Close',
   },
 
   paperTrading: {
@@ -188,7 +190,9 @@ export const common: Catalog['common'] = {
    * 的名字，中文那一半是給讀者的說明。en 版讀者已經看得懂那個英文名字本身，不需要
    * 再翻出第二份說明，所以就是單一個字。
    */
-  rankPrefix: 'RANK',
+  rankPrefix: 'Reputation',
+  rankTooltip: 'From the stake and slashing record: stake ÷ (stake + slashed amount × 5) × 100, so a trader never slashed scores 100. Currently {tier} tier. Not a measure of performance.',
+  rankUnknown: '—',
 
   tier: {
     diamond: 'Diamond',

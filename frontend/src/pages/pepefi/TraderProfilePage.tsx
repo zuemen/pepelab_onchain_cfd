@@ -16,11 +16,16 @@ import { FEATURE_COPY_TRADING } from 'src/lib/pepefi/featureFlags'
 
 // 統計卡：跟單旗標關閉時少了「跟隨者」那張，剩三張各佔三分之一。
 const STAT_SIZE = FEATURE_COPY_TRADING ? { xs: 6, md: 3 } : { xs: 12, sm: 4 }
+// 策略歷史在卡片上只列最新的這麼多版；全部版本開在彈窗裡（ListDialog）。
+const FIRST_VERSIONS = 5
 import { useAddressActivity } from 'src/hooks/useAddressActivity'
 import HeroTrades from 'src/components/pepefi/hero/HeroTrades'
 import HeroRiskStats from 'src/components/pepefi/hero/HeroRiskStats'
 import HeroPerformance from 'src/components/pepefi/hero/HeroPerformance'
 import { fetchHeroDetail, type HeroDetail } from 'src/lib/pepefi/heroData'
+import { followerReaderOf, readActiveFollowers } from 'src/lib/pepefi/activeFollowers'
+import TxProof from 'src/components/pepefi/hero/TxProof'
+import ListDialog, { ExpandListButton } from 'src/components/pepefi/ListDialog'
 
 import Box from '@mui/material/Box';
 import Container from '@mui/material/Container';
@@ -94,11 +99,12 @@ function TraderProfileView() {
 
   const [name,          setName]          = useState('')
   const [registered,    setRegistered]    = useState(false)
-  const [followers,     setFollowers]     = useState<bigint>(0n)
+  const [followers,     setFollowers]     = useState<bigint | null>(null)
   const [followerList,  setFollowerList]  = useState<string[]>([])
   const [allocs,        setAllocs]        = useState<RawAlloc[]>([])
   const [hasStrategy,   setHasStrategy]   = useState(false)
   const [stratHistory,  setStratHistory]  = useState<HistVer[]>([])
+  const [versionsOpen,  setVersionsOpen]  = useState(false)
   const [stakeInfo,     setStakeInfo]     = useState<StakeInfo | null>(null)
   const [repScore,      setRepScore]      = useState<bigint | null>(null)
   const [eligible,      setEligible]      = useState<boolean | null>(null)
@@ -126,6 +132,7 @@ function TraderProfileView() {
   useEffect(() => {
     let cancelled = false
     setHero(null)
+    setVersionsOpen(false)
     if (!traderAddr) return undefined
     void fetchHeroDetail(traderAddr, wallet.chainId).then((detail) => {
       if (!cancelled) setHero(detail)
@@ -149,22 +156,14 @@ function TraderProfileView() {
         if (alive()) setName(traderRaw[1])
         if (alive()) setRegistered(traderRaw[0])
       }
-      try {
-        const fc = await contracts.copyTracker.getFollowerCount(traderAddr)
-        if (alive()) setFollowers(fc as bigint)
-      } catch { /* no follower data */ }
-
-      // followersByTrader (first 10)
-      try {
-        const list: string[] = []
-        for (let i = 0; i < 10; i++) {
-          try {
-            const addr = await contracts.copyTracker.followersByTrader(traderAddr, BigInt(i))
-            list.push(addr as string)
-          } catch { break }
-        }
-        if (alive()) setFollowerList(list)
-      } catch { /* no followers */ }
+      // 目前的跟隨者，不是 getFollowerCount 的「被跟單過幾次」（見 activeFollowers.ts）。
+      // 清單只列還在跟的人、每人一次，前 10 位；讀不到時人數顯示「—」，不是 0。
+      const active = (await readActiveFollowers([traderAddr], followerReaderOf(contracts.copyTracker)))
+        .get(traderAddr.toLowerCase()) ?? null
+      if (alive()) {
+        setFollowers(active === null ? null : BigInt(active.length))
+        setFollowerList(active?.slice(0, 10) ?? [])
+      }
 
       // strategy + history
       let count = 0
@@ -263,6 +262,113 @@ function TraderProfileView() {
     return () => ac.abort()
   }, [contracts, traderAddr, wallet.chainId])
 
+  // 策略歷史的一列（可以點開看資產明細與發布交易）：卡片上的最新幾版與彈窗裡的全部版本共用。
+  const renderVersion = (ver: HistVer) => {
+    // 模擬交易者的績效資料裡有每一版的發布交易；展開時附上，可以向節點讀回確認。
+    const publishTx = hero?.strategies.find(s => s.versionId === ver.versionId)?.tx ?? null
+    return (
+    <Card key={ver.versionId} sx={{ border: '1px solid', borderColor: 'divider', overflow: 'hidden' }}>
+      <Box
+        component="button"
+        onClick={() => toggleVer(ver.versionId)}
+        sx={{
+          width: '100%',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          px: 2,
+          py: 1.5,
+          bgcolor: 'transparent',
+          border: 0,
+          cursor: 'pointer',
+          textAlign: 'left',
+          '&:hover': { bgcolor: 'action.hover' }
+        }}
+      >
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, minWidth: 0, flexGrow: 1 }}>
+          <Typography variant="caption" sx={{ fontFamily: MONO, color: 'text.secondary' }}>
+            {/* 合約的 versionId 從 0 起算；畫面從 1 起算，最新一版的編號才會等於版本數。 */}
+            v{ver.versionId + 1}
+          </Typography>
+          <Typography variant="body2" sx={{ fontWeight: 'bold', color: 'text.primary', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {ver.allocs
+              .map(a =>
+                interpolate(t.traderProfile.history.summaryEntry, {
+                  asset: ASSET_LABEL[a.asset] ?? '?',
+                  side: a.isLong ? t.traderProfile.history.long : t.traderProfile.history.short,
+                  leverage: String(a.leverage),
+                }),
+              )
+              .join(' · ')}
+          </Typography>
+        </Box>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, ml: 2, shrink: 0 }}>
+          <Typography variant="caption" color="text.secondary">
+            {fmtDate(ver.createdAt)}
+          </Typography>
+          <Typography variant="caption" color="text.secondary">
+            {ver.expanded ? '▲' : '▼'}
+          </Typography>
+        </Box>
+      </Box>
+      {ver.expanded && (
+        <Box sx={{ borderTop: '1px solid', borderColor: 'divider', bgcolor: 'background.neutral', px: 2, py: 1.5 }}>
+          <TableContainer>
+            <Table size="small">
+              <TableHead>
+                <TableRow>
+                  {[
+                    t.traderProfile.history.column.asset,
+                    t.traderProfile.history.column.esg,
+                    t.traderProfile.history.column.side,
+                    t.traderProfile.history.column.leverage,
+                    t.traderProfile.history.column.weight,
+                  ].map(h => (
+                    <TableCell key={h} sx={{ color: 'text.secondary', fontWeight: 'bold' }}>{h}</TableCell>
+                  ))}
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {ver.allocs.map((a, idx) => (
+                  <TableRow key={idx}>
+                    <TableCell sx={{ fontFamily: MONO, fontWeight: 'bold', color: 'text.primary' }}>
+                      {ASSET_LABEL[a.asset] ?? '?'}
+                    </TableCell>
+                    <TableCell>
+                      {esg[a.asset] ? (
+                        <ESGBadge composite={esg[a.asset].composite} rating={esg[a.asset].rating} />
+                      ) : (
+                        <Typography variant="caption" color="text.disabled">—</Typography>
+                      )}
+                    </TableCell>
+                    <TableCell sx={{ fontWeight: 'bold', color: a.isLong ? 'success.main' : 'error.main' }}>
+                      {a.isLong ? t.traderProfile.history.longLabel : t.traderProfile.history.shortLabel}
+                    </TableCell>
+                    <TableCell sx={{ fontFamily: MONO }}>{String(a.leverage)}×</TableCell>
+                    <TableCell align="right" sx={{ fontFamily: MONO, fontWeight: 'bold', color: 'text.primary' }}>
+                      {(Number(a.weight) / 100).toFixed(0)}%
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </TableContainer>
+          {publishTx && (
+            <Box sx={{ mt: 1 }}>
+              <TxProof label={t.traderProfile.hero.publishTx} hash={publishTx} provider={wallet.provider} chainId={wallet.chainId} />
+            </Box>
+          )}
+        </Box>
+      )}
+    </Card>
+    )
+  }
+
+  const historyTitle = interpolate(
+    stratHistory.length === 1 ? t.traderProfile.history.titleOne : t.traderProfile.history.titleMany,
+    { count: stratHistory.length },
+  )
+
   if (!traderAddr) return <Box sx={{ p: 4 }}><Typography color="text.secondary">{t.traderProfile.invalidAddress}</Typography></Box>
 
   if (!wallet.isConnected) {
@@ -357,7 +463,7 @@ function TraderProfileView() {
                   {/* 跟隨者數與跟隨者清單跟著 FEATURE_COPY_TRADING 走（商業版預設關）。 */}
                   {FEATURE_COPY_TRADING && (
                   <Typography variant="body2" color="text.secondary">
-                    <Box component="span" sx={{ fontWeight: 'bold', color: 'text.primary' }}>{String(followers)}</Box>{' '}
+                    <Box component="span" sx={{ fontWeight: 'bold', color: 'text.primary' }}>{followers === null ? '—' : String(followers)}</Box>{' '}
                     {followers === 1n
                       ? t.traderProfile.header.followerSingular
                       : t.traderProfile.header.followerPlural}
@@ -408,7 +514,7 @@ function TraderProfileView() {
             </Grid>
             {FEATURE_COPY_TRADING && (
             <Grid size={STAT_SIZE}>
-              <StatCard title={t.traderProfile.stats.followers} value={String(followers)} sub={t.traderProfile.stats.copiers} />
+              <StatCard title={t.traderProfile.stats.followers} value={followers === null ? '—' : String(followers)} sub={t.traderProfile.stats.copiers} />
             </Grid>
             )}
             <Grid size={STAT_SIZE}>
@@ -457,106 +563,20 @@ function TraderProfileView() {
           {/* ─── D. Strategy History ───────────────────────────────── */}
           {stratHistory.length > 0 && (
             <Card sx={{ p: 3, display: 'flex', flexDirection: 'column', gap: 2 }}>
-              <Typography variant="subtitle1" sx={{ fontWeight: 'bold' }}>
-                {interpolate(
-                  stratHistory.length === 1
-                    ? t.traderProfile.history.titleOne
-                    : t.traderProfile.history.titleMany,
-                  { count: stratHistory.length },
+              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 2 }}>
+                <Typography variant="subtitle1" sx={{ fontWeight: 'bold' }}>{historyTitle}</Typography>
+                {stratHistory.length > FIRST_VERSIONS && (
+                  <ExpandListButton count={stratHistory.length} onClick={() => setVersionsOpen(true)} />
                 )}
-              </Typography>
+              </Box>
               <Stack spacing={1.5}>
-                {stratHistory.map(ver => (
-                  <Card key={ver.versionId} sx={{ border: '1px solid', borderColor: 'divider', overflow: 'hidden' }}>
-                    <Box
-                      component="button"
-                      onClick={() => toggleVer(ver.versionId)}
-                      sx={{
-                        width: '100%',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'space-between',
-                        px: 2,
-                        py: 1.5,
-                        bgcolor: 'transparent',
-                        border: 0,
-                        cursor: 'pointer',
-                        textAlign: 'left',
-                        '&:hover': { bgcolor: 'action.hover' }
-                      }}
-                    >
-                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, minWidth: 0, flexGrow: 1 }}>
-                        <Typography variant="caption" sx={{ fontFamily: MONO, color: 'text.secondary' }}>
-                          v{ver.versionId}
-                        </Typography>
-                        <Typography variant="body2" sx={{ fontWeight: 'bold', color: 'text.primary', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                          {ver.allocs
-                            .map(a =>
-                              interpolate(t.traderProfile.history.summaryEntry, {
-                                asset: ASSET_LABEL[a.asset] ?? '?',
-                                side: a.isLong ? t.traderProfile.history.long : t.traderProfile.history.short,
-                                leverage: String(a.leverage),
-                              }),
-                            )
-                            .join(' · ')}
-                        </Typography>
-                      </Box>
-                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, ml: 2, shrink: 0 }}>
-                        <Typography variant="caption" color="text.secondary">
-                          {fmtDate(ver.createdAt)}
-                        </Typography>
-                        <Typography variant="caption" color="text.secondary">
-                          {ver.expanded ? '▲' : '▼'}
-                        </Typography>
-                      </Box>
-                    </Box>
-                    {ver.expanded && (
-                      <Box sx={{ borderTop: '1px solid', borderColor: 'divider', bgcolor: 'background.neutral', px: 2, py: 1.5 }}>
-                        <TableContainer>
-                          <Table size="small">
-                            <TableHead>
-                              <TableRow>
-                                {[
-                                  t.traderProfile.history.column.asset,
-                                  t.traderProfile.history.column.esg,
-                                  t.traderProfile.history.column.side,
-                                  t.traderProfile.history.column.leverage,
-                                  t.traderProfile.history.column.weight,
-                                ].map(h => (
-                                  <TableCell key={h} sx={{ color: 'text.secondary', fontWeight: 'bold' }}>{h}</TableCell>
-                                ))}
-                              </TableRow>
-                            </TableHead>
-                            <TableBody>
-                              {ver.allocs.map((a, idx) => (
-                                <TableRow key={idx}>
-                                  <TableCell sx={{ fontFamily: MONO, fontWeight: 'bold', color: 'text.primary' }}>
-                                    {ASSET_LABEL[a.asset] ?? '?'}
-                                  </TableCell>
-                                  <TableCell>
-                                    {esg[a.asset] ? (
-                                      <ESGBadge composite={esg[a.asset].composite} rating={esg[a.asset].rating} />
-                                    ) : (
-                                      <Typography variant="caption" color="text.disabled">—</Typography>
-                                    )}
-                                  </TableCell>
-                                  <TableCell sx={{ fontWeight: 'bold', color: a.isLong ? 'success.main' : 'error.main' }}>
-                                    {a.isLong ? t.traderProfile.history.longLabel : t.traderProfile.history.shortLabel}
-                                  </TableCell>
-                                  <TableCell sx={{ fontFamily: MONO }}>{String(a.leverage)}×</TableCell>
-                                  <TableCell align="right" sx={{ fontFamily: MONO, fontWeight: 'bold', color: 'text.primary' }}>
-                                    {(Number(a.weight) / 100).toFixed(0)}%
-                                  </TableCell>
-                                </TableRow>
-                              ))}
-                            </TableBody>
-                          </Table>
-                        </TableContainer>
-                      </Box>
-                    )}
-                  </Card>
-                ))}
+                {stratHistory.slice(0, FIRST_VERSIONS).map(renderVersion)}
               </Stack>
+              <ListDialog open={versionsOpen} onClose={() => setVersionsOpen(false)} title={historyTitle}>
+                <Stack spacing={1.5} sx={{ p: 2 }}>
+                  {stratHistory.map(renderVersion)}
+                </Stack>
+              </ListDialog>
             </Card>
           )}
 

@@ -711,7 +711,8 @@ export default function TraderDashboard() {
                 >
                   <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, minWidth: 0, flexGrow: 1 }}>
                     <Typography variant="caption" sx={{ fontFamily: MONO, color: 'text.secondary' }}>
-                      v{ver.versionId}
+                      {/* 合約的 versionId 從 0 起算；畫面從 1 起算，最新一版的編號才會等於版本數。 */}
+                      v{ver.versionId + 1}
                     </Typography>
                     <Typography variant="body2" sx={{ fontWeight: 'bold', color: 'text.primary', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                       {ver.allocs

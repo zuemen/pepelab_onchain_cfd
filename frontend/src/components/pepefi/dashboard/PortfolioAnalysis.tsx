@@ -1,6 +1,6 @@
 import type { ESGInfo } from 'src/hooks/useESG';
 
-import { useMemo } from 'react';
+import { useMemo, Fragment } from 'react';
 
 import Box from '@mui/material/Box';
 import Card from '@mui/material/Card';
@@ -160,21 +160,39 @@ export default function PortfolioAnalysis({ rows, esg }: Props) {
               <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 700, display: 'block', mb: 1.5 }}>
                 {t.portfolio.analysis.byAsset}
               </Typography>
-              <Stack spacing={1.25}>
+              {/* 每一列：標的、ESG 評等、權重長條、百分比。以前標的在最左、百分比在最右，中間空一大塊；
+                  改用長條把權重畫出來，顏色跟上面三項分數同一套（依這一檔的 ESG 分數）。 */}
+              <Box
+                sx={{
+                  display: 'grid',
+                  gridTemplateColumns: 'minmax(56px, auto) auto minmax(0, 1fr) 40px',
+                  columnGap: 1.5,
+                  rowGap: 1.25,
+                  alignItems: 'center',
+                }}
+              >
                 {contributions.map((c) => (
-                  <Stack key={c.asset} direction="row" alignItems="center" justifyContent="space-between">
-                    <Stack direction="row" alignItems="center" spacing={1}>
-                      <Typography sx={{ fontFamily: MONO, fontWeight: 700, fontSize: '0.8125rem' }}>
-                        {c.symbol}
-                      </Typography>
-                      <ESGBadge composite={c.composite} rating={c.rating} size="sm" />
-                    </Stack>
-                    <Typography variant="caption" sx={{ fontFamily: MONO, color: 'text.secondary' }}>
+                  <Fragment key={c.asset}>
+                    <Typography sx={{ fontFamily: MONO, fontWeight: 700, fontSize: '0.8125rem' }}>
+                      {c.symbol}
+                    </Typography>
+                    <ESGBadge composite={c.composite} rating={c.rating} size="sm" />
+                    <LinearProgress
+                      variant="determinate"
+                      value={Math.min(100, Math.max(0, c.weightPct))}
+                      sx={{
+                        height: 6,
+                        borderRadius: 1,
+                        bgcolor: 'action.hover',
+                        '& .MuiLinearProgress-bar': { bgcolor: barColor(c.composite), borderRadius: 1 },
+                      }}
+                    />
+                    <Typography variant="caption" sx={{ fontFamily: MONO, color: 'text.secondary', textAlign: 'right' }}>
                       {c.weightPct.toFixed(0)}%
                     </Typography>
-                  </Stack>
+                  </Fragment>
                 ))}
-              </Stack>
+              </Box>
             </Box>
           )}
         </>

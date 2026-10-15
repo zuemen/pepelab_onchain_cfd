@@ -1,6 +1,6 @@
 import { MONO } from 'src/components/pepefi/brandKit'
 import { useState, useEffect } from 'react'
-import { useParams, useNavigate, Link as RouterLink } from 'react-router'
+import { useParams, useNavigate, useSearchParams, Link as RouterLink } from 'react-router'
 import { parseEther } from 'ethers'
 import { paths } from 'src/routes/paths'
 import { useContracts } from 'src/hooks/useContracts'
@@ -21,6 +21,8 @@ import KYCModal from 'src/components/pepefi/KYCModal'
 import { traderAvatarSrc } from 'src/utils/pepefi-assets'
 import TraderRankBadge from 'src/components/pepefi/TraderRankBadge'
 import { useToast } from 'src/components/pepefi/ToastProvider'
+import { belowMinimum, minimumCopyAmount } from 'src/lib/pepefi/copyGuards'
+import { fetchHeroIndex, heroByAddress } from 'src/lib/pepefi/heroData'
 
 import Box from '@mui/material/Box';
 import Container from '@mui/material/Container';
@@ -83,6 +85,8 @@ const asTx = (tx: unknown): TxResp => tx as TxResp
 export default function CopyPage() {
   const wallet = usePepefiWallet()
   const { traderAddress } = useParams<{ traderAddress: string }>()
+  // 從投資組合「更新到最新版」過來時，金額已經帶在 ?amount= 上。
+  const [searchParams] = useSearchParams()
   const navigate = useNavigate()
   const contracts = useContracts(wallet.provider, wallet.signer, wallet.chainId)
   // VC 准入登錄沒有 submitKYC：「送出 KYC」改為前往憑證頁。
@@ -95,11 +99,16 @@ export default function CopyPage() {
   const [loadError,        setLoadError]        = useState<string | null>(null)
   const [stratAllocs,      setStratAllocs]      = useState<AllocWithPrice[]>([])
   const [stakeData,        setStakeData]        = useState<TraderStakeData | null>(null)
-  const [totalMargin,      setTotalMargin]      = useState('1000')
+  const [totalMargin,      setTotalMargin]      = useState(searchParams.get('amount') ?? '1000')
   const [approved,         setApproved]         = useState(false)
   const [busy,             setBusy]             = useState<Record<string, boolean>>({})
   const [preview,          setPreview]          = useState<CopyPreview | null>(null)
   const [showKYCModal,     setShowKYCModal]     = useState(false)
+  // PerpetualExchange.MIN_MARGIN：每一檔部位的最低保證金。讀不到就用合約目前的常數。
+  const [minMargin,        setMinMargin]        = useState<bigint>(10n * 10n ** 18n)
+  // 被跟單的對象是模擬交易者（issue #309）。讀的是靜態檔，不依賴任何鏈上讀取；
+  // 這條鏈沒有績效資料時維持 false。
+  const [isSimulated,      setIsSimulated]      = useState(false)
 
   const { isVerified: isKYCVerified, isPending: kycPending, refetch: refetchKYC } = useKYC(
     contracts?.kycRegistry ?? null,
@@ -175,6 +184,21 @@ export default function CopyPage() {
 
   useEffect(() => { setApproved(false) }, [totalMargin])
 
+  useEffect(() => {
+    if (!contracts) return
+    void (contracts.exchange.MIN_MARGIN() as Promise<bigint>).then(setMinMargin).catch(() => undefined)
+  }, [contracts])
+
+  useEffect(() => {
+    let cancelled = false
+    setIsSimulated(false)
+    if (!traderAddress) return undefined
+    void fetchHeroIndex(wallet.chainId).then((index) => {
+      if (!cancelled) setIsSimulated(!!index && heroByAddress(index).has(traderAddress.toLowerCase()))
+    })
+    return () => { cancelled = true }
+  }, [traderAddress, wallet.chainId])
+
   const onchainRwa     = useOnchainRwaFlags(contracts?.exchange, stratAllocs.map((a) => a.asset))
   const hasKYCRequired = stratAllocs.some(a => kycGateApplies(ASSET_META[a.asset]?.regulated, onchainRwa[a.asset]))
   const kycBlocked     = hasKYCRequired && !isKYCVerified
@@ -225,6 +249,10 @@ export default function CopyPage() {
     })()
     return () => { cancelled = true }
   }, [contracts, traderAddress, totalBig])
+
+  // 照比例拆完有一檔低於最低保證金，followTrader 會整筆 revert——送出前就擋下，並講出最低要多少。
+  const tooSmall = preview !== null && belowMinimum(preview.portions, minMargin)
+  const minAmount = preview && tooSmall ? minimumCopyAmount(totalBig, preview.portions, minMargin) : null
 
   const doApprove = async () => {
     if (!contracts) return
@@ -356,6 +384,12 @@ export default function CopyPage() {
           </Typography>
         )}
       </Card>
+
+      {isSimulated && (
+        <Alert severity="info" variant="outlined">
+          {t.marketplace.hero.disclosure}
+        </Alert>
+      )}
 
       {/* Strategy allocations */}
       <Card sx={{ p: 3 }}>
@@ -608,6 +642,18 @@ export default function CopyPage() {
           {t.copy.confirm.title}
         </Typography>
 
+        <Alert severity="info" variant="outlined">
+          {t.copy.confirm.snapshotNote}
+        </Alert>
+
+        {tooSmall && (
+          <Alert severity="warning">
+            {interpolate(t.copy.amount.belowMinimum, {
+              amount: minAmount === null ? '—' : (minAmount / 10n ** 18n).toString(),
+            })}
+          </Alert>
+        )}
+
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
           <Chip
             label={approved ? '✓' : '1'}
@@ -683,7 +729,7 @@ export default function CopyPage() {
             variant={approved ? 'contained' : 'outlined'}
             color={approved ? 'success' : 'inherit'}
             onClick={() => void doApprove()}
-            disabled={approved || busy['approve'] || !totalMargin || !hasStrategy || kycBlocked}
+            disabled={approved || busy['approve'] || !totalMargin || !hasStrategy || kycBlocked || tooSmall}
             sx={{ flexGrow: 1 }}
           >
             {busy['approve'] ? t.copy.confirm.approving : approved ? t.copy.confirm.approved : t.copy.confirm.approveCta}
@@ -696,7 +742,7 @@ export default function CopyPage() {
             disabled={
               !hasStrategy || !approved || busy['follow'] || stratAllocs.length === 0 ||
               (preview !== null && preview.marginForPositions === 0n) ||
-              kycBlocked || staleBlocked
+              kycBlocked || staleBlocked || tooSmall
             }
             title={staleNotice ?? undefined}
             sx={{ flexGrow: 1 }}

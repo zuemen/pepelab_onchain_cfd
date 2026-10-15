@@ -164,6 +164,8 @@ export const portfolio = {
     closed: '已平倉',
     halted: '{asset} 市場目前暫停（Halted），暫時無法平倉。',
     copyManaged: '此部位屬於進行中的跟單，請在上方「跟單部位」取消跟單以一併平倉。',
+    /** 平倉欄的短標籤；完整說明（copyManaged）放在滑鼠移上去的提示。 */
+    copyManagedShort: '跟單中',
     leftover: '此為先前跟單留下的部位，可直接平倉。',
   },
 
@@ -214,6 +216,15 @@ export const portfolio = {
     noCopyPositions: '無跟單部位',
 
     copyPositions: '跟單部位',
+    copyOutdated: '策略已更新',
+    copyOutdatedHint: '交易者發布了新版策略。你的跟單仍是舊版，不會自動調整。',
+    copyRefresh: '更新到最新版',
+    copyRefreshing: '更新中…',
+    copyRefreshStep: '取消舊的跟單、把取回的 {amount} USDC 提回錢包，接著到跟單頁用同樣金額跟最新版。',
+    stopLossNone: '不提醒',
+    stopLossOption: '虧 {pct}%',
+    stopLossReached: '已達停損',
+    stopLossHint: '停損提醒只存在這個瀏覽器，不會自動平倉；到了請自己按「取消跟單」。',
     notCopyingAnyone: '你尚未跟單任何人。',
     browseTraders: '瀏覽交易者 →',
     copyColumn: {
@@ -222,6 +233,7 @@ export const portfolio = {
       initial: '初始金額',
       current: '目前金額',
       return: '報酬率',
+      stopLoss: '停損提醒',
       actions: '操作',
     },
     unfollow: '取消跟隨',
@@ -232,7 +244,8 @@ export const portfolio = {
     openCount: '{count} 筆未平倉 · 手動 + 跟單',
     openCountNoCopy: '{count} 筆未平倉',
     noOpenPositions: '無未平倉部位。',
-    total: '總計',
+    /** 未平倉部位上方總計卡片的標題，label 是欄位名稱（價值、未實現 PnL…）。 */
+    totalOf: '{label}總計',
 
     // issue #101：Simple Mode 的說法。這些部位是既有的（可能在 Expert 開的），
     // Simple Mode 仍要能看到、平掉它們，只是不用交易桌的字。

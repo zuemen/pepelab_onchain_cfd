@@ -18,6 +18,8 @@ import {
   cmpNullableBigDesc,
   matchesSearch,
   makeTraderComparator,
+  isRankEligible,
+  rankLeaderboard,
   type TraderCard,
   type TraderRawInput,
   type TraderEventAggregates,
@@ -482,6 +484,7 @@ describe('sorting by the simulated-trader figures', () => {
     hero: {
       address, name: address, rule: 'buy_hold', totalReturnPct, maxDrawdownPct, sharpe,
       winRatePct: null, closedTrades: 0, esgScore: null, window7d: window, window30d: window, sparkline: [],
+      activeSince: '2024-10-01',
     },
   })
   const steady = withHero('0xa', 10, 5, 2.0)
@@ -509,5 +512,75 @@ describe('sorting by the simulated-trader figures', () => {
     const losing = withHero('0xd', -20, 50, -1.5)
     expect([plain, losing].sort(makeTraderComparator('return', () => null)).map((t) => t.address)).toEqual(['0xd', '0xc'])
     expect([plain, losing].sort(makeTraderComparator('sharpe', () => null)).map((t) => t.address)).toEqual(['0xd', '0xc'])
+  })
+})
+
+// 先篩選、再排名（參考 Bybit 跟單排行榜的兩階段做法）：資料不足的人不佔名次，
+// 所以領獎台永遠是名次 1–3、表格從第 4 名接著排，不重複也不跳號。
+describe('ranking', () => {
+  const window = { pnlUsd: 0, marginUsd: 0, volumeUsd: 0, wins: 0, trades: 0 }
+  const card = (address: string, trades: number): TraderCard => {
+    const built = buildTraderCard(
+      { address, displayName: address, allocs: [], followerCount: 0n, reputation: null, stake: null, totalSlashed: null },
+      emptyAggregates,
+    )
+    return { ...built, trades, score: { ...built.score, insufficientSample: trades < 5 } }
+  }
+  const hero = (address: string, activeSince: string | null): TraderCard => ({
+    ...card(address, 0),
+    hero: {
+      address, name: address, rule: 'buy_hold', totalReturnPct: 0, maxDrawdownPct: 0, sharpe: 0,
+      winRatePct: null, closedTrades: 0, esgScore: null, window7d: window, window30d: window, sparkline: [],
+      activeSince,
+    },
+  })
+
+  describe('isRankEligible', () => {
+    it('with performance data, counts how long the trader has traded, up to the end of the data', () => {
+      // 買入持有的人兩年幾乎不平倉，用「最近平倉幾筆」判斷會把他誤判成資料不足
+      expect(isRankEligible(hero('0xa', '2024-10-01'), '2026-10-13')).toBe(true)
+      expect(isRankEligible(hero('0xa', '2026-08-14'), '2026-10-13')).toBe(true) // 剛好 60 天
+      expect(isRankEligible(hero('0xa', '2026-08-15'), '2026-10-13')).toBe(false) // 59 天
+      expect(isRankEligible(hero('0xa', null), '2026-10-13')).toBe(false)
+    })
+
+    it('without performance data, needs enough closed trades', () => {
+      expect(isRankEligible(card('0xa', 5), null)).toBe(true)
+      expect(isRankEligible(card('0xa', 4), null)).toBe(false)
+      // 這條鏈有資料、但這位不在資料裡（例如自己註冊的交易者）
+      expect(isRankEligible(card('0xa', 4), '2026-10-13')).toBe(false)
+    })
+  })
+
+  describe('rankLeaderboard', () => {
+    const sorted = ['0xa', '0xb', '0xc', '0xd', '0xe'].map((a) => card(a, 5))
+    const eligible = (c: TraderCard) => c.address !== '0xb'
+
+    it('fills the podium with ranks 1–3 and continues the table from 4, with no gaps', () => {
+      const result = rankLeaderboard(sorted, eligible, 3)
+      expect(result.podium.map((c) => c.address)).toEqual(['0xa', '0xc', '0xd'])
+      expect(result.rows.map((c) => c.address)).toEqual(['0xe'])
+      expect([...result.rankOf.entries()]).toEqual([['0xa', 1], ['0xc', 2], ['0xd', 3], ['0xe', 4]])
+    })
+
+    it('keeps traders without enough data out of the ranking, in sort order, after everyone ranked', () => {
+      const result = rankLeaderboard(sorted, eligible, 3)
+      expect(result.unranked.map((c) => c.address)).toEqual(['0xb'])
+      expect(result.rankOf.has('0xb')).toBe(false)
+    })
+
+    it('puts everyone ranked in the table when the podium is not shown', () => {
+      const result = rankLeaderboard(sorted, eligible, 0)
+      expect(result.podium).toEqual([])
+      expect(result.rows.map((c) => c.address)).toEqual(['0xa', '0xc', '0xd', '0xe'])
+      expect(result.rankOf.get('0xa')).toBe(1)
+    })
+
+    it('shows a shorter podium when fewer than three are ranked', () => {
+      const result = rankLeaderboard(sorted, (c) => c.address === '0xc', 3)
+      expect(result.podium.map((c) => c.address)).toEqual(['0xc'])
+      expect(result.rows).toEqual([])
+      expect(result.unranked.map((c) => c.address)).toEqual(['0xa', '0xb', '0xd', '0xe'])
+    })
   })
 })

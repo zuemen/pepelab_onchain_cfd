@@ -20,6 +20,14 @@ import { t, interpolate } from 'src/locales';
 import { ASSET_LABEL } from 'src/lib/pepefi/assetMeta';
 import { prettyError } from 'src/lib/pepefi/errorMessages';
 import {
+  isOutdated,
+  readStopLoss,
+  writeStopLoss,
+  refreshCopyPath,
+  stopLossReached,
+  STOP_LOSS_CHOICES,
+} from 'src/lib/pepefi/copyGuards';
+import {
   isPriced,
   totalPnl,
   totalValue,
@@ -77,7 +85,10 @@ import TableBody from '@mui/material/TableBody';
 import TableRow from '@mui/material/TableRow';
 import TableCell from '@mui/material/TableCell';
 import TextField from '@mui/material/TextField';
+import Select from '@mui/material/Select';
+import MenuItem from '@mui/material/MenuItem';
 import { Icon } from '@iconify/react';
+import { alpha } from '@mui/material/styles';
 import { useToast } from 'src/components/pepefi/ToastProvider'
 
 // ── Config ──────────────────────────────────────────────────────────────────
@@ -107,6 +118,9 @@ interface CopyRec {
   currentValue:  bigint;    // sum of getPositionValue for all positionIds
   /** 這筆 active 跟單底下的部位——平倉按鈕據此判斷哪些部位要走「取消跟單」。 */
   positionIds:   bigint[];
+  versionId:     bigint;
+  /** 交易者目前發布過幾版（getStrategyCount）；讀不到時為 null，就不標示「已更新」。 */
+  strategyCount: bigint | null;
 }
 
 /** 見 lib/pepefi/positionPnl.ts：終端機與這頁共用同一個讀取與損益定義。 */
@@ -274,6 +288,19 @@ export default function PortfolioPage() {
 
   const setLoad = (k: string, v: boolean) => setBusy(p => ({ ...p, [k]: v }));
 
+  // 每筆跟單的停損提醒比例。只存在這個瀏覽器（見 copyGuards），不是鏈上狀態。
+  const [stopLoss, setStopLoss] = useState<Record<number, number | null>>({});
+  useEffect(() => {
+    if (!wallet.address) return;
+    const account = wallet.address;
+    setStopLoss(Object.fromEntries(copyRecs.map(r => [r.index, readStopLoss(account, r.index)])));
+  }, [copyRecs, wallet.address]);
+  const changeStopLoss = (index: number, value: number | null) => {
+    if (!wallet.address) return;
+    writeStopLoss(wallet.address, index, value);
+    setStopLoss(prev => ({ ...prev, [index]: value }));
+  };
+
   // ── Fetch ─────────────────────────────────────────────────────────────────
   const fetchAll = useCallback(async () => {
     if (!contracts || !wallet.address) {
@@ -298,6 +325,13 @@ export default function PortfolioPage() {
           } catch { nameMap[ta] = ''; }
         })
       );
+      const countMap: Record<string, bigint | null> = {};
+      await Promise.all(
+        uniqueTraders.map(async ta => {
+          try { countMap[ta] = (await contracts.registry.getStrategyCount(ta)) as bigint; }
+          catch { countMap[ta] = null; }
+        })
+      );
 
       const getVal = async (id: bigint): Promise<bigint> => {
         try { return (await contracts.exchange.getPositionValue(id)) as bigint; }
@@ -316,6 +350,8 @@ export default function PortfolioPage() {
             copiedAt:      rec.copiedAt,
             currentValue:  vals.reduce((s, v) => s + v, 0n),
             positionIds:   [...rec.positionIds],
+            versionId:     rec.versionId,
+            strategyCount: countMap[rec.trader] ?? null,
           };
         })
       );
@@ -402,6 +438,31 @@ export default function PortfolioPage() {
     } finally { setLoad(key, false); }
   };
 
+  // 「更新到最新版」：合約不做持續跟隨，換版本就是取消舊的、重新跟一次。取消跟單後
+  // 取回的錢回到交易所的可用保證金，不是錢包；跟單合約是從錢包扣款，所以要先提回錢包。
+  const doRefreshCopy = async (rec: CopyRec) => {
+    if (!contracts || !wallet.address) return;
+    const blocked = unfollowStaleNotice(rec.index);
+    if (blocked) { notify(blocked, false); return; }
+    const key = `refresh_${rec.index}`;
+    setLoad(key, true);
+    try {
+      const before = (await contracts.exchange.freeMargin(wallet.address)) as bigint;
+      await asTx(await contracts.copyTracker.unfollowAndCloseAll(BigInt(rec.index))).wait();
+      const after = (await contracts.exchange.freeMargin(wallet.address)) as bigint;
+      const returned = after > before ? after - before : 0n;
+      if (returned > 0n) {
+        const tx = asTx(await contracts.exchange.withdrawMargin(returned));
+        await tx.wait();
+        notify(interpolate(t.portfolio.page.copyRefreshStep, { amount: f18(returned) }), true, tx.hash);
+      }
+      navigate(refreshCopyPath(rec.trader, returned));
+    } catch (e) {
+      notify(prettyError(e), false);
+      await fetchAll();
+    } finally { setLoad(key, false); }
+  };
+
   // 自己的部位直接在這裡平倉。SHOW_PERPETUALS 關閉時終端機沒有入口，這是使用者
   // 唯一看得到、按得到的平倉路徑。送出前先檢查價格新鮮度與 AssetMode（新版合約
   // 才有；舊合約讀不到就略過），兩者在鏈上都會 revert，先擋才能把原因講清楚。
@@ -456,17 +517,19 @@ export default function PortfolioPage() {
   const renderCloseCell = (row: PosRow) => {
     const availability = closeAvailability(row, activeCopyPositionIds);
     if (availability === 'managed') {
+      // 跟單開的部位不能單獨平倉。以前把整句說明塞在這一格，折成好幾行、每一列都被撐得很高；
+      // 改成一個短標籤，完整說明放在滑鼠移上去的提示。
       return (
-        <TableCell align="right" sx={{ maxWidth: 220 }}>
-          <Typography variant="caption" color="text.secondary" sx={{ display: 'block', whiteSpace: 'normal' }}>
-            {t.portfolio.close.copyManaged}
-          </Typography>
+        <TableCell sx={{ whiteSpace: 'nowrap' }}>
+          <MuiTooltip title={t.portfolio.close.copyManaged}>
+            <Chip size="small" variant="outlined" label={t.portfolio.close.copyManagedShort} sx={{ cursor: 'help', fontSize: '0.75rem' }} />
+          </MuiTooltip>
         </TableCell>
       );
     }
     const busyNow = !!busy[`close_${String(row.id)}`];
     return (
-      <TableCell align="right" sx={{ whiteSpace: 'nowrap' }}>
+      <TableCell sx={{ whiteSpace: 'nowrap' }}>
         <Button
           size="small"
           variant="outlined"
@@ -802,14 +865,16 @@ export default function PortfolioPage() {
               <TableHead>
                 <TableRow sx={{ bgcolor: 'background.neutral' }}>
                   {([
-                    { label: t.portfolio.page.copyColumn.trader,   right: false },
-                    { label: t.portfolio.page.copyColumn.copiedAt, right: false },
-                    { label: t.portfolio.page.copyColumn.initial,  right: true },
-                    { label: t.portfolio.page.copyColumn.current,  right: true },
-                    { label: t.portfolio.page.copyColumn.return,   right: true },
-                    { label: t.portfolio.page.copyColumn.actions,  right: true },
-                  ]).map(({ label, right }) => (
-                    <TableCell key={label} sx={{ color: 'text.secondary', fontWeight: 'bold', fontSize: '0.75rem', py: 1.5, textAlign: right ? 'right' : 'left' }}>
+                    // 所有欄位一律靠左，標題與內容對齊同一邊（簡單與專家模式共用這張表）。
+                    t.portfolio.page.copyColumn.trader,
+                    t.portfolio.page.copyColumn.copiedAt,
+                    t.portfolio.page.copyColumn.initial,
+                    t.portfolio.page.copyColumn.current,
+                    t.portfolio.page.copyColumn.return,
+                    t.portfolio.page.copyColumn.stopLoss,
+                    t.portfolio.page.copyColumn.actions,
+                  ]).map(label => (
+                    <TableCell key={label} sx={{ color: 'text.secondary', fontWeight: 'bold', fontSize: '0.75rem', py: 1.5, whiteSpace: 'nowrap' }}>
                       {label}
                     </TableCell>
                   ))}
@@ -820,8 +885,22 @@ export default function PortfolioPage() {
                   const unfKey = `unfollow_${rec.index}`;
                   // M1：一鍵平掉所有跟單倉位，任何一檔價格過期整筆都會 revert。
                   const unfStale = unfollowStaleNotice(rec.index);
+                  // 「更新到最新版」會帶到 /copy 重新跟單；跟單旗標關閉時那條路由被收起，這組標示也不出現。
+                  const outdated = FEATURE_COPY_TRADING && rec.strategyCount !== null && isOutdated(rec.versionId, rec.strategyCount);
+                  const refreshKey = `refresh_${rec.index}`;
+                  const stopHit = stopLossReached(rec.initialAmount, rec.currentValue, stopLoss[rec.index] ?? null);
                   return (
-                    <TableRow key={rec.index} sx={{ '&:hover': { bgcolor: 'action.hover' } }}>
+                    <TableRow
+                      key={rec.index}
+                      sx={outdated
+                        // 策略已更新：整列淡橘底、左側一條橘線，一眼就看得出哪一筆要處理。
+                        ? {
+                            bgcolor: theme => alpha(theme.palette.warning.main, 0.08),
+                            '& > td:first-of-type': { boxShadow: theme => `inset 4px 0 0 ${theme.palette.warning.main}` },
+                            '&:hover': { bgcolor: theme => alpha(theme.palette.warning.main, 0.12) },
+                          }
+                        : { '&:hover': { bgcolor: 'action.hover' } }}
+                    >
                       <TableCell>
                         <Typography variant="subtitle2" sx={{ fontWeight: 'bold' }}>
                           {rec.traderName || SHORT_ADDR(rec.trader)}
@@ -829,26 +908,73 @@ export default function PortfolioPage() {
                         <Typography variant="caption" sx={{ fontFamily: MONO, color: 'text.secondary', display: 'block', mt: 0.2 }}>
                           {SHORT_ADDR(rec.trader)}
                         </Typography>
+                        {outdated && (
+                          <MuiTooltip title={t.portfolio.page.copyOutdatedHint}>
+                            <Chip
+                              size="small"
+                              color="warning"
+                              icon={<Icon icon="solar:danger-triangle-bold" width={14} />}
+                              label={t.portfolio.page.copyOutdated}
+                              sx={{ mt: 0.75, fontWeight: 'bold', fontSize: '0.75rem' }}
+                            />
+                          </MuiTooltip>
+                        )}
                       </TableCell>
-                      <TableCell sx={{ color: 'text.secondary', fontSize: '0.75rem' }}>
+                      <TableCell sx={{ color: 'text.secondary', fontSize: '0.75rem', whiteSpace: 'nowrap' }}>
                         {fDate(rec.copiedAt)}
                       </TableCell>
-                      <TableCell sx={{ fontFamily: MONO, textAlign: 'right' }}>
+                      <TableCell sx={{ fontFamily: MONO }}>
                         {f18(rec.initialAmount)}
                       </TableCell>
-                      <TableCell sx={{ fontFamily: MONO, textAlign: 'right', fontWeight: 'bold' }}>
+                      <TableCell sx={{ fontFamily: MONO, fontWeight: 'bold' }}>
                         {f18(rec.currentValue)}
                       </TableCell>
-                      <TableCell sx={{ fontFamily: MONO, textAlign: 'right', fontWeight: 'bold', color: returnColor(rec.initialAmount, rec.currentValue) }}>
+                      <TableCell sx={{ fontFamily: MONO, fontWeight: 'bold', color: returnColor(rec.initialAmount, rec.currentValue) }}>
                         {returnPct(rec.initialAmount, rec.currentValue)}
+                        {stopHit && (
+                          <Box>
+                            <Chip size="small" color="error" label={t.portfolio.page.stopLossReached} sx={{ mt: 0.5, height: 20, fontSize: '0.6875rem' }} />
+                          </Box>
+                        )}
                       </TableCell>
-                      <TableCell sx={{ textAlign: 'right' }}>
+                      <TableCell>
+                        <MuiTooltip title={t.portfolio.page.stopLossHint}>
+                          <Select<number | ''>
+                            size="small"
+                            value={stopLoss[rec.index] ?? ''}
+                            displayEmpty
+                            onChange={e => changeStopLoss(rec.index, e.target.value === '' ? null : Number(e.target.value))}
+                            sx={{ minWidth: 104, fontSize: '0.8125rem' }}
+                          >
+                            <MenuItem value="">{t.portfolio.page.stopLossNone}</MenuItem>
+                            {STOP_LOSS_CHOICES.map(pct => (
+                              <MenuItem key={pct} value={pct}>{interpolate(t.portfolio.page.stopLossOption, { pct })}</MenuItem>
+                            ))}
+                          </Select>
+                        </MuiTooltip>
+                      </TableCell>
+                      <TableCell sx={{ whiteSpace: 'nowrap' }}>
+                        {outdated && (
+                          <Button
+                            size="small"
+                            variant="contained"
+                            color="warning"
+                            startIcon={<Icon icon="solar:refresh-bold" width={16} />}
+                            onClick={() => void doRefreshCopy(rec)}
+                            disabled={busy[refreshKey] || busy[unfKey] || !!unfStale}
+                            title={unfStale ?? undefined}
+                            sx={{ mr: 1, fontWeight: 'bold' }}
+                          >
+                            {busy[refreshKey] ? t.portfolio.page.copyRefreshing : t.portfolio.page.copyRefresh}
+                          </Button>
+                        )}
+                        {/* 已達停損時實心，讓它在需要的時候最醒目。 */}
                         <Button
                           size="small"
-                          variant="contained"
+                          variant={stopHit ? 'contained' : 'outlined'}
                           color="error"
                           onClick={() => void doUnfollow(rec.index)}
-                          disabled={busy[unfKey] || !!unfStale}
+                          disabled={busy[unfKey] || busy[refreshKey] || !!unfStale}
                           title={unfStale ?? undefined}
                           sx={{ fontWeight: 'bold' }}
                         >
@@ -871,7 +997,7 @@ export default function PortfolioPage() {
           的空表——而他在這個版本裡根本沒有辦法開出部位。 */}
       {(SHOW_PERPETUALS || positions.length > 0) && (
       <Card sx={{ border: '1px solid', borderColor: 'divider', overflow: 'hidden' }}>
-        <Box sx={{ px: 3, py: 2, borderBottom: '1px solid', borderColor: 'divider', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <Box sx={{ px: 3, py: 2, borderBottom: '1px solid', borderColor: 'divider', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 1.5 }}>
           <Typography variant="subtitle2" sx={{ fontWeight: 'bold', color: 'text.secondary', textTransform: 'uppercase', letterSpacing: 1 }}>
             {mode === 'simple' ? t.portfolio.page.openPositionsSimple : t.portfolio.page.openPositions}
           </Typography>
@@ -883,6 +1009,52 @@ export default function PortfolioPage() {
               : interpolate(FEATURE_COPY_TRADING ? t.portfolio.page.openCount : t.portfolio.page.openCountNoCopy, { count: positions.length })}
           </Typography>
         </Box>
+
+        {/* 總計放在表格上方的一排小卡片：專家模式的表格要橫向捲動，總計放在最後一列時「總計」在最左、
+            數字在最右，捲到哪邊都只看得到一半；擠在標題列又太擠。簡單模式只有價值與損益兩項，
+            用自己的欄位名稱（columnLabelForMode）。 */}
+        {positions.length > 0 && (
+          <Box
+            sx={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+              gap: 1.5,
+              px: 3,
+              py: 2,
+              borderBottom: '1px solid',
+              borderColor: 'divider',
+            }}
+          >
+            {[
+              {
+                label: mode === 'simple' ? columnLabelForMode('value', 'simple') : t.portfolio.column.value,
+                value: positionsValueTotal === null ? '—' : `${f18(positionsValueTotal)} ${STABLE_LABEL}`,
+                color: 'text.primary',
+              },
+              {
+                label: mode === 'simple' ? columnLabelForMode('unrealizedPnl', 'simple') : t.portfolio.column.unrealizedPnl,
+                value: unrealisedPnl === null ? '—' : fPnL(unrealisedPnl),
+                color: pnlColor(unrealisedPnl),
+              },
+              ...(mode === 'expert'
+                ? [{
+                    label: t.portfolio.column.accruedFunding,
+                    value: fundingTotal === null ? '—' : fPnL(-fundingTotal),
+                    color: fundingTotal === null ? 'text.secondary' : fundingTotal < 0n ? 'success.main' : 'error.main',
+                  }]
+                : []),
+            ].map(card => (
+              <Box key={card.label} sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 1.5, px: 2, py: 1.25, bgcolor: 'background.neutral' }}>
+                <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+                  {interpolate(t.portfolio.page.totalOf, { label: card.label })}
+                </Typography>
+                <Typography sx={{ fontFamily: MONO, fontWeight: 'bold', fontSize: '1.0625rem', color: card.color, whiteSpace: 'nowrap' }}>
+                  {card.value}
+                </Typography>
+              </Box>
+            ))}
+          </Box>
+        )}
 
         {positionsUnread > 0 && (
           <Alert severity="warning" sx={{ mx: 2, mb: 1 }}>
@@ -906,7 +1078,7 @@ export default function PortfolioPage() {
                       {columnLabelForMode(key, 'simple')}
                     </TableCell>
                   ))}
-                  <TableCell align="right" sx={{ color: 'text.secondary', fontWeight: 'bold', fontSize: '0.75rem', py: 1.5 }}>
+                  <TableCell sx={{ color: 'text.secondary', fontWeight: 'bold', fontSize: '0.75rem', py: 1.5 }}>
                     {t.portfolio.close.column}
                   </TableCell>
                 </TableRow>
@@ -919,18 +1091,6 @@ export default function PortfolioPage() {
                   </TableRow>
                 ))}
               </TableBody>
-              <tfoot style={{ borderTop: '1px solid rgba(255,255,255,0.08)' }}>
-                <TableRow sx={{ bgcolor: 'background.neutral' }}>
-                  <TableCell colSpan={2} sx={{ fontWeight: 'bold', color: 'text.primary' }}>{t.portfolio.page.total}</TableCell>
-                  <TableCell sx={{ fontFamily: MONO, fontWeight: 'bold', color: 'text.primary' }}>
-                    {positionsValueTotal === null ? '—' : f18(positionsValueTotal)}
-                  </TableCell>
-                  <TableCell sx={{ fontFamily: MONO, fontWeight: 'bold', color: pnlColor(unrealisedPnl) }}>
-                    {unrealisedPnl === null ? '—' : fPnL(unrealisedPnl)}
-                  </TableCell>
-                  <TableCell />
-                </TableRow>
-              </tfoot>
             </Table>
           </TableContainer>
         ) : (
@@ -967,6 +1127,8 @@ export default function PortfolioPage() {
                         fontWeight: 'bold',
                         fontSize: '0.75rem',
                         py: 1.5,
+                        // 欄位多，不讓標題被擠到一個字一行（「槓桿」「累計資金費」）；放不下時表格自己橫向捲動。
+                        whiteSpace: 'nowrap',
                         ...(hint ? { cursor: 'help', textDecoration: 'underline dotted', textUnderlineOffset: 3 } : {}),
                       }}
                     >
@@ -1032,34 +1194,19 @@ export default function PortfolioPage() {
                       ) : SHORT_ADDR(row.copiedFrom)}
                     </TableCell>
                     )}
-                    <TableCell sx={{ fontFamily: MONO, fontWeight: 'bold', fontSize: '0.8125rem', color: pnlColor(row.unrealizedPnL) }}>
+                    <TableCell sx={{ fontFamily: MONO, fontWeight: 'bold', fontSize: '0.8125rem', whiteSpace: 'nowrap', color: pnlColor(row.unrealizedPnL) }}>
                       {row.unrealizedPnL === null ? <NoFigure status={row.status} /> : fPnL(row.unrealizedPnL)}
                     </TableCell>
-                    <TableCell sx={{ fontFamily: MONO, fontSize: '0.75rem', color: row.accruedFunding === null || row.accruedFunding === 0n ? 'text.secondary' : row.accruedFunding < 0n ? 'success.main' : 'error.main' }}>
+                    <TableCell sx={{ fontFamily: MONO, fontSize: '0.75rem', whiteSpace: 'nowrap', color: row.accruedFunding === null || row.accruedFunding === 0n ? 'text.secondary' : row.accruedFunding < 0n ? 'success.main' : 'error.main' }}>
                       {row.accruedFunding === null || row.accruedFunding === 0n ? '—' : fPnL(-row.accruedFunding)}
                     </TableCell>
-                    <TableCell sx={{ fontFamily: MONO, fontWeight: 'bold', fontSize: '0.8125rem', color: pnlColor(row.unrealizedPnL) }}>
+                    <TableCell sx={{ fontFamily: MONO, fontWeight: 'bold', fontSize: '0.8125rem', whiteSpace: 'nowrap', color: pnlColor(row.unrealizedPnL) }}>
                       {row.currentValue === null ? <NoFigure status={row.status} /> : f18(row.currentValue)}
                     </TableCell>
                     {renderCloseCell(row)}
                   </TableRow>
                 ))}
               </TableBody>
-              <tfoot style={{ borderTop: '1px solid rgba(255,255,255,0.08)' }}>
-                <TableRow sx={{ bgcolor: 'background.neutral' }}>
-                  <TableCell colSpan={showCopiedFrom ? 9 : 8} sx={{ fontWeight: 'bold', color: 'text.primary' }}>{t.portfolio.page.total}</TableCell>
-                  <TableCell sx={{ fontFamily: MONO, fontWeight: 'bold', color: pnlColor(unrealisedPnl) }}>
-                    {unrealisedPnl === null ? '—' : fPnL(unrealisedPnl)}
-                  </TableCell>
-                  <TableCell sx={{ fontFamily: MONO, fontSize: '0.75rem', color: fundingTotal === null ? 'text.secondary' : fundingTotal < 0n ? 'success.main' : 'error.main' }}>
-                    {fundingTotal === null ? '—' : fPnL(-fundingTotal)}
-                  </TableCell>
-                  <TableCell sx={{ fontFamily: MONO, fontWeight: 'bold', color: 'text.primary' }}>
-                    {positionsValueTotal === null ? '—' : f18(positionsValueTotal)}
-                  </TableCell>
-                  <TableCell />
-                </TableRow>
-              </tfoot>
             </Table>
           </TableContainer>
         )}

@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import { ethers } from "ethers";
 import { fetchPrice, SOURCES } from "../keeper/feeds.ts";
 import { ORACLE_ABI } from "./abi.ts";
+import { localProvider } from "./provider.ts";
 import { receiptOf } from "./receipt.ts";
 
 const RPC = process.env.HEROES_RPC_URL ?? "http://127.0.0.1:8545";
@@ -15,7 +16,8 @@ const MNEMONIC = "test test test test test test test test test test test junk";
 const addressesPath = process.argv[2] ?? fileURLToPath(new URL("../../heroes/out/addresses.json", import.meta.url));
 
 async function main(): Promise<void> {
-  const provider = new ethers.JsonRpcProvider(RPC);
+  // 跟回放同一套設定；預設的請求快取會讓連續送出的 updatePrice 拿到舊 nonce（見 provider.ts）。
+  const provider = localProvider(RPC);
   const chainId = BigInt(await provider.send("eth_chainId", []));
   if (chainId !== 31337n) throw new Error(`refusing to write prices on chainId ${chainId}: local Anvil (31337) only`);
   const owner = ethers.HDNodeWallet.fromPhrase(MNEMONIC, undefined, "m/44'/60'/0'/0/0").connect(provider);

@@ -37,6 +37,7 @@ export const copy: Catalog['copy'] = {
     placeholder: '1000',
     unitSuffix: '{token} total margin',
     disabledHint: 'disabled — no strategy',
+    belowMinimum: 'Amount too small: once split by weight, one leg falls under the exchange minimum margin. This strategy needs at least {amount} USDC.',
   },
 
   preview: {
@@ -105,6 +106,8 @@ export const copy: Catalog['copy'] = {
     noStrategy: '⚠ Trader has no published strategy. Copy is disabled.',
     footer:
       'Your margin will be automatically split and deposited into positions according to the strategy above.',
+    snapshotNote:
+      'Copying takes the trader\'s current strategy version. If the trader publishes a new version later, your positions do not follow automatically; to move to the new version, unfollow and copy again.',
   },
 
   tx: {

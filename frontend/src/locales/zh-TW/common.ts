@@ -50,6 +50,9 @@ export const common = {
   dialog: {
     cancel: '取消',
     confirm: '確認',
+    /** 長清單（部位紀錄、鏈上動態）在卡片上只放前幾筆，完整清單開在彈窗裡（ListDialog）。 */
+    expandList: '展開全部 {count} 筆',
+    close: '關閉',
   },
 
   paperTrading: {
@@ -209,8 +212,14 @@ export const common = {
    * 交易者等級。名稱刻意是「英文 中文」的雙語形式，逐字保留——英文那一半是
    * 排行榜與合約事件裡用的名字，中文那一半是給讀者的。
    */
-  /** 交易者等級徽章前面的小字（TraderRankBadge）。 */
-  rankPrefix: '等級',
+  /**
+   * 交易者聲譽徽章（TraderRankBadge）。聲譽只反映質押被罰沒的紀錄，跟績效無關——
+   * 以前寫「等級 Diamond 鑽石」，看起來像績效等級（虧 99% 的交易者也是鑽石），所以改成顯示聲譽分數。
+   */
+  rankPrefix: '聲譽',
+  /** 滑鼠移上去的說明。tier 是下面 tier 裡的名稱。 */
+  rankTooltip: '依質押與罰沒紀錄計算：質押 ÷（質押 + 被罰沒金額 × 5）× 100，從未被罰沒為 100。目前是 {tier} 級。與績效無關。',
+  rankUnknown: '—',
 
   tier: {
     diamond: 'Diamond 鑽石',

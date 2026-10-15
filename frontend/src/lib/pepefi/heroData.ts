@@ -8,7 +8,8 @@
 
 import { computeTraderScore, type TraderCard } from './leaderboardMetrics'
 
-export const HERO_SCHEMA_VERSION = 1
+/** 2：每位交易者多了 activeSince（排行榜用來判斷能不能列入排名）。 */
+export const HERO_SCHEMA_VERSION = 2
 
 export interface HeroWindow {
   pnlUsd: number
@@ -32,6 +33,8 @@ export interface HeroSummary {
   window7d: HeroWindow
   window30d: HeroWindow
   sparkline: number[]
+  /** 第一次發布策略的日期（YYYY-MM-DD）；從沒發布過時為 null。 */
+  activeSince: string | null
 }
 
 export interface HeroIndex {
@@ -89,7 +92,6 @@ export interface HeroDetail extends HeroSummary {
   tradesPerWeek: number
   topAssets: { asset: string; trades: number; sharePct: number }[]
   followerHistory: { month: string; followers: number }[]
-  activeSince: string | null
   strategies: HeroStrategyVersion[]
   trades: HeroTrade[]
 }
@@ -110,7 +112,8 @@ const isSummary = (x: unknown): boolean =>
   isNum(x.totalReturnPct) && isNum(x.maxDrawdownPct) && isNum(x.sharpe) &&
   isNumOrNull(x.winRatePct) && isNum(x.closedTrades) && isNumOrNull(x.esgScore) &&
   isWindow(x.window7d) && isWindow(x.window30d) &&
-  Array.isArray(x.sparkline) && x.sparkline.every(isNum)
+  Array.isArray(x.sparkline) && x.sparkline.every(isNum) &&
+  (x.activeSince === null || typeof x.activeSince === 'string')
 
 /** 只要有一筆不合格就整份不收：半份資料畫出來的排行榜比沒有資料更糟。 */
 export function parseHeroIndex(raw: unknown, chainId: number | null): HeroIndex | null {
@@ -132,7 +135,6 @@ export function parseHeroDetail(raw: unknown, address: string): HeroDetail | nul
   if (!isNumOrNull(record.riskScore) || !isNumOrNull(record.profitableWeeksPct)) return null
   if (!['worstDayLossPct', 'worstWeekLossPct', 'maxDrawdown1yPct', 'tradesPerWeek'].every((k) => isNum(record[k]))) return null
   if (!Array.isArray(record.topAssets) || !Array.isArray(record.followerHistory)) return null
-  if (record.activeSince !== null && typeof record.activeSince !== 'string') return null
   return raw as HeroDetail
 }
 
@@ -218,6 +220,19 @@ export const fSignedPct = (v: Maybe): string => (missing(v) ? '—' : `${v >= 0 
 export const fDrawdown = (v: Maybe): string => (missing(v) ? '—' : v === 0 ? '0.0%' : `-${v.toFixed(1)}%`)
 
 export const fRatio = (v: Maybe): string => (missing(v) ? '—' : v.toFixed(2))
+
+/**
+ * 風險分數的分級門檻：單日 95% VaR（%）每超過一道門檻加 1 級，所以 9 道門檻分出 1–10 級。
+ * 分數本身由資料管線算好（heroes/herolab/analytics.py 的 RISK_BANDS），這裡只用來在量表下
+ * 標出每一級的範圍；兩邊的數字由 heroData.test.ts 檢查必須相同。
+ */
+export const RISK_VAR_BANDS_PCT = [0.25, 0.5, 1, 1.5, 2, 3, 4, 6, 10]
+
+/** 十個級別各自的 VaR 範圍：「≤0.25%」…「≤10%」「>10%」。 */
+export const riskBandLabels = (): string[] => [
+  ...RISK_VAR_BANDS_PCT.map((pct) => `≤${pct}%`),
+  `>${RISK_VAR_BANDS_PCT[RISK_VAR_BANDS_PCT.length - 1]}%`,
+]
 
 export const fUsd = (v: Maybe): string =>
   missing(v) ? '—' : v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
