@@ -14,18 +14,17 @@ import { CHAIN_NAMES, isPrimaryChain, PRIMARY_CHAIN_ID } from 'src/contracts/add
 import { LoadingScreen } from 'src/components/loading-screen';
 import { SwitchChainButton } from 'src/components/pepefi/SwitchChainButton';
 
+import { isPublicPath } from './publicPaths';
+
 // ----------------------------------------------------------------------
 // PepefiLayout: 只呼叫一次 useWallet()，透過 outlet context 傳給所有子頁面
 //
 // Wallet gate:
-//   - 未連錢包 → 只能停留在 PUBLIC_PATHS（landing / x402 docs / marketplace），
-//     其他內頁一律導回 landing。
+//   - 未連錢包 → 只能停留在 PUBLIC_PATHS（./publicPaths.ts），其他內頁一律導回 landing。
 //   - 已連錢包 → 停在 landing 時自動進入 app（AFTER_CONNECT_PATH）。
 //   - 刷新頁面時 useWallet 會先做靜默 session 恢復（initializing），
 //     守衛等它完成才判斷，避免已連線用戶刷新內頁被誤踢回 landing。
 
-// /rwa、/oracle、/solvency 是唯讀揭露頁（公開節點讀鏈，不需錢包），未連錢包也要看得到。
-const PUBLIC_PATHS = ['/', '/x402', '/marketplace', '/rwa', '/oracle', '/solvency'];
 const AFTER_CONNECT_PATH = '/portfolio';
 
 export function PepefiLayout() {
@@ -35,7 +34,7 @@ export function PepefiLayout() {
 
   useEffect(() => {
     if (wallet.initializing) return;
-    const isPublic = PUBLIC_PATHS.includes(pathname);
+    const isPublic = isPublicPath(pathname);
     if (!wallet.isConnected && !isPublic) {
       navigate('/', { replace: true });
     } else if (wallet.isConnected && pathname === '/') {

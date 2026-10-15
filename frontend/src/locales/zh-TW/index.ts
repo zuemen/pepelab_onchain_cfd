@@ -1,5 +1,6 @@
 import { esg } from './esg';
 import { kyc } from './kyc';
+import { lab } from './lab';
 import { nav } from './nav';
 import { rwa } from './rwa';
 import { copy } from './copy';
@@ -73,6 +74,7 @@ const zhTW = {
   legacy,
   rwa,
   investorVc,
+  lab,
 };
 
 export type Catalog = typeof zhTW;

@@ -1,0 +1,307 @@
+{
+ "schemaVersion": 1,
+ "range": {
+  "from": "2024-10-01",
+  "to": "2026-10-13"
+ },
+ "capitalUsd": 10000.0,
+ "tradeFields": [
+  "day",
+  "asset",
+  "action",
+  "isLong",
+  "price",
+  "marginUsd",
+  "pnlUsd"
+ ],
+ "martingaleBasePct": 2.0,
+ "forecast": {
+  "horizonDays": 90,
+  "paths": 1000,
+  "blockDays": 10,
+  "seed": 332,
+  "percentiles": [
+   5,
+   25,
+   50,
+   75,
+   95
+  ]
+ },
+ "assets": [
+  {
+   "id": "sBTC",
+   "carbonTier": "high",
+   "feeBps": 100,
+   "borrowBpsPerHour": 10,
+   "maxLeverage": 1
+  },
+  {
+   "id": "sETH",
+   "carbonTier": "low",
+   "feeBps": 10,
+   "borrowBpsPerHour": 1,
+   "maxLeverage": 5
+  },
+  {
+   "id": "sAAPL",
+   "carbonTier": "low",
+   "feeBps": 10,
+   "borrowBpsPerHour": 1,
+   "maxLeverage": 5
+  },
+  {
+   "id": "sTSLA",
+   "carbonTier": "high",
+   "feeBps": 100,
+   "borrowBpsPerHour": 10,
+   "maxLeverage": 1
+  },
+  {
+   "id": "sGOLD",
+   "carbonTier": "high",
+   "feeBps": 100,
+   "borrowBpsPerHour": 10,
+   "maxLeverage": 1
+  },
+  {
+   "id": "sBOND",
+   "carbonTier": "low",
+   "feeBps": 10,
+   "borrowBpsPerHour": 1,
+   "maxLeverage": 5
+  },
+  {
+   "id": "sNVDA",
+   "carbonTier": "low",
+   "feeBps": 10,
+   "borrowBpsPerHour": 1,
+   "maxLeverage": 5
+  },
+  {
+   "id": "sMSFT",
+   "carbonTier": "high",
+   "feeBps": 100,
+   "borrowBpsPerHour": 10,
+   "maxLeverage": 1
+  },
+  {
+   "id": "sGOOGL",
+   "carbonTier": "high",
+   "feeBps": 100,
+   "borrowBpsPerHour": 10,
+   "maxLeverage": 1
+  },
+  {
+   "id": "sICLN",
+   "carbonTier": "low",
+   "feeBps": 10,
+   "borrowBpsPerHour": 1,
+   "maxLeverage": 5
+  },
+  {
+   "id": "sESGU",
+   "carbonTier": "mid",
+   "feeBps": 40,
+   "borrowBpsPerHour": 4,
+   "maxLeverage": 2
+  }
+ ],
+ "baskets": [
+  {
+   "id": "low_carbon",
+   "assets": [
+    "sETH",
+    "sAAPL",
+    "sBOND",
+    "sNVDA",
+    "sICLN"
+   ]
+  },
+  {
+   "id": "equities",
+   "assets": [
+    "sAAPL",
+    "sMSFT",
+    "sGOOGL",
+    "sNVDA",
+    "sTSLA"
+   ]
+  },
+  {
+   "id": "macro",
+   "assets": [
+    "sGOLD",
+    "sBOND",
+    "sBTC",
+    "sESGU"
+   ]
+  },
+  {
+   "id": "crypto_mix",
+   "assets": [
+    "sBTC",
+    "sETH",
+    "sGOLD",
+    "sNVDA"
+   ]
+  }
+ ],
+ "strategies": [
+  {
+   "id": "dca",
+   "kind": "single",
+   "rule": null,
+   "params": [
+    {
+     "key": "every_days",
+     "values": [
+      7,
+      30
+     ]
+    },
+    {
+     "key": "leverage",
+     "values": [
+      1,
+      2
+     ]
+    }
+   ]
+  },
+  {
+   "id": "martingale",
+   "kind": "single",
+   "rule": null,
+   "params": [
+    {
+     "key": "multiplier",
+     "values": [
+      1.5,
+      2
+     ]
+    },
+    {
+     "key": "drop_pct",
+     "values": [
+      5,
+      10
+     ]
+    },
+    {
+     "key": "take_profit_pct",
+     "values": [
+      5,
+      10
+     ]
+    }
+   ]
+  },
+  {
+   "id": "grid",
+   "kind": "single",
+   "rule": null,
+   "params": [
+    {
+     "key": "spacing_pct",
+     "values": [
+      3,
+      6,
+      10
+     ]
+    },
+    {
+     "key": "levels",
+     "values": [
+      5,
+      10
+     ]
+    }
+   ]
+  },
+  {
+   "id": "momentum",
+   "kind": "portfolio",
+   "rule": "momentum",
+   "params": [
+    {
+     "key": "lookback",
+     "values": [
+      30,
+      90
+     ]
+    },
+    {
+     "key": "every_days",
+     "values": [
+      7,
+      30
+     ]
+    },
+    {
+     "key": "leverage",
+     "values": [
+      1,
+      2
+     ]
+    }
+   ]
+  },
+  {
+   "id": "mean_reversion",
+   "kind": "portfolio",
+   "rule": "mean_reversion",
+   "params": [
+    {
+     "key": "lookback",
+     "values": [
+      30,
+      60
+     ]
+    },
+    {
+     "key": "every_days",
+     "values": [
+      14,
+      30
+     ]
+    },
+    {
+     "key": "leverage",
+     "values": [
+      1,
+      2
+     ]
+    }
+   ]
+  },
+  {
+   "id": "trend",
+   "kind": "portfolio",
+   "rule": "trend",
+   "params": [
+    {
+     "key": "window",
+     "values": [
+      50,
+      100
+     ]
+    },
+    {
+     "key": "every_days",
+     "values": [
+      14,
+      30
+     ]
+    },
+    {
+     "key": "leverage",
+     "values": [
+      1,
+      2
+     ]
+    }
+   ]
+  }
+ ]
+}

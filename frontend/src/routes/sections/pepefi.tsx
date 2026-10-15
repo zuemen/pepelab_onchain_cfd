@@ -42,6 +42,7 @@ const PepeLabPage       = lazy(() => import('src/pages/pepefi/PepeLabPage'));
 const RwaPage           = lazy(() => import('src/pages/pepefi/RwaPage'));
 const OraclePage        = lazy(() => import('src/pages/pepefi/OraclePage'));
 const SolvencyPage      = lazy(() => import('src/pages/pepefi/SolvencyPage'));
+const StrategyLabPage   = lazy(() => import('src/pages/pepefi/StrategyLabPage'));
 const InvestorCredentialPage = lazy(() => import('src/pages/pepefi/InvestorCredentialPage'));
 
 // ----------------------------------------------------------------------
@@ -95,6 +96,8 @@ export const pepefiRoutes: RouteObject[] = [
           { path: 'stake', element: <TraderStakePage /> },
           { path: 'trader/:address', element: <TraderProfilePage /> },
           { path: 'marketplace', element: <MarketplacePage /> },
+          // 策略實驗室不受跟單旗標影響：它不提供跟單，也不讀鏈（issue #332）。
+          { path: 'lab', element: <StrategyLabPage /> },
           { path: 'esg', element: <ESGPage /> },
           // 商業版旗標（featureFlags.ts）：關閉時連路由一起收，直接打網址看到「此功能未啟用」。
           {

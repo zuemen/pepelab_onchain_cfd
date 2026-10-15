@@ -70,6 +70,7 @@ export const navData: NavSectionProps['data'] = byFeatureFlags([
       { title: t.nav.item.tokens, path: paths.pepefi.tokens, icon: ICONS.product },
       { title: t.nav.item.exchange, path: paths.pepefi.exchange, icon: ICONS.ecommerce },
       { title: t.nav.item.marketplace, path: paths.pepefi.marketplace, icon: ICONS.invoice },
+      { title: t.nav.item.lab, path: paths.pepefi.lab, icon: ICONS.params },
       { title: t.nav.item.history, path: paths.pepefi.history, icon: ICONS.order },
       { title: t.nav.item.vault, path: paths.pepefi.vault, icon: ICONS.file },
       { title: t.nav.item.esg, path: paths.pepefi.esg, icon: ICONS.tour },
