@@ -45,6 +45,8 @@ export const common: Catalog['common'] = {
   dialog: {
     cancel: 'Cancel',
     confirm: 'Confirm',
+    expandList: 'Show all {count}',
+    close: 'Close',
   },
 
   paperTrading: {

@@ -50,6 +50,9 @@ export const common = {
   dialog: {
     cancel: '取消',
     confirm: '確認',
+    /** 長清單（部位紀錄、鏈上動態）在卡片上只放前幾筆，完整清單開在彈窗裡（ListDialog）。 */
+    expandList: '展開全部 {count} 筆',
+    close: '關閉',
   },
 
   paperTrading: {

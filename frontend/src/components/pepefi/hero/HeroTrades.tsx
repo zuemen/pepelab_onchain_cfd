@@ -7,7 +7,6 @@ import Card from '@mui/material/Card';
 import Chip from '@mui/material/Chip';
 import Stack from '@mui/material/Stack';
 import Table from '@mui/material/Table';
-import Button from '@mui/material/Button';
 import TableRow from '@mui/material/TableRow';
 import TableBody from '@mui/material/TableBody';
 import TableCell from '@mui/material/TableCell';
@@ -15,9 +14,11 @@ import TableHead from '@mui/material/TableHead';
 import Typography from '@mui/material/Typography';
 import TableContainer from '@mui/material/TableContainer';
 
-import { t, interpolate } from 'src/locales';
+import { t } from 'src/locales';
 import { MONO } from 'src/components/pepefi/brandKit';
 import { fUsd, type HeroDetail, type HeroTrade } from 'src/lib/pepefi/heroData';
+
+import ListDialog, { ExpandListButton } from 'src/components/pepefi/ListDialog';
 
 import TxProof from './TxProof';
 
@@ -25,7 +26,8 @@ import TxProof from './TxProof';
 // 模擬交易者的部位紀錄（issue #309）。每一筆都附開倉與平倉交易雜湊，點開向節點讀收據（見 TxProof）。
 // 策略的歷次版本不在這裡：個人頁的「策略歷史」從鏈上讀，發布交易也併在那裡，不重複列一次。
 
-const FIRST_PAGE = 25;
+// 卡片上只放最新的這麼多筆；完整清單開在彈窗裡（ListDialog）。
+const PREVIEW_ROWS = 10;
 const fDay = (unix: number) => new Date(unix * 1000).toISOString().slice(0, 10);
 
 function PnlCell({ trade }: { trade: HeroTrade }) {
@@ -55,66 +57,71 @@ interface Props {
 }
 
 export default function HeroTrades({ hero, provider, chainId }: Props) {
-  const [showAllTrades, setShowAllTrades] = useState(false);
+  const [expanded, setExpanded] = useState(false);
   const L = t.traderProfile.hero;
   // 最新的在最上面
   const trades = [...hero.trades].reverse();
-  const shownTrades = showAllTrades ? trades : trades.slice(0, FIRST_PAGE);
+
+  // 卡片上的預覽與彈窗裡的完整清單共用同一張表；彈窗裡標題列固定在上方。
+  const table = (rows: HeroTrade[], stickyHeader: boolean) => (
+    <TableContainer>
+      <Table size="small" stickyHeader={stickyHeader}>
+        <TableHead>
+          <TableRow>
+            <TableCell>{L.colAsset}</TableCell>
+            <TableCell>{L.colSide}</TableCell>
+            <TableCell align="right">{L.colMargin}</TableCell>
+            <TableCell align="right">{L.colOpen}</TableCell>
+            <TableCell align="right">{L.colClose}</TableCell>
+            <TableCell align="right">{L.colPnl}</TableCell>
+            <TableCell>{L.colProof}</TableCell>
+          </TableRow>
+        </TableHead>
+        <TableBody>
+          {rows.map((trade) => (
+            <TableRow key={trade.positionId} hover>
+              <TableCell sx={{ fontWeight: 600 }}>{trade.asset}</TableCell>
+              <TableCell sx={{ color: trade.isLong ? 'success.main' : 'error.main', whiteSpace: 'nowrap' }}>
+                {trade.isLong ? L.long : L.short} {trade.leverage}×
+              </TableCell>
+              <TableCell align="right" sx={{ fontFamily: MONO }}>{fUsd(trade.marginUsd)}</TableCell>
+              <TableCell align="right" sx={{ fontFamily: MONO, whiteSpace: 'nowrap' }}>
+                {fUsd(trade.openPrice)}
+                <Box sx={{ fontSize: '0.6875rem', color: 'text.secondary' }}>{fDay(trade.openTime)}</Box>
+              </TableCell>
+              <TableCell align="right" sx={{ fontFamily: MONO, whiteSpace: 'nowrap' }}>
+                {fUsd(trade.closePrice)}
+                <Box sx={{ fontSize: '0.6875rem', color: 'text.secondary' }}>
+                  {trade.closeTime === null ? '—' : fDay(trade.closeTime)}
+                </Box>
+              </TableCell>
+              <TableCell align="right"><PnlCell trade={trade} /></TableCell>
+              <TableCell>
+                <TxProof label={L.openTx} hash={trade.openTx} provider={provider} chainId={chainId} />
+                {trade.closeTx && (
+                  <TxProof label={L.closeTx} hash={trade.closeTx} provider={provider} chainId={chainId} />
+                )}
+              </TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    </TableContainer>
+  );
 
   return (
-    <Stack spacing={2}>
-      <Card sx={{ p: 3 }}>
-        <Typography variant="subtitle1" sx={{ fontWeight: 'bold' }}>{L.tradesTitle}</Typography>
-        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 2 }}>{L.tradesNote}</Typography>
-        <TableContainer>
-          <Table size="small">
-            <TableHead>
-              <TableRow>
-                <TableCell>{L.colAsset}</TableCell>
-                <TableCell>{L.colSide}</TableCell>
-                <TableCell align="right">{L.colMargin}</TableCell>
-                <TableCell align="right">{L.colOpen}</TableCell>
-                <TableCell align="right">{L.colClose}</TableCell>
-                <TableCell align="right">{L.colPnl}</TableCell>
-                <TableCell>{L.colProof}</TableCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {shownTrades.map((trade) => (
-                <TableRow key={trade.positionId} hover>
-                  <TableCell sx={{ fontWeight: 600 }}>{trade.asset}</TableCell>
-                  <TableCell sx={{ color: trade.isLong ? 'success.main' : 'error.main', whiteSpace: 'nowrap' }}>
-                    {trade.isLong ? L.long : L.short} {trade.leverage}×
-                  </TableCell>
-                  <TableCell align="right" sx={{ fontFamily: MONO }}>{fUsd(trade.marginUsd)}</TableCell>
-                  <TableCell align="right" sx={{ fontFamily: MONO, whiteSpace: 'nowrap' }}>
-                    {fUsd(trade.openPrice)}
-                    <Box sx={{ fontSize: '0.6875rem', color: 'text.secondary' }}>{fDay(trade.openTime)}</Box>
-                  </TableCell>
-                  <TableCell align="right" sx={{ fontFamily: MONO, whiteSpace: 'nowrap' }}>
-                    {fUsd(trade.closePrice)}
-                    <Box sx={{ fontSize: '0.6875rem', color: 'text.secondary' }}>
-                      {trade.closeTime === null ? '—' : fDay(trade.closeTime)}
-                    </Box>
-                  </TableCell>
-                  <TableCell align="right"><PnlCell trade={trade} /></TableCell>
-                  <TableCell>
-                    <TxProof label={L.openTx} hash={trade.openTx} provider={provider} chainId={chainId} />
-                    {trade.closeTx && (
-                      <TxProof label={L.closeTx} hash={trade.closeTx} provider={provider} chainId={chainId} />
-                    )}
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </TableContainer>
-        {!showAllTrades && trades.length > FIRST_PAGE && (
-          <Button size="small" onClick={() => setShowAllTrades(true)} sx={{ mt: 1, textTransform: 'none' }}>
-            {interpolate(L.showMore, { count: trades.length })}
-          </Button>
-        )}
-      </Card>
-    </Stack>
+    <Card sx={{ p: 3 }}>
+      <Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 2, mb: 2 }}>
+        <Box sx={{ minWidth: 0 }}>
+          <Typography variant="subtitle1" sx={{ fontWeight: 'bold' }}>{L.tradesTitle}</Typography>
+          <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>{L.tradesNote}</Typography>
+        </Box>
+        {trades.length > PREVIEW_ROWS && <ExpandListButton count={trades.length} onClick={() => setExpanded(true)} />}
+      </Box>
+      {table(trades.slice(0, PREVIEW_ROWS), false)}
+      <ListDialog open={expanded} onClose={() => setExpanded(false)} title={L.tradesTitle} subtitle={L.tradesNote}>
+        {table(trades, true)}
+      </ListDialog>
+    </Card>
   );
 }

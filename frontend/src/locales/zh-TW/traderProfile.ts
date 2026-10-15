@@ -183,7 +183,6 @@ export const traderProfile = {
     proofSuccess: '成功',
     proofReverted: '失敗',
     proofLogs: '{count} 筆事件',
-    showMore: '顯示全部 {count} 筆',
     riskTitle: '風險與交易統計',
     riskScore: '風險分數',
     riskScoreScale: '1 最低、10 最高',

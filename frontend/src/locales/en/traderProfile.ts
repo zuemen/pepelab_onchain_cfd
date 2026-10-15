@@ -182,7 +182,6 @@ export const traderProfile: Catalog['traderProfile'] = {
     proofSuccess: 'success',
     proofReverted: 'reverted',
     proofLogs: '{count} events',
-    showMore: 'Show all {count}',
     riskTitle: 'Risk and trading statistics',
     riskScore: 'Risk score',
     riskScoreScale: '1 lowest, 10 highest',
