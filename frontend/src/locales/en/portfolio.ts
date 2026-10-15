@@ -181,6 +181,15 @@ export const portfolio: Catalog['portfolio'] = {
     noCopyPositions: 'no copy positions',
 
     copyPositions: 'Copy Positions',
+    copyOutdated: 'Strategy updated',
+    copyOutdatedHint: 'The trader has published a new strategy version. Your copy is still on the old one and does not adjust by itself.',
+    copyRefresh: 'Move to latest',
+    copyRefreshing: 'Updating…',
+    copyRefreshStep: 'Unfollow the old copy, withdraw the {amount} USDC it returns to your wallet, then copy the latest version with the same amount.',
+    stopLossNone: 'Off',
+    stopLossOption: 'At -{pct}%',
+    stopLossReached: 'Stop-loss reached',
+    stopLossHint: 'The stop-loss reminder lives in this browser only and never closes anything by itself; when it fires, press Unfollow.',
     notCopyingAnyone: "You're not copying anyone yet.",
     browseTraders: 'Browse traders →',
     copyColumn: {
@@ -189,6 +198,7 @@ export const portfolio: Catalog['portfolio'] = {
       initial: 'Initial',
       current: 'Current',
       return: 'Return',
+      stopLoss: 'Stop-loss reminder',
       actions: 'Actions',
     },
     unfollow: 'Unfollow',

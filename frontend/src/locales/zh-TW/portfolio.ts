@@ -214,6 +214,15 @@ export const portfolio = {
     noCopyPositions: '無跟單部位',
 
     copyPositions: '跟單部位',
+    copyOutdated: '策略已更新',
+    copyOutdatedHint: '交易者發布了新版策略。你的跟單仍是舊版，不會自動調整。',
+    copyRefresh: '更新到最新版',
+    copyRefreshing: '更新中…',
+    copyRefreshStep: '取消舊的跟單、把取回的 {amount} USDC 提回錢包，接著到跟單頁用同樣金額跟最新版。',
+    stopLossNone: '不提醒',
+    stopLossOption: '虧 {pct}%',
+    stopLossReached: '已達停損',
+    stopLossHint: '停損提醒只存在這個瀏覽器，不會自動平倉；到了請自己按「取消跟單」。',
     notCopyingAnyone: '你尚未跟單任何人。',
     browseTraders: '瀏覽交易者 →',
     copyColumn: {
@@ -222,6 +231,7 @@ export const portfolio = {
       initial: '初始金額',
       current: '目前金額',
       return: '報酬率',
+      stopLoss: '停損提醒',
       actions: '操作',
     },
     unfollow: '取消跟隨',
