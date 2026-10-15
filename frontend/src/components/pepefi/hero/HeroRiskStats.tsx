@@ -13,11 +13,14 @@ import { MONO } from 'src/components/pepefi/brandKit';
 import { FEATURE_COPY_TRADING } from 'src/lib/pepefi/featureFlags';
 import { fDrawdown, type HeroDetail } from 'src/lib/pepefi/heroData';
 
+import { lineCursor, tooltipProps } from './chartTooltip';
+
 // ----------------------------------------------------------------------
 // 參考 eToro 交易者統計頁的「風險」「交易」「其他」三張卡（issue #309）。數字來自
 // public/data/heroes/<address>.json，由鏈上事件算出；這個元件只畫。
 
-const STAT = { xs: 6, md: 3 };
+// 六張卡一列三張、排兩整列（一列四張會變成 4＋2、右邊空一塊，日期也會被擠成兩行）。
+const STAT = { xs: 6, md: 4 };
 
 function RiskMeter({ score }: { score: number | null }) {
   const theme = useTheme();
@@ -93,9 +96,13 @@ export default function HeroRiskStats({ hero }: { hero: HeroDetail }) {
           <Box sx={{ height: 140 }}>
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={hero.followerHistory} margin={{ top: 4, right: 8, bottom: 0, left: 0 }}>
-                <XAxis dataKey="month" tick={{ fontSize: 11 }} minTickGap={24} />
+                <XAxis dataKey="month" tick={{ fontSize: 11 }} minTickGap={24} height={22} tickMargin={4} />
                 <YAxis allowDecimals={false} tick={{ fontSize: 11 }} width={32} />
-                <Tooltip />
+                <Tooltip
+                  {...tooltipProps(theme)}
+                  cursor={lineCursor(theme)}
+                  formatter={(value) => [String(value), L.followersTitle]}
+                />
                 <Line type="stepAfter" dataKey="followers" stroke={theme.palette.info.main} dot={false} isAnimationActive={false} />
               </LineChart>
             </ResponsiveContainer>

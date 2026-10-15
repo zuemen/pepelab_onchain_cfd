@@ -25,7 +25,8 @@ export default function StatCard({ title, value, sub, valueClass = '', valueColo
   }
 
   return (
-    <Card sx={{ p: 3, display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+    // height 100%：放在 Grid 裡時，同一列有副標與沒副標的卡片撐到一樣高。
+    <Card sx={{ p: 3, display: 'flex', flexDirection: 'column', gap: 0.5, height: '100%' }}>
       <Typography variant="overline" sx={{ color: 'text.secondary', fontWeight: 'bold' }}>
         {title}
       </Typography>
