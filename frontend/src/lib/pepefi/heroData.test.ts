@@ -1,3 +1,6 @@
+import fs from 'node:fs'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { describe, it, expect } from 'vitest'
 
 import { buildTraderCard } from './leaderboardMetrics'
@@ -31,7 +34,13 @@ const detail = {
   equityCurve: [{ date: '2024-10-01', equity: 10000 }],
   monthlyReturns: [{ month: '2024-10', returnPct: 1.2 }],
   exposure: [{ asset: 'sBTC', weightPct: 50, isLong: true, leverage: 1 }],
-  esgCorrelation: 0.41, avgHoldDays: 23.5, strategies: [], trades: [],
+  esgCorrelation: 0.41, avgHoldDays: 23.5,
+  riskScore: 6, worstDayLossPct: 4.1, worstWeekLossPct: 9.8, maxDrawdown1yPct: 12.3,
+  profitableWeeksPct: 58.3, tradesPerWeek: 1.4,
+  topAssets: [{ asset: 'sBTC', trades: 12, sharePct: 40 }],
+  followerHistory: [{ month: '2024-10', followers: 2 }],
+  activeSince: '2024-10-01',
+  strategies: [], trades: [],
 }
 
 const responding = (body: unknown, ok = true) => async () => ({ ok, json: async () => body })
@@ -75,6 +84,29 @@ describe('parseHeroDetail', () => {
   it('refuses a file about a different trader or without the detail sections', () => {
     expect(parseHeroDetail(detail, '0x00000000000000000000000000000000000000BB')).toBeNull()
     expect(parseHeroDetail(summary, ADDR)).toBeNull()
+  })
+
+  it('refuses a detail file from before the risk statistics existed', () => {
+    const older: Record<string, unknown> = { ...detail }
+    delete older.riskScore
+    expect(parseHeroDetail(older, ADDR)).toBeNull()
+    expect(parseHeroDetail({ ...detail, riskScore: null, profitableWeeksPct: null, activeSince: null }, ADDR)).not.toBeNull()
+  })
+})
+
+// 解析一筆不合格就整份不收，所以管線重新產生的資料若少了欄位，畫面會悄悄退回「沒有資料」。
+// 這裡直接拿進版控的那份資料檔跑解析，讓它在測試裡失敗，而不是在展示時才發現。
+describe('committed hero data', () => {
+  const dir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..', 'public', 'data', 'heroes')
+  const read = (name: string): unknown => JSON.parse(fs.readFileSync(path.join(dir, name), 'utf8'))
+  const committed = fs.existsSync(path.join(dir, 'index.json')) ? parseHeroIndex(read('index.json'), 31337) : null
+
+  it.runIf(fs.existsSync(path.join(dir, 'index.json')))('every trader in the index has a detail file the page accepts', () => {
+    expect(committed).not.toBeNull()
+    for (const trader of committed!.traders) {
+      const name = `${trader.address.toLowerCase()}.json`
+      expect(parseHeroDetail(read(name), trader.address), name).not.toBeNull()
+    }
   })
 })
 

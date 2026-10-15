@@ -41,6 +41,7 @@ const ALLOWED: ReadonlyArray<{ key: string; why: string }> = [
   { key: 'traderProfile.stats.followers', why: '跟隨者統計卡在旗標關閉時不渲染' },
   { key: 'traderProfile.stats.copiers', why: '同上' },
   { key: 'traderProfile.followers.titleFirst', why: '跟隨者清單在旗標關閉時不渲染' },
+  { key: 'traderProfile.hero.followersTitle', why: 'HeroRiskStats 的跟隨人數走勢在旗標關閉時不渲染' },
   { key: 'traderDashboard.publish.stakeRequiredBody', why: '旗標關閉時改顯示 stakeRequiredBodyNeutral' },
   { key: 'traderDashboard.earnings.claimable', why: '旗標關閉時改顯示 claimableNeutral' },
   { key: 'traderDashboard.earnings.note', why: '旗標關閉時改顯示 noteNeutral' },
