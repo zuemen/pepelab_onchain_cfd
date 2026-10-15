@@ -17,6 +17,10 @@ import { FEATURE_COPY_TRADING } from 'src/lib/pepefi/featureFlags'
 // 統計卡：跟單旗標關閉時少了「跟隨者」那張，剩三張各佔三分之一。
 const STAT_SIZE = FEATURE_COPY_TRADING ? { xs: 6, md: 3 } : { xs: 12, sm: 4 }
 import { useAddressActivity } from 'src/hooks/useAddressActivity'
+import HeroTrades from 'src/components/pepefi/hero/HeroTrades'
+import HeroRiskStats from 'src/components/pepefi/hero/HeroRiskStats'
+import HeroPerformance from 'src/components/pepefi/hero/HeroPerformance'
+import { fetchHeroDetail, type HeroDetail } from 'src/lib/pepefi/heroData'
 
 import Box from '@mui/material/Box';
 import Container from '@mui/material/Container';
@@ -109,12 +113,25 @@ function TraderProfileView() {
   const [slashBlocks,   setSlashBlocks]   = useState(0)
   const [loading,       setLoading]       = useState(true)
   const [error,         setError]         = useState<string | null>(null)
+  // 模擬交易者的績效資料（issue #309）。讀的是靜態檔，不該被讀鏈的 loading 拖住；
+  // 這個位址不是模擬交易者、或這條鏈沒有資料時維持 null，下面的區塊就不出現。
+  const [hero,          setHero]          = useState<HeroDetail | null>(null)
 
   const toggleVer = useCallback((versionId: number) => {
     setStratHistory(prev =>
       prev.map(v => v.versionId === versionId ? { ...v, expanded: !v.expanded } : v),
     )
   }, [])
+
+  useEffect(() => {
+    let cancelled = false
+    setHero(null)
+    if (!traderAddr) return undefined
+    void fetchHeroDetail(traderAddr, wallet.chainId).then((detail) => {
+      if (!cancelled) setHero(detail)
+    })
+    return () => { cancelled = true }
+  }, [traderAddr, wallet.chainId])
 
   useEffect(() => {
     if (!contracts || !traderAddr) return
@@ -269,6 +286,13 @@ function TraderProfileView() {
         </Typography>
       </Breadcrumbs>
 
+      {/* 放在 loading 判斷之外：揭露只看資料檔在不在，不等讀鏈。 */}
+      {hero && (
+        <Alert severity="info" variant="outlined">
+          {t.marketplace.hero.disclosure}
+        </Alert>
+      )}
+
       {error && (
         <Alert severity="error">
           {error}
@@ -394,6 +418,9 @@ function TraderProfileView() {
               <StatCard title={t.traderProfile.stats.strategies} value={stratCount !== null ? String(stratCount) : '—'} sub={t.traderProfile.stats.versions} />
             </Grid>
           </Grid>
+
+          {hero && <HeroPerformance hero={hero} />}
+          {hero && <HeroRiskStats hero={hero} />}
 
           {/* ─── C. Latest Strategy ────────────────────────────────── */}
           <Card sx={{ p: 3 }}>
@@ -630,6 +657,8 @@ function TraderProfileView() {
               </TableContainer>
             </Card>
           )}
+
+          {hero && <HeroTrades hero={hero} provider={wallet.provider} chainId={wallet.chainId} />}
 
           {/* ─── F. On-chain activity ──────────────────────────────── */}
           {/* 從 WhaleTrackerPage 搬過來。那一頁查完地址就把交易紀錄長在自己

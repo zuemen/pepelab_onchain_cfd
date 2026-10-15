@@ -79,6 +79,17 @@ export interface HeroDetail extends HeroSummary {
   exposure: { asset: string; weightPct: number; isLong: boolean; leverage: number }[]
   esgCorrelation: number | null
   avgHoldDays: number | null
+  /** 1–10，最近 365 天日報酬的 95% 單日 VaR 分級；資料不足 30 天時為 null。 */
+  riskScore: number | null
+  /** 以下三個是正數表示的損失百分比。 */
+  worstDayLossPct: number
+  worstWeekLossPct: number
+  maxDrawdown1yPct: number
+  profitableWeeksPct: number | null
+  tradesPerWeek: number
+  topAssets: { asset: string; trades: number; sharePct: number }[]
+  followerHistory: { month: string; followers: number }[]
+  activeSince: string | null
   strategies: HeroStrategyVersion[]
   trades: HeroTrade[]
 }
@@ -118,6 +129,10 @@ export function parseHeroDetail(raw: unknown, address: string): HeroDetail | nul
   if ((record.address as string).toLowerCase() !== address.toLowerCase()) return null
   if (!DETAIL_LISTS.every((k) => Array.isArray(record[k]))) return null
   if (!isNumOrNull(record.esgCorrelation) || !isNumOrNull(record.avgHoldDays)) return null
+  if (!isNumOrNull(record.riskScore) || !isNumOrNull(record.profitableWeeksPct)) return null
+  if (!['worstDayLossPct', 'worstWeekLossPct', 'maxDrawdown1yPct', 'tradesPerWeek'].every((k) => isNum(record[k]))) return null
+  if (!Array.isArray(record.topAssets) || !Array.isArray(record.followerHistory)) return null
+  if (record.activeSince !== null && typeof record.activeSince !== 'string') return null
   return raw as HeroDetail
 }
 
