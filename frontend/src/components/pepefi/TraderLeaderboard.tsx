@@ -427,6 +427,37 @@ export default function TraderLeaderboard() {
     { key: 'esg', label: t.marketplace.sort.esg },
   ];
 
+  // 欄位標題的說明：滑鼠移到標題上顯示這一欄怎麼算。近期視窗有績效資料時是 30 天，否則 7 天。
+  const tipParams = {
+    days: usingHeroData ? 30 : 7,
+    from: heroRange?.from ?? '—',
+    to: heroRange?.to ?? '—',
+    rule: rankRule,
+  };
+  const tips = t.marketplace.table.tips;
+  const tip = (text: string) => interpolate(text, tipParams);
+  const sortTips: Partial<Record<SortKey, string>> = {
+    score: tip(tips.score),
+    return: tip(tips.totalReturn),
+    drawdown: tip(tips.maxDrawdown),
+    sharpe: tip(tips.sharpe),
+    volume: tip(tips.volume),
+    pnl: tip(tips.pnl),
+    followers: tip(tips.followers),
+    stake: tip(tips.stake),
+    esg: tip(tips.esg),
+  };
+
+  /** 標題文字加虛線底線，提示「移上去有說明」。 */
+  const headerLabel = (label: string, text: string | undefined) =>
+    text === undefined ? label : (
+      <Tooltip title={text} arrow placement="top" enterDelay={200}>
+        <Box component="span" sx={{ borderBottom: '1px dotted', borderColor: 'text.disabled', cursor: 'help' }}>
+          {label}
+        </Box>
+      </Tooltip>
+    );
+
   const sortableHeader = (key: SortKey, label: string, align: 'left' | 'center' | 'right' = 'right') => (
     <TableCell
       align={align}
@@ -440,7 +471,7 @@ export default function TraderLeaderboard() {
         direction="desc"
         onClick={() => setSortKey(key)}
       >
-        {label}
+        {headerLabel(label, sortTips[key])}
       </TableSortLabel>
     </TableCell>
   );
@@ -628,7 +659,7 @@ export default function TraderLeaderboard() {
                       bgcolor: 'background.neutral', color: 'text.secondary', fontWeight: 'bold',
                     }}
                   >
-                    {t.marketplace.table.rank}
+                    {headerLabel(t.marketplace.table.rank, tip(tips.rank))}
                     {scanFailedChunks > 0 && (
                       <Box component="span" sx={{ display: 'block', fontSize: 10, color: 'warning.main' }}>
                         {t.marketplace.table.provisional}
@@ -646,7 +677,7 @@ export default function TraderLeaderboard() {
                   </TableCell>
                   {sortableHeader('score', t.marketplace.table.score, 'center')}
                   <TableCell sx={{ position: 'sticky', top: 0, zIndex: 2, bgcolor: 'background.neutral', color: 'text.secondary', fontWeight: 'bold' }}>
-                    {t.marketplace.table.strategy}
+                    {headerLabel(t.marketplace.table.strategy, tip(tips.strategy))}
                   </TableCell>
                   {usingHeroData && sortableHeader('return', t.marketplace.hero.totalReturn)}
                   {usingHeroData && sortableHeader('drawdown', t.marketplace.hero.maxDrawdown)}
@@ -657,7 +688,7 @@ export default function TraderLeaderboard() {
                     align="right"
                     sx={{ position: 'sticky', top: 0, zIndex: 2, bgcolor: 'background.neutral', color: 'text.secondary', fontWeight: 'bold', whiteSpace: 'nowrap' }}
                   >
-                    {t.marketplace.table.winRate}
+                    {headerLabel(t.marketplace.table.winRate, tip(tips.winRate))}
                   </TableCell>
                   {sortableHeader('followers', t.marketplace.card.followersLabel)}
                   {sortableHeader('stake', t.marketplace.card.stakeLabel)}
