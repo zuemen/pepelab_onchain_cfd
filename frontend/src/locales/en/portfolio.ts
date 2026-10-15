@@ -210,7 +210,7 @@ export const portfolio: Catalog['portfolio'] = {
     openCount: '{count} open · manual + copied',
     openCountNoCopy: '{count} open',
     noOpenPositions: 'No open positions.',
-    total: 'Total',
+    totalOf: 'Total {label}',
 
     openPositionsSimple: 'My positions',
     openCountSimple: '{count} positions',

@@ -1001,44 +1001,60 @@ export default function PortfolioPage() {
           <Typography variant="subtitle2" sx={{ fontWeight: 'bold', color: 'text.secondary', textTransform: 'uppercase', letterSpacing: 1 }}>
             {mode === 'simple' ? t.portfolio.page.openPositionsSimple : t.portfolio.page.openPositions}
           </Typography>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2.5, flexWrap: 'wrap' }}>
-            {/* 專家模式的表格有十幾欄、要橫向捲動，總計放在表格最底下那一列時，「總計」兩字在最左邊、
-                數字在最右邊，捲到哪一邊都只看得到一半。所以總計放在這裡，不用捲動就看得到。
-                簡單模式只有四欄，總計照舊放在表格最後一列。 */}
-            {mode === 'expert' && positions.length > 0 && (
-              <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 2, flexWrap: 'wrap', fontFamily: MONO, fontSize: '0.8125rem' }}>
-                <Typography component="span" variant="caption" sx={{ fontWeight: 'bold', color: 'text.primary' }}>
-                  {t.portfolio.page.total}
-                </Typography>
-                <Box component="span" sx={{ whiteSpace: 'nowrap' }}>
-                  <Typography component="span" variant="caption" color="text.secondary">{t.portfolio.column.value} </Typography>
-                  <Box component="span" sx={{ fontWeight: 'bold', color: 'text.primary' }}>
-                    {positionsValueTotal === null ? '—' : f18(positionsValueTotal)}
-                  </Box>
-                </Box>
-                <Box component="span" sx={{ whiteSpace: 'nowrap' }}>
-                  <Typography component="span" variant="caption" color="text.secondary">{t.portfolio.column.unrealizedPnl} </Typography>
-                  <Box component="span" sx={{ fontWeight: 'bold', color: pnlColor(unrealisedPnl) }}>
-                    {unrealisedPnl === null ? '—' : fPnL(unrealisedPnl)}
-                  </Box>
-                </Box>
-                <Box component="span" sx={{ whiteSpace: 'nowrap' }}>
-                  <Typography component="span" variant="caption" color="text.secondary">{t.portfolio.column.accruedFunding} </Typography>
-                  <Box component="span" sx={{ color: fundingTotal === null ? 'text.secondary' : fundingTotal < 0n ? 'success.main' : 'error.main' }}>
-                    {fundingTotal === null ? '—' : fPnL(-fundingTotal)}
-                  </Box>
-                </Box>
-              </Box>
-            )}
-            {/* The count lives here now rather than in its own card above a table
-                that already shows every row. */}
-            <Typography variant="caption" color="text.secondary">
-              {mode === 'simple'
-                ? interpolate(t.portfolio.page.openCountSimple, { count: positions.length })
-                : interpolate(FEATURE_COPY_TRADING ? t.portfolio.page.openCount : t.portfolio.page.openCountNoCopy, { count: positions.length })}
-            </Typography>
-          </Box>
+          {/* The count lives here now rather than in its own card above a table
+              that already shows every row. */}
+          <Typography variant="caption" color="text.secondary">
+            {mode === 'simple'
+              ? interpolate(t.portfolio.page.openCountSimple, { count: positions.length })
+              : interpolate(FEATURE_COPY_TRADING ? t.portfolio.page.openCount : t.portfolio.page.openCountNoCopy, { count: positions.length })}
+          </Typography>
         </Box>
+
+        {/* 總計放在表格上方的一排小卡片：專家模式的表格要橫向捲動，總計放在最後一列時「總計」在最左、
+            數字在最右，捲到哪邊都只看得到一半；擠在標題列又太擠。簡單模式只有價值與損益兩項，
+            用自己的欄位名稱（columnLabelForMode）。 */}
+        {positions.length > 0 && (
+          <Box
+            sx={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+              gap: 1.5,
+              px: 3,
+              py: 2,
+              borderBottom: '1px solid',
+              borderColor: 'divider',
+            }}
+          >
+            {[
+              {
+                label: mode === 'simple' ? columnLabelForMode('value', 'simple') : t.portfolio.column.value,
+                value: positionsValueTotal === null ? '—' : f18(positionsValueTotal),
+                color: 'text.primary',
+              },
+              {
+                label: mode === 'simple' ? columnLabelForMode('unrealizedPnl', 'simple') : t.portfolio.column.unrealizedPnl,
+                value: unrealisedPnl === null ? '—' : fPnL(unrealisedPnl),
+                color: pnlColor(unrealisedPnl),
+              },
+              ...(mode === 'expert'
+                ? [{
+                    label: t.portfolio.column.accruedFunding,
+                    value: fundingTotal === null ? '—' : fPnL(-fundingTotal),
+                    color: fundingTotal === null ? 'text.secondary' : fundingTotal < 0n ? 'success.main' : 'error.main',
+                  }]
+                : []),
+            ].map(card => (
+              <Box key={card.label} sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 1.5, px: 2, py: 1.25, bgcolor: 'background.neutral' }}>
+                <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+                  {interpolate(t.portfolio.page.totalOf, { label: card.label })}
+                </Typography>
+                <Typography sx={{ fontFamily: MONO, fontWeight: 'bold', fontSize: '1.0625rem', color: card.color, whiteSpace: 'nowrap' }}>
+                  {card.value}
+                </Typography>
+              </Box>
+            ))}
+          </Box>
+        )}
 
         {positionsUnread > 0 && (
           <Alert severity="warning" sx={{ mx: 2, mb: 1 }}>
@@ -1075,18 +1091,6 @@ export default function PortfolioPage() {
                   </TableRow>
                 ))}
               </TableBody>
-              <tfoot style={{ borderTop: '1px solid rgba(255,255,255,0.08)' }}>
-                <TableRow sx={{ bgcolor: 'background.neutral' }}>
-                  <TableCell colSpan={2} sx={{ fontWeight: 'bold', color: 'text.primary' }}>{t.portfolio.page.total}</TableCell>
-                  <TableCell sx={{ fontFamily: MONO, fontWeight: 'bold', color: 'text.primary' }}>
-                    {positionsValueTotal === null ? '—' : f18(positionsValueTotal)}
-                  </TableCell>
-                  <TableCell sx={{ fontFamily: MONO, fontWeight: 'bold', color: pnlColor(unrealisedPnl) }}>
-                    {unrealisedPnl === null ? '—' : fPnL(unrealisedPnl)}
-                  </TableCell>
-                  <TableCell />
-                </TableRow>
-              </tfoot>
             </Table>
           </TableContainer>
         ) : (
