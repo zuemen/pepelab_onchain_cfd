@@ -78,6 +78,7 @@ const ALLOWED: ReadonlyArray<{ key: string; why: string }> = [
   { key: 'portfolio.page.copyRefreshStep', why: '同上（「更新到最新版」完成後的提示）' },
   { key: 'portfolio.page.stopLossHint', why: '跟單部位卡的停損提醒說明：跟 unfollow 一樣，既有跟單要能設提醒並取消' },
   { key: 'portfolio.close.copyManaged', why: '只在該列屬於 active 跟單紀錄時出現' },
+  { key: 'portfolio.close.copyManagedShort', why: '同上（平倉欄的短標籤，copyManaged 是它的提示）' },
   { key: 'portfolio.close.leftover', why: '只在該列是跟單留下的部位時出現' },
   { key: 'portfolio.column.copiedFrom', why: '旗標關閉時只在有跟單留下的部位時才顯示此欄' },
   { key: 'history.eventType.copyFee', why: '鏈上歷史事件，只在使用者真的有這類事件時出現' },

@@ -88,6 +88,7 @@ import TextField from '@mui/material/TextField';
 import Select from '@mui/material/Select';
 import MenuItem from '@mui/material/MenuItem';
 import { Icon } from '@iconify/react';
+import { alpha } from '@mui/material/styles';
 import { useToast } from 'src/components/pepefi/ToastProvider'
 
 // ── Config ──────────────────────────────────────────────────────────────────
@@ -516,11 +517,13 @@ export default function PortfolioPage() {
   const renderCloseCell = (row: PosRow) => {
     const availability = closeAvailability(row, activeCopyPositionIds);
     if (availability === 'managed') {
+      // 跟單開的部位不能單獨平倉。以前把整句說明塞在這一格，折成好幾行、每一列都被撐得很高；
+      // 改成一個短標籤，完整說明放在滑鼠移上去的提示。
       return (
-        <TableCell align="right" sx={{ maxWidth: 220 }}>
-          <Typography variant="caption" color="text.secondary" sx={{ display: 'block', whiteSpace: 'normal' }}>
-            {t.portfolio.close.copyManaged}
-          </Typography>
+        <TableCell align="right" sx={{ whiteSpace: 'nowrap' }}>
+          <MuiTooltip title={t.portfolio.close.copyManaged}>
+            <Chip size="small" variant="outlined" label={t.portfolio.close.copyManagedShort} sx={{ cursor: 'help', fontSize: '0.75rem' }} />
+          </MuiTooltip>
         </TableCell>
       );
     }
@@ -862,12 +865,13 @@ export default function PortfolioPage() {
               <TableHead>
                 <TableRow sx={{ bgcolor: 'background.neutral' }}>
                   {([
+                    // 交易者名稱靠左，其餘欄位一律靠右，標題與內容對齊同一邊。
                     { label: t.portfolio.page.copyColumn.trader,   right: false },
-                    { label: t.portfolio.page.copyColumn.copiedAt, right: false },
+                    { label: t.portfolio.page.copyColumn.copiedAt, right: true },
                     { label: t.portfolio.page.copyColumn.initial,  right: true },
                     { label: t.portfolio.page.copyColumn.current,  right: true },
                     { label: t.portfolio.page.copyColumn.return,   right: true },
-                    { label: t.portfolio.page.copyColumn.stopLoss, right: false },
+                    { label: t.portfolio.page.copyColumn.stopLoss, right: true },
                     { label: t.portfolio.page.copyColumn.actions,  right: true },
                   ]).map(({ label, right }) => (
                     <TableCell key={label} sx={{ color: 'text.secondary', fontWeight: 'bold', fontSize: '0.75rem', py: 1.5, textAlign: right ? 'right' : 'left' }}>
@@ -886,7 +890,17 @@ export default function PortfolioPage() {
                   const refreshKey = `refresh_${rec.index}`;
                   const stopHit = stopLossReached(rec.initialAmount, rec.currentValue, stopLoss[rec.index] ?? null);
                   return (
-                    <TableRow key={rec.index} sx={{ '&:hover': { bgcolor: 'action.hover' } }}>
+                    <TableRow
+                      key={rec.index}
+                      sx={outdated
+                        // 策略已更新：整列淡橘底、左側一條橘線，一眼就看得出哪一筆要處理。
+                        ? {
+                            bgcolor: theme => alpha(theme.palette.warning.main, 0.08),
+                            '& > td:first-of-type': { boxShadow: theme => `inset 4px 0 0 ${theme.palette.warning.main}` },
+                            '&:hover': { bgcolor: theme => alpha(theme.palette.warning.main, 0.12) },
+                          }
+                        : { '&:hover': { bgcolor: 'action.hover' } }}
+                    >
                       <TableCell>
                         <Typography variant="subtitle2" sx={{ fontWeight: 'bold' }}>
                           {rec.traderName || SHORT_ADDR(rec.trader)}
@@ -896,11 +910,17 @@ export default function PortfolioPage() {
                         </Typography>
                         {outdated && (
                           <MuiTooltip title={t.portfolio.page.copyOutdatedHint}>
-                            <Chip size="small" color="warning" variant="outlined" label={t.portfolio.page.copyOutdated} sx={{ mt: 0.5, height: 20, fontSize: '0.6875rem' }} />
+                            <Chip
+                              size="small"
+                              color="warning"
+                              icon={<Icon icon="solar:danger-triangle-bold" width={14} />}
+                              label={t.portfolio.page.copyOutdated}
+                              sx={{ mt: 0.75, fontWeight: 'bold', fontSize: '0.75rem' }}
+                            />
                           </MuiTooltip>
                         )}
                       </TableCell>
-                      <TableCell sx={{ color: 'text.secondary', fontSize: '0.75rem' }}>
+                      <TableCell sx={{ color: 'text.secondary', fontSize: '0.75rem', textAlign: 'right', whiteSpace: 'nowrap' }}>
                         {fDate(rec.copiedAt)}
                       </TableCell>
                       <TableCell sx={{ fontFamily: MONO, textAlign: 'right' }}>
@@ -917,7 +937,7 @@ export default function PortfolioPage() {
                           </Box>
                         )}
                       </TableCell>
-                      <TableCell>
+                      <TableCell sx={{ textAlign: 'right' }}>
                         <MuiTooltip title={t.portfolio.page.stopLossHint}>
                           <Select<number | ''>
                             size="small"
@@ -937,7 +957,9 @@ export default function PortfolioPage() {
                         {outdated && (
                           <Button
                             size="small"
-                            variant="outlined"
+                            variant="contained"
+                            color="warning"
+                            startIcon={<Icon icon="solar:refresh-bold" width={16} />}
                             onClick={() => void doRefreshCopy(rec)}
                             disabled={busy[refreshKey] || busy[unfKey] || !!unfStale}
                             title={unfStale ?? undefined}
@@ -1071,6 +1093,8 @@ export default function PortfolioPage() {
                         fontWeight: 'bold',
                         fontSize: '0.75rem',
                         py: 1.5,
+                        // 欄位多，不讓標題被擠到一個字一行（「槓桿」「累計資金費」）；放不下時表格自己橫向捲動。
+                        whiteSpace: 'nowrap',
                         ...(hint ? { cursor: 'help', textDecoration: 'underline dotted', textUnderlineOffset: 3 } : {}),
                       }}
                     >
