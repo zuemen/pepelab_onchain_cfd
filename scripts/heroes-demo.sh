@@ -21,9 +21,11 @@ fi
 anvil --port "$PORT" --host 0.0.0.0 --load-state "$STATE" --silent &
 ANVIL_PID=$!
 TICK_PID=""
+# 跟 heroes-replay.sh 一樣用 kill -9：Windows 上 SIGINT 送不到原生的 anvil.exe，`wait` 會一直卡住。
+# 這裡不需要結束時存狀態，直接收掉沒有損失。
 cleanup() {
   [ -n "$TICK_PID" ] && kill "$TICK_PID" 2>/dev/null || true
-  kill -INT "$ANVIL_PID" 2>/dev/null || true
+  kill -9 "$ANVIL_PID" 2>/dev/null || true
   wait 2>/dev/null || true
 }
 trap cleanup EXIT

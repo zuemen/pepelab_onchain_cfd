@@ -23,6 +23,18 @@ Windows 的 Git Bash 裡 venv 的路徑是 `.venv/Scripts/`：把 `. .venv/bin/a
 需要 PATH 上有 `anvil`／`forge`／`cast`。開啟 Smart App Control 的 Windows 機器請在 WSL 裡執行，
 並先 `export PATH="$HOME/.foundry/bin:$PATH"`（見 `docs/agents/environment.md`）。
 
+在 WSL 裡對 Windows 那份 checkout（`/mnt/c/...`）執行時，`agent/node_modules` 是在 Windows 上裝的，
+只有 Windows 版的 esbuild，`npx tsx` 會報「You installed esbuild for another platform」。在 WSL 的家目錄
+另放一份同版本的 Linux 版，讓 esbuild 改用它（只要做一次；agent 的 esbuild 升版後要重裝）：
+
+```bash
+# 在 repo 根目錄執行
+V="$(node -p "require('./agent/node_modules/esbuild/package.json').version")"
+mkdir -p ~/esbuild-linux && (cd ~/esbuild-linux && npm install --no-save "@esbuild/linux-x64@$V")
+# 之後每個 WSL 終端機都要有這一行（可以加進 ~/.bashrc）
+export ESBUILD_BINARY_PATH="$HOME/esbuild-linux/node_modules/@esbuild/linux-x64/bin/esbuild"
+```
+
 改完程式想快速驗證，用進版控的小規模排程（3 位交易者 × 30 天，一兩分鐘跑完）：
 
 ```bash
