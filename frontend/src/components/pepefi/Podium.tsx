@@ -94,13 +94,22 @@ export default function Podium({
         border: '1px solid',
         borderColor: MEDAL_BORDER[rank - 1],
         boxShadow: MEDAL_GLOW[rank - 1],
+        // 整張卡片都能點進個人頁：見下面名稱連結的 ::after。
+        position: 'relative',
+        transition: 'transform 120ms ease, box-shadow 120ms ease',
+        '&:hover': { transform: 'translateY(-2px)', boxShadow: MEDAL_GLOW[rank - 1].replace('24px', '32px') },
+        '&:hover .podium-trader-name': { textDecoration: 'underline' },
+        '&:has(.podium-profile-link:focus-visible)': { outline: '2px solid', outlineColor: 'primary.main', outlineOffset: 2 },
       }}
     >
-      {/* 身分列——頭貼與名稱是通往個人首頁的連結。 */}
+      {/* 身分列——頭貼與名稱是通往個人頁的連結，它的 ::after 蓋住整張卡片（stretched link），
+          所以點卡片任何地方都進個人頁，而且仍是真的連結（可以 Ctrl+點開新分頁、用 Tab 聚焦）。
+          卡片裡自己能點的東西（策略圖示、TraderScore、跟單按鈕）用 position: relative 疊在它上面。 */}
       <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1 }}>
         <Box
           component={RouterLink}
           to={`/trader/${trader.address}`}
+          className="podium-profile-link"
           sx={{
             display: 'flex',
             alignItems: 'center',
@@ -108,7 +117,8 @@ export default function Podium({
             minWidth: 0,
             textDecoration: 'none',
             color: 'inherit',
-            '&:hover .podium-trader-name': { textDecoration: 'underline' },
+            outline: 'none',
+            '&::after': { content: '""', position: 'absolute', inset: 0 },
           }}
         >
           <Avatar
@@ -139,7 +149,8 @@ export default function Podium({
 
       {/* 策略配置:這個人押什麼、做多還做空——卡片的主角。ESG 評等接在後面,
           跟表格「策略」欄的排法一致。 */}
-      <Box sx={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 1 }}>
+      {/* 疊在卡片連結上面：圖示的提示（資產名稱、權重）要能滑鼠移上去看。 */}
+      <Box sx={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 1, position: 'relative', zIndex: 1, alignSelf: 'flex-start' }}>
         <AllocationRow allocs={trader.allocs} hasStrategy={trader.hasStrategy} size={26} />
         {esg && <ESGBadge composite={esg.composite} rating={esg.rating} size="sm" />}
       </Box>
@@ -187,7 +198,7 @@ export default function Podium({
             size="small"
             color={scoreChipColor(trader.score.total)}
             onClick={e => onScoreClick(e.currentTarget, trader)}
-            sx={{ fontWeight: 'bold', fontFamily: MONO, cursor: 'pointer' }}
+            sx={{ fontWeight: 'bold', fontFamily: MONO, cursor: 'pointer', position: 'relative', zIndex: 1 }}
           />
         </Box>
         <Typography
@@ -211,7 +222,7 @@ export default function Podium({
           color="primary"
           component={RouterLink}
           to={`/copy/${trader.address}`}
-          sx={{ textTransform: 'none', fontWeight: 'bold', fontSize: '0.75rem' }}
+          sx={{ textTransform: 'none', fontWeight: 'bold', fontSize: '0.75rem', position: 'relative', zIndex: 1 }}
         >
           {t.marketplace.card.copy}
         </Button>
