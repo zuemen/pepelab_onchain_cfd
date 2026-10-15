@@ -27,8 +27,9 @@ const summary: HeroSummary = {
   window7d: window,
   window30d: { pnlUsd: 123.45, marginUsd: 1000, volumeUsd: 2500, wins: 5, trades: 8 },
   sparkline: [10000, 10050.5, 9990],
+  activeSince: '2024-10-01',
 }
-const index = { schemaVersion: 1, chainId: 31337, range: { from: '2024-10-01', to: '2026-10-09' }, traders: [summary] }
+const index = { schemaVersion: 2, chainId: 31337, range: { from: '2024-10-01', to: '2026-10-09' }, traders: [summary] }
 const detail = {
   ...summary,
   equityCurve: [{ date: '2024-10-01', equity: 10000 }],
@@ -60,7 +61,16 @@ describe('parseHeroIndex', () => {
   })
 
   it('refuses a schema version it does not know', () => {
-    expect(parseHeroIndex({ ...index, schemaVersion: 2 }, 31337)).toBeNull()
+    // 1 是還沒有 activeSince 的舊資料：排行榜靠它判斷能不能列入排名，舊檔整份不收。
+    expect(parseHeroIndex({ ...index, schemaVersion: 1 }, 31337)).toBeNull()
+    expect(parseHeroIndex({ ...index, schemaVersion: 3 }, 31337)).toBeNull()
+  })
+
+  it('needs each trader start date, which may be null for a trader who never published', () => {
+    const { activeSince: _omit, ...withoutStart } = summary
+    expect(parseHeroIndex({ ...index, traders: [withoutStart] }, 31337)).toBeNull()
+    expect(parseHeroIndex({ ...index, traders: [{ ...summary, activeSince: 20241001 }] }, 31337)).toBeNull()
+    expect(parseHeroIndex({ ...index, traders: [{ ...summary, activeSince: null }] }, 31337)?.traders[0].activeSince).toBeNull()
   })
 
   it('refuses the whole file when one trader is malformed', () => {

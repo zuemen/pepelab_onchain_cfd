@@ -40,6 +40,9 @@ export const marketplace: Catalog['marketplace'] = {
     esg: 'ESG',
     actions: 'Actions',
     insufficientSample: 'Insufficient sample',
+    unranked: 'Not enough data to be ranked ({rule})',
+    unrankedRuleHistory: 'trading for less than {days} days',
+    unrankedRuleTrades: 'fewer than {count} closed trades',
   },
 
   scoreBreakdown: {
@@ -54,7 +57,7 @@ export const marketplace: Catalog['marketplace'] = {
   podium: {
     hiddenIncomplete: 'Some block ranges could not be read, so the 7-day metrics are incomplete; the podium is withheld until a refresh succeeds.',
     heading: '🏆 Top 3 by Current Sort',
-    noneQualified: 'No trader has 5+ closed trades yet, so there are no podium finishers — they\'re still in the table below.',
+    noneQualified: 'No trader qualifies for a rank yet (those {rule} are not ranked), so there are no podium finishers — they\'re still in the table below.',
   },
 
   loadFailed: 'Failed to load:',
@@ -118,6 +121,7 @@ export const marketplace: Catalog['marketplace'] = {
     sortReturn: 'Sort: Total return',
     sortDrawdown: 'Sort: Max drawdown',
     sortSharpe: 'Sort: Sharpe',
+    podiumReturn: 'Return 30d',
     sortVolume: 'Sort: Volume (30d)',
     sortPnl: 'Sort: PnL (30d)',
   },

@@ -18,7 +18,8 @@ from .schedule import day_timestamp
 
 E18 = 10**18
 DAY = 86_400
-SCHEMA_VERSION = 1
+# 2：索引的每位交易者多了 activeSince（排行榜用來判斷能不能列入排名）。
+SCHEMA_VERSION = 2
 
 
 @dataclass
@@ -240,6 +241,8 @@ def build_outputs(doc: dict, prices: pd.DataFrame) -> tuple[dict, dict[str, dict
             "window7d": window_stats(trades, end_ts, 7),
             "window30d": window_stats(trades, end_ts, 30),
             "sparkline": _sparkline(equity),
+            # 第一次發布策略的日期。排行榜用它判斷交易了多久、夠不夠資格列入排名。
+            "activeSince": strategies[0]["date"] if strategies else None,
         }
         summaries.append(summary)
         details[address.lower()] = {
@@ -258,7 +261,6 @@ def build_outputs(doc: dict, prices: pd.DataFrame) -> tuple[dict, dict[str, dict
             "tradesPerWeek": round(len(trades) / max(len(days) / 7, 1), 2),
             "topAssets": top_assets(trades),
             "followerHistory": follower_history(doc["events"], address, months),
-            "activeSince": strategies[0]["date"] if strategies else None,
             "strategies": strategies,
             "trades": [{
                 "positionId": t.position_id, "asset": t.asset, "isLong": t.is_long, "leverage": t.leverage,

@@ -1,5 +1,5 @@
 import { MONO, LiveDot } from 'src/components/pepefi/brandKit'
-import { useRef, useState, useEffect, useCallback } from 'react';
+import { useRef, useState, Fragment, useEffect, useCallback } from 'react';
 import { Link as RouterLink } from 'react-router';
 import { useContracts } from 'src/hooks/useContracts';
 import { usePepefiWallet } from 'src/layouts/pepefi';
@@ -31,6 +31,10 @@ import {
   buildTraderCard,
   matchesSearch,
   makeTraderComparator,
+  isRankEligible,
+  rankLeaderboard,
+  MIN_HISTORY_DAYS,
+  MIN_TRADES_FOR_TRUST,
   scoreChipColor,
   fPnL,
   fWinRate,
@@ -372,17 +376,20 @@ export default function TraderLeaderboard() {
     .filter(tr => matchesSearch(tr, search))
     .sort(makeTraderComparator(sortKey, getEsgComposite));
 
-  // 領獎台跟著目前排序走,取 visible 的前三名——但「資料不足」(平倉 <5 筆)的
-  // 交易者排除在外,不讓僥倖的少量樣本登上榜首。這些人仍然留在下面的表格裡,
-  // 只是不佔領獎台的位置。
-  const podium = visible.filter(tr => !tr.score.insufficientSample).slice(0, 3);
-  const podiumAddresses = new Set(podium.map(tr => tr.address));
-
-  // 表格從第 4 名接續,不重複顯示領獎台上的人——但名次標示的是這個人在 visible
-  // 裡的真實排名,不是表格陣列裡的位置。「資料不足」的人若排在前三名,不會上
-  // 領獎台,但仍會用他真實的名次(例如 #2)留在表格裡,名次因此可能不連續。
-  const rankOf = new Map(visible.map((tr, i) => [tr.address, i + 1]));
-  const tableRows = visible.filter(tr => !podiumAddresses.has(tr.address));
+  // 先篩選、再排名（見 leaderboardMetrics 的 rankLeaderboard）：資料不足的人不佔名次，
+  // 領獎台永遠是目前排序的名次 1–3，表格從第 4 名接著排，不重複也不跳號；資料不足的人
+  // 依同樣的排序列在表格最後、不給名次，仍然搜得到、也能跟單。
+  // 有段落讀不到時指標不完整，不選領獎台，列入排名的人全部留在表格。
+  const rankAsOf = heroRange?.to ?? null;
+  const { podium, rows: rankedRows, unranked, rankOf } = rankLeaderboard(
+    visible,
+    tr => isRankEligible(tr, rankAsOf),
+    scanFailedChunks > 0 ? 0 : 3,
+  );
+  const tableRows = [...rankedRows, ...unranked];
+  const rankRule = rankAsOf !== null
+    ? interpolate(t.marketplace.table.unrankedRuleHistory, { days: MIN_HISTORY_DAYS })
+    : interpolate(t.marketplace.table.unrankedRuleTrades, { count: MIN_TRADES_FOR_TRUST });
 
   const isStarTrader = (t: TraderCard) =>
     t.reputation !== null && t.reputation > 80n && t.followerCount > 3n;
@@ -396,6 +403,8 @@ export default function TraderLeaderboard() {
       setSortKey('score');
     }
   }, [usingHeroData, sortKey]);
+  // 表頭的欄數：「資料不足」分隔列要橫跨整張表。績效資料多三欄（累積報酬、最大回撤、Sharpe）。
+  const columnCount = usingHeroData ? 14 : 11;
   const volLabel = usingHeroData ? t.marketplace.hero.volLabel : t.marketplace.card.volLabel;
   const pnlLabel = usingHeroData ? t.marketplace.hero.pnlLabel : t.marketplace.card.pnlLabel;
 
@@ -588,14 +597,15 @@ export default function TraderLeaderboard() {
           ) : podium.length > 0 ? (
             <Podium
               podium={podium}
+              returnLabel={usingHeroData ? t.marketplace.hero.podiumReturn : undefined}
               esgOf={esgFor}
               onScoreClick={(el, trader) => setScorePopover({ anchorEl: el, trader })}
             />
           ) : (
-            // 領獎台把「資料不足」(平倉 <5 筆)的人排除在外,人數不夠時 Podium 直接
-            // return null——這裡不能讓它就這樣悄悄消失,不然看起來像壞掉,要講清楚為什麼。
+            // 沒有人列入排名時 Podium 直接 return null——這裡不能讓它就這樣悄悄消失,
+            // 不然看起來像壞掉,要講清楚為什麼。
             <Typography variant="body2" color="text.secondary" sx={{ textAlign: 'center', py: 2 }}>
-              {t.marketplace.podium.noneQualified}
+              {interpolate(t.marketplace.podium.noneQualified, { rule: rankRule })}
             </Typography>
           )}
 
@@ -664,19 +674,34 @@ export default function TraderLeaderboard() {
               </TableHead>
               <TableBody>
                 {tableRows.map(trader => {
-                  const rank = rankOf.get(trader.address) ?? 0;
+                  const rank = rankOf.get(trader.address);
                   const star = isStarTrader(trader);
                   const esgComposite = esgFor(trader);
 
                   return (
-                    <TableRow key={trader.address} hover>
+                    <Fragment key={trader.address}>
+                    {trader === unranked[0] && (
+                      <TableRow>
+                        <TableCell colSpan={columnCount} sx={{ bgcolor: 'background.neutral', py: 1 }}>
+                          {/* 文字跟著左側固定欄停在原地，橫向捲動時不會被捲走。 */}
+                          <Typography
+                            variant="caption"
+                            color="text.secondary"
+                            sx={{ position: 'sticky', left: 16, display: 'inline-block', fontWeight: 'bold' }}
+                          >
+                            {interpolate(t.marketplace.table.unranked, { rule: rankRule })}
+                          </Typography>
+                        </TableCell>
+                      </TableRow>
+                    )}
+                    <TableRow hover>
                       <TableCell
                         sx={{
                           position: 'sticky', left: 0, zIndex: 1, minWidth: STICKY_RANK_W,
                           bgcolor: 'background.paper', fontFamily: MONO, color: 'text.secondary', fontWeight: 'bold',
                         }}
                       >
-                        #{rank}
+                        {rank === undefined ? '—' : `#${rank}`}
                       </TableCell>
 
                       <TableCell
@@ -866,6 +891,7 @@ export default function TraderLeaderboard() {
                         </Stack>
                       </TableCell>
                     </TableRow>
+                    </Fragment>
                   );
                 })}
               </TableBody>

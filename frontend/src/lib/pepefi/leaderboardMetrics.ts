@@ -139,7 +139,7 @@ const clamp = (n: number, lo: number, hi: number): number => Math.min(hi, Math.m
 
 const RETURN_SATURATION_PCT = 20;   // 7 天報酬率達 20% 就拿滿 40 分,再高不加碼
 const STAKE_FOR_MAX_SCORE   = 5_000; // 質押滿 5,000(完整代幣單位)拿滿 20 分
-const MIN_TRADES_FOR_TRUST  = 5;     // 平倉少於這個數,勝率不可信,標「資料不足」
+export const MIN_TRADES_FOR_TRUST  = 5;     // 平倉少於這個數,勝率不可信,標「資料不足」
 
 export interface TraderScoreInput {
   pnl7d:          bigint;
@@ -361,3 +361,55 @@ export const makeTraderComparator = (
   }
   return primary !== 0 ? primary : b.score.total - a.score.total;
 };
+
+// ── 排名 ──────────────────────────────────────────────────────────────────────
+// 先篩選、再排名（參考 Bybit 跟單排行榜的兩階段做法：先篩出有資格的人，再只對他們排序）。
+// 以前是先替所有人編名次、再把資料不足的人從領獎台拿掉，表格就會出現 #1 → #3 這種跳號，
+// 而 #1 反而不在領獎台上。現在資料不足的人不佔名次，領獎台永遠是名次 1–3。
+
+/** 有績效資料時，交易滿這麼多天才列入排名（參考 eToro 被跟單前至少兩個月的紀錄）。 */
+export const MIN_HISTORY_DAYS = 60;
+
+const DAY_MS = 86_400_000;
+
+/**
+ * 能不能列入排名（有名次、能上領獎台）。
+ * - 有績效資料：交易滿 MIN_HISTORY_DAYS 天，算到資料的統計期間終點（asOf）為止，不是今天——
+ *   回放結束後沒有新交易，用今天算會讓天數隨展示日期變動。買入持有的人兩年幾乎不平倉，
+ *   用「最近平倉幾筆」判斷會把他誤判成資料不足。
+ * - 沒有績效資料（例如測試網）：最近平倉滿 MIN_TRADES_FOR_TRUST 筆，跟勝率可信的門檻相同。
+ */
+export function isRankEligible(card: TraderCard, asOf: string | null): boolean {
+  if (card.hero && asOf !== null) {
+    const since = card.hero.activeSince;
+    if (since === null) return false;
+    return (Date.parse(asOf) - Date.parse(since)) / DAY_MS >= MIN_HISTORY_DAYS;
+  }
+  return !card.score.insufficientSample;
+}
+
+export interface RankedLeaderboard {
+  /** 名次 1 到 podiumSize。 */
+  podium: TraderCard[];
+  /** 接在領獎台之後的名次。 */
+  rows:   TraderCard[];
+  /** 資料不足、不列入排名的人，維持原本的排序。 */
+  unranked: TraderCard[];
+  /** 只有列入排名的人有名次，從 1 連續編號。 */
+  rankOf: Map<string, number>;
+}
+
+/** sorted 是已經依目前排序鍵排好的清單。podiumSize 傳 0 時（例如資料不完整、不選領獎台）全部列在表格。 */
+export function rankLeaderboard(
+  sorted: TraderCard[],
+  eligible: (card: TraderCard) => boolean,
+  podiumSize: number,
+): RankedLeaderboard {
+  const ranked = sorted.filter(eligible);
+  return {
+    podium:   ranked.slice(0, podiumSize),
+    rows:     ranked.slice(podiumSize),
+    unranked: sorted.filter((card) => !eligible(card)),
+    rankOf:   new Map(ranked.map((card, i) => [card.address, i + 1])),
+  };
+}

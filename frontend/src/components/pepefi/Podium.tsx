@@ -34,6 +34,8 @@ interface Props {
   /** 交易者的加權 ESG {分數, 評等},缺資料時回傳 null——由 MarketplacePage 帶著 useESG 的資料算。 */
   esgOf: (trader: TraderCard) => { composite: number; rating: string } | null;
   onScoreClick: (el: HTMLElement, trader: TraderCard) => void;
+  /** 報酬率那格的標籤。有績效資料時它是 30 天的數字，要跟表格的「累積報酬」分清楚。 */
+  returnLabel?: string;
 }
 
 /** 小標籤 + mono 數值的一格統計,三格並排。 */
@@ -68,7 +70,12 @@ function Stat({ label, value, tone }: { label: string; value: string; tone?: 'up
  * 權益曲線(擠成平線)與勝負方塊列(跟勝率重複)都拿掉了,數字本身就是答案。
  * 跟著目前排序走,而不是固定按 TraderScore。交易者少於 3 位時,對應的格子就不畫。
  */
-export default function Podium({ podium, esgOf, onScoreClick }: Props) {
+export default function Podium({
+  podium,
+  esgOf,
+  onScoreClick,
+  returnLabel = t.marketplace.scoreBreakdown.returnLabel,
+}: Props) {
   if (podium.length === 0) return null;
 
   const card = (trader: TraderCard, rank: number) => {
@@ -143,7 +150,7 @@ export default function Podium({ podium, esgOf, onScoreClick }: Props) {
           穩不穩」的答案,不再另外畫一條擠成平線的曲線或跟勝率重複的方塊列。 */}
       <Stack direction="row" spacing={1}>
         <Stat
-          label={t.marketplace.scoreBreakdown.returnLabel}
+          label={returnLabel}
           value={fReturnPct(trader.score.returnPct)}
           tone={
             trader.score.returnPct === null

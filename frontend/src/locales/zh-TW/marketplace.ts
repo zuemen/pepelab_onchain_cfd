@@ -46,6 +46,10 @@ export const marketplace = {
     actions: '操作',
     /** 平倉少於 5 筆時掛在勝率旁邊的灰標,不是紅色警告——只是不夠準,不是壞消息。 */
     insufficientSample: '資料不足',
+    /** 表格裡「不列入排名」那一段的分隔列。rule 是下面兩句之一。 */
+    unranked: '以下資料不足，不列入排名（{rule}）',
+    unrankedRuleHistory: '交易未滿 {days} 天',
+    unrankedRuleTrades: '平倉未滿 {count} 筆',
   },
 
   /**
@@ -66,7 +70,7 @@ export const marketplace = {
     hiddenIncomplete: '部分區塊範圍讀取失敗，7 日指標不完整，暫不選出領獎台。重新整理成功後才會顯示。',
     heading: '🏆 目前排序前三名',
     /** 平倉 <5 筆的人被排除在領獎台之外,人數不夠時要講清楚為什麼消失,不能悄悄空白。 */
-    noneQualified: '還沒有交易者平倉滿 5 筆,暫時沒有領獎台名次——這些人仍然在下面的表格裡。',
+    noneQualified: '還沒有交易者符合排名資格（{rule}的不列入排名），暫時沒有領獎台名次——這些人仍然在下面的表格裡。',
   },
 
   loadFailed: '載入失敗：',
@@ -138,6 +142,8 @@ export const marketplace = {
     sortReturn: '排序：累積報酬',
     sortDrawdown: '排序：最大回撤',
     sortSharpe: '排序：Sharpe',
+    /** 領獎台卡片上的報酬率是 30 天的數字，跟表格的「累積報酬」不同。 */
+    podiumReturn: '30 日報酬率',
     /** 有績效資料時交易量與 PnL 是 30 天的視窗，排序下拉也要跟著講 30 天。 */
     sortVolume: '排序：交易量（30 天）',
     sortPnl: '排序：PnL（30 天）',
