@@ -42,6 +42,7 @@ export const traderProfile: Catalog['traderProfile'] = {
     titleMany: 'Strategy History ({count} versions)',
     /** 摘要行：sBTC L 3× · sETH S 2× */
     summaryEntry: '{asset} {side} {leverage}×',
+    showAll: 'Show all {count} versions',
     long: 'L',
     short: 'S',
 
@@ -157,8 +158,6 @@ export const traderProfile: Catalog['traderProfile'] = {
     equityNote: 'Equity = free margin + each position valued at the day\'s price. Borrow fees and funding not yet realised on open positions are left out until the position closes.',
     monthlyTitle: 'Monthly returns',
     exposureTitle: 'Current strategy exposure',
-    strategiesTitle: 'Strategy versions',
-    strategyVersion: 'Version {version}',
     tradesTitle: 'Positions',
     tradesNote: 'PnL is net: the amount returned on close, less margin and the opening fee. The figure in brackets is the price move before fees and funding.',
     colAsset: 'Asset',

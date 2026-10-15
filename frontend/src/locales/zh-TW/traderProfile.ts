@@ -40,6 +40,8 @@ export const traderProfile = {
     titleMany: '策略歷史（{count} 個版本）',
     /** 摘要行：sBTC L 3× · sETH S 2× */
     summaryEntry: '{asset} {side} {leverage}×',
+    /** 策略歷史只先列最新的幾版；按下去展開全部。 */
+    showAll: '顯示全部 {count} 個版本',
     long: '多',
     short: '空',
 
@@ -157,8 +159,6 @@ export const traderProfile = {
     equityNote: '淨值 = 可用保證金 + 各部位依當日價格計算的價值。未平倉部位尚未實現的借款費與資金費率不計入，平倉時才反映。',
     monthlyTitle: '逐月報酬',
     exposureTitle: '目前策略的持倉分布',
-    strategiesTitle: '策略版本',
-    strategyVersion: '第 {version} 版',
     tradesTitle: '部位紀錄',
     tradesNote: '損益為淨額：平倉取回的金額減去保證金與開倉手續費。括號內是未扣費用與資金費率的價差損益。',
     colAsset: '資產',

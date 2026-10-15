@@ -16,12 +16,15 @@ import { FEATURE_COPY_TRADING } from 'src/lib/pepefi/featureFlags'
 
 // 統計卡：跟單旗標關閉時少了「跟隨者」那張，剩三張各佔三分之一。
 const STAT_SIZE = FEATURE_COPY_TRADING ? { xs: 6, md: 3 } : { xs: 12, sm: 4 }
+// 策略歷史先列最新的這麼多版，其餘收在「顯示全部」後面。
+const FIRST_VERSIONS = 5
 import { useAddressActivity } from 'src/hooks/useAddressActivity'
 import HeroTrades from 'src/components/pepefi/hero/HeroTrades'
 import HeroRiskStats from 'src/components/pepefi/hero/HeroRiskStats'
 import HeroPerformance from 'src/components/pepefi/hero/HeroPerformance'
 import { fetchHeroDetail, type HeroDetail } from 'src/lib/pepefi/heroData'
 import { followerReaderOf, readActiveFollowers } from 'src/lib/pepefi/activeFollowers'
+import TxProof from 'src/components/pepefi/hero/TxProof'
 
 import Box from '@mui/material/Box';
 import Container from '@mui/material/Container';
@@ -100,6 +103,7 @@ function TraderProfileView() {
   const [allocs,        setAllocs]        = useState<RawAlloc[]>([])
   const [hasStrategy,   setHasStrategy]   = useState(false)
   const [stratHistory,  setStratHistory]  = useState<HistVer[]>([])
+  const [showAllVersions, setShowAllVersions] = useState(false)
   const [stakeInfo,     setStakeInfo]     = useState<StakeInfo | null>(null)
   const [repScore,      setRepScore]      = useState<bigint | null>(null)
   const [eligible,      setEligible]      = useState<boolean | null>(null)
@@ -127,6 +131,7 @@ function TraderProfileView() {
   useEffect(() => {
     let cancelled = false
     setHero(null)
+    setShowAllVersions(false)
     if (!traderAddr) return undefined
     void fetchHeroDetail(traderAddr, wallet.chainId).then((detail) => {
       if (!cancelled) setHero(detail)
@@ -458,8 +463,12 @@ function TraderProfileView() {
                   { count: stratHistory.length },
                 )}
               </Typography>
+              {/* 調整頻繁的交易者兩年有幾十個版本：先列最新的幾版，其餘收在「顯示全部」後面。 */}
               <Stack spacing={1.5}>
-                {stratHistory.map(ver => (
+                {(showAllVersions ? stratHistory : stratHistory.slice(0, FIRST_VERSIONS)).map(ver => {
+                  // 模擬交易者的績效資料裡有每一版的發布交易；展開時附上，可以向節點讀回確認。
+                  const publishTx = hero?.strategies.find(s => s.versionId === ver.versionId)?.tx ?? null
+                  return (
                   <Card key={ver.versionId} sx={{ border: '1px solid', borderColor: 'divider', overflow: 'hidden' }}>
                     <Box
                       component="button"
@@ -480,7 +489,8 @@ function TraderProfileView() {
                     >
                       <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, minWidth: 0, flexGrow: 1 }}>
                         <Typography variant="caption" sx={{ fontFamily: MONO, color: 'text.secondary' }}>
-                          v{ver.versionId}
+                          {/* 合約的 versionId 從 0 起算；畫面從 1 起算，最新一版的編號才會等於版本數。 */}
+                          v{ver.versionId + 1}
                         </Typography>
                         <Typography variant="body2" sx={{ fontWeight: 'bold', color: 'text.primary', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                           {ver.allocs
@@ -545,11 +555,22 @@ function TraderProfileView() {
                             </TableBody>
                           </Table>
                         </TableContainer>
+                        {publishTx && (
+                          <Box sx={{ mt: 1 }}>
+                            <TxProof label={t.traderProfile.hero.publishTx} hash={publishTx} provider={wallet.provider} chainId={wallet.chainId} />
+                          </Box>
+                        )}
                       </Box>
                     )}
                   </Card>
-                ))}
+                  )
+                })}
               </Stack>
+              {!showAllVersions && stratHistory.length > FIRST_VERSIONS && (
+                <Button size="small" onClick={() => setShowAllVersions(true)} sx={{ alignSelf: 'flex-start', textTransform: 'none' }}>
+                  {interpolate(t.traderProfile.history.showAll, { count: stratHistory.length })}
+                </Button>
+              )}
             </Card>
           )}
 
