@@ -39,7 +39,7 @@ export const marketplace: Catalog['marketplace'] = {
     winRate: 'Win Rate',
     esg: 'ESG',
     actions: 'Actions',
-    insufficientSample: 'Insufficient sample',
+    insufficientSample: 'Small sample',
     unranked: 'Not enough data to be ranked ({rule})',
     unrankedRuleHistory: 'trading for less than {days} days',
     unrankedRuleTrades: 'fewer than {count} closed trades',

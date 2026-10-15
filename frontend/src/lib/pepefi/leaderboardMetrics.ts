@@ -18,7 +18,8 @@ export interface TraderCard {
   address:        string;
   displayName:    string;
   allocs:         RawAlloc[];
-  followerCount:  bigint;
+  /** 目前的跟隨人數（見 activeFollowers.ts），不是被跟單過幾次；讀不到時為 null。 */
+  followerCount:  bigint | null;
   hasStrategy:    boolean;
   reputation:     bigint | null;
   stake:          bigint | null;
@@ -239,7 +240,7 @@ export interface TraderRawInput {
   address:       string;
   displayName:   string;
   allocs:        RawAlloc[];
-  followerCount: bigint;
+  followerCount: bigint | null;
   reputation:    bigint | null;
   stake:         bigint | null;
   totalSlashed:  bigint | null;
@@ -347,7 +348,7 @@ export const makeTraderComparator = (
 ) => (a: TraderCard, b: TraderCard): number => {
   let primary: number;
   switch (sortKey) {
-    case 'followers':  primary = cmpBigDesc(a.followerCount, b.followerCount); break;
+    case 'followers':  primary = cmpNullableBigDesc(a.followerCount, b.followerCount); break;
     case 'volume':     primary = cmpBigDesc(a.totalVolume, b.totalVolume); break;
     case 'pnl':        primary = cmpBigDesc(a.pnl7d, b.pnl7d); break;
     case 'stake':      primary = cmpNullableBigDesc(a.stake, b.stake); break;

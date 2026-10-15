@@ -168,7 +168,7 @@ export default function Podium({
         />
         <Stat
           label={t.marketplace.card.followersLabel}
-          value={String(trader.followerCount)}
+          value={trader.followerCount === null ? '—' : String(trader.followerCount)}
         />
       </Stack>
 

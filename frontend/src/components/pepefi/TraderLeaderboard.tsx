@@ -44,6 +44,7 @@ import {
   type ClosedEvent,
   type LeaderboardSortKey,
 } from 'src/lib/pepefi/leaderboardMetrics';
+import { followerReaderOf, readActiveFollowers } from 'src/lib/pepefi/activeFollowers';
 import {
   fetchHeroIndex,
   heroByAddress,
@@ -274,18 +275,19 @@ export default function TraderLeaderboard() {
         closedEventsByOwner: groupClosedEventsByOwner(closedEvents),
       };
 
+      // 目前的跟隨人數，不是 getFollowerCount 的「被跟單過幾次」（見 activeFollowers.ts）。
+      // 所有交易者一起讀，同一位跟單者的紀錄只讀一次。
+      const followersOf = await readActiveFollowers(addresses as string[], followerReaderOf(contracts.copyTracker));
+      if (ac.signal.aborted) return;
+
       const cards = await Promise.all(
         (addresses as string[]).map(async (addr): Promise<TraderCard> => {
           let tRaw: [boolean, string, bigint] = [false, '', 0n];
-          let fc: bigint = 0n;
           try {
-            const [traderRaw, followerCount] = await Promise.all([
-              contracts.registry.traders(addr),
-              contracts.copyTracker.getFollowerCount(addr),
-            ]);
-            tRaw = traderRaw as unknown as [boolean, string, bigint];
-            fc = followerCount as bigint;
+            tRaw = (await contracts.registry.traders(addr)) as unknown as [boolean, string, bigint];
           } catch { /* unregistered or unavailable */ }
+          const active = followersOf.get(addr.toLowerCase()) ?? null;
+          const fc = active === null ? null : BigInt(active.length);
 
           let allocs: RawAlloc[] = [];
           try {
@@ -392,7 +394,7 @@ export default function TraderLeaderboard() {
     : interpolate(t.marketplace.table.unrankedRuleTrades, { count: MIN_TRADES_FOR_TRUST });
 
   const isStarTrader = (t: TraderCard) =>
-    t.reputation !== null && t.reputation > 80n && t.followerCount > 3n;
+    t.reputation !== null && t.reputation > 80n && t.followerCount !== null && t.followerCount > 3n;
 
   const starTraderCount = visible.filter(isStarTrader).length;
 
@@ -837,7 +839,7 @@ export default function TraderLeaderboard() {
                       </TableCell>
 
                       <TableCell align="right" sx={{ fontFamily: MONO }}>
-                        {String(trader.followerCount)}
+                        {trader.followerCount === null ? '—' : String(trader.followerCount)}
                       </TableCell>
 
                       <TableCell align="right" sx={{ fontFamily: MONO }}>
@@ -907,7 +909,7 @@ export default function TraderLeaderboard() {
               )}{' '}
               ·{' '}
               {interpolate(t.marketplace.footer.followersTotal, {
-                count: visible.reduce((s, tr) => s + Number(tr.followerCount), 0),
+                count: visible.reduce((s, tr) => s + Number(tr.followerCount ?? 0n), 0),
               })}{' '}
               ·{' '}
               {interpolate(

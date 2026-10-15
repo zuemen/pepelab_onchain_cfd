@@ -21,6 +21,7 @@ import HeroTrades from 'src/components/pepefi/hero/HeroTrades'
 import HeroRiskStats from 'src/components/pepefi/hero/HeroRiskStats'
 import HeroPerformance from 'src/components/pepefi/hero/HeroPerformance'
 import { fetchHeroDetail, type HeroDetail } from 'src/lib/pepefi/heroData'
+import { followerReaderOf, readActiveFollowers } from 'src/lib/pepefi/activeFollowers'
 
 import Box from '@mui/material/Box';
 import Container from '@mui/material/Container';
@@ -94,7 +95,7 @@ function TraderProfileView() {
 
   const [name,          setName]          = useState('')
   const [registered,    setRegistered]    = useState(false)
-  const [followers,     setFollowers]     = useState<bigint>(0n)
+  const [followers,     setFollowers]     = useState<bigint | null>(null)
   const [followerList,  setFollowerList]  = useState<string[]>([])
   const [allocs,        setAllocs]        = useState<RawAlloc[]>([])
   const [hasStrategy,   setHasStrategy]   = useState(false)
@@ -149,22 +150,14 @@ function TraderProfileView() {
         if (alive()) setName(traderRaw[1])
         if (alive()) setRegistered(traderRaw[0])
       }
-      try {
-        const fc = await contracts.copyTracker.getFollowerCount(traderAddr)
-        if (alive()) setFollowers(fc as bigint)
-      } catch { /* no follower data */ }
-
-      // followersByTrader (first 10)
-      try {
-        const list: string[] = []
-        for (let i = 0; i < 10; i++) {
-          try {
-            const addr = await contracts.copyTracker.followersByTrader(traderAddr, BigInt(i))
-            list.push(addr as string)
-          } catch { break }
-        }
-        if (alive()) setFollowerList(list)
-      } catch { /* no followers */ }
+      // 目前的跟隨者，不是 getFollowerCount 的「被跟單過幾次」（見 activeFollowers.ts）。
+      // 清單只列還在跟的人、每人一次，前 10 位；讀不到時人數顯示「—」，不是 0。
+      const active = (await readActiveFollowers([traderAddr], followerReaderOf(contracts.copyTracker)))
+        .get(traderAddr.toLowerCase()) ?? null
+      if (alive()) {
+        setFollowers(active === null ? null : BigInt(active.length))
+        setFollowerList(active?.slice(0, 10) ?? [])
+      }
 
       // strategy + history
       let count = 0
@@ -357,7 +350,7 @@ function TraderProfileView() {
                   {/* 跟隨者數與跟隨者清單跟著 FEATURE_COPY_TRADING 走（商業版預設關）。 */}
                   {FEATURE_COPY_TRADING && (
                   <Typography variant="body2" color="text.secondary">
-                    <Box component="span" sx={{ fontWeight: 'bold', color: 'text.primary' }}>{String(followers)}</Box>{' '}
+                    <Box component="span" sx={{ fontWeight: 'bold', color: 'text.primary' }}>{followers === null ? '—' : String(followers)}</Box>{' '}
                     {followers === 1n
                       ? t.traderProfile.header.followerSingular
                       : t.traderProfile.header.followerPlural}
@@ -408,7 +401,7 @@ function TraderProfileView() {
             </Grid>
             {FEATURE_COPY_TRADING && (
             <Grid size={STAT_SIZE}>
-              <StatCard title={t.traderProfile.stats.followers} value={String(followers)} sub={t.traderProfile.stats.copiers} />
+              <StatCard title={t.traderProfile.stats.followers} value={followers === null ? '—' : String(followers)} sub={t.traderProfile.stats.copiers} />
             </Grid>
             )}
             <Grid size={STAT_SIZE}>

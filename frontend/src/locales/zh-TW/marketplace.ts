@@ -45,7 +45,8 @@ export const marketplace = {
     esg: 'ESG',
     actions: '操作',
     /** 平倉少於 5 筆時掛在勝率旁邊的灰標,不是紅色警告——只是不夠準,不是壞消息。 */
-    insufficientSample: '資料不足',
+    /** 勝率旁的小標籤：這段期間平倉不到 5 筆，勝率參考就好。跟「不列入排名」是兩件事。 */
+    insufficientSample: '樣本少',
     /** 表格裡「不列入排名」那一段的分隔列。rule 是下面兩句之一。 */
     unranked: '以下資料不足，不列入排名（{rule}）',
     unrankedRuleHistory: '交易未滿 {days} 天',
