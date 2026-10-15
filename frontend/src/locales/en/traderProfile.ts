@@ -42,7 +42,6 @@ export const traderProfile: Catalog['traderProfile'] = {
     titleMany: 'Strategy History ({count} versions)',
     /** 摘要行：sBTC L 3× · sETH S 2× */
     summaryEntry: '{asset} {side} {leverage}×',
-    showAll: 'Show all {count} versions',
     long: 'L',
     short: 'S',
 

@@ -40,8 +40,6 @@ export const traderProfile = {
     titleMany: '策略歷史（{count} 個版本）',
     /** 摘要行：sBTC L 3× · sETH S 2× */
     summaryEntry: '{asset} {side} {leverage}×',
-    /** 策略歷史只先列最新的幾版；按下去展開全部。 */
-    showAll: '顯示全部 {count} 個版本',
     long: '多',
     short: '空',
 
