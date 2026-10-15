@@ -94,6 +94,7 @@ const ALLOWED: ReadonlyArray<{ key: string; why: string }> = [
   { key: 'errors.contract.NotFollowing', why: '同上' },
   { key: 'errors.contract.SelfCopyNotAllowed', why: '同上' },
   { key: 'errors.reverted.copy', why: '同上（跟單獎勵領取失敗）' },
+  { key: 'lab.noOrder.copy', why: '策略實驗室只在跟單旗標開啟時渲染這一句' },
 
   // ── 非使用者畫面 ──
   { key: 'admin.treasury.claim.note', why: '管理員頁（營運方自己看，描述實際的費用分潤模型）' },

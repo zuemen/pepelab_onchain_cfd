@@ -24,6 +24,7 @@ CARBON_TIER = {
 
 _TIER_MAX_LEVERAGE = {"low": 5, "mid": 2, "high": 1}
 _TIER_FEE_BPS = {"low": 10, "mid": 40, "high": 100}
+_TIER_BORROW_BPS_PER_HOUR = {"low": 1, "mid": 4, "high": 10}
 
 # (environmental, social, governance)
 ESG = {
@@ -40,6 +41,11 @@ def max_leverage(asset: str) -> int:
 
 def fee_bps(asset: str) -> int:
     return _TIER_FEE_BPS[CARBON_TIER[asset]]
+
+
+def borrow_bps_per_hour(asset: str) -> int:
+    """槓桿借來的那一部分每小時收的借款費；開倉時凍結。"""
+    return _TIER_BORROW_BPS_PER_HOUR[CARBON_TIER[asset]]
 
 
 def esg_composite(asset: str) -> int:

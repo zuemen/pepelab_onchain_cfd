@@ -2,6 +2,7 @@ import type { Catalog } from '../zh-TW';
 
 import { esg } from './esg';
 import { kyc } from './kyc';
+import { lab } from './lab';
 import { nav } from './nav';
 import { rwa } from './rwa';
 import { copy } from './copy';
@@ -79,6 +80,7 @@ const en: Catalog = {
   legacy,
   rwa,
   investorVc,
+  lab,
 };
 
 export default en;

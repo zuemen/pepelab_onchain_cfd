@@ -75,5 +75,7 @@ export const paths = {
     rwa: '/rwa',
     oracle: '/oracle',
     solvency: '/solvency',
+    // 策略實驗室（issue #332）：回測與預測，只在 Expert 模式
+    lab: '/lab',
   },
 };
