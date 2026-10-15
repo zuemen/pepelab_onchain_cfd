@@ -61,6 +61,8 @@ export interface ExitEvent {
   pnl:         bigint
   txHash:      string
   blockNumber: number
+  /** 同一區塊內的先後順序（動態牆排序用）。 */
+  logIndex:    number
   liquidated:  boolean
 }
 
@@ -218,8 +220,8 @@ export function useExchangeActivity(
       }
 
       const openedLogs:     Array<{ args: any; blockNumber: number; transactionHash: string; index: number }> = []
-      const closedLogs:     Array<{ args: any; blockNumber: number; transactionHash: string }> = []
-      const liquidatedLogs: Array<{ args: any; blockNumber: number; transactionHash: string }> = []
+      const closedLogs:     Array<{ args: any; blockNumber: number; transactionHash: string; index: number }> = []
+      const liquidatedLogs: Array<{ args: any; blockNumber: number; transactionHash: string; index: number }> = []
 
       for (const log of rawLogs) {
         const parsed = iface.parseLog({ topics: [...log.topics], data: log.data })
@@ -243,6 +245,7 @@ export function useExchangeActivity(
           pnl:         l.args.pnl as bigint,
           txHash:      l.transactionHash as string,
           blockNumber: l.blockNumber as number,
+          logIndex:    l.index,
           liquidated:  false,
         })),
         ...liquidatedLogs.map(l => ({
@@ -251,6 +254,7 @@ export function useExchangeActivity(
           pnl:         l.args.pnl as bigint,
           txHash:      l.transactionHash as string,
           blockNumber: l.blockNumber as number,
+          logIndex:    l.index,
           liquidated:  true,
         })),
       ]

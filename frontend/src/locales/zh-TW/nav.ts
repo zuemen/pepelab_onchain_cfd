@@ -19,6 +19,7 @@ export const nav = {
     x402: 'x402 訊號 API',
     marketplace: '交易市集',
     lab: '策略實驗室',
+    feed: '動態',
     vault: '保險金庫',
     history: '歷史記錄',
     whale: '鯨魚追蹤',

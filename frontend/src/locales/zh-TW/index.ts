@@ -3,6 +3,7 @@ import { kyc } from './kyc';
 import { lab } from './lab';
 import { nav } from './nav';
 import { rwa } from './rwa';
+import { feed } from './feed';
 import { copy } from './copy';
 import { x402 } from './x402';
 import { pepe } from './pepe';
@@ -75,6 +76,7 @@ const zhTW = {
   rwa,
   investorVc,
   lab,
+  feed,
 };
 
 export type Catalog = typeof zhTW;

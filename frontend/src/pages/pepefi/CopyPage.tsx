@@ -23,6 +23,8 @@ import TraderRankBadge from 'src/components/pepefi/TraderRankBadge'
 import { useToast } from 'src/components/pepefi/ToastProvider'
 import { belowMinimum, minimumCopyAmount } from 'src/lib/pepefi/copyGuards'
 import { fetchHeroIndex, heroByAddress } from 'src/lib/pepefi/heroData'
+import { useMode } from 'src/contexts/mode-context'
+import StrategySides from 'src/components/pepefi/feed/StrategySides'
 
 import Box from '@mui/material/Box';
 import Container from '@mui/material/Container';
@@ -84,6 +86,7 @@ const asTx = (tx: unknown): TxResp => tx as TxResp
 
 export default function CopyPage() {
   const wallet = usePepefiWallet()
+  const { mode } = useMode()
   const { traderAddress } = useParams<{ traderAddress: string }>()
   // 從投資組合「更新到最新版」過來時，金額已經帶在 ?amount= 上。
   const [searchParams] = useSearchParams()
@@ -423,6 +426,11 @@ export default function CopyPage() {
           </Stack>
         )}
       </Card>
+
+      {/* 策略各資產目前的市場多空比例（issue #335），只在 Expert */}
+      {mode === 'expert' && stratAllocs.length > 0 && (
+        <StrategySides legs={stratAllocs} exchange={contracts?.exchange ?? null} />
+      )}
 
       {/* Strategy ESG composite */}
       {stratAllocs.length > 0 && (() => {
