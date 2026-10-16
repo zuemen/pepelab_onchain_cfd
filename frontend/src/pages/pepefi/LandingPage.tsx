@@ -28,13 +28,14 @@ const FEATURES = {
   // so they drew at different weights and baselines depending on the machine,
   // and none of them could inherit the panel's colour. The mascot 🐸 stays —
   // that is brand, not an icon.
-  // 哪幾張、什麼順序由 landingFeatureKeys 決定（#331：社交交易、鏈上透明、ESG、GameFi）。
-  social:       { icon: 'solar:users-group-rounded-bold', title: t.landing.features.copyTitle,         desc: t.landing.features.copyDesc },
-  tokenized:    { icon: 'solar:case-minimalistic-bold',   title: t.landing.features.rwaTitle,          desc: t.landing.features.rwaDesc },
-  transparency: { icon: 'solar:eye-bold',                 title: t.landing.features.transparencyTitle, desc: t.landing.features.transparencyDesc },
-  esg:          { icon: 'solar:verified-check-bold',      title: t.landing.features.esgTitle,          desc: t.landing.features.esgDesc },
-  gamefi:       { icon: 'solar:gamepad-bold',             title: t.landing.features.gamefiTitle,       desc: t.landing.features.gamefiDesc },
-  perpetuals:   { icon: 'solar:chart-square-outline',     title: t.landing.features.perpetualsTitle,   desc: t.landing.features.perpetualsDesc },
+  // 哪幾張、什麼順序由 landingFeatureKeys 決定。文字（標題、痛點、做法）在 t.landing.features.<key>。
+  social:       { icon: 'solar:users-group-rounded-bold', ...t.landing.features.social },
+  assets:       { icon: 'solar:case-minimalistic-bold',   ...t.landing.features.assets },
+  transparency: { icon: 'solar:eye-bold',                 ...t.landing.features.transparency },
+  esg:          { icon: 'solar:verified-check-bold',      ...t.landing.features.esg },
+  gamefi:       { icon: 'solar:gamepad-bold',             ...t.landing.features.gamefi },
+  agent:        { icon: 'solar:atom-bold-duotone',        ...t.landing.features.agent },
+  perpetuals:   { icon: 'solar:chart-square-outline',     ...t.landing.features.perpetuals },
   // `as const` so the icon strings keep their literal types. Iconify's `icon`
   // prop is a union of the names registered in components/iconify/icon-sets
   // (which inlines each SVG body, so icons ship with the bundle rather than
@@ -397,9 +398,26 @@ export default function LandingPage() {
                   <Typography variant="subtitle1" component="h3" sx={{ color: 'text.primary', fontWeight: 'bold', mb: 1.5, fontSize: '1.2rem' }}>
                     {f.title}
                   </Typography>
-                  <Typography variant="body2" sx={{ color: 'text.secondary', lineHeight: 1.6, fontSize: '1rem' }}>
-                    {f.desc}
-                  </Typography>
+                  {/* 痛點 → 我們的做法：要解決的問題與功能在同一張卡講完。 */}
+                  <Stack spacing={1.5}>
+                    {([
+                      { label: t.landing.features.painLabel, text: f.pain, color: 'text.secondary' },
+                      { label: t.landing.features.solutionLabel, text: f.solution, color: 'primary.main' },
+                    ] as const).map((row) => (
+                      <Box key={row.label}>
+                        <Typography
+                          variant="caption"
+                          component="p"
+                          sx={{ color: row.color, fontWeight: 'bold', letterSpacing: 1, mb: 0.5 }}
+                        >
+                          {row.label}
+                        </Typography>
+                        <Typography variant="body2" sx={{ color: 'text.secondary', lineHeight: 1.6, fontSize: '1rem' }}>
+                          {row.text}
+                        </Typography>
+                      </Box>
+                    ))}
+                  </Stack>
                 </Card>
               </Grid>
             ))}

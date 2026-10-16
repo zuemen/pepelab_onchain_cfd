@@ -16,14 +16,15 @@ Web3 版 eToro：社交交易、鏈上透明、ESG、GameFi。兩套說法並存
 
 2026-10-14 擁有者決定，本 ADR 正式記錄：
 
-1. **對外主軸是 Web3 版 eToro。** 首頁依序介紹社交交易、鏈上透明、ESG、GameFi 四個特色；首頁一開始就說
+1. **對外主軸是 Web3 版 eToro。** 首頁以「平台特色」六張卡依序介紹社交交易（去中心化的 eToro）、整合四大資產、鏈上透明、ESG、GameFi、
+   Agent 原生（x402 與 agent session）；每張卡寫「痛點 → 我們的做法」，要解決的問題與功能在同一處講完，不分兩段重複。首頁一開始就說
    「跟著透明的交易者投資」。README 第一章、meta 標題與描述同步改寫。
 2. **只支援使用者自管，不提供託管帳戶。** 平台不持有使用者私鑰、沒有代管錢包。理由見下一節。
 3. **B2B 白標保留，降為「未來延伸」。** 租戶隔離（[ADR-008](./ADR-008-tenant-isolation.md)）與白標設定層
    （[frontend ADR-0009](../frontend/docs/adr/0009-tenant-config-layer.md)）的架構一行都不變，只是不再是主軸。
    跟單旗標關閉的租戶（`demo-bank`、`rwa-poc`）的功能上限與預設值不變，主視覺、標題與 meta 沿用原本代幣化資產的說法；
-   首頁功能卡與平台站共用同一組（代幣化資產、鏈上透明、ESG），原本的保險金庫、x402、Agent 三張卡拿掉，因為它們不再是頭條。
-4. **AI agent 與 x402 維持現狀**，不再是首頁的頭條，功能不動。
+   跟單旗標關閉的租戶不放社交交易卡，整合四大資產排第一；GameFi 未授權的租戶也不放 GameFi 卡。
+4. **AI agent 與 x402 功能維持現狀**，首頁合成一張「Agent 原生」卡介紹，功能不動。
 5. **不做持續跟單、不做自動停損。** 跟單維持快照式：複製交易者當下那一版策略、開倉一次。
 
 被取代的說法：README 舊版的「**定位**：PepeFi 規劃以 B2B 白標形式……提供給持牌金融機構」、首頁「RWA 現貨排第一是為了
@@ -76,7 +77,7 @@ Web3 版 eToro：社交交易、鏈上透明、ESG、GameFi。兩套說法並存
 - `frontend/src/tenant/tenants/default.json`：`copyTrading` 改為 `{ allowed: true, default: true }`，比照 2026-10-12
   把 GameFi 改回預設開的做法。`demo-bank`、`rwa-poc` 的上限與預設值不動（`allowed: false`）。環境變數
   `VITE_FEATURE_COPY_TRADING=0` 仍可關閉。
-- 首頁功能卡順序由 `frontend/src/lib/pepefi/landingFeatures.ts` 決定；跟單旗標關閉的租戶第一張換回代幣化資產。
+- 首頁「平台特色」卡的順序由 `frontend/src/lib/pepefi/landingFeatures.ts` 決定，文字（標題、痛點、做法）在 `landing.features.<key>`。
 - meta 標題與描述依跟單旗標選用（`meta.title`／`meta.titleNoCopy`、`meta.description`／`meta.descriptionNoCopy`）。
 - 跟單文案守門（`copyWording.test.ts`）原本在跟單旗標開啟時整組跳過；平台站改為預設開之後它會永遠不跑，所以改成
   不論當前旗標一律檢查。
