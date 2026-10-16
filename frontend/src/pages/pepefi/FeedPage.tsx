@@ -38,6 +38,7 @@ const VISIBLE_TYPES: readonly FeedType[] = FEED_TYPES.filter(
 
 export default function FeedPage() {
   const { mode, setMode } = useMode();
+  const wallet = usePepefiWallet();
   if (mode !== 'expert') {
     return (
       <Container maxWidth="sm" sx={{ py: 6 }}>
@@ -47,6 +48,14 @@ export default function FeedPage() {
           <Button variant="contained" onClick={() => setMode('expert')}>{L.expertOnly.action}</Button>
         </Card>
       </Container>
+    );
+  }
+  // 未連錢包時不導回首頁（/feed 在 PUBLIC_PATHS），只說這一頁需要錢包
+  if (!wallet.isConnected) {
+    return (
+      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '60vh' }}>
+        <Typography color="text.secondary">{t.common.wallet.connectPrompt.feed}</Typography>
+      </Box>
     );
   }
   return <Feed />;

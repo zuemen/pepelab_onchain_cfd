@@ -13,6 +13,7 @@ describe('isPublicPath', () => {
     paths.pepefi.oracle,
     paths.pepefi.solvency,
     paths.pepefi.lab,
+    paths.pepefi.feed,
   ])('%s opens without a wallet', (path) => {
     expect(isPublicPath(path)).toBe(true);
   });
