@@ -4,6 +4,7 @@ import { Link as RouterLink } from 'react-router';
 import { useContracts } from 'src/hooks/useContracts';
 import { usePepefiWallet } from 'src/layouts/pepefi';
 import { ASSET_IDS, CHAIN_NAMES } from 'src/contracts/addresses';
+import { MAPPED_GOALS, sdgGoalName, sdgHoldings, hasPositiveExposure } from 'src/lib/pepefi/sdg';
 import Skeleton, { TableSkeleton } from 'src/components/pepefi/Skeleton';
 import EmptyState from 'src/components/pepefi/EmptyState';
 import { useESG } from 'src/hooks/useESG';
@@ -159,6 +160,8 @@ export default function TraderLeaderboard() {
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [sortKey,    setSortKey]    = useState<SortKey>('score');
   const [esgOnly,    setEsgOnly]    = useState(false);
+  /** #333：只看策略裡有正向對應這個 SDG 的交易者；null = 全部。 */
+  const [sdgGoal,    setSdgGoal]    = useState<number | null>(null);
   const [search,     setSearch]     = useState('');
   const [scorePopover, setScorePopover] = useState<{ anchorEl: HTMLElement; trader: TraderCard } | null>(null);
   // 實際掃了幾塊、換算成多久。寫死的常數不能再拿來當文案,因為同一個數字在
@@ -367,6 +370,10 @@ export default function TraderLeaderboard() {
   // 「有人,只是搜尋詞沒有比對到」這兩種完全不同的空狀態。
   const filtered = traders.filter(tr => {
     if (!tr.hasStrategy) return false;
+    if (sdgGoal !== null && !hasPositiveExposure(
+      sdgHoldings(tr.allocs.map(a => ({ asset: a.asset, weight: Number(a.weight), isLong: a.isLong }))),
+      sdgGoal,
+    )) return false;
     if (!esgOnly) return true;
     const score = getEsgComposite(tr);
     return score !== null && score >= ESG_FRIENDLY_THRESHOLD;
@@ -535,6 +542,30 @@ export default function TraderLeaderboard() {
               state: esgOnly ? t.marketplace.esgFiltered : t.marketplace.esgAll,
             })}
           </Button>
+
+          {/* #333：依 SDG 篩選。對應表是團隊判斷，說明在 ESG 頁的 SDG 卡片。 */}
+          <FormControl size="small" sx={{ minWidth: 180 }}>
+            <Select
+              value={sdgGoal === null ? '' : String(sdgGoal)}
+              onChange={e => setSdgGoal(e.target.value === '' ? null : Number(e.target.value))}
+              displayEmpty
+              inputProps={{ 'aria-label': t.marketplace.sdgFilter.label }}
+              renderValue={v => `${t.marketplace.sdgFilter.label}：${v === ''
+                ? t.marketplace.sdgFilter.all
+                : interpolate(t.marketplace.sdgFilter.option, { goal: v, name: sdgGoalName(t.esg.sdg.goalNames, Number(v)) })}`}
+              sx={{ borderRadius: 1 }}
+            >
+              <MenuItem value="">{t.marketplace.sdgFilter.all}</MenuItem>
+              {MAPPED_GOALS.map(goal => (
+                <MenuItem key={goal} value={String(goal)}>
+                  {interpolate(t.marketplace.sdgFilter.option, {
+                    goal: String(goal),
+                    name: sdgGoalName(t.esg.sdg.goalNames, goal),
+                  })}
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
 
           {/* 窄螢幕沒有欄位標頭可點,這個下拉是排序的替代入口——跟表頭共用同一個 sortKey。 */}
           <FormControl size="small" sx={{ minWidth: 160 }}>

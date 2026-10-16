@@ -28,6 +28,8 @@ import TxProof from 'src/components/pepefi/hero/TxProof'
 import ListDialog, { ExpandListButton } from 'src/components/pepefi/ListDialog'
 import StrategySides from 'src/components/pepefi/feed/StrategySides'
 import TraderFeedSection from 'src/components/pepefi/feed/TraderFeedSection'
+import SustainabilityMix from 'src/components/pepefi/SustainabilityMix'
+import { usePricingCarbonTiers } from 'src/hooks/usePricingCarbonTiers'
 
 import Box from '@mui/material/Box';
 import Container from '@mui/material/Container';
@@ -96,6 +98,7 @@ function TraderProfileView() {
   const { mode } = useMode()
   const { address: traderAddr } = useParams<{ address: string }>()
   const contracts = useContracts(wallet.provider, wallet.signer, wallet.chainId)
+  const pricingTiers = usePricingCarbonTiers(contracts?.exchange ?? null)
   const { data: esg } = useESG(contracts?.esgRegistry ?? null)
   const addressActivity = useAddressActivity(contracts, wallet.provider, wallet.chainId, traderAddr)
 
@@ -561,6 +564,15 @@ function TraderProfileView() {
               </Stack>
             )}
           </Card>
+
+          {/* #333：目前策略依權重的 SDG 分布與碳分級組成（策略讀自鏈上，同上） */}
+          {hasStrategy && (
+            <SustainabilityMix
+              holdings={allocs.map((a) => ({ asset: a.asset, weight: Number(a.weight), isLong: a.isLong }))}
+              tierOf={pricingTiers.tierOf}
+              source="trader"
+            />
+          )}
 
           {/* 市場多空比例與這位交易者的最近動態（issue #335）：交易桌的資訊，只在 Expert */}
           {mode === 'expert' && hasStrategy && (

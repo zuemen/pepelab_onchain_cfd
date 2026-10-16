@@ -61,6 +61,9 @@ import { SwitchChainButton } from 'src/components/pepefi/SwitchChainButton';
 import KYCStatusCard from 'src/components/pepefi/dashboard/KYCStatusCard';
 import QuickActions from 'src/components/pepefi/dashboard/QuickActions';
 import PortfolioAnalysis from 'src/components/pepefi/dashboard/PortfolioAnalysis';
+import SustainabilityMix from 'src/components/pepefi/SustainabilityMix';
+import { holdingValue } from 'src/lib/pepefi/assetClass';
+import { usePricingCarbonTiers } from 'src/hooks/usePricingCarbonTiers';
 import EmptyState from 'src/components/pepefi/EmptyState';
 import Skeleton, { TableSkeleton } from 'src/components/pepefi/Skeleton';
 
@@ -246,6 +249,7 @@ export default function PortfolioPage() {
   const navigate = useNavigate();
   const { mode } = useMode();
   const contracts  = useContracts(wallet.provider, wallet.signer, wallet.chainId);
+  const pricingTiers = usePricingCarbonTiers(contracts?.exchange ?? null);
   // 交易所的 KYC 登錄是 VC 登錄（專屬租戶 schema v4 的 kycRegistry=vc）時，「去取得資格」走憑證頁。
   const vcKyc = useVcKycRegistry(wallet.chainId, wallet.provider);
   const kycAction = kycActionMode(vcKyc, contracts ? String(contracts.kycRegistry.target) : null);
@@ -1215,6 +1219,18 @@ export default function PortfolioPage() {
 
       {/* ─── Analysis (expert only) ─────────────────────────────────────── */}
       {mode === 'expert' && <PortfolioAnalysis rows={pricedPositions} esg={esg} />}
+
+      {/* #333：自己持倉（永續部位＋現貨代幣）依市值的 SDG 分布與碳分級組成（等級讀自交易所定價用的鏈上見證） */}
+      {(pricedPositions.length > 0 || synthHoldings.rows.length > 0) && (
+        <SustainabilityMix
+          holdings={[
+            ...pricedPositions.map((p) => ({ asset: p.asset, weight: Number(p.currentValue) / 1e18, isLong: p.isLong })),
+            ...synthHoldings.rows.map((h) => ({ asset: h.asset, weight: Number(holdingValue(h)) / 1e18 })),
+          ]}
+          tierOf={pricingTiers.tierOf}
+          source="portfolio"
+        />
+      )}
 
       {/* ─── C + D side-by-side ─────────────────────────────────────────── */}
       <Grid container spacing={3}>

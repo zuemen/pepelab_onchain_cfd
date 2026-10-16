@@ -41,10 +41,128 @@ export const esg: Catalog['esg'] = {
       time: 'Time',
       tonnes: 'Amount (simulated)',
       amount: 'Cost',
+      tx: 'On-chain tx',
     },
     empty: 'No retirements yet.',
     failed: 'Could not read the retirement records — cannot confirm right now. This does not mean "nothing retired".',
     loading: 'Reading retirement records…',
+    /** #333: the beneficiary rule — one tonne can be claimed by one party only. */
+    beneficiaryTitle: 'The platform is the beneficiary',
+    beneficiary:
+      'A tonne can be claimed by one party only. The tonnes retired here belong to the platform, not to any individual user: your trades helped bring the retirement about, but these tonnes cannot be counted as a reduction of your own emissions.',
+    fundingTitle: 'Where the money comes from',
+    funding:
+      'Of the fee revenue the platform receives, {carbon}% of the platform’s {platform}% share goes to the retirement budget automatically — {total}% of the fee. The ratio is fixed in the contract (immutable) and the platform cannot change it; changing it takes a new deployment, which is itself visible on chain. Anyone can trigger the split and the retirement; whoever triggers it decides only when, the contract decides where the money goes.',
+    /** Rendered only when the copy-trading flag is on (allow-listed in copyWording.test.ts). */
+    fundingCopy:
+      'The revenue on this path is the copy fee (0.3% of the copied amount) and the performance fee on profitable copied positions; ordinary trading fees do not pass through it. Retirement is paid from the platform’s own revenue — users pay nothing extra.',
+    viewTx: 'View tx',
+    shownOf: 'Showing the latest {shown} of {count}',
+    more: 'Show earlier retirements',
+  },
+
+  /**
+   * #333: assets → UN Sustainable Development Goals. The mapping itself is in lib/pepefi/sdg.ts;
+   * these are the goal names and a one-line reason per mapping. A team judgement, not a
+   * third-party rating, and labelled as such on screen.
+   */
+  sdg: {
+    title: 'Assets and the Sustainable Development Goals (SDGs)',
+    lead: 'Each asset is mapped to the UN Sustainable Development Goals it relates to, marked positive or negative, with a one-line reason.',
+    basisChip: 'Team judgement',
+    basis:
+      'This mapping is our team’s judgement based on what each asset is made of and does. It is not a third-party rating and has not been externally reviewed — it carries the weight of the “qualitative” carbon basis. SDGs do not affect fees or any trading terms: pricing reads the carbon tier only.',
+    positive: 'Positive',
+    negative: 'Negative',
+    goalLabel: 'SDG {goal}',
+    column: {
+      asset: 'Asset',
+      goal: 'Goal',
+      reason: 'Reason',
+    },
+    goalNames: {
+      1: 'No Poverty',
+      2: 'Zero Hunger',
+      3: 'Good Health and Well-being',
+      4: 'Quality Education',
+      5: 'Gender Equality',
+      6: 'Clean Water and Sanitation',
+      7: 'Affordable and Clean Energy',
+      8: 'Decent Work and Economic Growth',
+      9: 'Industry, Innovation and Infrastructure',
+      10: 'Reduced Inequalities',
+      11: 'Sustainable Cities and Communities',
+      12: 'Responsible Consumption and Production',
+      13: 'Climate Action',
+      14: 'Life Below Water',
+      15: 'Life on Land',
+      16: 'Peace, Justice and Strong Institutions',
+      17: 'Partnerships for the Goals',
+    },
+    reasons: {
+      sBTC: {
+        7: 'Proof-of-work mining uses large amounts of electricity, a significant share of it fossil-fuelled.',
+        13: 'Mining electricity brings sizeable greenhouse-gas emissions, against the climate goal.',
+      },
+      sETH: {
+        9: 'Since the 2022 move to proof of stake its power use fell sharply; it runs as open financial and application infrastructure.',
+      },
+      sAAPL: {
+        12: 'Products use a rising share of recycled material, backed by recycling and trade-in programmes.',
+        8: 'Its outsourced manufacturing supply chain has faced labour-condition concerns.',
+      },
+      sTSLA: {
+        7: 'Energy storage and solar support grid integration of renewables.',
+        11: 'Electric vehicles cut tailpipe emissions in cities.',
+        12: 'Mining battery materials (lithium, cobalt, nickel) carries environmental and human-rights risks.',
+      },
+      sGOLD: {
+        15: 'Gold mining disturbs land and destroys habitat.',
+        6: 'Mining uses cyanide and heavy metals that risk contaminating water.',
+      },
+      sBOND: {
+        7: 'Green-bond proceeds go mainly to renewable-energy and energy-efficiency projects.',
+        13: 'Proceeds are restricted to projects that mitigate or adapt to climate change.',
+      },
+      sNVDA: {
+        9: 'Accelerated-computing chips are infrastructure for AI and scientific computing.',
+        7: 'Data-centre GPU power demand is growing fast and adds load to the grid.',
+      },
+      sMSFT: {
+        9: 'Cloud and enterprise software are part of digital infrastructure.',
+        7: 'AI data-centre expansion is raising its electricity use, and emissions are rising rather than falling.',
+      },
+      sGOOGL: {
+        9: 'Search, cloud and maps are widely used digital infrastructure.',
+        7: 'A long-standing large buyer of renewable power purchase agreements, among the largest corporate buyers.',
+      },
+      sICLN: {
+        7: 'Its holdings are solar, wind and other clean-energy companies.',
+        13: 'The portfolio directly backs the energy transition and lower-emission power.',
+      },
+      sESGU: {
+        13: 'Holdings are screened on ESG scores, giving lower carbon intensity than the broad US market.',
+        12: 'Excludes controversial industries and tilts toward companies with better sustainability governance.',
+      },
+    },
+  },
+
+  /** #333: "SDG distribution" and "carbon tier mix" cards on the trader page and the portfolio. */
+  impact: {
+    sdgTitle: 'SDG distribution (by weight)',
+    sdgLead: 'How much of the holdings relate to each goal. One asset can map to several goals, so the goals can add up to more than 100%.',
+    sdgUnmapped: '{pct}% of the holdings are not in the SDG mapping',
+    tierTitle: 'Carbon tier mix',
+    tierLead: 'How much of the holdings sits in each carbon tier. Carbon intensities of different assets have different units and cannot be added up into one tonnage, so only tiers are compared here.',
+    /** Low / mid / high / unrated reuse tokens.provenance.carbonTier (one set of tiers); only the failed-read bucket lives here. */
+    tierUnknown: 'Unknown (read failed)',
+    tierSource: 'Tiers are read from the on-chain attestations the exchange prices on; assets that cannot be read are shown as unknown, never as low carbon.',
+    basisNote: 'The SDG mapping is a team judgement, not a third-party rating, and does not affect pricing.',
+    sdgShort: '{pct}% is short positions, left out of the SDG distribution: shorting an asset does not support the goals it maps to.',
+    traderSource: 'Weighted by this trader’s currently published strategy, read from chain.',
+    portfolioSource: 'Weighted by the market value of your current positions.',
+    empty: 'No holdings to calculate from.',
+    pct: '{pct}%',
   },
 
   title: '🌱 ESG Asset Explorer',

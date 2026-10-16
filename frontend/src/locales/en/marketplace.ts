@@ -11,6 +11,13 @@ export const marketplace: Catalog['marketplace'] = {
   esgFiltered: 'Filtered',
   esgAll: 'All',
   esgButton: 'ESG {state}',
+  /** #333: filter traders by SDG (a strategy holding an asset mapped positively to the goal). */
+  sdgFilter: {
+    /** "Team judgement" stays visible on the filter: the mapping is not a third-party rating (CONTEXT.md, SDG Mapping). */
+    label: 'SDG (team judgement)',
+    all: 'All goals',
+    option: 'SDG {goal} · {name}',
+  },
 
   sort: {
     score: 'Sort: TraderScore',

@@ -13,6 +13,13 @@ export const marketplace = {
   esgFiltered: '已篩選',
   esgAll: '全部',
   esgButton: 'ESG {state}',
+  /** #333：依 SDG 篩選交易者（策略裡有正向對應該目標的資產）。 */
+  sdgFilter: {
+    /** 篩選器上一直看得到「團隊判斷」：對應表不是第三方評等（CONTEXT.md 的 SDG Mapping）。 */
+    label: 'SDG（團隊判斷）',
+    all: '全部目標',
+    option: 'SDG {goal}・{name}',
+  },
 
   sort: {
     score: '排序：TraderScore',

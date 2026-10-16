@@ -69,6 +69,7 @@ const ALLOWED: ReadonlyArray<{ key: string; why: string }> = [
   { key: 'portfolio.page.emptyDescription', why: '旗標關閉時改用 emptyDescriptionNoCopy' },
   { key: 'portfolio.page.openCount', why: 'Expert 表頭；旗標關閉時改用 openCountNoCopy' },
   { key: 'vault.markup.howItWorksBody', why: '旗標關閉時改用 howItWorksBodyNoCopy' },
+  { key: 'esg.retirement.fundingCopy', why: 'CarbonRetirementCard 只在跟單旗標開啟時顯示這一句（#333）' },
 
   // ── 只在使用者真的有跟單資料時出現（既有部位不能被旗標藏起來） ──
   { key: 'portfolio.page.activeCopies', why: '跟單統計卡：copyDeskVisibility，旗標關閉時不顯示' },

@@ -87,3 +87,112 @@ export function retirementReadFailed(raw: RawRetirementState): boolean {
 export function simulationFlagContradicts(raw: RawRetirementState): boolean {
   return raw.simulated === false
 }
+
+// ── #333：跟單前的退役估算 ─────────────────────────────────────────────────────
+
+export interface CopyRetirementInputs {
+  /** 跟單金額（結算幣最小單位）。 */
+  totalMargin: bigint
+  /** CopyTracker.COPY_FEE_BPS。 */
+  copyFeeBps: bigint
+  /** FeeRouter.PLATFORM_SHARE_BPS。 */
+  platformShareBps: bigint
+  /** PlatformFeeSplitter.carbonShareBps（immutable）。 */
+  carbonShareBps: bigint
+  /** CarbonRetirement.pricePerTonne（結算幣最小單位 / 1e18 碳權單位）。 */
+  pricePerTonne: bigint
+}
+
+export interface CopyRetirementEstimate {
+  copyFee: bigint
+  platformShare: bigint
+  toRetirement: bigint
+  /** 1e18 = 1 公噸模擬碳權。 */
+  tonnes: bigint
+}
+
+const BPS = 10_000n
+
+/**
+ * 這次跟單的跟單費，經平台份額、退役比例、模擬價格，換算成會促成平台退役的噸數。每一步都照
+ * 合約的整數除法向下取整，所以和鏈上實際撥入的數字一致。只算跟單費：跟單部位日後的績效費
+ * 也會經過同一條路，但金額要看損益，事前算不出來——畫面因此標明是估算。
+ */
+export function copyRetirementEstimate(x: CopyRetirementInputs): CopyRetirementEstimate {
+  const copyFee = (x.totalMargin * x.copyFeeBps) / BPS
+  const platformShare = (copyFee * x.platformShareBps) / BPS
+  const toRetirement = (platformShare * x.carbonShareBps) / BPS
+  const tonnes = x.pricePerTonne === 0n ? 0n : (toRetirement * 10n ** BigInt(TONNE_DECIMALS)) / x.pricePerTonne
+  return { copyFee, platformShare, toRetirement, tonnes }
+}
+
+// ── #333：退役紀錄的交易雜湊 ───────────────────────────────────────────────────
+
+export interface RetiredLog {
+  amount: bigint
+  tonnesCO2e: bigint
+  timestamp: bigint
+  txHash: string
+}
+
+/**
+ * 合約的退役清單沒有存交易雜湊，所以用 CarbonRetired 事件補：以金額、噸數、時間三者比對
+ * （事件就是這三個欄位）。每個事件只配一列；配不到的列是 null，不借用別筆的雜湊。
+ */
+export function attachRetirementTx<R extends RetirementRow>(
+  rows: readonly R[],
+  raw: readonly RawRetirement[],
+  logs: readonly RetiredLog[],
+): (R & { txHash: string | null })[] {
+  const unused = [...logs]
+  return rows.map((row, i) => {
+    const r = raw[i]
+    const at = r
+      ? unused.findIndex((l) => l.amount === r.amount && l.tonnesCO2e === r.tonnesCO2e && l.timestamp === r.timestamp)
+      : -1
+    const txHash = at >= 0 ? unused.splice(at, 1)[0].txHash : null
+    return { ...row, txHash }
+  })
+}
+
+/** 本機展示鏈：回放把時間往前撥，區塊與時間不成比例，anvil 的 getLogs 也沒有範圍上限。 */
+export const LOCAL_CHAIN_ID = 31337
+/** 每筆退役的估計區塊前後各查幾塊。估計誤差來自出塊時間不完全固定；200 塊＝Base 上約 ±7 分鐘。 */
+const ROW_WINDOW_BLOCKS = 200
+
+export interface BlockRange {
+  fromBlock: number
+  toBlock: number
+}
+
+/**
+ * 查 CarbonRetired 事件的區塊範圍。
+ *
+ * 本機鏈：回放把時間一天天往前撥，區塊與時間沒有線性關係；anvil 的 getLogs 又沒有範圍上限，
+ * 所以整條鏈一次查完。
+ *
+ * 公開鏈：出塊時間固定（Base 2 秒），每筆退役的時間就能推回它大概在哪一塊，只查那附近——
+ * 最近 10 筆最多 10 段，不必從現在往回掃好幾天（公開節點一次只能查幾百塊）。相鄰的範圍合併。
+ */
+export function retirementLogRanges(
+  chainId: number | null,
+  latest: { number: number; timestamp: number },
+  rowTimestamps: readonly number[],
+  blockTimeSec: number,
+): BlockRange[] {
+  if (chainId === LOCAL_CHAIN_ID) return [{ fromBlock: 0, toBlock: latest.number }]
+  const ranges = rowTimestamps
+    .map((ts) => Math.round(latest.number - Math.max(0, latest.timestamp - ts) / blockTimeSec))
+    .map((b) => ({
+      fromBlock: Math.max(0, b - ROW_WINDOW_BLOCKS),
+      toBlock: Math.min(latest.number, b + ROW_WINDOW_BLOCKS),
+    }))
+    .sort((a, b) => a.fromBlock - b.fromBlock)
+  const merged: BlockRange[] = []
+  for (const r of ranges) {
+    const last = merged[merged.length - 1]
+    if (last && r.fromBlock <= last.toBlock + 1) last.toBlock = Math.max(last.toBlock, r.toBlock)
+    else merged.push({ ...r })
+  }
+  return merged
+}

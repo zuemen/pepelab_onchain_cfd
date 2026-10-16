@@ -40,6 +40,14 @@ export const copy: Catalog['copy'] = {
     belowMinimum: 'Amount too small: once split by weight, one leg falls under the exchange minimum margin. This strategy needs at least {amount} USDC.',
   },
 
+  /** #333: before copying, how many simulated credits this copy will lead the platform to retire. The tonnes are the platform's (carbonWording.test.ts). */
+  retirementEstimate: {
+    title: 'Carbon retirement this copy leads to (estimate)',
+    value: 'About {tonnes} t of simulated carbon credits',
+    body: 'Of the {fee} copy fee, {carbon} of the platform’s {platform} share goes to the retirement budget, leading the platform to retire about {tonnes} t of simulated carbon credits. The tonnes belong to the platform, not to you; retirement is paid from the platform’s own revenue and costs you nothing extra.',
+    note: 'An estimate: it counts the copy fee only; the performance fee on profitable copied positions later goes the same way. Ratios and price are read from the contracts; the retirement records are on the ESG page.',
+  },
+
   preview: {
     totalDeposit: 'Total deposit:',
     copyFee: '− Copy fee (0.3%):',
