@@ -34,6 +34,7 @@ export const common: Catalog['common'] = {
       marketplace: 'Connect wallet to browse the marketplace.',
       stake: 'Connect wallet to manage your stake.',
       sessions: 'Connect wallet to manage agent sessions.',
+      feed: 'Connect wallet to see the on-chain feed.',
     },
   },
 

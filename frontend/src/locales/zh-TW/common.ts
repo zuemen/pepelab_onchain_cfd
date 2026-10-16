@@ -38,6 +38,7 @@ export const common = {
       marketplace: '連接錢包以瀏覽市集。',
       stake: '連接錢包以管理你的質押。',
       sessions: '連接錢包以管理 agent session。',
+      feed: '連接錢包以查看鏈上動態。',
     },
   },
 
