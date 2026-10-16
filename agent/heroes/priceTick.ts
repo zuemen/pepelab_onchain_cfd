@@ -1,10 +1,12 @@
 // 展示用：定時把即時價格寫進本機鏈的預言機，報價才不會過期。
 // 價格來源與 keeper 相同（CoinGecko／Yahoo）；抓不到的資產把目前的價格原樣重寫一次，只更新時間。
+// 每一輪順帶觸發碳權退役的分流與退役（#333），展示時跟單後下一輪就看得到退役紀錄。
 //   cd agent && npx tsx heroes/priceTick.ts [addresses.json]
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { ethers } from "ethers";
 import { fetchPrice, SOURCES } from "../keeper/feeds.ts";
+import { crankCarbon, describeCrank, ethersCarbonPorts } from "../keeper/carbon.ts";
 import { ORACLE_ABI } from "./abi.ts";
 import { localProvider } from "./provider.ts";
 import { receiptOf } from "./receipt.ts";
@@ -21,8 +23,11 @@ async function main(): Promise<void> {
   const chainId = BigInt(await provider.send("eth_chainId", []));
   if (chainId !== 31337n) throw new Error(`refusing to write prices on chainId ${chainId}: local Anvil (31337) only`);
   const owner = ethers.HDNodeWallet.fromPhrase(MNEMONIC, undefined, "m/44'/60'/0'/0/0").connect(provider);
-  const { MockOracle } = JSON.parse(readFileSync(addressesPath, "utf8"));
+  const { MockOracle, PlatformFeeSplitter, CarbonRetirement } = JSON.parse(readFileSync(addressesPath, "utf8"));
   const oracle = new ethers.Contract(MockOracle, ORACLE_ABI, owner);
+  const carbon = PlatformFeeSplitter && CarbonRetirement
+    ? ethersCarbonPorts({ splitter: PlatformFeeSplitter, retirement: CarbonRetirement }, owner, (tx) => receiptOf(provider, tx.hash))
+    : null;
 
   for (;;) {
     let live = 0;
@@ -35,6 +40,14 @@ async function main(): Promise<void> {
       await receiptOf(provider, (await oracle.updatePrice(id, next)).hash);
     }
     console.log(`${new Date().toISOString()} wrote ${Object.keys(SOURCES).length} prices (${live} changed)`);
+    if (carbon) {
+      // 退役失敗不停掉價格寫入：報價過期會讓整個展示不能用，退役晚一輪沒有關係。
+      try {
+        console.log(describeCrank(await crankCarbon(carbon.splitter, carbon.retirement)));
+      } catch (e) {
+        console.error(`carbon crank failed: ${(e as Error).message.slice(0, 160)}`);
+      }
+    }
     await new Promise((resolve) => setTimeout(resolve, EVERY_SEC * 1000));
   }
 }

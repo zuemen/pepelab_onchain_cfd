@@ -1,12 +1,14 @@
 // 在本機 Anvil 上回放一份排程：逐日設定時間、寫入價格、清算、讓交易者重新發布策略並換倉、
-// 讓虛擬跟隨者跟隨與取消。結束時把相關事件匯出成 events.json。
+// 讓虛擬跟隨者跟隨與取消；每個模擬月份的最後一天觸發一次碳權退役的分流與退役（#333）。
+// 結束時把相關事件匯出成 events.json。
 //   cd agent && npx tsx heroes/replay.ts <schedule.json> <addresses.json> <events.json>
 import { readFileSync, writeFileSync } from "node:fs";
 import { ethers } from "ethers";
 import { COPY_ABI, EXCHANGE_ABI, KYC_ABI, ORACLE_ABI, REGISTRY_ABI, STAKE_ABI, USDC_ABI } from "./abi.ts";
-import { planHedge, planOpens, shouldLiquidate, type LegPlan } from "./plan.ts";
+import { isLastDayOfMonth, planHedge, planOpens, shouldLiquidate, type LegPlan } from "./plan.ts";
 import { localProvider } from "./provider.ts";
 import { receiptOf } from "./receipt.ts";
+import { crankCarbon, RETIREMENT_ABI, SPLITTER_ABI } from "../keeper/carbon.ts";
 
 const RPC = process.env.HEROES_RPC_URL ?? "http://127.0.0.1:8545";
 // Anvil 的預設助記詞。公開的測試金鑰，只能用在本機鏈。
@@ -50,6 +52,8 @@ const stake = new ethers.Contract(A.TraderStake, STAKE_ABI, provider);
 const usdc = new ethers.Contract(A.MockUSDC, USDC_ABI, provider);
 const oracle = new ethers.Contract(A.MockOracle, ORACLE_ABI, provider);
 const kyc = new ethers.Contract(A.KYCRegistry, KYC_ABI, provider);
+const splitter = new ethers.Contract(A.PlatformFeeSplitter, SPLITTER_ABI, provider);
+const retirement = new ethers.Contract(A.CarbonRetirement, RETIREMENT_ABI, provider);
 
 const assetId = (symbol: string) => ethers.id(symbol);
 const symbolOf = new Map(schedule.assets.map((s) => [assetId(s), s]));
@@ -85,6 +89,32 @@ function track(receipt: Receipt): void {
     } else if (parsed?.name === "PositionClosed" || parsed?.name === "PositionLiquidated") {
       open.delete(parsed.args.positionId);
     }
+  }
+}
+
+/**
+ * 這個模擬月份的平台份額 → 分流 → 退役。兩筆都走 send()，失敗照常計入 stats（對帳要求 0 失敗）；
+ * 任何一筆失敗就停在那裡，預算留到下個月。
+ */
+async function crankCarbonMonth(date: string): Promise<void> {
+  const must = async (label: string, tx: () => Promise<ethers.ContractTransactionResponse>) => {
+    if (!(await send(`${label} ${date}`, tx))) throw new Error(`${label} failed`);
+  };
+  try {
+    await crankCarbon(
+      {
+        pending: async () => (await splitter.pending()) as bigint,
+        distribute: () => must("carbon distribute", () => splitter.connect(deployer).getFunction("distribute")()),
+      },
+      {
+        budget: async () => (await retirement.budget()) as bigint,
+        quoteTonnes: async (amount) => (await retirement.quoteTonnes(amount)) as bigint,
+        availableTonnes: async () => (await retirement.availableTonnes()) as bigint,
+        retire: (amount) => must("carbon retire", () => retirement.connect(deployer).getFunction("retire")(amount)),
+      },
+    );
+  } catch {
+    // 已由 send() 記錄
   }
 }
 
@@ -155,6 +185,7 @@ async function main(): Promise<void> {
   }
 
   // ── 逐日 ──────────────────────────────────────────────────────────────────
+  const dates = schedule.days.map((d) => d.date);
   for (const [n, day] of schedule.days.entries()) {
     await provider.send("evm_setNextBlockTimestamp", [day.timestamp]);
     for (const symbol of schedule.assets) {
@@ -244,6 +275,8 @@ async function main(): Promise<void> {
           exchange.connect(maker).getFunction("openPosition")(id, isLong, margin, 1n, { value: executionFee })));
       }
     }
+    // 一個月的跟單費與績效費都進來之後，退役在這個月的最後一天發生，紀錄帶著模擬月份的時間。
+    if (isLastDayOfMonth(dates, n)) await crankCarbonMonth(day.date);
     if (n % 30 === 0) console.log(`${day.date}  open=${open.size}  sent=${stats.sent}  failed=${stats.failed}`);
   }
 
@@ -260,7 +293,7 @@ async function main(): Promise<void> {
   }
 
   const events = [];
-  for (const contract of [exchange, registry, copy]) {
+  for (const contract of [exchange, registry, copy, splitter, retirement]) {
     const logs = await provider.getLogs({ address: await contract.getAddress(), fromBlock: 0, toBlock: "latest" });
     for (const log of logs) {
       const parsed = contract.interface.parseLog(log);
@@ -294,6 +327,11 @@ async function main(): Promise<void> {
   writeFileSync(outPath, JSON.stringify({
     schemaVersion: 1, chainId: 31337, range: { from: schedule.start, to: schedule.end },
     marketMaker: maker.address, stats, traders: traderDocs, events,
+    // 對帳用：鏈上的累計退役噸數（1e18 = 1 公噸模擬碳權）要等於 CarbonRetired 事件的總和。
+    carbon: {
+      retirement: A.CarbonRetirement,
+      totalRetiredTonnes: ((await retirement.totalRetiredTonnes()) as bigint).toString(),
+    },
   }) + "\n");
 
   const ratio = stats.sent === 0 ? 0 : stats.failed / stats.sent;

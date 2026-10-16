@@ -39,6 +39,14 @@ export const copy = {
     belowMinimum: '金額太小：照比例拆分後有一檔低於交易所的最低保證金。這位交易者的策略最少需要 {amount} USDC。',
   },
 
+  /** #333：跟單前看到這次跟單會促成平台退役多少模擬碳權。噸數歸屬平台（carbonWording.test.ts）。 */
+  retirementEstimate: {
+    title: '這次跟單促成的碳權退役（估算）',
+    value: '約 {tonnes} 公噸模擬碳權',
+    body: '跟單手續費 {fee} 中，平台份額 {platform} 裡有 {carbon} 會撥入退役預算，促成平台退役約 {tonnes} 公噸模擬碳權。噸數歸屬平台，不是你個人的減碳；退役用的是平台自己的收入，不向你多收任何費用。',
+    note: '估算：只算跟單手續費；跟單部位日後的績效費也會照同樣比例撥入。比例與價格讀自鏈上合約，退役紀錄在 ESG 頁。',
+  },
+
   preview: {
     totalDeposit: '總存入金額：',
     copyFee: '− 跟單手續費（0.3%）：',

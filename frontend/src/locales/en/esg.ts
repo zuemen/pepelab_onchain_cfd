@@ -41,10 +41,37 @@ export const esg: Catalog['esg'] = {
       time: 'Time',
       tonnes: 'Amount (simulated)',
       amount: 'Cost',
+      tx: 'On-chain tx',
     },
     empty: 'No retirements yet.',
     failed: 'Could not read the retirement records — cannot confirm right now. This does not mean "nothing retired".',
     loading: 'Reading retirement records…',
+    /** #333: the beneficiary rule — one tonne can be claimed by one party only. */
+    beneficiaryTitle: 'The platform is the beneficiary',
+    beneficiary:
+      'A tonne can be claimed by one party only. The tonnes retired here belong to the platform, not to any individual user: your trades helped bring the retirement about, but these tonnes cannot be counted as a reduction of your own emissions.',
+    fundingTitle: 'Where the money comes from',
+    funding:
+      'Of the fee revenue the platform receives, {carbon}% of the platform’s {platform}% share goes to the retirement budget automatically — {total}% of the fee. The ratio is fixed in the contract (immutable) and the platform cannot change it; changing it takes a new deployment, which is itself visible on chain. Anyone can trigger the split and the retirement; whoever triggers it decides only when, the contract decides where the money goes.',
+    /** Rendered only when the copy-trading flag is on (allow-listed in copyWording.test.ts). */
+    fundingCopy:
+      'The revenue on this path is the copy fee (0.3% of the copied amount) and the performance fee on profitable copied positions; ordinary trading fees do not pass through it. Retirement is paid from the platform’s own revenue — users pay nothing extra.',
+    viewTx: 'View tx',
+    shownOf: 'Showing the latest {shown} of {count}',
+    more: 'Show earlier retirements',
+  },
+
+  /** #333: the "carbon tier mix" card on the trader page and the portfolio (CarbonTierMixCard). */
+  impact: {
+    tierTitle: 'Carbon tier mix',
+    tierLead: 'How much of the holdings sits in each carbon tier. Carbon intensities of different assets have different units and cannot be added up into one tonnage, so only tiers are compared here.',
+    /** Low / mid / high / unrated reuse tokens.provenance.carbonTier (one set of tiers); only the failed-read bucket lives here. */
+    tierUnknown: 'Unknown (read failed)',
+    tierSource: 'Tiers are read from the on-chain attestations the exchange prices on; assets that cannot be read are shown as unknown, never as low carbon.',
+    traderSource: 'Weighted by this trader’s currently published strategy, read from chain.',
+    portfolioSource: 'Weighted by the market value of your current positions.',
+    empty: 'No holdings to calculate from.',
+    pct: '{pct}%',
   },
 
   title: '🌱 ESG Asset Explorer',

@@ -25,6 +25,8 @@ import { belowMinimum, minimumCopyAmount } from 'src/lib/pepefi/copyGuards'
 import { fetchHeroIndex, heroByAddress } from 'src/lib/pepefi/heroData'
 import { useMode } from 'src/contexts/mode-context'
 import StrategySides from 'src/components/pepefi/feed/StrategySides'
+import { useCarbonRouting } from 'src/hooks/useCarbonRouting'
+import { copyRetirementEstimate } from 'src/lib/pepefi/carbonRetirement'
 
 import Box from '@mui/material/Box';
 import Container from '@mui/material/Container';
@@ -120,6 +122,8 @@ export default function CopyPage() {
   const { data: esg } = useESG(contracts?.esgRegistry ?? null)
   const livePrices = useLivePrices()
   const execFee = useExecutionFee(contracts?.exchange ?? null)
+  // #333：跟單費 → 平台份額 → 退役預算的比例與模擬價格，全部讀自鏈上；這條鏈沒接碳權退役時為 null。
+  const { routing: carbon } = useCarbonRouting(wallet.provider, wallet.chainId)
 
   const setLoad = (k: string, v: boolean) => setBusy(p => ({ ...p, [k]: v }))
   const { notify } = useToast()
@@ -223,6 +227,18 @@ export default function CopyPage() {
   const totalBig  = tryParse(totalMargin) ?? 0n
   const feeBig    = totalBig * COPY_FEE_BPS / 10_000n
   const netBig    = totalBig - feeBig
+  const retirement = carbon && carbon.copyFeeBps !== null && totalBig > 0n
+    ? copyRetirementEstimate({
+        totalMargin:      totalBig,
+        copyFeeBps:       carbon.copyFeeBps,
+        platformShareBps: carbon.platformShareBps,
+        carbonShareBps:   carbon.carbonShareBps,
+        pricePerTonne:    carbon.pricePerTonne,
+      })
+    : null
+  const tokenAmt = (v: bigint) => `${(Number(v) / 10 ** (carbon?.decimals ?? 18)).toFixed(4)} ${STABLE_LABEL}`
+  // 碳權固定 18 位（1e18 = 1 公噸），f18 正好適用
+  const tonnesTxt = (v: bigint) => f18(v, 4)
   const previewRows = stratAllocs.map(a => ({
     ...a,
     margin:   netBig * a.weight / 10_000n,
@@ -596,6 +612,29 @@ export default function CopyPage() {
               {t.copy.feePreview.split}
             </Typography>
           </Stack>
+        </Card>
+      )}
+
+      {/* #333：這次跟單會促成平台退役多少模擬碳權（估算）。噸數歸屬平台，文案不說「抵銷」。 */}
+      {retirement && (
+        <Card sx={{ p: 2.5, bgcolor: 'background.neutral', border: '1px solid', borderColor: 'divider' }}>
+          <Typography variant="overline" color="success.main" sx={{ fontWeight: 'bold', display: 'block', mb: 1 }}>
+            {t.copy.retirementEstimate.title}
+          </Typography>
+          <Typography variant="subtitle1" sx={{ fontWeight: 'bold', fontFamily: MONO }}>
+            {interpolate(t.copy.retirementEstimate.value, { tonnes: tonnesTxt(retirement.tonnes) })}
+          </Typography>
+          <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+            {interpolate(t.copy.retirementEstimate.body, {
+              fee:      tokenAmt(retirement.copyFee),
+              platform: tokenAmt(retirement.platformShare),
+              carbon:   tokenAmt(retirement.toRetirement),
+              tonnes:   tonnesTxt(retirement.tonnes),
+            })}
+          </Typography>
+          <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
+            {t.copy.retirementEstimate.note}
+          </Typography>
         </Card>
       )}
 

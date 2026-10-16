@@ -62,7 +62,7 @@ scripts/heroes-replay.sh heroes/tests/fixtures/schedule_smoke.json
 | `tests/fixtures/schedule_smoke.json` | 是 | 小規模排程，測試用 |
 | `out/schedule.json` | 否 | 逐日價格、每位交易者的策略、虛擬跟隨者的動作 |
 | `out/addresses.json` | 否 | 本機鏈上各合約的位址 |
-| `out/events.json` | 否 | 回放後從鏈上匯出的事件 |
+| `out/events.json` | 否 | 回放後從鏈上匯出的事件（含碳權退役的 `CarbonRetired` 與鏈上的累計退役噸數） |
 | `out/chain.json` | 否 | 鏈狀態（含歷史區塊與交易收據）；展示時用 `anvil --load-state` 載入 |
 | `../frontend/public/data/heroes/*.json` | 是 | 前端讀取的績效資料 |
 
@@ -78,6 +78,15 @@ cast rpc evm_setNextBlockTimestamp "$(date +%s)"     # 把鏈的時間對到現�
 ```
 
 鏈重新載入後，錢包對這條鏈的 nonce 快取會錯：在錢包裡清掉這個帳號的活動紀錄再送交易。
+
+## 碳權退役（#333）
+
+本機部署的平台手續費收款人是分流合約（docs/ADR-022-carbon-retirement-splitter.md）：跟單費與跟單部位的績效費，
+平台 20% 份額裡固定四分之一撥入退役預算，用來買入並銷毀**模擬碳權**。分配與退役都不需權限即可觸發：
+
+- 回放：每個模擬月份的最後一天觸發一次，退役紀錄因此帶著模擬月份的時間。
+- 展示：`priceTick.ts` 每一輪寫完價格順帶觸發，跟單之後下一輪就在 ESG 頁看得到這筆退役。
+- 兩者用的是 keeper 同一份實作（`agent/keeper/carbon.ts`）。
 
 ## 本機展示
 
@@ -114,7 +123,7 @@ heroes/.venv/Scripts/python heroes/check_pipeline.py # 整條管線對帳（要�
 
 `check_pipeline.py` 預設對照 `out/schedule.json`；小規模回放要把排程傳進去：
 `python check_pipeline.py out/events.json tests/fixtures/schedule_smoke.json`。它檢查：沒有失敗或被跳過的交易、
-平倉筆數、期末淨值與鏈上相差在本金 2% 以內、鏈上的跟隨者人數與排程一致。
+平倉筆數、期末淨值與鏈上相差在本金 2% 以內、鏈上的跟隨者人數與排程一致、匯出的退役事件總噸數等於鏈上的累計退役噸數。
 
 ## 新增一條策略規則
 

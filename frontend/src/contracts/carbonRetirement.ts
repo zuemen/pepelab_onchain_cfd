@@ -49,3 +49,20 @@ export const CARBON_RETIREMENT_ABI = [
 ] as const
 
 export const CARBON_ERC20_DECIMALS_ABI = ['function decimals() view returns (uint8)'] as const
+
+/**
+ * #333：從 FeeRouter 找到分流與退役合約。FeeRouter 的平台收款人（platformTreasury）若是
+ * PlatformFeeSplitter，就讀得到 carbonRetirement() 與 carbonShareBps()；是 EOA 或別的合約時
+ * 讀取失敗＝這條鏈沒有接上碳權退役。keeper（agent/keeper/carbon.ts）用的是同一條路。
+ */
+export const FEE_ROUTER_PAYEE_ABI = [
+  'function platformTreasury() view returns (address)',
+  'function PLATFORM_SHARE_BPS() view returns (uint256)',
+] as const
+
+export const FEE_SPLITTER_ABI = [
+  'function carbonRetirement() view returns (address)',
+  'function carbonShareBps() view returns (uint256)',
+] as const
+
+export const COPY_FEE_ABI = ['function COPY_FEE_BPS() view returns (uint256)'] as const

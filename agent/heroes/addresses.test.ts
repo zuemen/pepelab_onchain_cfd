@@ -13,6 +13,7 @@ const BROADCAST = {
     { transactionType: "CALL", contractName: "ESGRegistryV2", contractAddress: "0x" + "9".repeat(40) },
     created("TraderStake", 5), created("InsuranceVault", 6), created("FeeRouter", 7), created("PerpetualExchange", 8),
     created("StrategyRegistry", 9), created("CopyTracker", 10), created("AgentSessionManager", 11), created("KYCRegistry", 12),
+    created("MockCarbonCredit", 13), created("CarbonRetirement", 14), created("PlatformFeeSplitter", 15),
   ],
 };
 
@@ -22,6 +23,10 @@ assert.equal(found.MockUSDC, "0x0000000000000000000000000000000000000001");
 // 前端的 ESGRegistry 欄位指向 ESGRegistryV2（與 Base Sepolia 相同）
 assert.equal(found.ESGRegistry, "0x0000000000000000000000000000000000000004");
 assert.equal(found.AgentSessionManager, "0x0000000000000000000000000000000000000011");
+// #333：回放每個模擬月份觸發分流與退役，也從退役合約匯出事件
+assert.equal(found.CarbonRetirement, "0x0000000000000000000000000000000000000014");
+assert.equal(found.PlatformFeeSplitter, "0x0000000000000000000000000000000000000015");
+assert.equal(found.MockCarbonCredit, "0x0000000000000000000000000000000000000013");
 // 這次沒部署的合約是 0x0，前端的「未部署」判斷靠它
 assert.equal(found.PepeAMM, ZERO);
 assert.equal(found.AssetVault, ZERO);
@@ -44,6 +49,7 @@ assert.ok(block.startsWith("const ANVIL: ChainAddresses = {\n"));
 assert.ok(block.endsWith("\n}"));
 for (const field of FRONTEND_FIELDS) assert.ok(block.includes(`  ${field}:`), `缺欄位 ${field}`);
 assert.ok(!block.includes("AgentSessionManager"), "ChainAddresses 沒有這個欄位，寫進去會讓型別檢查失敗");
+assert.ok(!block.includes("CarbonRetirement"), "前端從 FeeRouter 的平台收款人找到退役合約，不進位址表");
 
 // ── 改寫：只動本機鏈區塊 ────────────────────────────────────────────────────
 const SOURCE = [
