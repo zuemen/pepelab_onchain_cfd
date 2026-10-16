@@ -449,8 +449,21 @@ PepeAMM 的修正都只存在於原始碼；平台 FeeRouter 的 `platformTreasu
      永久綁錯。腳本會要求 `STRATEGY_REGISTRY.stakeContract() == TRADER_STAKE`，並在 exchange 已有 CopyTracker 時要求它的
      `registry()`／`traderStake()` 與輸入一致（exchange 尚無 CopyTracker 時略過這項比對）。部署者也不得持有 timelock 的
      `DEFAULT_ADMIN_ROLE`（比照 `HandoverToTimelock`）。
+   - **碳權退役（#333、ADR-022）：平台收款人是分流合約。** 這一項之前，用**同一把 owner 金鑰**先部署模擬碳權、退役合約與
+     分流合約（不另部署 router），再把分流合約當成這一項的 `CARBON_SPLITTER`。腳本會檢查分流合約由同一個部署者部署、尚未綁定、
+     `treasury()` 等於 `TREASURY`（owner `0x27C2…A585`，不是外洩地址），新 FeeRouter 部署後在同一次 broadcast 內 `bindFeeRouter`，
+     結束時讀回 `platformTreasury() == 分流合約`。退役比例用腳本預設的 2,500 bps（平台 20% 份額的四分之一）。
+     ```bash
+     cd contracts
+     CARBON_USDC=0x69fd695Bc7C3aFdb35ABA35cD6890C506400b035 CARBON_TREASURY=0x27C21324D101e867E0634bf2ebe3F9Dcf3ACA585 \
+     CARBON_DEPLOY_ROUTER=false CARBON_CHAIN_ID=84532 \
+       forge script script/DeployCarbonRetirement.s.sol:DeployCarbonRetirement --rpc-url $RPC --account $ACCOUNT --sender $DEPLOYER --broadcast --slow
+     # 印出的 PlatformFeeSplitter 位址 → 下面的 CARBON_SPLITTER
+     ```
+     之後分流與退役由 keeper 每次執行順帶觸發（`agent/keeper/carbon.ts`，從 `EXCHANGE` 找到分流合約，不需要新的 secret 或設定）；
+     前端從 FeeRouter 的平台收款人找到退役合約，不需要改位址表。fork 驗證：`test/fork/CarbonCutoverFork.t.sol`。
    - 用法（環境變數：`EXCHANGE`、`STRATEGY_REGISTRY`、`TRADER_STAKE`、`TREASURY` 必填，`TRADER_STAKE` 填第 1 項之後 Registry
-     實際使用的那一個；`TIMELOCK` 或 `KEEP_DEPLOYER_OWNER` 擇一；續跑用
+     實際使用的那一個；`CARBON_SPLITTER` 填上一段部署的分流合約；`TIMELOCK` 或 `KEEP_DEPLOYER_OWNER` 擇一；續跑用
      `RESUME_VAULT`／`RESUME_FEE_ROUTER`／`RESUME_COPY_TRACKER`）：
      ```bash
      cd contracts

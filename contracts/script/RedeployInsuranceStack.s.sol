@@ -12,6 +12,7 @@ import "../src/CopyTracker.sol";
 import "../src/PerpetualExchange.sol";
 import "../src/TraderStake.sol";
 import "../src/StrategyRegistry.sol";
+import "../src/PlatformFeeSplitter.sol";
 
 /// @title  RedeployInsuranceStack — new InsuranceVault + platform FeeRouter + CopyTracker, as one batch
 /// @notice OWNER_ACTIONS.md step 5 item 4, specified in INSURANCE_VAULT_SHARES.md §5.1–§5.3.
@@ -57,6 +58,16 @@ import "../src/StrategyRegistry.sol";
 ///         stakeContract() must equal TRADER_STAKE, and the exchange's current
 ///         CopyTracker (when set) must point at the same registry and stake.
 ///
+///         CARBON RETIREMENT (#333, ADR-022)
+///         With CARBON_SPLITTER set, the new router's platform payee is that
+///         PlatformFeeSplitter instead of TREASURY: a fixed share of the
+///         platform's fee share goes to carbon retirement, the rest to the
+///         splitter's own treasury — which must be TREASURY, so TREASURY keeps
+///         meaning "where platform revenue ends up". The splitter comes from
+///         DeployCarbonRetirement (CARBON_DEPLOY_ROUTER=false) broadcast by the
+///         same deployer: bindFeeRouter is callable once, by its deployer only,
+///         and this script sends it right after the router exists.
+///
 ///         WHAT THIS DOES NOT DO
 ///         It does not touch the exchange or TraderStake. Repointing them is a
 ///         timelock matter (48h); the exact scheduleBatch / executeBatch calldata
@@ -73,6 +84,11 @@ import "../src/StrategyRegistry.sol";
 ///                         A Safe is fine — unlike x402's payTo it need not be an EOA.
 ///                         Not a protocol contract either (USDC, exchange, …):
 ///                         the router's treasury is immutable, fees sent there stay.
+///     CARBON_SPLITTER     optional. A PlatformFeeSplitter deployed by this same
+///                         deployer, not yet bound, settling in USDC and paying
+///                         its remainder to TREASURY. It becomes the router's
+///                         platformTreasury and is bound in the same broadcast.
+///                         Base Sepolia cutover (#344): set it (OWNER_ACTIONS step 5).
 ///     TIMELOCK            (required unless KEEP_DEPLOYER_OWNER=true) a
 ///                         TimelockController with minDelay >= MIN_TIMELOCK_DELAY
 ///                         that already owns EXCHANGE — i.e. HandoverToTimelock
@@ -127,6 +143,7 @@ contract RedeployInsuranceStack is Script {
         address registry;
         address traderStake;
         address treasury;
+        address carbonSplitter;     // zero = the router pays TREASURY directly
         address timelock;
         bool    keepDeployerOwner;
         uint256 minTimelockDelay;
@@ -176,6 +193,7 @@ contract RedeployInsuranceStack is Script {
         c.registry          = vm.envAddress("STRATEGY_REGISTRY");
         c.traderStake       = vm.envAddress("TRADER_STAKE");
         c.treasury          = vm.envOr("TREASURY", address(0));
+        c.carbonSplitter    = vm.envOr("CARBON_SPLITTER", address(0));
         c.timelock          = vm.envOr("TIMELOCK", address(0));
         c.keepDeployerOwner = vm.envOr("KEEP_DEPLOYER_OWNER", false);
         c.minTimelockDelay  = vm.envOr("MIN_TIMELOCK_DELAY", uint256(24 hours));
@@ -196,6 +214,12 @@ contract RedeployInsuranceStack is Script {
         require(cfg.seedAmount >= unit, "SEED_AMOUNT below one whole token (INSURANCE_VAULT_SHARES.md 5.2)");
 
         _preflightResume(cfg);
+
+        if (cfg.carbonSplitter != address(0)) {
+            address bound = address(PlatformFeeSplitter(cfg.carbonSplitter).feeRouter());
+            require(bound == address(0) || (cfg.resumeRouter != address(0) && bound == cfg.resumeRouter),
+                "CARBON_SPLITTER is already bound to another FeeRouter");
+        }
 
         bool needsSeed = cfg.resumeVault == address(0) || !_deployerSeeded(cfg, InsuranceVault(cfg.resumeVault));
         if (needsSeed) {
@@ -234,8 +258,10 @@ contract RedeployInsuranceStack is Script {
         require(cfg.treasury != cfg.usdc && cfg.treasury != cfg.exchange && cfg.treasury != cfg.registry
                 && cfg.treasury != cfg.traderStake && cfg.treasury != cfg.timelock
                 && cfg.treasury != cfg.resumeVault && cfg.treasury != cfg.resumeRouter
-                && cfg.treasury != cfg.resumeCopyTracker,
+                && cfg.treasury != cfg.resumeCopyTracker && cfg.treasury != cfg.carbonSplitter,
             "TREASURY is a protocol contract - the router's treasury is immutable, fees would be stuck");
+
+        _checkCarbonSplitter(cfg);
 
         // Deployer — it holds the seed and owns everything until the handover.
         require(cfg.deployer != address(0), "BROADCASTER is zero");
@@ -261,6 +287,21 @@ contract RedeployInsuranceStack is Script {
             require(!tl.hasRole(tl.PROPOSER_ROLE(), cfg.deployer), "deployer is a timelock proposer - no real delay");
             require(!tl.hasRole(tl.DEFAULT_ADMIN_ROLE(), cfg.deployer), "deployer administers the timelock - no real delay");
         }
+    }
+
+    /// #333: the splitter that becomes the platform payee. Its remainder must go
+    /// to TREASURY (checked above), and only its deployer can bind it.
+    function _checkCarbonSplitter(Config memory cfg) internal view {
+        if (cfg.carbonSplitter == address(0)) return;
+        require(cfg.carbonSplitter.code.length > 0, "CARBON_SPLITTER has no code");
+        (bool ok, bytes memory ret) = cfg.carbonSplitter.staticcall(abi.encodeWithSignature("carbonShareBps()"));
+        require(ok && ret.length == 32, "CARBON_SPLITTER is not a PlatformFeeSplitter");
+        PlatformFeeSplitter s = PlatformFeeSplitter(cfg.carbonSplitter);
+        require(address(s.usdc()) == cfg.usdc, "CARBON_SPLITTER settles in a different USDC");
+        require(s.treasury() == cfg.treasury, "CARBON_SPLITTER pays a different treasury than TREASURY");
+        require(s.deployer() == cfg.deployer,
+            "CARBON_SPLITTER was deployed by another address - only its deployer can bindFeeRouter");
+        require(s.carbonRetirement().code.length > 0, "CARBON_SPLITTER: carbonRetirement has no code");
     }
 
     /// The exchange's current CopyTracker must already use the same registry and
@@ -301,7 +342,7 @@ contract RedeployInsuranceStack is Script {
             FeeRouter r = FeeRouter(cfg.resumeRouter);
             require(cfg.resumeRouter.code.length > 0, "RESUME_FEE_ROUTER has no code");
             require(address(r.insuranceVault()) == cfg.resumeVault, "RESUME_FEE_ROUTER: built for a different vault");
-            require(r.platformTreasury() == cfg.treasury, "RESUME_FEE_ROUTER: different TREASURY");
+            require(r.platformTreasury() == _payee(cfg), "RESUME_FEE_ROUTER: different TREASURY");
             require(address(r.usdc()) == cfg.usdc, "RESUME_FEE_ROUTER: different USDC");
         }
         if (cfg.resumeCopyTracker != address(0)) {
@@ -337,10 +378,16 @@ contract RedeployInsuranceStack is Script {
             require(_deployerSeeded(cfg, vault), "seed deposit did not give the deployer a seed-sized position");
         }
 
-        // 3. Router — treasury and vault are immutable from here on.
+        // 3. Router — payee and vault are immutable from here on.
         FeeRouter router = cfg.resumeRouter != address(0)
             ? FeeRouter(cfg.resumeRouter)
-            : new FeeRouter(cfg.usdc, cfg.treasury, address(vault));
+            : new FeeRouter(cfg.usdc, _payee(cfg), address(vault));
+
+        // 3b. #333: bind the splitter to the router that pays it (once, deployer only).
+        if (cfg.carbonSplitter != address(0)
+            && address(PlatformFeeSplitter(cfg.carbonSplitter).feeRouter()) == address(0)) {
+            PlatformFeeSplitter(cfg.carbonSplitter).bindFeeRouter(address(router));
+        }
 
         // 4. CopyTracker — feeRouter is immutable from here on.
         CopyTracker ct = cfg.resumeCopyTracker != address(0)
@@ -389,7 +436,7 @@ contract RedeployInsuranceStack is Script {
         require(vault.totalAssets() >= _seed(cfg), "readback: vault.totalAssets() below SEED_AMOUNT");
 
         require(router.owner() == expectedOwner, "readback: router.owner()");
-        require(router.platformTreasury() == cfg.treasury, "readback: router.platformTreasury()");
+        require(router.platformTreasury() == _payee(cfg), "readback: router.platformTreasury()");
         require(!_isCompromised(router.platformTreasury()), "readback: platformTreasury is compromised");
         require(address(router.insuranceVault()) == d.vault, "readback: router.insuranceVault()");
         require(router.exchange() == cfg.exchange, "readback: router.exchange()");
@@ -405,6 +452,13 @@ contract RedeployInsuranceStack is Script {
 
         require(cfg.treasury != d.vault && cfg.treasury != d.router && cfg.treasury != d.copyTracker,
             "readback: platformTreasury is one of the new contracts");
+
+        if (cfg.carbonSplitter != address(0)) {
+            PlatformFeeSplitter s = PlatformFeeSplitter(cfg.carbonSplitter);
+            require(address(s.feeRouter()) == d.router, "readback: carbonSplitter.feeRouter()");
+            require(s.treasury() == cfg.treasury, "readback: carbonSplitter.treasury()");
+            require(!_isCompromised(s.treasury()), "readback: carbonSplitter.treasury() is compromised");
+        }
     }
 
     // ── Output ───────────────────────────────────────────────────────────────
@@ -414,7 +468,13 @@ contract RedeployInsuranceStack is Script {
         console.log("InsuranceVault_NEW :", d.vault);
         console.log("FeeRouter_NEW      :", d.router);
         console.log("CopyTracker_NEW    :", d.copyTracker);
-        console.log("platformTreasury   :", cfg.treasury);
+        console.log("platformTreasury   :", _payee(cfg));
+        if (cfg.carbonSplitter != address(0)) {
+            PlatformFeeSplitter s = PlatformFeeSplitter(cfg.carbonSplitter);
+            console.log("  = PlatformFeeSplitter (#333), bound; carbonShareBps:", s.carbonShareBps());
+            console.log("  remainder to TREASURY:", cfg.treasury);
+            console.log("  CarbonRetirement     :", s.carbonRetirement());
+        }
         console.log("vault totalSupply  :", InsuranceVault(d.vault).totalSupply());
 
         if (cfg.keepDeployerOwner) {
@@ -543,6 +603,11 @@ contract RedeployInsuranceStack is Script {
             "vault has zero supply but an inflow source is wired - inflows would accrue to virtual shares forever");
         require(v.totalAssets() == 0,
             "vault has zero supply but holds assets - they already belong to the virtual shares; deploy a fresh vault");
+    }
+
+    /// Who the new router pays its platform share to.
+    function _payee(Config memory cfg) internal pure returns (address) {
+        return cfg.carbonSplitter != address(0) ? cfg.carbonSplitter : cfg.treasury;
     }
 
     function _isCompromised(address a) internal pure returns (bool) {

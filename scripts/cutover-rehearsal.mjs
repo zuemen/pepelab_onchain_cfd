@@ -13,8 +13,9 @@
 //   3. RedeployGuardedOracle → 4. UpgradeVaultToV2_5
 //   5. DeploySessionCredentialAnchor（綁新的 AgentSessionManager；平台從未部署過）
 //   6. DeployGovernance → 7. HandoverToTimelock phase 1
-//   8. RedeployInsuranceStack（TIMELOCK）→ VERIFY_ONLY → timelock scheduleBatch → 等 minDelay →
-//      ReduceOnly → executeBatch → 回 Active → 讀回 exchange／TraderStake 的新指標
+//   8. DeployCarbonRetirement（不另部署 router；#333）→ RedeployInsuranceStack（TIMELOCK、CARBON_SPLITTER）→
+//      VERIFY_ONLY → timelock scheduleBatch → 等 minDelay → ReduceOnly → executeBatch → 回 Active →
+//      讀回 exchange／TraderStake 的新指標 → 平台份額走一次分流與退役
 //   9. DeployPepeIncentives（綁最終 CopyTracker）→ 10. DeployAMM（MockUSDC owner 簽）
 //   11. HandoverToTimelock phase 2 → VerifyHandover
 //   12. （選用）DeployVCKycRegistry → timelock batch（acceptOwnership＋setKycRegistry）
@@ -323,6 +324,17 @@ async function main() {
       return "exchange 等 owner 已移交 timelock（部署者仍保有 AccessControl admin，phase 2 才放棄）";
     });
 
+    await step("8.0 DeployCarbonRetirement（#333，平台收款人＝分流合約）", () => {
+      const out = forgeScript("DeployCarbonRetirement", {
+        env: { CARBON_USDC: USDC, CARBON_TREASURY: R.TREASURY, CARBON_DEPLOY_ROUTER: "false", CARBON_CHAIN_ID: String(CHAIN_ID) },
+      });
+      addrs.PlatformFeeSplitter = grab(out, "PlatformFeeSplitter");
+      addrs.CarbonRetirement = grab(out, "CarbonRetirement");
+      const deployer = call(addrs.PlatformFeeSplitter, "deployer()(address)");
+      if (!eq(deployer, OWNER)) throw new Error(`splitter.deployer() = ${deployer}，RedeployInsuranceStack 無法綁定`);
+      return "模擬碳權、退役合約、分流合約；分流合約尚未綁定，等下一步的平台 FeeRouter";
+    });
+
     await step("8a. RedeployInsuranceStack", () => {
       const bal = BigInt(call(USDC, "balanceOf(address)(uint256)", OWNER));
       const unit = 10n ** BigInt(call(USDC, "decimals()(uint8)"));
@@ -336,6 +348,7 @@ async function main() {
         STRATEGY_REGISTRY: addrs.STRATEGY_REGISTRY_NEW,
         TRADER_STAKE: addrs.TRADER_STAKE,
         TREASURY: R.TREASURY,
+        CARBON_SPLITTER: addrs.PlatformFeeSplitter,
         TIMELOCK: addrs.TIMELOCK,
       };
       const out = forgeScript("RedeployInsuranceStack", { env });
@@ -355,7 +368,9 @@ async function main() {
         },
         broadcast: false,
       });
-      return "新保險金庫、平台 FeeRouter、CopyTracker 部署並讀回核對；VERIFY_ONLY 通過";
+      const payee = call(addrs.FeeRouter_NEW, "platformTreasury()(address)");
+      if (!eq(payee, addrs.PlatformFeeSplitter)) throw new Error(`FeeRouter.platformTreasury() = ${payee}，應為分流合約`);
+      return "新保險金庫、平台 FeeRouter（收款人＝分流合約、已綁定）、CopyTracker 部署並讀回核對；VERIFY_ONLY 通過";
     });
     await step("8b. timelock 排程 → 等待 → 遷移窗口 → 執行", () => {
       cast(["send", addrs.TIMELOCK, addrs._schedule, "--from", R.PROPOSER, "--unlocked", "--rpc-url", LOCAL]);
@@ -384,6 +399,26 @@ async function main() {
       delete addrs._schedule;
       delete addrs._execute;
       return `minDelay ${delay} 秒後 executeBatch 成功，四個指標都換到新合約${back.length ? `；${back.length} 檔無法由 marketOperator 切回 Active` : "；11 檔已切回 Active"}`;
+    });
+
+    await step("8c. 平台份額 → 分流 → 退役（#333）", () => {
+      // 演練不建交易者：用 permissionless 的 routeExternalRevenue 送一筆收入進新 router，
+      // 走的是和跟單費同一個 70/20/10 分帳。真正的跟單路徑由 test/fork/CarbonCutoverFork.t.sol 驗證。
+      const unit = 10n ** BigInt(call(USDC, "decimals()(uint8)"));
+      const usdcOwner = call(USDC, "owner()(address)");
+      rpc("anvil_setBalance", usdcOwner, "0x56BC75E2D63100000");
+      send(usdcOwner, USDC, "mint(address,uint256)", R.TREASURY, (100n * unit).toString());
+      send(R.TREASURY, USDC, "approve(address,uint256)", addrs.FeeRouter_NEW, (100n * unit).toString());
+      send(R.TREASURY, addrs.FeeRouter_NEW, "routeExternalRevenue(address,uint256)", R.TREASURY, (100n * unit).toString());
+      const pending = BigInt(call(addrs.PlatformFeeSplitter, "pending()(uint256)"));
+      if (pending !== 20n * unit) throw new Error(`splitter.pending() = ${pending}，應為平台 20% = ${20n * unit}`);
+      send(KEEPER, addrs.PlatformFeeSplitter, "distribute()");
+      const budget = call(addrs.CarbonRetirement, "budget()(uint256)");
+      if (BigInt(budget) !== 5n * unit) throw new Error(`retirement.budget() = ${budget}，應為 ${5n * unit}`);
+      send(KEEPER, addrs.CarbonRetirement, "retire(uint256)", budget);
+      const tonnes = BigInt(call(addrs.CarbonRetirement, "totalRetiredTonnes()(uint256)"));
+      if (tonnes === 0n) throw new Error("退役後 totalRetiredTonnes() 仍是 0");
+      return `100 枚收入 → 平台 20 → 退役預算 5 → 銷毀 ${Number(tonnes) / 1e18} 公噸模擬碳權（任何人都能觸發，這裡由 keeper 送）`;
     });
 
     await step("9. DeployPepeIncentives", () => {

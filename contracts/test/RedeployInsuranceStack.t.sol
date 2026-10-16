@@ -11,6 +11,9 @@ import "../src/TraderStake.sol";
 import "../src/InsuranceVault.sol";
 import "../src/FeeRouter.sol";
 import "../src/CopyTracker.sol";
+import "../src/MockCarbonCredit.sol";
+import "../src/CarbonRetirement.sol";
+import "../src/PlatformFeeSplitter.sol";
 import "../script/RedeployInsuranceStack.s.sol";
 
 /// Exercises the OWNER_ACTIONS step 5 item 4 batch end to end on a local chain.
@@ -515,6 +518,121 @@ contract RedeployInsuranceStackTest is Test {
         assertEq(exchange.copyTracker(), d.copyTracker, "exchange.copyTracker");
         assertTrue(exchange.authorizedAgents(d.copyTracker), "new CopyTracker authorized");
         assertEq(stake.copyTracker(), d.copyTracker, "TraderStake.copyTracker");
+    }
+
+    // ── #333: the platform payee is the carbon splitter (ADR-022) ───────────
+
+    /// What DeployCarbonRetirement (CARBON_DEPLOY_ROUTER=false) leaves behind,
+    /// deployed by `by` — the splitter's one-time bindFeeRouter belongs to it.
+    function _splitter(address payTo, address by) internal returns (PlatformFeeSplitter s) {
+        vm.startPrank(by);
+        MockCarbonCredit credit = new MockCarbonCredit(by);
+        CarbonRetirement retirement = new CarbonRetirement(address(usdc), address(credit), by, 10e18);
+        s = new PlatformFeeSplitter(address(usdc), payTo, address(retirement), 2500);
+        vm.stopPrank();
+    }
+
+    function test_carbonSplitter_isThePlatformPayeeAndGetsBound() public {
+        PlatformFeeSplitter s = _splitter(treasury, deployer);
+        RedeployInsuranceStack.Config memory c = _cfg();
+        c.carbonSplitter = address(s);
+        RedeployInsuranceStack.Deployed memory d = script.runWith(c);
+
+        assertEq(FeeRouter(d.router).platformTreasury(), address(s), "router pays the splitter");
+        assertEq(address(s.feeRouter()), d.router, "splitter bound to the new router");
+        assertEq(s.treasury(), treasury, "the splitter's remainder goes to TREASURY");
+    }
+
+    function test_carbonSplitter_rejectsSplitterPayingAnotherTreasury() public {
+        PlatformFeeSplitter s = _splitter(makeAddr("someone-else"), deployer);
+        RedeployInsuranceStack.Config memory c = _cfg();
+        c.carbonSplitter = address(s);
+        vm.expectRevert(bytes("CARBON_SPLITTER pays a different treasury than TREASURY"));
+        script.runWith(c);
+    }
+
+    function test_carbonSplitter_rejectsLeakedTreasuryBehindTheSplitter() public {
+        PlatformFeeSplitter s = _splitter(LEAKED, deployer);
+        RedeployInsuranceStack.Config memory c = _cfg();
+        c.treasury = LEAKED;
+        c.carbonSplitter = address(s);
+        vm.expectRevert(bytes("TREASURY is a known-compromised address"));
+        script.runWith(c);
+    }
+
+    function test_carbonSplitter_rejectsSplitterDeployedBySomeoneElse() public {
+        PlatformFeeSplitter s = _splitter(treasury, makeAddr("other-deployer"));
+        RedeployInsuranceStack.Config memory c = _cfg();
+        c.carbonSplitter = address(s);
+        vm.expectRevert(bytes("CARBON_SPLITTER was deployed by another address - only its deployer can bindFeeRouter"));
+        script.runWith(c);
+    }
+
+    function test_carbonSplitter_rejectsSplitterAlreadyBound() public {
+        PlatformFeeSplitter s = _splitter(treasury, deployer);
+        vm.startPrank(deployer);
+        FeeRouter other = new FeeRouter(address(usdc), address(s), address(new InsuranceVault(address(usdc))));
+        s.bindFeeRouter(address(other));
+        vm.stopPrank();
+
+        RedeployInsuranceStack.Config memory c = _cfg();
+        c.carbonSplitter = address(s);
+        vm.expectRevert(bytes("CARBON_SPLITTER is already bound to another FeeRouter"));
+        script.runWith(c);
+    }
+
+    function test_carbonSplitter_rejectsSomethingThatIsNotASplitter() public {
+        RedeployInsuranceStack.Config memory c = _cfg();
+        c.carbonSplitter = address(registry);
+        vm.expectRevert(bytes("CARBON_SPLITTER is not a PlatformFeeSplitter"));
+        script.runWith(c);
+    }
+
+    function test_carbonSplitter_resumeRejectsRouterThatPaysTreasuryDirectly() public {
+        PlatformFeeSplitter s = _splitter(treasury, deployer);
+        vm.startPrank(deployer);
+        InsuranceVault pre = new InsuranceVault(address(usdc));
+        FeeRouter direct = new FeeRouter(address(usdc), treasury, address(pre));
+        vm.stopPrank();
+
+        RedeployInsuranceStack.Config memory c = _cfg();
+        c.carbonSplitter = address(s);
+        c.resumeVault = address(pre);
+        c.resumeRouter = address(direct);
+        vm.expectRevert(bytes("RESUME_FEE_ROUTER: different TREASURY"));
+        script.runWith(c);
+    }
+
+    function test_carbonSplitter_resumeBindsARouterLeftUnbound() public {
+        PlatformFeeSplitter s = _splitter(treasury, deployer);
+        RedeployInsuranceStack.Config memory c = _cfg();
+        c.carbonSplitter = address(s);
+        c.timelock = address(0);
+        c.keepDeployerOwner = true;
+        // An interrupted run: vault seeded, router built for the splitter, bind never sent.
+        vm.startPrank(deployer);
+        InsuranceVault pre = new InsuranceVault(address(usdc));
+        usdc.approve(address(pre), 1e18);
+        pre.deposit(1e18);
+        FeeRouter half = new FeeRouter(address(usdc), address(s), address(pre));
+        vm.stopPrank();
+        c.resumeVault = address(pre);
+        c.resumeRouter = address(half);
+
+        RedeployInsuranceStack.Deployed memory d = script.runWith(c);
+        assertEq(d.router, address(half));
+        assertEq(address(s.feeRouter()), address(half), "the resumed run sent the missing bind");
+    }
+
+    function test_carbonSplitter_verifyCatchesAnUnboundSplitter() public {
+        PlatformFeeSplitter s = _splitter(treasury, deployer);
+        RedeployInsuranceStack.Config memory c = _cfg();
+        c.carbonSplitter = address(s);
+        RedeployInsuranceStack.Deployed memory d = script.runWith(c);
+        // Same addresses, but the splitter in the config is a fresh one nobody bound.
+        c.carbonSplitter = address(_splitter(treasury, deployer));
+        vm.expectRevert(bytes("readback: router.platformTreasury()"));
+        script.verify(c, d);
     }
 
     // No 6-decimal case: PerpetualExchange's constructor refuses any USDC that

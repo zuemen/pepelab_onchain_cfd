@@ -15,6 +15,9 @@ import "../src/TraderStake.sol";
 import "../src/AgentSessionManager.sol";
 import "../src/KYCRegistry.sol";
 import "../src/ESGRegistryV2.sol";
+import "../src/MockCarbonCredit.sol";
+import "../src/CarbonRetirement.sol";
+import "../src/PlatformFeeSplitter.sol";
 import "./CarbonAttestations.sol";
 
 /// @notice 本機 Anvil（chainId 31337）專用的完整部署：平台整套合約、11 個資產、
@@ -29,10 +32,20 @@ import "./CarbonAttestations.sol";
 ///      - 見證者與 KYC 審核者都是部署者自己：這是營運方自己的陳述，不是獨立機構的評等或審查。
 ///      - 交易所的報價時效放到合約上限（7 天），展示時價格寫入程序短暫中斷不至於讓所有操作失敗。
 ///      - 沒有設未平倉量上限與單筆獲利上限。
+///
+///      平台手續費的收款人是分流合約（#333、ADR-022），與公開鏈的部署順序相同：先部署模擬碳權、
+///      退役合約與分流合約，再以分流合約為平台收款人部署 FeeRouter，最後綁定。退役比例 2,500 bps；
+///      模擬賣方與 treasury 都是部署者。
 contract DeployLocalDemo is Script {
     uint256 public constant LOCAL_CHAIN_ID = 31337;
     uint256 public constant INSURANCE_SEED = 500_000e18;
     uint256 public constant LOCAL_MAX_PRICE_AGE = 7 days;
+    /// 平台份額中導向碳權退役的比例：平台 20% 的四分之一（同 DeployCarbonRetirement 的預設）。
+    uint256 public constant CARBON_SHARE_BPS = 2500;
+    /// 模擬價格：每公噸 10 枚結算幣（MockUSDC 為 18 位）。
+    uint256 public constant CARBON_PRICE_PER_TONNE = 10e18;
+    /// 模擬賣方的初始庫存。兩年回放的退役量遠小於這個數字。
+    uint256 public constant CARBON_INVENTORY = 100_000e18;
 
     error NotLocalChain(uint256 chainId);
 
@@ -49,6 +62,9 @@ contract DeployLocalDemo is Script {
         address strategyRegistry;
         address copyTracker;
         address sessionManager;
+        address carbonCredit;
+        address carbonRetirement;
+        address feeSplitter;
     }
 
     function run() external returns (Deployed memory) {
@@ -84,7 +100,16 @@ contract DeployLocalDemo is Script {
         usdc.mint(deployer, INSURANCE_SEED);
         usdc.approve(address(vault), INSURANCE_SEED);
         vault.deposit(INSURANCE_SEED);
-        FeeRouter feeRouter = new FeeRouter(address(usdc), deployer, address(vault));
+        // 分流合約坐在 FeeRouter 的平台收款人位置；router 本身一行不改（ADR-022）。
+        MockCarbonCredit credit = new MockCarbonCredit(deployer);
+        CarbonRetirement retirement =
+            new CarbonRetirement(address(usdc), address(credit), deployer, CARBON_PRICE_PER_TONNE);
+        PlatformFeeSplitter splitter =
+            new PlatformFeeSplitter(address(usdc), deployer, address(retirement), CARBON_SHARE_BPS);
+        credit.issue(deployer, CARBON_INVENTORY);
+        credit.approve(address(retirement), type(uint256).max);
+        FeeRouter feeRouter = new FeeRouter(address(usdc), address(splitter), address(vault));
+        splitter.bindFeeRouter(address(feeRouter));
 
         PerpetualExchange exchange = new PerpetualExchange(address(usdc), address(oracle), address(esg));
         StrategyRegistry registry = new StrategyRegistry(address(traderStake));
@@ -129,10 +154,14 @@ contract DeployLocalDemo is Script {
             exchange: address(exchange),
             strategyRegistry: address(registry),
             copyTracker: address(copyTracker),
-            sessionManager: address(sessionManager)
+            sessionManager: address(sessionManager),
+            carbonCredit: address(credit),
+            carbonRetirement: address(retirement),
+            feeSplitter: address(splitter)
         });
         console.log("DeployLocalDemo: exchange", d.exchange);
         console.log("DeployLocalDemo: copyTracker", d.copyTracker);
         console.log("DeployLocalDemo: esgRegistry", d.esgRegistry);
+        console.log("DeployLocalDemo: carbonRetirement", d.carbonRetirement);
     }
 }
