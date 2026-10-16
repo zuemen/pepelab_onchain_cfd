@@ -7,8 +7,8 @@
 // 值的解析規則統一：`VITE_X=1` / `true` / `on` 才算開，其餘（含未設定）用租戶的預設值。
 //
 // 白標：每個旗標的有效值 = 租戶授權（allowed）且 readFlag(env, 租戶預設)。環境變數可以
-// 把功能關掉，但打不開租戶未授權的功能。default 租戶五個旗標都是
-// { allowed: true, default: false }，結果與改版前的 readFlag(env, false) 完全相同。
+// 把功能關掉，但打不開租戶未授權的功能。default 租戶五個旗標都是 allowed: true；
+// 預設開的是 gamefi（2026-10-12 恢復）與 copyTrading（#331），其餘預設關。
 // 規則在 src/tenant/flags.ts（vite.config.ts 也要用，不能碰 import.meta.env）。
 import { tenant } from 'src/tenant';
 import { resolveFeatureFlag } from 'src/tenant/flags';
@@ -62,9 +62,10 @@ export const PERPETUALS_AUTHORIZED = tenant.features.showPerpetuals.allowed;
 
 // ── 商業版（B2B 白標）功能旗標 ────────────────────────────────────────────────
 //
-// 以下三個旗標收的是「零售／遊戲化」功能。平台定位是賣給持牌金融機構的白標引擎，
-// 盡職調查（DD）時看到的站不該出現養成遊戲、平台幣獎勵或槓桿跟單。程式碼全部保留，
-// 改一個環境變數就能打開。
+// 以下三個旗標收的是「零售／遊戲化」功能。#192 為了 B2B 白標把它們全部預設關；#331 起
+// 平台站的主軸改為 Web3 版 eToro（ADR-023），default 租戶的 GameFi 與跟單預設開，
+// 機構租戶（demo-bank、rwa-poc）的上限仍是 allowed: false。程式碼全部保留，改一個環境
+// 變數就能關掉。
 //
 // 與上面 SHOW_* 的差別：SHOW_* 收的是入口、路徑仍到得了；FEATURE_* 關閉時**連路由
 // 也收起來**——直接打網址會看到「此功能未啟用」。唯一例外是既有部位：使用者已經
@@ -72,8 +73,8 @@ export const PERPETUALS_AUTHORIZED = tenant.features.showPerpetuals.allowed;
 // 把別人的錢鎖在看不到的地方。
 
 /**
- * GameFi：Pepe 養成中心／PepeLab 扭蛋（`/pepe`、帳戶選單的藥水／坐騎／外觀）。
- * 預設 **關**。開啟：`VITE_FEATURE_GAMEFI=1`。
+ * GameFi：Pepe 養成中心／PepeLab 扭蛋（`/pepe`、帳戶選單的藥水／坐騎／外觀）、首頁的 GameFi 功能卡。
+ * default 租戶預設 **開**（2026-10-12 恢復）。關閉：`VITE_FEATURE_GAMEFI=0`。
  */
 export const FEATURE_GAMEFI = resolveFeatureFlag(
   tenant.features.gamefi,
@@ -92,8 +93,8 @@ export const FEATURE_PEPE_REWARDS = resolveFeatureFlag(
 /**
  * Expert 跟單（CopyTracker 的槓桿跟單）：Expert 模式的交易者排行榜、`/copy/:addr`、
  * 交易者頁與巨鯨動態上的「跟單」按鈕與跟隨者統計、首頁的跟單功能卡與文案、
- * meta description。`/stake`（交易員信譽質押）不受影響。
- * 預設 **關**。開啟：`VITE_FEATURE_COPY_TRADING=1`。
+ * 網頁標題與 meta description。`/stake`（交易員信譽質押）不受影響。
+ * default 租戶預設 **開**（#331）。關閉：`VITE_FEATURE_COPY_TRADING=0`。
  */
 export const FEATURE_COPY_TRADING = resolveFeatureFlag(
   tenant.features.copyTrading,

@@ -60,13 +60,14 @@ export default defineConfig(({ mode, command }) => {
   const locale = pickLocale(envOf('VITE_LOCALE'), tenant.config.defaultLocale);
   const { htmlLang, catalog } = LOCALES[locale];
 
-  // app 內的旗標在 featureFlags.ts；index.html 在建置時就寫死了，所以 meta description 要在
-  // 這裡依 FEATURE_COPY_TRADING 選字串——否則商業版的搜尋結果與分享預覽仍在介紹「社交跟單」。
+  // app 內的旗標在 featureFlags.ts；index.html 在建置時就寫死了，所以標題與 meta description
+  // 要在這裡依 FEATURE_COPY_TRADING 選字串——否則商業版的搜尋結果與分享預覽仍在介紹「社交跟單」。
   // 與 app 內走同一條「租戶上限 × 環境變數」規則（src/tenant/flags.ts）。
   const copyTrading = resolveFeatureFlag(
     tenant.config.features.copyTrading,
     envOf('VITE_FEATURE_COPY_TRADING')
   );
+  const metaTitle = applyBrand(copyTrading ? catalog.meta.title : catalog.meta.titleNoCopy, brand);
   const metaDescription = applyBrand(
     copyTrading ? catalog.meta.description : catalog.meta.descriptionNoCopy,
     brand
@@ -110,7 +111,7 @@ export default defineConfig(({ mode, command }) => {
           handler: (html: string) =>
             html
               .replace('__LOCALE_HTML_LANG__', () => htmlLang)
-              .replace('__APP_TITLE__', () => applyBrand(catalog.meta.title, brand))
+              .replace('__APP_TITLE__', () => metaTitle)
               .replace('__APP_DESCRIPTION__', () => metaDescription)
               // 租戶的 favicon 與 theme-color。值都經過 schema 驗證（站內路徑、#RRGGBB），
               // 不會有引號或角括號跑進 HTML。

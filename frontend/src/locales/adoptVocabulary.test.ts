@@ -63,3 +63,32 @@ describe('the adopt flow vocabulary', () => {
     expect(offenders(leaky)).not.toEqual([]);
   });
 });
+
+/**
+ * #331：「你的資產在哪裡」在 Simple 模式顯示的那一份，同一套詞彙規則。Expert 那一份
+ * 刻意用交易桌的字（保證金、跟單、清算），不在這裡檢查。
+ */
+function custodyOffenders(catalog: typeof zhTW): string[] {
+  const shown = [
+    ...strings(catalog.custody.heading, 'custody.heading'),
+    ...strings(catalog.custody.simple, 'custody.simple'),
+  ];
+  return shown.flatMap(({ at, text }) =>
+    BANNED.filter((word) => text.toLowerCase().includes(word)).map((word) => `${at}: "${word}" in ${text}`)
+  );
+}
+
+describe('the custody explainer in Simple Mode', () => {
+  it('never uses trading-desk words in zh-TW', () => {
+    expect(custodyOffenders(zhTW)).toEqual([]);
+  });
+
+  it('never uses trading-desk words in en', () => {
+    expect(custodyOffenders(en)).toEqual([]);
+  });
+
+  it('actually catches a banned word', () => {
+    const leaky = { ...zhTW, custody: { ...zhTW.custody, simple: { ...zhTW.custody.simple, intro: '保證金在你名下' } } };
+    expect(custodyOffenders(leaky)).not.toEqual([]);
+  });
+});

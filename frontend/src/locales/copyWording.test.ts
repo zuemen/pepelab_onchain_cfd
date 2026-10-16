@@ -1,13 +1,14 @@
 import { it, expect, describe } from 'vitest';
 
-import { FEATURE_COPY_TRADING } from 'src/lib/pepefi/featureFlags';
-
 import { LOCALES } from './catalogs';
 
 // ----------------------------------------------------------------------
 
 /**
- * 跟單旗標關閉（商業版預設）時，使用者看得到的字串不得提到跟單。
+ * 跟單旗標關閉的建置（demo-bank、rwa-poc 這類機構租戶）裡，使用者看得到的字串不得提到跟單。
+ *
+ * 不看當前建置的旗標值：平台站從 #331 起預設開跟單，若照舊 `skipIf(FEATURE_COPY_TRADING)`，
+ * 這組守門在預設的測試執行裡會整組跳過。關閉跟單的租戶仍然存在，所以一律檢查。
  *
  * 靜態掃描分不出「這個 key 此刻有沒有被渲染」，所以反過來做：掃整份 catalog，
  * 每一個含跟單用語的 key 都必須落在下面的白名單裡，而白名單的每一條都寫明它為什麼
@@ -52,13 +53,17 @@ const ALLOWED: ReadonlyArray<{ key: string; why: string }> = [
   { key: 'stake.current.minimum', why: '旗標關閉時改用 stake.copyOff.minimum' },
   { key: 'stake.add.description', why: '旗標關閉時改用 stake.copyOff.addDescription' },
   { key: 'stake.info.slashing', why: '旗標關閉時改用 stake.copyOff.slashing' },
-  { key: 'landing.tagline', why: '旗標關閉時改用 landing.copyOff.tagline' },
-  { key: 'landing.features.copyTitle', why: '跟單功能卡在旗標關閉時被濾掉' },
-  { key: 'landing.features.copyDesc', why: '同上' },
+  { key: 'landing.features.copyDesc', why: '跟單功能卡在旗標關閉時換成代幣化資產卡（landingFeatures.ts）' },
   { key: 'landing.steps.four', why: '旗標關閉時改用 landing.copyOff.stepFour' },
   { key: 'landing.markup.heroBefore', why: '旗標關閉時改用 landing.copyOff.heroBefore' },
+  { key: 'landing.markup.heroBold', why: '旗標關閉時改用 landing.copyOff.heroBold' },
   { key: 'landing.markup.paperMid', why: '旗標關閉時改用 landing.copyOff.paperMid' },
   { key: 'meta.description', why: 'vite.config.ts 在旗標關閉時改用 meta.descriptionNoCopy' },
+  { key: 'custody.expert.facts.copy', why: 'custodyContent 在旗標關閉時不取這一句（custody.test.ts 釘住）' },
+  { key: 'custody.expert.differenceHeading', why: '同上：旗標關閉時整段「和 eToro 的差別」不顯示' },
+  { key: 'custody.expert.difference.snapshot', why: '同上' },
+  { key: 'custody.expert.difference.stopLoss', why: '同上' },
+  { key: 'custody.expert.difference.reason', why: '同上' },
   { key: 'portfolio.quickAction.copyTrader', why: '旗標關閉時改用 quickAction.marketplace' },
   { key: 'portfolio.page.emptyDescription', why: '旗標關閉時改用 emptyDescriptionNoCopy' },
   { key: 'portfolio.page.openCount', why: 'Expert 表頭；旗標關閉時改用 openCountNoCopy' },
@@ -130,7 +135,7 @@ function hits(catalog: unknown, re: RegExp): string[] {
 const isAllowed = (key: string) =>
   ALLOWED.some((a) => a.key === key) || ROUTE_PREFIXES.some(({ prefix }) => key.startsWith(prefix));
 
-describe.skipIf(FEATURE_COPY_TRADING)('跟單旗標關閉時沒有殘留的跟單文案', () => {
+describe('跟單旗標關閉時沒有殘留的跟單文案', () => {
   it('zh-TW：每個含跟單用語的字串都在白名單（且有理由）裡', () => {
     expect(hits(LOCALES['zh-TW'].catalog, ZH).filter((k) => !isAllowed(k))).toEqual([]);
   });
@@ -143,6 +148,7 @@ describe.skipIf(FEATURE_COPY_TRADING)('跟單旗標關閉時沒有殘留的跟�
     const zh = LOCALES['zh-TW'].catalog;
     const en = LOCALES.en.catalog;
     const zhAlt = [
+      zh.meta.titleNoCopy,
       zh.meta.descriptionNoCopy,
       zh.portfolio.quickAction.marketplace,
       zh.portfolio.page.emptyDescriptionNoCopy,
@@ -156,6 +162,7 @@ describe.skipIf(FEATURE_COPY_TRADING)('跟單旗標關閉時沒有殘留的跟�
       ...Object.values(zh.landing.copyOff),
     ];
     const enAlt = [
+      en.meta.titleNoCopy,
       en.meta.descriptionNoCopy,
       en.portfolio.quickAction.marketplace,
       en.portfolio.page.emptyDescriptionNoCopy,

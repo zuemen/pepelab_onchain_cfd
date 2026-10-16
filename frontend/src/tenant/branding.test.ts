@@ -51,7 +51,8 @@ describe('brand placeholders', () => {
 
   it('a non-default tenant shows its own name wherever the platform names itself', () => {
     const zh = brandCatalog(LOCALES['zh-TW'].catalog, demoBank.brand);
-    expect(zh.meta.title).toBe('Demo Bank · Agent 原生代幣化 RWA');
+    // demo-bank 沒有授權跟單，建置進 index.html 的是 titleNoCopy（vite.config.ts）。
+    expect(zh.meta.titleNoCopy).toBe('Demo Bank · Agent 原生代幣化 RWA');
     expect(zh.nav.section.pepelab).toBe('Demo Bank');
     expect(zh.landing.enterDashboard).toBe('🏦 進入 Dashboard');
   });
@@ -203,7 +204,7 @@ describe('default tenant is the current production site, unchanged', () => {
 
   it('keeps the original locale, flags and asset list', () => {
     expect(locale).toBe('zh-TW');
-    expect(FEATURES).toEqual({ gamefi: true, pepeRewards: false, copyTrading: false });
+    expect(FEATURES).toEqual({ gamefi: true, pepeRewards: false, copyTrading: true });
     expect(SHOW_LEVERAGE).toBe(false);
     expect(SHOW_PERPETUALS).toBe(false);
     expect(PERPETUALS_AUTHORIZED).toBe(true);
@@ -211,11 +212,14 @@ describe('default tenant is the current production site, unchanged', () => {
   });
 
   // 改版前寫死在 catalog 裡的原文。{brand}/{brandMark} 代換之後必須逐字相同。
+  // #331（ADR-023）改寫了平台站的定位文案：meta.title、meta.description、landing.tagline
+  // 換成 Web3 社交交易的說法，舊的標題移到 meta.titleNoCopy（跟單旗標關閉的租戶用）。
   const ORIGINAL = {
     'zh-TW': {
-      'meta.title': 'PepeLab · Agent 原生代幣化 RWA',
+      'meta.title': 'PepeLab · Web3 社交交易',
       'meta.description':
-        'PepeLab — 基於 Base 鏈的 Agent 原生代幣化 RWA 平台。鏈上買賣股債金幣 + x402 付費訊號 + 社交跟單。',
+        'PepeLab — Base 鏈上的 Web3 社交交易平台：跟著鏈上透明的交易者投資。社交跟單、ESG 評分、GameFi（測試網研究原型）。',
+      'meta.titleNoCopy': 'PepeLab · Agent 原生代幣化 RWA',
       'meta.descriptionNoCopy':
         'PepeLab — 基於 Base 鏈的 Agent 原生代幣化資產引擎（測試網研究原型）。鏈上鑄造與贖回合成股債金幣 + x402 付費訊號 + agent session 委任。',
       'common.wallet.intro': '選擇您的登入通道以進入 PepeLab 鏈上 RWA 平台。',
@@ -223,14 +227,15 @@ describe('default tenant is the current production site, unchanged', () => {
       'x402.docs.how.ask.body': '助理向 PepeLab 要一筆資料，例如某位交易者的下一步。',
       'x402.docs.how.quote.title': 'PepeLab 報價',
       'nav.section.pepelab': 'PepeLab',
-      'landing.tagline': 'RWA · 代幣化資產 · 社交跟單 🐸',
+      'landing.tagline': '跟著透明的交易者投資 🐸',
       'landing.enterDashboard': '🐸 進入 Dashboard',
       'landing.copyOff.tagline': 'RWA · 代幣化資產 · Agent 原生 🐸',
     },
     en: {
-      'meta.title': 'PepeLab · Agent-Native Tokenized RWA',
+      'meta.title': 'PepeLab · Web3 Social Trading',
       'meta.description':
-        'PepeLab — agent-native tokenized RWA on Base. Buy equities, bonds, gold, and crypto on-chain + x402 paid signals + social copy trading.',
+        'PepeLab — Web3 social trading on Base: invest alongside traders whose every move is on-chain. Social copy trading, ESG scores and GameFi (testnet research prototype).',
+      'meta.titleNoCopy': 'PepeLab · Agent-Native Tokenized RWA',
       'meta.descriptionNoCopy':
         'PepeLab — an agent-native tokenized-asset engine on Base (testnet research prototype). Mint and redeem synthetic equities, bonds, gold and crypto on-chain + x402 paid signals + bounded agent sessions.',
       'common.wallet.intro':
@@ -240,7 +245,7 @@ describe('default tenant is the current production site, unchanged', () => {
         'Your assistant asks PepeLab for a piece of data, such as a trader’s next move.',
       'x402.docs.how.quote.title': 'PepeLab quotes a price',
       'nav.section.pepelab': 'PepeLab',
-      'landing.tagline': 'RWA · Tokenized Assets · Social Copy Trading 🐸',
+      'landing.tagline': 'Invest alongside transparent traders 🐸',
       'landing.enterDashboard': '🐸 Enter Dashboard',
       'landing.copyOff.tagline': 'RWA · Tokenized Assets · Agent-Native 🐸',
     },

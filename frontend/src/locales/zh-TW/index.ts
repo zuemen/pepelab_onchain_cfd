@@ -18,6 +18,7 @@ import { legacy } from './legacy';
 import { tokens } from './tokens';
 import { errors } from './errors';
 import { status } from './status';
+import { custody } from './custody';
 import { history } from './history';
 import { pepelab } from './pepelab';
 import { landing } from './landing';
@@ -77,6 +78,7 @@ const zhTW = {
   investorVc,
   lab,
   feed,
+  custody,
 };
 
 export type Catalog = typeof zhTW;
