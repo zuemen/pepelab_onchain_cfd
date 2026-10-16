@@ -47,6 +47,8 @@ Bitcoin's absolute footprint (~39.8 Mt CO2e/yr, comparable to a small country's 
 
 ### sICLN / sESGU (ETFs — holdings-weighted, partial coverage)
 
+> **Under review (2026-10-16):** iShares' own MSCI weighted average carbon intensity, in the same tCO2e/$M unit, is 241.74 for ICLN and 71.05 for ESGU. Both are above the High line, which contradicts the placements below. The tiers are unchanged until the team decides. See [carbon-tier-etf-waci.md](./carbon-tier-etf-waci.md).
+
 Full holdings-weighted intensity requires constituent-level Scope 1+2 and revenue data for every holding, which is what commercial ESG data vendors (MSCI, Sustainalytics) sell. Manually collecting that for two diversified ETFs is out of proportion for a data-gathering ticket, so this table reports what a top-holdings pass actually supports, states its coverage honestly, and does not extrapolate beyond it.
 
 **sICLN (iShares Global Clean Energy ETF).** Top-10 holdings (First Solar, China Yangtze Power, NextEra/NextPower, Bloom Energy, Enphase Energy, Iberdrola, Ormat, Equatorial, Vestas Wind Systems, EDP) are ≈50% of the fund and are exclusively renewable power generation and equipment companies — a sector with a structurally low emissions-per-revenue profile compared to fossil-fuel-dependent or heavy-manufacturing sectors. No constituent-level Scope 1+2 figures were collected for this pass. **Placed in Low by sector composition, not by computed intensity — flagged as qualitative.**
@@ -72,6 +74,8 @@ Source: holdings via [stockanalysis.com](https://stockanalysis.com/etf/esgu/hold
 
 
 **Name correction first:** the candidate named in earlier drafts of this work, "iShares Global Green Bond ETF (BGRN)," has been renamed by the issuer. The ticker BGRN now trades as **iShares USD Green Bond ETF** — narrower scope (USD-denominated only), same underlying strategy. Every reference to "Global Green Bond ETF (BGRN)" elsewhere in this repo's docs refers to this same fund under its old name.
+
+**Benchmark:** Bloomberg MSCI USD Green Bond Select Index (Bloomberg ticker I36761US), per the [iShares BGRN product page](https://www.ishares.com/us/products/305296/ishares-usd-green-bond-etf), retrieved 2026-10-16.
 
 **Fund facts** (iShares USD Green Bond ETF fact sheet, retrieved 2026-09-02): AUM ≈$445.89M, **329 holdings**, top-10 holdings are only **13.5%** of assets, largest single holding is the European Investment Bank at **3.75%**. Source: [iShares BGRN fact sheet](https://www.ishares.com/us/literature/fact-sheet/bgrn-ishares-usd-green-bond-etf-fund-fact-sheet-en-us.pdf), holdings breakdown corroborated across two independent searches.
 
