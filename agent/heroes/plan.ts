@@ -75,3 +75,11 @@ export function planHedge(total: Notional, maker: Notional): HedgeOrder | null {
     open: size >= MIN_MARGIN ? { isLong: tradersNet < 0n, margin: size } : null,
   };
 }
+
+/**
+ * 碳權退役的觸發點（#333）：排程裡每個月份的最後一天（含整份排程的最後一天），所以每個模擬月份
+ * 恰好一次，最後一個不完整的月份也不會留下沒退役的預算。
+ */
+export function isLastDayOfMonth(dates: readonly string[], i: number): boolean {
+  return i === dates.length - 1 || dates[i + 1].slice(0, 7) !== dates[i].slice(0, 7);
+}

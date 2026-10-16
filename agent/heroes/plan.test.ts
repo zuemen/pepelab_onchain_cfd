@@ -1,7 +1,7 @@
 // 純函式測試：回放怎麼把可用保證金拆給每一檔、什麼時候該清算。
 //   cd agent && npx tsx heroes/plan.test.ts
 import assert from "node:assert";
-import { planHedge, planOpens, shouldLiquidate, MIN_MARGIN, type LegPlan } from "./plan.ts";
+import { isLastDayOfMonth, planHedge, planOpens, shouldLiquidate, MIN_MARGIN, type LegPlan } from "./plan.ts";
 
 const E18 = 10n ** 18n;
 const FEES = { sBTC: 100n, sETH: 10n, sESGU: 40n };
@@ -74,5 +74,13 @@ assert.deepEqual(planHedge({ long: 5n * E18, short: 100n * E18 }, { long: 0n, sh
 });
 // 完全沒有部位：不動
 assert.equal(planHedge({ long: 0n, short: 0n }, { long: 0n, short: 0n }), null);
+
+// ── isLastDayOfMonth：碳權退役每個模擬月份觸發一次，在該月排程的最後一天（#333） ──
+const dates = ["2024-01-30", "2024-01-31", "2024-02-01", "2024-02-29", "2024-03-01", "2024-03-04"];
+assert.deepEqual(
+  dates.map((_, i) => isLastDayOfMonth(dates, i)),
+  [false, true, false, true, false, true],
+);
+assert.equal(isLastDayOfMonth(["2024-01-05"], 0), true, "單日排程：最後一天也算");
 
 console.log("plan.test.ts ✓");

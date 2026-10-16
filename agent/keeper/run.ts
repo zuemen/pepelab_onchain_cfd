@@ -38,6 +38,7 @@ import { writeFileSync } from "node:fs";
 import { CLOSE_LEAD_RANGE, DEFAULT_CLOSE_LEAD_SEC, classifyProbeError, marketOperatorEnabled } from "./operator.ts";
 import { classifyProtected, closedForTrading, createMarketMode } from "./marketMode.ts";
 import { keeperKeySpec, loadKeeperWallet, type KeeperKeySpec } from "./keySource.ts";
+import { crankCarbon, describeCrank, discoverCarbon, ethersCarbonPorts, ethersDiscoveryReads } from "./carbon.ts";
 
 const SYMBOLS = [
   "sBTC", "sETH", "sAAPL", "sTSLA", "sNVDA",
@@ -437,6 +438,11 @@ async function main(): Promise<void> {
     failed += 1;
   }
 
+  // #333：碳權退役 crank（分流 → 退役，兩者都 permissionless）。順帶執行、不影響喂價結果：
+  // 失敗只出 warning、不計入 failed——喂價是 liveness 關鍵路徑，不能被它拖紅。
+  if (txUnknown) console.log("::warning::carbon crank 本輪略過（有狀態未知的交易，見上）");
+  else await crankCarbonIfWired(provider, signer);
+
   // 2026-09-30 事故：來源無效而跳過的資產也計入失敗率（workflow 以 failed/available
   // 對 MAX_FAIL_PCT 判斷）。格式維持 `available=N … failed=N` 讓 workflow 的 grep 相容。
   console.log(`\n${summaryLine({ available, skipped, rejected, confirmed, wrote, failed })}`);
@@ -450,6 +456,24 @@ async function main(): Promise<void> {
   for (const msg of verdict.errors) console.error(`::error::${msg}`);
   writeNextNonce();
   if (verdict.exitCode !== 0) process.exit(verdict.exitCode);
+}
+
+/**
+ * #333：交易所的平台收款人是分流合約時，觸發一次 distribute() 與 retire(budget)。位址由鏈上找
+ * （exchange → feeRouter → platformTreasury），不需要另外的設定：cutover 前現行 router 付給 EOA，
+ * 這裡什麼都不做；cutover 換上新 router 之後自動開始。評審跟單後最慢一個 keeper 週期內看到退役。
+ */
+async function crankCarbonIfWired(provider: ethers.Provider, signer: LocalNonceSigner | null): Promise<void> {
+  if (!signer || DRY_RUN || !ethers.isAddress(EXCHANGE_ADDR)) return;
+  try {
+    const found = await discoverCarbon(EXCHANGE_ADDR, ethersDiscoveryReads(provider));
+    if (!found) return;
+    const ports = ethersCarbonPorts(found, signer, (tx) => tx.wait(1, TX_WAIT_TIMEOUT_MS));
+    console.log(describeCrank(await crankCarbon(ports.splitter, ports.retirement)));
+  } catch (e) {
+    const what = isTimeout(e) ? "等確認逾時，狀態未知" : "失敗";
+    console.log(`::warning::carbon crank ${what}（不影響喂價）：${(e as Error).message.slice(0, 140)}`);
+  }
 }
 
 /** main() 建立的 signer；結束時（含例外中止）據此寫出下一個 nonce。 */

@@ -9,7 +9,7 @@ import json
 import sys
 from pathlib import Path
 
-from herolab.reconcile import expected_follower_counts
+from herolab.reconcile import TONNE, carbon_mismatch, expected_follower_counts, retired_tonnes
 
 HERE = Path(__file__).parent
 DATA = HERE.parent / "frontend" / "public" / "data" / "heroes"
@@ -35,6 +35,10 @@ def main() -> int:
     # 回放跳過的動作（例如交易者質押不足、不能發布或被跟隨）會讓鏈上與排程不一致，一律攤出來
     for line in doc["stats"]["skipped"]:
         problems.append(f"skipped: {line}")
+    # #333：退役事件的總噸數與鏈上的累計退役噸數一致
+    carbon = carbon_mismatch(doc)
+    if carbon is not None:
+        problems.append(carbon)
     expected_follows = expected_follower_counts(schedule, [t["index"] for t in doc["traders"]])
 
     summaries = {t["address"].lower(): t for t in index["traders"]}
@@ -57,7 +61,9 @@ def main() -> int:
         print("MISMATCH:", line)
     if not problems:
         closes = sum(t["closedTrades"] for t in index["traders"])
-        print(f"pipeline ok: {len(doc['traders'])} traders, {closes} closed trades, {doc['stats']['sent']} tx, 0 failed")
+        retirements = sum(1 for e in doc["events"] if e["name"] == "CarbonRetired")
+        print(f"pipeline ok: {len(doc['traders'])} traders, {closes} closed trades, {doc['stats']['sent']} tx, 0 failed, "
+              f"{retirements} retirements / {retired_tonnes(doc['events']) / TONNE:g} t (simulated credits)")
     return 1 if problems else 0
 
 

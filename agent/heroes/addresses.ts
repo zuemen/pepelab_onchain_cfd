@@ -33,8 +33,16 @@ const FIELD_SOURCES: Record<string, string | null> = {
 
 export const FRONTEND_FIELDS = Object.keys(FIELD_SOURCES);
 
-/** 回放需要、但前端的 ChainAddresses 沒有的合約。 */
-const EXTRA_SOURCES: Record<string, string> = { AgentSessionManager: "AgentSessionManager" };
+/**
+ * 回放需要、但前端的 ChainAddresses 沒有的合約。碳權三顆（#333）不進前端位址表：前端與 keeper
+ * 都從 FeeRouter.platformTreasury() 找到分流合約，再找到退役合約。
+ */
+const EXTRA_SOURCES: Record<string, string> = {
+  AgentSessionManager: "AgentSessionManager",
+  MockCarbonCredit: "MockCarbonCredit",
+  CarbonRetirement: "CarbonRetirement",
+  PlatformFeeSplitter: "PlatformFeeSplitter",
+};
 
 export interface BroadcastFile {
   transactions?: { transactionType?: string; contractName?: string | null; contractAddress?: string | null }[];
