@@ -20,7 +20,7 @@ export const landing: Catalog['landing'] = {
     solutionLabel: 'What we do',
 
     social: {
-      title: 'Social Trading: a Decentralised eToro',
+      title: 'Social Trading: Every Move On-Chain',
       pain: "Copy-trading platforms publish traders' track records themselves, so losing trades can be deleted or hidden and followers have no way to check. Traders face no consequences for losing, and your money has to sit with the platform first — if the platform fails, it is gone.",
       solution:
         'Every position and every strategy version a trader makes is recorded on-chain, so the leaderboard can be checked. Traders must stake before anyone can copy them, and when a follower stops copying with a loss past the threshold, part of the trader\'s stake is slashed. Copying takes the trader\'s current strategy version; if they publish a new one you see "Strategy updated" and decide for yourself. Positions opened by copy trading are in your own name, and stopping copying closes them all in one click.',
