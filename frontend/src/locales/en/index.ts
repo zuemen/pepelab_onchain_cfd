@@ -20,6 +20,7 @@ import { legacy } from './legacy';
 import { tokens } from './tokens';
 import { errors } from './errors';
 import { status } from './status';
+import { custody } from './custody';
 import { history } from './history';
 import { pepelab } from './pepelab';
 import { landing } from './landing';
@@ -83,6 +84,7 @@ const en: Catalog = {
   investorVc,
   lab,
   feed,
+  custody,
 };
 
 export default en;

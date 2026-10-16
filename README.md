@@ -1,9 +1,19 @@
-# PepeFi — 鏈上衍生品與代幣化配置的白標基礎設施（測試網研究原型）
+# PepeFi — Web3 社交交易：跟著鏈上透明的交易者投資（測試網研究原型）
 
-> **定位**：PepeFi 規劃以 **B2B 白標**形式，把鏈上衍生品引擎、代幣化配置、碳強度定價、
-> agent session 與 x402 付費資料 API 提供給**持牌金融機構**（期貨商、槓桿交易商、
-> 有衍生品業務的銀行）。對終端客戶的合規責任（牌照、KYC／AML、適合度、槓桿上限等）
-> 由持牌客戶承擔，分工見 [`docs/COMPLIANCE_BOUNDARY.md`](docs/COMPLIANCE_BOUNDARY.md)。
+> **定位**：PepeFi 是給**一般投資人**的 Web3 版 eToro：**社交交易**（看清交易者的每一筆部位、
+> 每一版策略再決定跟不跟）、**鏈上透明**（部位、策略版本、手續費分潤、金庫儲備率都在鏈上）、
+> **ESG**（交易者 ESG 分數、有來源的碳強度與碳分級定價）、**GameFi**（Pepe 養成與不可轉讓的成就）。
+> 決策與理由見 [`docs/ADR-023-web3-etoro-positioning.md`](docs/ADR-023-web3-etoro-positioning.md)。
+> 本專案與 eToro 沒有任何關聯，提到它只是說明定位。
+>
+> **你的資產在哪裡**：只支援**使用者自管**，不提供託管帳戶，平台不持有使用者私鑰。保證金記在使用者名下、
+> 只有本人能提領；跟單開出的部位在跟隨者自己名下；現貨代幣在使用者自己的錢包。營運方仍保有暫停與凍結市場、調整參數（含自動減倉）、
+> 升級金庫與指定代理合約的權限，價格由受信任的 keeper 寫入（見 §5），所以自管不等於「完全不需信任」。
+> 跟單是快照式（複製交易者當下那一版策略），沒有自動停損。
+>
+> **未來延伸：B2B 白標**。同一套合約與前端可以租戶形式提供給**持牌金融機構**（租戶隔離見 ADR-008、
+> 前端白標設定見 [`frontend/docs/adr/0009-tenant-config-layer.md`](frontend/docs/adr/0009-tenant-config-layer.md)）；
+> 對終端客戶的合規責任由持牌客戶承擔，分工見 [`docs/COMPLIANCE_BOUNDARY.md`](docs/COMPLIANCE_BOUNDARY.md)。
 >
 > **現況**：本 repo 是 2026 年 Capstone 專題出身的**研究原型**，只部署在 **Base Sepolia 測試網
 > （chainId 84532）**。沒有真實資產、沒有第三方安全稽核、沒有任何監理許可，**不是生產系統**。
@@ -118,16 +128,18 @@ Sepolia 的合約**未做金鑰輪替**（見 [`docs/RUNBOOK_KEY_ROTATION.md`](d
 [`docs/ADR-022-carbon-retirement-splitter.md`](docs/ADR-022-carbon-retirement-splitter.md)；
 部署腳本 `contracts/script/DeployCarbonRetirement.s.sol` 尚未執行，前端在沒有設定位址時不顯示退役區塊。
 
-## 4. 商業版功能旗標（前端）
+## 4. 功能旗標（前端）
 
 定義在 [`frontend/src/lib/pepefi/featureFlags.ts`](frontend/src/lib/pepefi/featureFlags.ts)。旗標只控制畫面，
-**不改任何鏈上行為**。值為 `1`／`true`／`on` 才算開啟，未設定一律關閉。
+**不改任何鏈上行為**。值為 `1`／`true`／`on` 才算開啟，其他值（例如 `0`）算關閉，未設定時用租戶的預設值。
+下表的預設是平台站（`default` 租戶）的值；機構租戶（`demo-bank`、`rwa-poc`）不授權 GameFi、PEPE 獎勵與跟單，
+環境變數也打不開。
 
 | 環境變數 | 預設 | 關閉時 |
 |---|---|---|
-| `VITE_FEATURE_GAMEFI` | 關 | 收起 `/pepe` 養成與扭蛋，路由顯示「此功能未啟用」 |
+| `VITE_FEATURE_GAMEFI` | 開（2026-10-12 起） | 收起 `/pepe` 養成與扭蛋與首頁的 GameFi 功能卡，路由顯示「此功能未啟用」 |
 | `VITE_FEATURE_PEPE_REWARDS` | 關 | 收起 `/rewards`、PEPE 平台幣獎勵與水龍頭卡片 |
-| `VITE_FEATURE_COPY_TRADING` | 關 | 收起 `/copy/*` 與跟單入口；既有跟單仍可在 Portfolio 取消 |
+| `VITE_FEATURE_COPY_TRADING` | 開（#331 起，見 ADR-023） | 收起 `/copy/*`、Expert 的交易者排行榜與跟單入口，首頁與 meta 改用代幣化資產的說法；既有跟單仍可在 Portfolio 取消 |
 | `VITE_SHOW_LEVERAGE` | 關 | 不顯示槓桿選擇器，前端一律送 1× |
 | `VITE_SHOW_PERPETUALS` | 關 | 收起永續入口（`/terminal` 路徑仍可到達；既有部位可在 Portfolio 平倉） |
 | `VITE_ENABLE_MOCK_WALLET` | 關（正式 build） | 不顯示免錢包的簡報通道 |
@@ -139,7 +151,10 @@ Sepolia 的合約**未做金鑰輪替**（見 [`docs/RUNBOOK_KEY_ROTATION.md`](d
 - 事故處置：見 [`docs/INCIDENT_RESPONSE.md`](docs/INCIDENT_RESPONSE.md)。
 - 重點事實（不含細節）：
   - 合約**沒有第三方安全稽核**。`docs/audit/` 內是內部審查與靜態分析紀錄，不等於稽核。
-  - 合約 owner 為**單一 EOA**，沒有 multisig，也沒有 timelock。
+  - 合約 owner 為**單一 EOA**，沒有 multisig，也沒有 timelock。owner（與 guardian）可以暫停交易所（暫停期間無法平倉、提領保證金），owner 也能凍結單一標的、開啟自動減倉、
+    決定哪些代理合約能代使用者開平倉（`setCopyTracker`、`setAgentAuthorized`）。
+  - `AssetVaultV2` 是 UUPS proxy，管理者可以升級實作、暫停（暫停期間無法贖回）；合成代幣的 `MINTER_ROLE` 可以銷毀任何持有者的代幣，
+    管理者可以授權這個角色。使用者自管的範圍與這些權限的關係見 ADR-023。
   - 交易所讀取的價格由 keeper 金鑰寫入 `MockOracle`，屬於受信任的中繼，不是去中心化預言機。
   - 碳權退役（#105，未部署）銷毀的是本專案自行鑄造的模擬碳權，不是真實碳權，不抵銷任何真實排放。
   - `AssetVaultV2` 為非足額抵押的合成曝險。
@@ -186,7 +201,8 @@ npm run mcp-server      # 本機啟動 MCP server（stdio）
 |---|---|
 | [`docs/RELEASE_STATUS.md`](docs/RELEASE_STATUS.md) | 發布狀態：每個元件的已合併／已部署／鏈上驗證（bytecode 比對）／展示驗收。由 `scripts/check-deployment-status.mjs` 以唯讀 RPC 產生，不手寫。**已合併不等於使用者受保護** |
 | [`docs/OWNER_ACTIONS.md`](docs/OWNER_ACTIONS.md) | 擁有者操作包：只有擁有者能做的 7 個步驟（GitHub 設定、Worker 部署、凍結舊部署、換收款地址、cutover、VC 清單、部署後重驗），每步附驗證與失敗處置 |
-| [`docs/INTEGRATION_GUIDE.md`](docs/INTEGRATION_GUIDE.md) | 給持牌機構的整合說明（草案） |
+| [`docs/ADR-023-web3-etoro-positioning.md`](docs/ADR-023-web3-etoro-positioning.md) | 專題主軸：Web3 版 eToro、只支援使用者自管（含營運方保有的權限、與 eToro 的差別）；B2B 白標降為延伸 |
+| [`docs/INTEGRATION_GUIDE.md`](docs/INTEGRATION_GUIDE.md) | 給持牌機構的整合說明（草案，B2B 白標延伸） |
 | [`docs/TENANT_DEPLOYMENT.md`](docs/TENANT_DEPLOYMENT.md) | 白標租戶：前端租戶設定、隔離模型（ADR-008）、部署設定、dry-run 與新增租戶步驟（廣播由擁有者執行） |
 | [`docs/TENANT_OPERATIONS.md`](docs/TENANT_OPERATIONS.md) | 白標租戶部署之後：每租戶的 keeper 金鑰與 workflow、signal-api 與收款、SDK 指向租戶部署 |
 | [`docs/tenants/rwa-poc/README.md`](docs/tenants/rwa-poc/README.md) | RWA＋SSI PoC 專屬租戶（Base Sepolia）：目的、架構、錢包與合約、重現指令、驗收結果、已知限制 |

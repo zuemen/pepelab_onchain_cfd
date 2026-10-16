@@ -270,11 +270,12 @@ describe('feature flags: tenant ceiling x env', () => {
   });
 
   it('for the default tenant, every flag behaves exactly like readFlag(env, tenant default) did', () => {
-    // gamefi 預設開（2026-10-12 恢復），其餘預設關；env 仍可覆寫兩個方向。
+    // gamefi 預設開（2026-10-12 恢復）、copyTrading 預設開（#331），其餘預設關；env 仍可覆寫兩個方向。
+    const defaultOn = new Set<string>(['gamefi', 'copyTrading']);
     for (const key of FEATURE_KEYS) {
       for (const raw of RAW_VALUES) {
         const got = resolveTenantFeatures(defaultTenant, { [FEATURE_ENV_KEYS[key]]: raw })[key];
-        expect(got, `${key}=${String(raw)}`).toBe(readFlag(raw, key === 'gamefi'));
+        expect(got, `${key}=${String(raw)}`).toBe(readFlag(raw, defaultOn.has(key)));
       }
     }
   });

@@ -4,7 +4,9 @@ import { t, interpolate } from 'src/locales';
 import { tenant, TENANT_SHOWS_MASCOT } from 'src/tenant';
 import WalletButton from 'src/components/pepefi/WalletButton';
 import HeroKpiStrip from 'src/components/pepefi/HeroKpiStrip';
-import { SHOW_PERPETUALS, FEATURE_COPY_TRADING } from 'src/lib/pepefi/featureFlags';
+import { SHOW_PERPETUALS, FEATURE_GAMEFI, FEATURE_COPY_TRADING } from 'src/lib/pepefi/featureFlags';
+import { landingFeatureKeys, type LandingFeatureKey } from 'src/lib/pepefi/landingFeatures';
+import { CustodyExplainer } from 'src/components/pepefi/CustodyExplainer';
 import BenchmarkStrip from 'src/components/pepefi/dashboard/BenchmarkStrip';
 import PaperTradingBadge from 'src/components/pepefi/PaperTradingBadge';
 import { SyntheticDisclosure } from 'src/components/pepefi/SyntheticDisclosure';
@@ -21,55 +23,53 @@ import Chip from '@mui/material/Chip';
 import Divider from '@mui/material/Divider';
 import Button from '@mui/material/Button';
 
-const FEATURES = [
+const FEATURES = {
   // Iconify rather than emoji. Emoji render from whatever font the OS supplies,
-  // so these six drew at six different weights and baselines depending on the
-  // machine, and none of them could inherit the panel's colour. The mascot 🐸
-  // stays — that is brand, not an icon.
-  // RWA 現貨排第一，是刻意的：來評估的機構第一個問題是「這是不是代幣化資產引擎」，
-  // 第一張卡就是答案。永續那張已經移出這個陣列——SHOW_PERPETUALS 預設關的時候，首頁介紹一個
-  // 側邊欄上不存在的功能只會讓人去找它。要展示永續時打開旗標，PERPETUAL_FEATURE
-  // 會接回去。
-  { icon: 'solar:case-minimalistic-bold',          title: t.landing.features.rwaTitle,        desc: t.landing.features.rwaDesc },
-  { icon: 'solar:copy-bold',                       title: t.landing.features.copyTitle,       desc: t.landing.features.copyDesc },
-  { icon: 'solar:verified-check-bold',             title: t.landing.features.esgTitle,        desc: t.landing.features.esgDesc },
-  { icon: 'solar:shield-keyhole-bold-duotone',     title: t.landing.features.vaultTitle,      desc: t.landing.features.vaultDesc },
-  { icon: 'solar:wad-of-money-bold',               title: t.landing.features.x402Title,       desc: t.landing.features.x402Desc },
-  { icon: 'solar:atom-bold-duotone',               title: t.landing.features.agentTitle,      desc: t.landing.features.agentDesc },
+  // so they drew at different weights and baselines depending on the machine,
+  // and none of them could inherit the panel's colour. The mascot 🐸 stays —
+  // that is brand, not an icon.
+  // 哪幾張、什麼順序由 landingFeatureKeys 決定。文字（標題、痛點、做法）在 t.landing.features.<key>。
+  social:       { icon: 'solar:users-group-rounded-bold', ...t.landing.features.social },
+  assets:       { icon: 'solar:case-minimalistic-bold',   ...t.landing.features.assets },
+  transparency: { icon: 'solar:eye-bold',                 ...t.landing.features.transparency },
+  esg:          { icon: 'solar:verified-check-bold',      ...t.landing.features.esg },
+  gamefi:       { icon: 'solar:gamepad-bold',             ...t.landing.features.gamefi },
+  agent:        { icon: 'solar:atom-bold-duotone',        ...t.landing.features.agent },
+  perpetuals:   { icon: 'solar:chart-square-outline',     ...t.landing.features.perpetuals },
   // `as const` so the icon strings keep their literal types. Iconify's `icon`
-  // prop is a union of the 206 names registered in components/iconify/icon-sets
+  // prop is a union of the names registered in components/iconify/icon-sets
   // (which inlines each SVG body, so icons ship with the bundle rather than
-  // being fetched). Without this the array widens to `string` and the check
+  // being fetched). Without this the values widen to `string` and the check
   // that catches a typo'd or unregistered icon at compile time is lost.
-] as const;
+} as const satisfies Record<LandingFeatureKey, unknown>;
 
-/** 只有 SHOW_PERPETUALS 打開時才接回功能卡的那一張。 */
-const PERPETUAL_FEATURE = {
-  icon: 'solar:chart-square-outline',
-  title: t.landing.features.perpetualsTitle,
-  desc: t.landing.features.perpetualsDesc,
-} as const;
+const VISIBLE_FEATURES = landingFeatureKeys({
+  copyTrading: FEATURE_COPY_TRADING,
+  gamefi: FEATURE_GAMEFI,
+  perpetuals: SHOW_PERPETUALS,
+}).map((key) => FEATURES[key]);
 
-// 跟單卡跟著 FEATURE_COPY_TRADING 走（商業版預設關）：首頁不介紹一個看不到的功能。
-const BASE_FEATURES = FEATURE_COPY_TRADING
-  ? FEATURES
-  : FEATURES.filter((f) => f.title !== t.landing.features.copyTitle);
-const VISIBLE_FEATURES = SHOW_PERPETUALS ? [...BASE_FEATURES, PERPETUAL_FEATURE] : BASE_FEATURES;
-
-// 同一個旗標也決定首頁文案裡提不提「社交跟單」。
+// 跟單旗標也決定主視覺講什麼：開啟時是 Web3 社交交易（ADR-023），關閉的租戶沿用代幣化
+// 資產的說法——首頁不介紹一個看不到的功能。
 const COPY = FEATURE_COPY_TRADING
   ? {
       tagline: t.landing.tagline,
+      brandLine: t.landing.brandLine,
       viewCta: t.landing.viewTraders,
       stepFour: t.landing.steps.four,
       heroBefore: t.landing.markup.heroBefore,
+      heroBold: t.landing.markup.heroBold,
+      heroAfter: t.landing.markup.heroAfter,
       paperMid: t.landing.markup.paperMid,
     }
   : {
       tagline: t.landing.copyOff.tagline,
+      brandLine: t.landing.copyOff.brandLine,
       viewCta: t.landing.copyOff.viewMarketplace,
       stepFour: t.landing.copyOff.stepFour,
       heroBefore: t.landing.copyOff.heroBefore,
+      heroBold: t.landing.copyOff.heroBold,
+      heroAfter: t.landing.copyOff.heroAfter,
       paperMid: t.landing.copyOff.paperMid,
     };
 
@@ -161,7 +161,7 @@ export default function LandingPage() {
                 {/* 這行是 ASCII，所以「不准硬編顯示字串」的 ratchet（只掃 CJK）
                     抓不到它，它就這樣掛在 logo 底下寫著 perpetuals，與整站改成
                     現貨門面之後的每一句話打架。改成 catalog 的 brandLine。 */}
-                {'>'} {t.landing.brandLine}
+                {'>'} {COPY.brandLine}
               </Typography>
 
               {/* Meme energy tagline */}
@@ -184,7 +184,7 @@ export default function LandingPage() {
                 mb: 4,
                 mx: { xs: 'auto', md: 0 },
               }}>
-                {COPY.heroBefore}<b style={{ color: 'var(--palette-primary-main)' }}>{t.landing.markup.heroBold}</b>{t.landing.markup.heroAfter}
+                {COPY.heroBefore}<b style={{ color: 'var(--palette-primary-main)' }}>{COPY.heroBold}</b>{COPY.heroAfter}
               </Typography>
 
               <Stack direction="row" spacing={2} justifyContent={{ xs: 'center', md: 'flex-start' }} flexWrap="wrap">
@@ -355,7 +355,7 @@ export default function LandingPage() {
         {/* ── Features ── */}
         <Box sx={{ mb: 6 }}>
           {/* Was a plain overline — visually a section heading, semantically
-              nothing, so the six feature cards below had no parent in the
+              nothing, so the feature cards below had no parent in the
               outline. */}
           <Typography variant="overline" component="h2" color="text.secondary" align="center" display="block" sx={{ mb: 3.5, fontWeight: 'bold', letterSpacing: 3, fontSize: '1rem' }}>
             {t.landing.features.heading}
@@ -398,14 +398,34 @@ export default function LandingPage() {
                   <Typography variant="subtitle1" component="h3" sx={{ color: 'text.primary', fontWeight: 'bold', mb: 1.5, fontSize: '1.2rem' }}>
                     {f.title}
                   </Typography>
-                  <Typography variant="body2" sx={{ color: 'text.secondary', lineHeight: 1.6, fontSize: '1rem' }}>
-                    {f.desc}
-                  </Typography>
+                  {/* 痛點 → 我們的做法：要解決的問題與功能在同一張卡講完。 */}
+                  <Stack spacing={1.5}>
+                    {([
+                      { label: t.landing.features.painLabel, text: f.pain, color: 'text.secondary' },
+                      { label: t.landing.features.solutionLabel, text: f.solution, color: 'primary.main' },
+                    ] as const).map((row) => (
+                      <Box key={row.label}>
+                        <Typography
+                          variant="caption"
+                          component="p"
+                          sx={{ color: row.color, fontWeight: 'bold', letterSpacing: 1, mb: 0.5 }}
+                        >
+                          {row.label}
+                        </Typography>
+                        <Typography variant="body2" sx={{ color: 'text.secondary', lineHeight: 1.6, fontSize: '1rem' }}>
+                          {row.text}
+                        </Typography>
+                      </Box>
+                    ))}
+                  </Stack>
                 </Card>
               </Grid>
             ))}
           </Grid>
         </Box>
+
+        {/* ── 你的資產在哪裡（#331）：Simple 與 Expert 都顯示，各用自己的詞彙 ── */}
+        <CustodyExplainer />
 
         {/* ── How to Start ── */}
         <Box sx={{ mb: 4 }}>

@@ -31,7 +31,7 @@ exports[`default tenant is the current production site, unchanged > matches the 
     "sESGU",
   ],
   "flagsWithNoEnv": {
-    "copyTrading": false,
+    "copyTrading": true,
     "gamefi": true,
     "pepeRewards": false,
     "showLeverage": false,

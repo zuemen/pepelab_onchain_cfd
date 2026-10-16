@@ -233,6 +233,10 @@ _Avoid_: pending list (that is one of its three parts), applications table
 
 ### Wallet
 
+**Self-custody (使用者自管)**:
+The only custody model the platform offers ([ADR-023](../docs/ADR-023-web3-etoro-positioning.md), root `docs/`). Margin is recorded under the user's address and only they can withdraw it; positions — copied ones included — are in the user's own name; spot tokens sit in the user's own wallet; the platform holds no private keys. It is never "trustless": the operator's single key can still pause, change parameters, decide which agent contracts may trade for users, and upgrade the vault, and a screen that claims self-custody lists those powers next to it.
+_Avoid_: trustless, custodial account, managed account, "the platform holds your funds"
+
 **Mock Wallet**:
 A demo connection used for presentations. It carries an address and counts as connected, but has no chain access at all, so no balance or position can ever be read while it is in use.
 _Avoid_: test wallet, fake wallet, guest mode
