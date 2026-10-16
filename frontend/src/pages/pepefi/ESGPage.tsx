@@ -16,7 +16,6 @@ import { ASSET_META } from 'src/lib/pepefi/assetMeta';
 import { assetDisplayName } from 'src/lib/pepefi/assetName';
 import ESGBadge from 'src/components/pepefi/ESGBadge';
 import CarbonRetirementCard from 'src/components/pepefi/CarbonRetirementCard';
-import SdgMappingCard from 'src/components/pepefi/SdgMappingCard';
 import Skeleton from 'src/components/pepefi/Skeleton';
 
 import Box from '@mui/material/Box';
@@ -356,9 +355,6 @@ export default function ESGPage() {
           退役的是**模擬碳權**，聲明在元件裡、不可收合。沒有設定退役合約位址時元件回 null，
           不留任何「尚未部署」提示（同上方見證碳等級的處理）。 */}
       <CarbonRetirementCard />
-
-      {/* #333：資產與 SDG 的對應。團隊判斷、不影響定價，卡片裡照實標示；靜態資料，不讀鏈。 */}
-      <SdgMappingCard />
 
       {/* ── B (left) + C (right) ─────────────────────────────────────────────── */}
       <Grid container spacing={3} alignItems="flex-start">

@@ -161,9 +161,9 @@ _Avoid_: carbon offset, offsetting, carbon neutral, any wording that lets a reti
 How much of a set of holdings sits in each Carbon Tier — low, mid, high, unrated, or unknown — weighted by strategy weight (a trader) or market value (a portfolio). It replaces "carbon footprint": intensities of different Carbon Bases carry different units and cannot be summed into one tonnage. An asset whose tier could not be read is *unknown*, never low; *unrated* is an on-chain fact (no fresh Attestation), *unknown* is a failed read.
 _Avoid_: carbon footprint, total emissions, a tonnage figure
 
-**SDG Mapping (SDG 對應)**:
-The team's written judgement of which UN Sustainable Development Goals an asset relates to, each marked positive or negative with a one-line reason (`lib/pepefi/sdg.ts`, reasons in the catalog). The same standing as the `qualitative` Carbon Basis, and labelled as a team judgement wherever it appears. Never reaches pricing — fees and leverage read the Carbon Tier only (ADR-003).
-_Avoid_: SDG rating, SDG score, SDG-aligned (as a certification), anything implying a third party assessed it
+**SDG label (not used)**:
+The platform does not tag assets with UN Sustainable Development Goals. Checked against primary sources in October 2026 (`docs/data/sdg-sources.md`), only three of the eleven assets carry SDGs their issuer itself discloses; tagging the rest would be the platform's own sustainability claim about someone else's asset — the kind of claim this platform declines everywhere else (see Simulated Carbon Credit). Sustainability shows up where it can be verified instead: the Carbon Tier Mix and on-chain retirements.
+_Avoid_: SDG-aligned, SDG score, SDG distribution, filtering traders by SDG
 
 ### Allocation and sharing
 

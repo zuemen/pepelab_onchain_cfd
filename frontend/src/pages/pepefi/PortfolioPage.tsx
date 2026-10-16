@@ -61,7 +61,7 @@ import { SwitchChainButton } from 'src/components/pepefi/SwitchChainButton';
 import KYCStatusCard from 'src/components/pepefi/dashboard/KYCStatusCard';
 import QuickActions from 'src/components/pepefi/dashboard/QuickActions';
 import PortfolioAnalysis from 'src/components/pepefi/dashboard/PortfolioAnalysis';
-import SustainabilityMix from 'src/components/pepefi/SustainabilityMix';
+import CarbonTierMixCard from 'src/components/pepefi/CarbonTierMixCard';
 import { holdingValue } from 'src/lib/pepefi/assetClass';
 import { usePricingCarbonTiers } from 'src/hooks/usePricingCarbonTiers';
 import EmptyState from 'src/components/pepefi/EmptyState';
@@ -1220,11 +1220,11 @@ export default function PortfolioPage() {
       {/* ─── Analysis (expert only) ─────────────────────────────────────── */}
       {mode === 'expert' && <PortfolioAnalysis rows={pricedPositions} esg={esg} />}
 
-      {/* #333：自己持倉（永續部位＋現貨代幣）依市值的 SDG 分布與碳分級組成（等級讀自交易所定價用的鏈上見證） */}
+      {/* #333：自己持倉（永續部位＋現貨代幣）依市值的碳分級組成（等級讀自交易所定價用的鏈上見證） */}
       {(pricedPositions.length > 0 || synthHoldings.rows.length > 0) && (
-        <SustainabilityMix
+        <CarbonTierMixCard
           holdings={[
-            ...pricedPositions.map((p) => ({ asset: p.asset, weight: Number(p.currentValue) / 1e18, isLong: p.isLong })),
+            ...pricedPositions.map((p) => ({ asset: p.asset, weight: Number(p.currentValue) / 1e18 })),
             ...synthHoldings.rows.map((h) => ({ asset: h.asset, weight: Number(holdingValue(h)) / 1e18 })),
           ]}
           tierOf={pricingTiers.tierOf}

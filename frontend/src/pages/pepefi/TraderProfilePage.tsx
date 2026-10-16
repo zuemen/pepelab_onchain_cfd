@@ -28,7 +28,7 @@ import TxProof from 'src/components/pepefi/hero/TxProof'
 import ListDialog, { ExpandListButton } from 'src/components/pepefi/ListDialog'
 import StrategySides from 'src/components/pepefi/feed/StrategySides'
 import TraderFeedSection from 'src/components/pepefi/feed/TraderFeedSection'
-import SustainabilityMix from 'src/components/pepefi/SustainabilityMix'
+import CarbonTierMixCard from 'src/components/pepefi/CarbonTierMixCard'
 import { usePricingCarbonTiers } from 'src/hooks/usePricingCarbonTiers'
 
 import Box from '@mui/material/Box';
@@ -565,10 +565,10 @@ function TraderProfileView() {
             )}
           </Card>
 
-          {/* #333：目前策略依權重的 SDG 分布與碳分級組成（策略讀自鏈上，同上） */}
+          {/* #333：目前策略依權重的碳分級組成（策略讀自鏈上，同上） */}
           {hasStrategy && (
-            <SustainabilityMix
-              holdings={allocs.map((a) => ({ asset: a.asset, weight: Number(a.weight), isLong: a.isLong }))}
+            <CarbonTierMixCard
+              holdings={allocs.map((a) => ({ asset: a.asset, weight: Number(a.weight) }))}
               tierOf={pricingTiers.tierOf}
               source="trader"
             />
