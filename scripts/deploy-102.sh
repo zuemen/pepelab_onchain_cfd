@@ -491,9 +491,9 @@ if confirm "用部署者帳號 registerTrader + 發 3 份策略？"; then
   cs "$STRATEGY_REGISTRY_NEW" 'registerTrader(string)' "PepeLab Demo" || true
   # Allocation tuple: (bytes32 asset, uint256 weightBps, bool isLong, uint256 leverage)
   KA(){ cast keccak "$1"; }
-  # 低碳保守：sICLN 3400 / sBOND 3300 / sNVDA 3300
+  # 低碳保守：sBOND 3400 / sNVDA 3300 / sAAPL 3300（sICLN 2026-10-18 起是高碳，見 docs/data/carbon-tier-etf-waci.md）
   cs "$STRATEGY_REGISTRY_NEW" 'publishStrategy((bytes32,uint256,bool,uint256)[])' \
-    "[($(KA sICLN),3400,true,1),($(KA sBOND),3300,true,1),($(KA sNVDA),3300,true,1)]" || warn "低碳保守 發布失敗"
+    "[($(KA sBOND),3400,true,1),($(KA sNVDA),3300,true,1),($(KA sAAPL),3300,true,1)]" || warn "低碳保守 發布失敗"
   # 均衡：sAAPL/sESGU/sGOLD/sETH 各 2500
   cs "$STRATEGY_REGISTRY_NEW" 'publishStrategy((bytes32,uint256,bool,uint256)[])' \
     "[($(KA sAAPL),2500,true,1),($(KA sESGU),2500,true,1),($(KA sGOLD),2500,true,1),($(KA sETH),2500,true,1)]" || warn "均衡 發布失敗"

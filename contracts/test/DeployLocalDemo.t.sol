@@ -54,12 +54,15 @@ contract DeployLocalDemoTest is Test {
         // Low
         assertEq(ex.maxLeverageForAsset(_id("sETH")), 5);
         assertEq(ex.tradingFeeBpsForAsset(_id("sETH")), 10);
-        // Mid
-        assertEq(ex.maxLeverageForAsset(_id("sESGU")), 2);
-        assertEq(ex.tradingFeeBpsForAsset(_id("sESGU")), 40);
         // High
         assertEq(ex.maxLeverageForAsset(_id("sBTC")), 1);
         assertEq(ex.tradingFeeBpsForAsset(_id("sBTC")), 100);
+        // The two equity ETFs are High on iShares' own WACI (docs/data/carbon-tier-etf-waci.md).
+        // No listed asset is Mid; CarbonPricing.t.sol covers that tier with its own fixtures.
+        assertEq(ex.maxLeverageForAsset(_id("sICLN")), 1);
+        assertEq(ex.tradingFeeBpsForAsset(_id("sICLN")), 100);
+        assertEq(ex.maxLeverageForAsset(_id("sESGU")), 1);
+        assertEq(ex.tradingFeeBpsForAsset(_id("sESGU")), 100);
     }
 
     function test_attestationsOutliveATwoYearReplay() public {

@@ -26,7 +26,7 @@ contract CarbonTiersTest is Test {
     }
 
     function testTierOf_betweenOneAndEight_isMid() public {
-        assertTrue(CarbonTiers.tierOf(4.34e18, true) == CarbonTiers.Tier.Mid); // sESGU, docs/data/carbon-intensity.md
+        assertTrue(CarbonTiers.tierOf(4.34e18, true) == CarbonTiers.Tier.Mid); // sESGU's former partial estimate, now just a Mid example
     }
 
     function testTierOf_exactlyEight_isMid() public {
@@ -170,7 +170,7 @@ contract CarbonTiersTest is Test {
 
     function testQualifiesAtOrBelow_ratedBelowCeiling_true() public {
         assertTrue(CarbonTiers.qualifiesAtOrBelow(0.150e18, true, CarbonTiers.Tier.Low)); // sAAPL, Low <= Low
-        assertTrue(CarbonTiers.qualifiesAtOrBelow(4.34e18, true, CarbonTiers.Tier.Mid)); // sESGU, Mid <= Mid
+        assertTrue(CarbonTiers.qualifiesAtOrBelow(4.34e18, true, CarbonTiers.Tier.Mid)); // a Mid figure (sESGU's former estimate), Mid <= Mid
     }
 
     function testQualifiesAtOrBelow_ratedAboveCeiling_false() public {
