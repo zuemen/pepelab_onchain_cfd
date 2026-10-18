@@ -1,6 +1,16 @@
 # The issuer's own carbon data contradicts the sICLN / sESGU tiers
 
-> Findings note, 2026-10-16. Follow-up to the #333 SDG source research (`docs/data/sdg-sources.md`), which ran into this by accident. **No tier has been changed.** This note says what is wrong, what a change would touch, and which option I recommend. The decision is the team's, because a tier is an on-chain attestation and a price (ADR-003, ADR-006 / frontend ADR 0008).
+> Findings note, 2026-10-16. Follow-up to the #333 SDG source research (`docs/data/sdg-sources.md`), which ran into this by accident. The decision belonged to the team, because a tier is an on-chain attestation and a price (ADR-003, ADR-006 / frontend ADR 0008).
+
+## Decision (2026-10-18): option B, plus the issuer's transition disclosure on screen
+
+- **sICLN → High, sESGU → High**, both on the Revenue basis with the issuer's WACI (241.74 / 71.05). This is written in `CarbonAttestations.sol`, `assetMeta.ts`, the heroes tier table, and `carbon-intensity.md`.
+- **sBOND stays qualitative Low.** Its 708.64 WACI and the reason it is set aside now appear in the on-screen "Known limitation" text and in `carbon-intensity.md`.
+- **The tier and the transition story are shown as two separate things.** The asset detail panel has a new "Issuer's transition disclosures" block directly under the carbon section, for sICLN, sESGU and sBOND (`AssetProvenanceBody`, text in `tokens.provenance.transition`). It only restates what the issuer publishes (index, sector mix, MSCI Implied Temperature Rise, the SDGs BlackRock lists for BGRN), each with a source and a read date. It carries no rating or chip and does not reach pricing. #333 removed the asset SDG labels because the platform should not make sustainability claims about other people's assets; the same reason is why this block attributes every sentence to the issuer.
+- **The roster's `LOW_CARBON` universe no longer contains sICLN**, and "Low Carbon Lev" no longer adds sESGU. Both are High now; a "low carbon" strategy holding them would contradict its own name. The replay data was regenerated afterwards.
+- **Not done here:** re-attesting on Base Sepolia. That is part of the #344 cutover, which writes from the same `CarbonAttestations.assets()` list. Other attestors would need to re-attest for the median to move.
+
+The rest of this note is the analysis as written on 2026-10-16.
 
 ## What iShares itself publishes
 

@@ -53,8 +53,8 @@ SDG 從頭到尾不進入定價（手續費與槓桿只看碳分級，ADR-003）
 ## 交叉發現（不屬於 SDG，另案處理）
 
 iShares fact sheet 上 ICLN 的持股加權碳強度（WACI 299.74）高於 ESGU（75.61），與 carbon-intensity.md 把 ICLN 定性放在
-低碳、ESGU 放在中碳的方向相反；BGRN 的指數全名應為 Bloomberg MSCI USD **Green Bond Select** Index。
-碳分級會進入定價，已另開工作處理。
+低碳、ESGU 放在中碳的方向相反。2026-10-18 已處理：兩檔改用 iShares 產品頁的 MSCI 持股加權碳強度（2026-09-18 為 241.74、71.05），都是高碳，見 `carbon-tier-etf-waci.md`。
+BGRN 的指數全名 Bloomberg MSCI USD **Green Bond Select** Index 已補進 carbon-intensity.md（原本那份文件沒有寫指數名稱，不是寫錯）。
 
 ---
 
@@ -172,7 +172,7 @@ PDF 的頁碼是文件本身印的頁碼。引文保留原文語言，每段 25 
 - iShares 產品頁與 2026-06-30 fact sheet 本身都沒有提到 SDG，SDG 只出現在 impact report。
 - 鏈條：指數適格類別（MSCI）→ ICMA 把同名類別對到 SDG 目標 → BlackRock 在 impact report 寫出 BGRN 對應的 SDG。三份都是第一手。
 - ICMA 自己提醒（p.5）："not all projects associated with a given project category will align to the SDG or target indicated"；以及（p.4）淘汰化石燃料的專案可能對 SDG 8 產生負面影響。這是框架層級的但書，不是 BGRN 的具體負面紀錄，不列入對應。
-- 指數名稱更正：基金追蹤的是 **Bloomberg MSCI USD Green Bond Select Index**（產品頁與 impact report 皆如此），不是 carbon-intensity.md 寫的 "Bloomberg MSCI USD Green Bond index"。
+- 指數名稱：基金追蹤的是 **Bloomberg MSCI USD Green Bond Select Index**（產品頁與 impact report 皆如此）。carbon-intensity.md 原本沒有寫指數名稱，2026-10-16 已補上。
 
 ## sNVDA（NVIDIA）
 
