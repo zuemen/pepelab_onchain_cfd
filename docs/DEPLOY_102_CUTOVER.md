@@ -345,12 +345,12 @@ demo「試圖為特定使用者豁免碳費率 → 看它 revert」那一幕：�
 2. 若新註冊表建構時帶了非零的 `stakeContract`（它建構子吃 `_stake` = `TraderStake`），發布者必須**質押夠**：`cast call $StrategyRegistry_NEW "isEligible(address)(bool)" <發布者>` 要回 `true` —— 不夠就補 `TraderStake` 存款。（若 `_stake` 是 `address(0)`，這個閘跳過。）
 3. `publishStrategy(Allocation[])` —— `Allocation` 是 `(bytes32 asset, uint256 weightBps, bool isLong, uint256 leverage)`。強制：長度 ≥ 3、資產不重複、每個 `weight ≤ 5000`、`Σ weight == 10000`、`leverage ∈ {1,2,5}`。
 
-建議的 3 份（碳分級依 `frontend/src/lib/pepefi/carbon.ts` + `assetMeta.ts`：低 = sNVDA、sAAPL、sETH、sICLN、sBOND；中 = sESGU；高 = sMSFT、sGOOGL、sTSLA、sGOLD、sBTC）：
+建議的 3 份（碳分級依 `frontend/src/lib/pepefi/carbon.ts` + `assetMeta.ts`：低 = sNVDA、sAAPL、sETH、sBOND；中 = 無；高 = sMSFT、sGOOGL、sTSLA、sGOLD、sBTC、sICLN、sESGU。sICLN、sESGU 在 2026-10-18 依 iShares 的持股加權碳強度改為高碳，見 `docs/data/carbon-tier-etf-waci.md`）：
 
 | 策略 | 組成（全部 long、1x） | 理由 |
 |---|---|---|
-| **低碳保守** | sICLN 3400 · sBOND 3300 · sNVDA 3300 | 三個低碳資產，加權碳強度最低，沒有一個超過 34% |
-| **均衡** | sAAPL 2500 · sESGU 2500 · sGOLD 2500 · sETH 2500 | 橫跨低 / 中 / 高，四等分 |
+| **低碳保守** | sBOND 3400 · sNVDA 3300 · sAAPL 3300 | 三個低碳資產，加權碳強度最低，沒有一個超過 34% |
+| **均衡** | sAAPL 2500 · sESGU 2500 · sGOLD 2500 · sETH 2500 | 低碳與高碳各兩檔，四等分（名單上已沒有中碳資產） |
 | **成長** | sNVDA 4000 · sMSFT 3000 · sGOOGL 3000 | 科技權重；sMSFT + sGOOGL 是高碳，所以被 1x 封頂 —— 展示機制在咬 |
 
 發布方式：對每份策略 `cast send $StrategyRegistry_NEW "publishStrategy(...)"`，或擴充 `contracts/script/SeedMarket.s.sol`（它已經在建 `StrategyRegistry.Allocation[]` 的變體）對新註冊表跑：
@@ -370,7 +370,7 @@ FEE_ROUTER_ADDR=$FEE_ROUTER STAKE_ADDR=$TRADER_STK \
 
 ### 9.1 一次完整的採用流程 + 正確的逐資產扣款
 
-1. 在 `/marketplace` 採用 **均衡**（橫跨三個碳分級）。
+1. 在 `/marketplace` 採用 **均衡**（橫跨低碳與高碳）。
 2. 確認預留的手續費預算是**逐 `Allocation` 項目**計算的（#97）—— 一份混合低碳 + 高碳的配置必須預留到足以讓每條 leg 都開得成；失敗症狀是「4 條開了 2 條，然後因保證金不足 revert」。
 3. 直接在**高碳**資產（`sMSFT`）和**低碳**資產（`sNVDA`）各開一個部位：
    - `sMSFT` 交易費 ≈ `CarbonTiers` 高（`tradingFeeBps` 100）且**最大槓桿 1x** —— 試 2x，確認 revert。
@@ -384,7 +384,7 @@ for s in sNVDA sMSFT sBOND sESGU; do
   fee=$(cast call $PerpetualExchange_NEW "tradingFeeBpsForAsset(bytes32)(uint256)" $(cast keccak "$s") --rpc-url $BASE_SEPOLIA_RPC_URL)
   echo "$s  maxLev=$lev  tradingFeeBps=$fee"
 done
-# 預期：sNVDA/sBOND 低（5, 10）· sESGU 中（2, 40）· sMSFT 高（1, 100）
+# 預期：sNVDA/sBOND 低（5, 10）· sESGU 高（1, 100，2026-10-18 起；舊見證會是中 2, 40）· sMSFT 高（1, 100）
 ```
 
 ### 9.2 Expert Mode —— 重部署後 11 頁全部仍可用

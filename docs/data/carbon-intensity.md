@@ -45,11 +45,27 @@ Bitcoin's absolute footprint (~39.8 Mt CO2e/yr, comparable to a small country's 
 
 **Why market-cap normalization is rejected here:** dividing each network's annual emissions by its market capitalization (BTC ≈$1.57T, ETH ≈$293B — [CoinDesk](https://www.coindesk.com/price/bitcoin) / [Coinbase](https://www.coinbase.com/price/ethereum), both 2026-09-01) produces ≈0.025 tCO2e/$M for BTC and ≈0.000008 tCO2e/$M for ETH — both *lower* than Apple and Nvidia. That result would place Bitcoin in the platform's lowest carbon tier, directly contradicting the widely-documented, well-sourced reality that Bitcoin mining draws as much power as a mid-sized country. The distortion is structural: market cap is a *stock* (accumulated valuation, driven by speculation and scarcity), not a *flow* (ongoing economic output), so it is not the right denominator for an *ongoing operational emissions* question. Revenue is the right denominator for a company precisely because revenue is also a flow. Gold and crypto have no equivalent flow, so this table reports their absolute annualized emissions and leaves the cross-asset-class normalization as an explicit open question rather than picking a denominator that produces a number known to be misleading.
 
-### sICLN / sESGU (ETFs — holdings-weighted, partial coverage)
+### sICLN / sESGU (ETFs — issuer-published holdings-weighted intensity)
+
+**Current figures.** Re-sourced 2026-10-16 and decided 2026-10-18 (option B in [carbon-tier-etf-waci.md](./carbon-tier-etf-waci.md)). Both ETFs now carry the issuer's own MSCI weighted average carbon intensity (WACI). That is each holding's Scope 1+2 emissions per $M sales, weighted by its share of the fund. The unit and scopes are the same as the equities above; the provider is different (MSCI rather than company reports).
+
+| Asset | WACI, tCO2e/$M sales | Coverage | As of | Tier | Source | Retrieved |
+|---|---:|---:|---|---|---|---|
+| sICLN (iShares Global Clean Energy ETF) | **241.74** | 92.81% | 2026-09-18 (holdings 2026-08-31) | **High** (Revenue basis) | [iShares ICLN product page](https://www.ishares.com/us/products/239738/ishares-global-clean-energy-etf), MSCI ESG Fund Ratings | 2026-10-16 |
+| sESGU (iShares ESG Aware MSCI USA ETF) | **71.05** | 99.73% | 2026-09-18 (holdings 2026-08-31) | **High** (Revenue basis) | [iShares ESGU product page](https://www.ishares.com/us/products/286007/ishares-esg-aware-msci-usa-etf), MSCI ESG Fund Ratings | 2026-10-16 |
+
+The 2026-09-02 placements below are kept as a record of the reasoning before the issuer's figures were read. Neither survived them:
+
+- **sICLN.** The premise was "structurally low emissions-per-revenue". It does not hold: about 45% of the fund is power generation (renewable electricity 27.45%, electric utilities 15.36%, independent power 0.53%, oil & gas refining 1.70%, as of 2026-10-14).
+- **sESGU.** The 4.34 estimate covered only ≈24% of the fund, and that slice was its least carbon-intensive part.
+
+What these funds do for the transition (their index, sector mix and MSCI Implied Temperature Rise) appears on screen as the issuer's own disclosure. It sits next to the tier and does not affect pricing.
+
+**As placed on 2026-09-02 (superseded):**
 
 Full holdings-weighted intensity requires constituent-level Scope 1+2 and revenue data for every holding, which is what commercial ESG data vendors (MSCI, Sustainalytics) sell. Manually collecting that for two diversified ETFs is out of proportion for a data-gathering ticket, so this table reports what a top-holdings pass actually supports, states its coverage honestly, and does not extrapolate beyond it.
 
-**sICLN (iShares Global Clean Energy ETF).** Top-10 holdings (First Solar, China Yangtze Power, NextEra/NextPower, Bloom Energy, Enphase Energy, Iberdrola, Ormat, Equatorial, Vestas Wind Systems, EDP) are ≈50% of the fund and are exclusively renewable power generation and equipment companies — a sector with a structurally low emissions-per-revenue profile compared to fossil-fuel-dependent or heavy-manufacturing sectors. No constituent-level Scope 1+2 figures were collected for this pass. **Placed in Low by sector composition, not by computed intensity — flagged as qualitative.**
+**sICLN (iShares Global Clean Energy ETF).** Top-10 holdings (First Solar, China Yangtze Power, NextEra/NextPower, Bloom Energy, Enphase Energy, Iberdrola, Ormat, Equatorial, Vestas Wind Systems, EDP) are ≈50% of the fund and are exclusively renewable power generation and equipment companies — a sector with a structurally low emissions-per-revenue profile compared to fossil-fuel-dependent or heavy-manufacturing sectors. No constituent-level Scope 1+2 figures were collected for this pass. **Placed in Low by sector composition, not by computed intensity — flagged as qualitative.** *(Superseded: High on 241.74, above.)*
 Source: [iShares ICLN fact sheet](https://www.ishares.com/us/literature/fact-sheet/icln-ishares-global-clean-energy-etf-fund-fact-sheet-en-us.pdf), holdings via [stockanalysis.com](https://stockanalysis.com/etf/icln/holdings/), retrieved 2026-09-02.
 
 **sESGU (iShares ESG Aware MSCI USA ETF).** A broad, market-cap-weighted, ESG-screened large-cap US portfolio — in practice close to the S&P 500 with a handful of exclusions. Its top-10 holdings overlap heavily with names already in this table:
@@ -63,7 +79,7 @@ Source: [iShares ICLN fact sheet](https://www.ishares.com/us/literature/fact-she
 | TSLA | 1.89% | 10.021 |
 | AMZN, AVGO, META, LLY, JPM | 8.00% (combined) | not collected this pass |
 
-Weighted average over the ≈24.4% of the fund with intensity data collected here: **≈4.34 tCO2e/$M revenue** (partial coverage — the remaining ≈75.6% of the fund, including the rest of the top-10 and the long tail of smaller holdings, is not reflected in this figure and could shift it materially in either direction). **Provisionally placed in Mid; flagged as a partial estimate.**
+Weighted average over the ≈24.4% of the fund with intensity data collected here: **≈4.34 tCO2e/$M revenue** (partial coverage — the remaining ≈75.6% of the fund, including the rest of the top-10 and the long tail of smaller holdings, is not reflected in this figure and could shift it materially in either direction). **Provisionally placed in Mid; flagged as a partial estimate.** *(Superseded: High on 71.05, above.)*
 Source: holdings via [stockanalysis.com](https://stockanalysis.com/etf/esgu/holdings/) and a second independent search, [iShares ESGU fact sheet](https://www.ishares.com/us/literature/fact-sheet/esgu-ishares-esg-aware-msci-usa-etf-fund-fact-sheet-en-us.pdf), retrieved 2026-09-02.
 
 ### sBOND replacement — BGRN, placed qualitatively (decided in #106)
@@ -72,6 +88,10 @@ Source: holdings via [stockanalysis.com](https://stockanalysis.com/etf/esgu/hold
 
 
 **Name correction first:** the candidate named in earlier drafts of this work, "iShares Global Green Bond ETF (BGRN)," has been renamed by the issuer. The ticker BGRN now trades as **iShares USD Green Bond ETF** — narrower scope (USD-denominated only), same underlying strategy. Every reference to "Global Green Bond ETF (BGRN)" elsewhere in this repo's docs refers to this same fund under its old name.
+
+**Benchmark:** Bloomberg MSCI USD Green Bond Select Index (Bloomberg ticker I36761US), per the [iShares BGRN product page](https://www.ishares.com/us/products/305296/ishares-usd-green-bond-etf), retrieved 2026-10-16.
+
+**The issuer-level figure exists, and is set aside on purpose.** The same page shows an MSCI weighted average carbon intensity of **708.64** tCO2e/$M sales (as of 2026-09-18, 82.39% coverage). It is disclosed on screen next to the Low placement, along with the reason it is not used: it measures each issuer's whole operations, while a green bond's proceeds are ring-fenced for a named project (point 3 below). This argument works for a bond and not for an equity fund. A shareholder owns all of a company's operations, so sICLN and sESGU are priced on their WACI.
 
 **Fund facts** (iShares USD Green Bond ETF fact sheet, retrieved 2026-09-02): AUM ≈$445.89M, **329 holdings**, top-10 holdings are only **13.5%** of assets, largest single holding is the European Investment Bank at **3.75%**. Source: [iShares BGRN fact sheet](https://www.ishares.com/us/literature/fact-sheet/bgrn-ishares-usd-green-bond-etf-fund-fact-sheet-en-us.pdf), holdings breakdown corroborated across two independent searches.
 
@@ -105,15 +125,15 @@ Fixed thresholds, not settable parameters — per ADR-003, an adjustable thresho
 | Mid | 1 – 8 tCO2e / $M revenue |
 | High | > 8 tCO2e / $M revenue |
 
-This places the five equities as a natural bimodal split: {AAPL 0.150, NVDA 0.099} → Low; {GOOGL 8.949, TSLA 10.021, MSFT 10.226} → High. Nothing currently lands in Mid among the five — that band exists for assets added later, and is where sESGU's partial estimate (≈4.34) provisionally sits.
+This places the five equities as a natural bimodal split: {AAPL 0.150, NVDA 0.099} → Low; {GOOGL 8.949, TSLA 10.021, MSFT 10.226} → High. Nothing currently lands in Mid among the five; that band exists for assets added later. sESGU's 2026-09-02 partial estimate (≈4.34) sat there. On the issuer's full-coverage figures both ETFs are High (sICLN 241.74, sESGU 71.05), so no listed asset is Mid. Any diversified equity fund is likely to land above 8, because these thresholds were set against single stocks. That is a calibration question, not a data error, and the thresholds stay constants (ADR-003).
 
-**For non-revenue assets (commodities, crypto), placed by absolute annualized emissions and sector benchmark rather than a $-normalized figure, per the rejections documented above.** On-chain (#128) these are attested with `tier` set directly and `basis` = `Absolute` (gold, BTC, ETH) or `Qualitative` (sICLN, sBOND); the "Basis" column below is that same distinction:
+**For non-revenue assets (commodities, crypto), placed by absolute annualized emissions and sector benchmark rather than a $-normalized figure, per the rejections documented above.** On-chain (#128) these are attested with `tier` set directly and `basis` = `Absolute` (gold, BTC, ETH) or `Qualitative` (sBOND); the "Basis" column below is that same distinction:
 
 | Asset | Tier | Basis |
 |---|---|---|
 | sETH | **Low** | ≈2,370 tCO2e/yr absolute — smaller than any single company's Scope 1 in this table |
-| sICLN | **Low** | sector composition (renewable generation/equipment); qualitative, not computed |
-| sESGU | **Mid** | partial weighted computation, ≈4.34 tCO2e/$M revenue-equivalent, ≈24% coverage |
+| sICLN | **High** | Revenue basis: 241.74 tCO2e/$M sales, MSCI WACI from iShares, 92.81% coverage (qualitative Low until 2026-10-18) |
+| sESGU | **High** | Revenue basis: 71.05 tCO2e/$M sales, MSCI WACI from iShares, 99.73% coverage (Mid on a ≈24% partial estimate until 2026-10-18) |
 | sGOLD | **High** | 0.85 tCO2e/oz industry benchmark; >100 Mt CO2e/yr sector-wide |
 | sBTC | **High** | ≈39.8 Mt CO2e/yr absolute — comparable to a small country's annual emissions |
 | sBOND → iShares USD Green Bond ETF (BGRN) | **Low** (decided, #106) | sector/instrument-class benchmark, qualitative — see full writeup below; not a computed number |
@@ -130,7 +150,7 @@ This table deliberately does not force one $-normalized number across every asse
 ## Coverage gaps, stated plainly
 
 - Scope 3 (supply chain, product use) is excluded throughout. For several of these companies (Apple, Tesla) Scope 3 dwarfs Scope 1+2 by 10–20×. This table measures *operational* carbon intensity, not *full lifecycle* carbon intensity — a real and material limitation, not a rounding error.
-- sESGU's intensity is a ≈24%-coverage partial estimate, not a full fund computation.
-- sICLN's Low placement is qualitative (sector composition), not computed from constituent data.
+- sICLN and sESGU carry MSCI's fund-level figures, not this table's own computation from company reports. MSCI's Scope 2 basis (location-based or market-based) was not confirmed. Coverage is 92.81% / 99.73%, not 100%.
+- Operational intensity is not avoided emissions. A clean-energy fund that displaces fossil generation still reports its holdings' own Scope 1+2, and the platform prices only that.
 - Alphabet and Tesla emissions are FY2024; Microsoft and Nvidia are FY2025 (their most recently completed fiscal years as of collection date) — the four companies do not all share a fiscal year, which is disclosed per-row above rather than normalized away.
 - The sBOND replacement (BGRN) has **no computed intensity at all** — its Low placement is a sector-benchmark judgment call, not arithmetic, and the fund's own Impact Report (which would supply a real number) could not be fetched in this session. This is the least-verified row in the table and should be the first one revisited.

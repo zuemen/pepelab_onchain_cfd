@@ -26,6 +26,8 @@ contract CarbonPricingTest is Test {
     // Real, sourced figures from docs/data/carbon-intensity.md — same numbers
     // CarbonTiers.t.sol pins its boundary tests against.
     bytes32 constant S_AAPL = keccak256("sAAPL"); // 0.150 tCO2e/$M rev -> Low
+    // sESGU at 4.34 is its former 24%-coverage estimate, kept as a Mid fixture —
+    // the live attestation is 71.05 -> High (docs/data/carbon-tier-etf-waci.md).
     bytes32 constant S_ESGU = keccak256("sESGU"); // 4.34  tCO2e/$M rev -> Mid
     bytes32 constant S_MSFT = keccak256("sMSFT"); // 10.226 tCO2e/$M rev -> High
     bytes32 constant S_UNRATED = keccak256("sUNRATED"); // never attested

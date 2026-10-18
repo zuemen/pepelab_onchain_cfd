@@ -9,12 +9,13 @@ def test_universe_is_the_eleven_listed_assets():
 
 def test_leverage_ceiling_follows_carbon_tier():
     assert max_leverage("sETH") == 5   # Low
-    assert max_leverage("sESGU") == 2  # Mid
+    assert max_leverage("sESGU") == 1  # High（iShares 的 WACI，docs/data/carbon-tier-etf-waci.md）
+    assert max_leverage("sICLN") == 1  # High
     assert max_leverage("sBTC") == 1   # High
 
 
 def test_fee_follows_carbon_tier():
-    assert (fee_bps("sETH"), fee_bps("sESGU"), fee_bps("sBTC")) == (10, 40, 100)
+    assert (fee_bps("sETH"), fee_bps("sESGU"), fee_bps("sBTC")) == (10, 100, 100)
 
 
 def test_esg_composite_rounds_half_up_like_the_frontend():

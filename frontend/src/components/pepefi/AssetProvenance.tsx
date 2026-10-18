@@ -128,6 +128,10 @@ export function AssetProvenanceBody({
   const shownTier: Tier = tierForAsset(meta, nowMs)
   const heldDays =
     heldSinceSec !== undefined ? Math.max(0, Math.floor((nowSec - heldSinceSec) / 86400)) : null
+  // 發行方的轉型揭露：只有 assetMeta 帶 `transition`、catalog 也有那一檔的文字時才顯示。
+  const tt = tp.transition
+  const transitionStr = (tt.assets as Record<string, { text: string; source: string } | undefined>)[meta.symbol]
+  const transition = meta.transition && transitionStr ? { ...meta.transition, ...transitionStr } : null
 
   return (
     <Stack spacing={1.5} divider={<Divider flexItem />}>
@@ -192,6 +196,32 @@ export function AssetProvenanceBody({
           </Typography>
         </Stack>
       </Box>
+
+      {/* ── 發行方的轉型揭露（docs/data/carbon-tier-etf-waci.md）——緊接在碳強度下面，
+           讓「排多少」和「在做什麼」並排；刻意不給 chip 或分數，也不進定價。 ── */}
+      {transition && (
+        <Box data-testid="asset-transition">
+          <Typography variant="caption" color="text.secondary" display="block">
+            {tt.title}
+          </Typography>
+          <Typography variant="body2" sx={{ mt: 0.25 }}>
+            {transition.text}
+          </Typography>
+          <Stack spacing={0.25} sx={{ mt: 1 }}>
+            <Typography variant="caption" color="text.secondary">
+              {tp.sourceLabel}:{' '}
+              <Link href={transition.sourceUrl} target="_blank" rel="noopener noreferrer">
+                {transition.source}
+              </Link>
+              {'  ·  '}
+              {tt.readLabel}: <Box component="span" sx={{ fontFamily: MONO }}>{transition.observed}</Box>
+            </Typography>
+            <Typography variant="caption" color="text.secondary">
+              {tt.note}
+            </Typography>
+          </Stack>
+        </Box>
+      )}
 
       {/* ── KYC 理由 ── */}
       <Box>

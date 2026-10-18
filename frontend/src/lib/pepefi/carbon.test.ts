@@ -28,7 +28,7 @@ describe('tierOf', () => {
   })
 
   it('1.0 到 8.0 之間為 mid', () => {
-    expect(tierOf(4.34, true)).toBe('mid') // sESGU，見 docs/data/carbon-intensity.md
+    expect(tierOf(4.34, true)).toBe('mid') // sESGU 先前只涵蓋 24% 的估算，現在只當 mid 區間的例子
   })
 
   it('剛好 8.0 屬於 mid——high 是嚴格大於', () => {

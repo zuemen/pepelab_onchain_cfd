@@ -71,7 +71,7 @@ describe('ASSET_META · 碳強度（carbon）', () => {
   })
 
   // 直接把 docs/data/carbon-intensity.md 的「Proposed carbon tiers」釘進斷言。
-  it('五檔個股與 sESGU 的數字與分級對齊碳資料表', () => {
+  it('五檔個股與兩檔股票 ETF 的數字與分級對齊碳資料表', () => {
     const expect_ = (sym: keyof typeof ASSET_IDS, intensity: number, tier: Tier) => {
       const c = ASSET_META[ASSET_IDS[sym]].carbon!
       expect(c.intensity, sym).toBeCloseTo(intensity, 3)
@@ -82,7 +82,23 @@ describe('ASSET_META · 碳強度（carbon）', () => {
     expect_('sGOOGL', 8.949, 'high')
     expect_('sTSLA', 10.021, 'high')
     expect_('sMSFT', 10.226, 'high')
-    expect_('sESGU', 4.34, 'mid')
+    // 兩檔 ETF 用 iShares 產品頁的 MSCI 持股加權碳強度（docs/data/carbon-tier-etf-waci.md）。
+    expect_('sICLN', 241.74, 'high')
+    expect_('sESGU', 71.05, 'high')
+  })
+
+  it('轉型揭露只轉述發行方資料：三檔 iShares 基金有，其餘沒有；出處一律是 ishares.com', () => {
+    const withTransition = ALL_IDS.filter((id) => ASSET_META[id].transition).map((id) => ASSET_META[id].symbol)
+    expect(withTransition.sort()).toEqual(['sBOND', 'sESGU', 'sICLN'])
+    for (const sym of withTransition) {
+      const tr = ASSET_META[ASSET_IDS[sym as keyof typeof ASSET_IDS]].transition!
+      expect(tr.observed, sym).toMatch(/^\d{4}-\d{2}-\d{2}$/)
+      expect(tr.sourceUrl, sym).toContain('ishares.com')
+      // 沒有文字，身世卡會靜默略過這一塊——釘住 catalog 也有這一檔。
+      const s = (t.tokens.provenance.transition.assets as Record<string, { text: string; source: string } | undefined>)[sym]
+      expect(s?.text, sym).toBeTruthy()
+      expect(s?.source, sym).toBeTruthy()
+    }
   })
 
   it('crypto 的絕對排放量分級：BTC 高、ETH 低（工作量證明 vs 權益證明）', () => {

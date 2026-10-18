@@ -78,8 +78,11 @@ def test_long_short_shorts_the_weakest():
 
 
 def test_requested_leverage_is_clipped_to_each_assets_carbon_ceiling():
-    first = RULES["momentum"](PRICES, {**BASE, "top_k": 3, "lookback": 60, "leverage": 5}, 1)[0]
-    assert {leg.asset: leg.leverage for leg in first.legs} == {"sESGU": 2, "sICLN": 5, "sGOOGL": 1}
+    # 動量前三名是漂移最快的 sGOOGL、sMSFT、sNVDA：Low 的 sNVDA 保留 5 倍，High 的兩檔夾到 1 倍。
+    # 名單上沒有 Mid 資產（docs/data/carbon-tier-etf-waci.md），所以不再有 2 倍的例子。
+    universe = ["sAAPL", "sNVDA", "sMSFT", "sGOOGL"]
+    first = RULES["momentum"](PRICES, {**BASE, "universe": universe, "top_k": 3, "lookback": 60, "leverage": 5}, 1)[0]
+    assert {leg.asset: leg.leverage for leg in first.legs} == {"sGOOGL": 1, "sMSFT": 1, "sNVDA": 5}
 
 
 def test_a_signal_rule_does_not_republish_an_unchanged_strategy():

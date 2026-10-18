@@ -24,14 +24,14 @@ import "./CarbonAttestations.sol";
 ///         Each attestation carries the WITNESSED `tier` (the on-chain fact
 ///         the exchange and vault price against, via `medianCarbonTier`) and
 ///         the `basis` it was determined on:
-///           - `Revenue`     — the five equities and sESGU have a real
+///           - `Revenue`     — the five equities, sICLN and sESGU have a real
 ///             tCO2e/$1M-revenue figure (pinned in
 ///             docs/data/carbon-intensity.md). The registry cross-checks
 ///             `tier == tierOf(intensity)` on submission, so both are filled.
 ///           - `Absolute`    — gold and BTC/ETH have no revenue; placed by
 ///             absolute annualized emissions + sector benchmark. `intensity`
 ///             is left 0 — there is no comparable number to record.
-///           - `Qualitative` — sICLN and sBOND (green bond ETF, #106) placed
+///           - `Qualitative` — sBOND (green bond ETF, #106), placed
 ///             by sector / instrument class. Also `intensity` 0.
 ///         The absolute / qualitative placements are decisions, documented in
 ///         carbon-intensity.md and ADR-006, not measurements. Flagged on

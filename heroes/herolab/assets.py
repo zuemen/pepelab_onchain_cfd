@@ -19,7 +19,7 @@ YAHOO_SYMBOL = {
 CARBON_TIER = {
     "sBTC": "high", "sETH": "low", "sAAPL": "low", "sTSLA": "high",
     "sGOLD": "high", "sBOND": "low", "sNVDA": "low", "sMSFT": "high",
-    "sGOOGL": "high", "sICLN": "low", "sESGU": "mid",
+    "sGOOGL": "high", "sICLN": "high", "sESGU": "high",
 }
 
 _TIER_MAX_LEVERAGE = {"low": 5, "mid": 2, "high": 1}

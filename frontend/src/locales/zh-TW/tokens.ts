@@ -239,7 +239,7 @@ export const tokens = {
       sBOND: {
         underlying: '在 NASDAQ 掛牌的 iShares USD Green Bond ETF（BGRN），持有依 Green Bond Principles 篩選的投資等級綠色債券。',
         carbonSource: 'iShares BGRN Fact Sheet + 持股揭露',
-        carbonCaveat: '定性判為低碳——投資等級綠色債券基金依 Green Bond Principles 的准入標準，結構性地低於未篩選的債券指數（比照 sICLN）。逐檔避免排放量的真數字需自 BGRN Impact Report 取得（發行方 host 對自動抓取回 403，待真人下載，見碳資料表）。',
+        carbonCaveat: '定性判為低碳——投資等級綠色債券依 Green Bond Principles 的准入標準，資金專款用在指名的綠色專案。iShares 產品頁上的 MSCI 持股加權碳強度是 708.64 tCO2e／每百萬美元營收（2026-09-18），但它量的是發行人整體的營運排放（例如發債的電力公司或銀行），不是這筆債券資助的專案，所以不採用。專案層級的避免排放量在 BGRN 年度影響報告裡，尚未逐項轉錄。',
       },
       sNVDA: {
         underlying: '在 NASDAQ 掛牌的 NVIDIA Corporation 普通股。',
@@ -257,14 +257,40 @@ export const tokens = {
         carbonCaveat: 'Scope 1+2（市場法），不含 Scope 3。',
       },
       sICLN: {
-        underlying: 'iShares Global Clean Energy ETF，持有全球再生能源發電與設備公司。',
-        carbonSource: 'iShares ICLN Fact Sheet + 持股（stockanalysis.com）',
-        carbonCaveat: '依前十大持股的產業組成質性判為低碳，非逐檔碳強度計算。',
+        underlying: 'iShares Global Clean Energy ETF，持有全球潔淨能源相關公司：再生能源發電、電力公用事業、電機設備與半導體。',
+        carbonSource: 'iShares ICLN 產品頁（MSCI ESG Fund Ratings，2026-09-18）',
+        carbonCaveat: 'MSCI 持股加權碳強度，涵蓋 92.81% 持股。量的是成分公司自己的營運排放（Scope 1+2），不計它們替別人避免的排放；約 45% 持股是發電業，即使再生能源比重高，每單位營收的排放仍高。由 MSCI 計算，與個股列的公司自揭數字不同來源。',
       },
       sESGU: {
-        underlying: 'iShares ESG Aware MSCI USA ETF，經 ESG 篩選的美國大型股組合。',
-        carbonSource: 'iShares ESGU Fact Sheet + 持股（stockanalysis.com）',
-        carbonCaveat: '僅約 24% 持股涵蓋率的加權部分估計，其餘約 76% 未反映，可能顯著改變此數字。',
+        underlying: 'iShares ESG Aware MSCI USA ETF，偏重 ESG 特性較佳的美國大中型股組合。',
+        carbonSource: 'iShares ESGU 產品頁（MSCI ESG Fund Ratings，2026-09-18）',
+        carbonCaveat: 'MSCI 持股加權碳強度，涵蓋 99.73% 持股，取代先前只涵蓋約 24% 持股的估算 4.34——那 24% 剛好是碳強度最低的大型科技股。量的是營運排放（Scope 1+2）；由 MSCI 計算，與個股列的公司自揭數字不同來源。',
+      },
+    },
+
+    /**
+     * 發行方的轉型揭露（docs/data/carbon-tier-etf-waci.md）：碳分級量的是成分公司
+     * 自己排多少，這裡轉述發行方自己說它在做什麼。只轉述、不評分、不進定價——
+     * #333 拿掉資產 SDG 標籤的理由（平台不替別人的資產做永續宣稱）在這裡同樣成立，
+     * 所以每一句都標明是誰說的。日期與網址在 assetMeta.ts 的 `transition`。
+     */
+    transition: {
+      title: '發行方的轉型揭露',
+      note: '以下轉述發行方自己公布的資料，平台不另外評分，也不影響費率或槓桿——費率與槓桿只看上面的碳分級。',
+      readLabel: '讀取日',
+      assets: {
+        sICLN: {
+          text: '追蹤 S&P Global Clean Energy Transition Index（全球潔淨能源公司）。產業組成：再生能源發電 27.45%、重型電機設備 19.02%、電力公用事業 15.36%、半導體 14.72%、電機零組件 13.41%（2026-10-14）。MSCI 隱含升溫 1.5–2.0°C（2026-09-18）。iShares 沒有為這檔基金發布避免排放數據或 SDG 對應。',
+          source: 'iShares ICLN 產品頁',
+        },
+        sESGU: {
+          text: '追蹤 MSCI USA Extended ESG Focus Index，偏重 ESG 特性較佳的美國大中型股；排除民用槍械、爭議性武器、菸草、動力煤與油砂。MSCI 隱含升溫 2.5–3.0°C（2026-09-18）。iShares 的產品資料沒有列出 SDG 對應。',
+          source: 'iShares ESGU 產品頁',
+        },
+        sBOND: {
+          text: '追蹤 Bloomberg MSCI USD Green Bond Select Index，資金用途須落在再生能源、能源效率、污染防治、永續水資源、綠建築、氣候調適等適格類別。BlackRock 的 BGRN 年度影響報告（資料截至 2026-06-30）列出它對應的 SDG：7 可負擔的潔淨能源、11 永續城鄉、12 責任消費與生產、13 氣候行動。',
+          source: 'BlackRock／iShares BGRN 年度影響報告 2026',
+        },
       },
     },
   },

@@ -9,7 +9,9 @@ import datetime as dt
 import random
 from dataclasses import dataclass, field
 
-LOW_CARBON = ["sETH", "sAAPL", "sBOND", "sNVDA", "sICLN"]
+# 碳分級為 Low 的資產（CarbonAttestations.sol）。sICLN 在 2026-10-16 改用 iShares 的 WACI 後是 High，
+# 不在這裡（docs/data/carbon-tier-etf-waci.md）。
+LOW_CARBON = ["sETH", "sAAPL", "sBOND", "sNVDA"]
 EQUITIES = ["sAAPL", "sMSFT", "sGOOGL", "sNVDA", "sTSLA"]
 
 
@@ -50,7 +52,7 @@ TRADERS: tuple[TraderSpec, ...] = (
     TraderSpec(28, "Trend Rider", "trend", {"universe": ["sBTC", "sETH", "sGOLD", "sNVDA"], "window": 50, "every_days": 14}, 28, stake_usd=1500),
     TraderSpec(29, "Steady Eddie", "risk_parity", {"universe": ["sBOND", "sGOLD", "sESGU", "sAAPL"], "lookback": 90, "every_days": 60}, 29, stake_usd=2000),
     TraderSpec(30, "Pairs Trader", "long_short", {"universe": EQUITIES, "lookback": 30, "long_k": 2, "short_k": 1, "every_days": 14}, 30, stake_usd=900),
-    TraderSpec(31, "Low Carbon Lev", "momentum", {"universe": LOW_CARBON + ["sESGU"], "top_k": 3, "lookback": 30, "every_days": 7, "leverage": 2}, 31, stake_usd=3000),
+    TraderSpec(31, "Low Carbon Lev", "momentum", {"universe": LOW_CARBON, "top_k": 3, "lookback": 30, "every_days": 7, "leverage": 2}, 31, stake_usd=3000),
     TraderSpec(32, "Green Rotation", "momentum", {"universe": ["sICLN", "sESGU", "sBOND", "sAAPL", "sNVDA"], "top_k": 3, "lookback": 60, "every_days": 30}, 32, stake_usd=1200),
     TraderSpec(33, "Macro Hedge", "trend", {"universe": ["sGOLD", "sBOND", "sBTC", "sESGU"], "window": 100, "every_days": 30}, 33, stake_usd=1800),
 )
