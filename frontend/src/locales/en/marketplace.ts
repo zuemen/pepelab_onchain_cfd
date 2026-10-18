@@ -127,6 +127,8 @@ export const marketplace: Catalog['marketplace'] = {
   hero: {
     disclosure:
       'Simulated traders: the traders below are operated by a program following published rules. Their performance is a replay of real historical prices on a local chain, not the record of a real person. Every open and close is an on-chain transaction; cumulative return, drawdown and the other statistics are computed off-chain from those on-chain events.',
+    disclosureCompressed:
+      'Simulated traders: the traders below are operated by a program following published rules. Their performance is a replay of real historical prices, not the record of a real person. Every open and close is an on-chain transaction; cumulative return, drawdown and the other statistics are computed off-chain from those on-chain events. Replayed on Base Sepolia in compressed time: borrow fees and funding are not counted, and the on-chain timestamps are the day of the replay. On this testnet KYC is approved as soon as it is submitted; the reviewed flow is demonstrated on the local chain, and verifiable-credential (VC) admission by the rwa-poc tenant.',
     range: 'Performance from {from} to {to}; volume, PnL and win rate cover the last 30 days',
     volLabel: 'Vol 30d',
     pnlLabel: 'PnL 30d',

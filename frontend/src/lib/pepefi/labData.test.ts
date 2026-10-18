@@ -121,9 +121,10 @@ const hero = (address: string, name: string, rule: string) => ({
   esgScore: null, window7d: window, window30d: window, sparkline: [], activeSince: null,
 })
 const heroIndex = {
-  schemaVersion: 2,
+  schemaVersion: 3,
   chainId: 31337,
   range: { from: '2024-10-01', to: '2026-10-13' },
+  timeCompressed: false,
   traders: [
     hero('0x00000000000000000000000000000000000000aa', 'Momentum Mike', 'momentum'),
     hero('0x00000000000000000000000000000000000000bb', 'Whale Alpha', 'buy_hold'),
@@ -159,13 +160,27 @@ describe('similarTraders', () => {
 
 describe('fetchSimilarTraders', () => {
   it('reads the leaderboard data of the connected chain', async () => {
-    const traders = await fetchSimilarTraders(strategies[1], 31337, serving({ 'index.json': heroIndex }))
-    expect(traders.map((h) => h.address)).toEqual(['0x00000000000000000000000000000000000000aa'])
+    const urls: string[] = []
+    const traders = await fetchSimilarTraders(strategies[1], 31337, async (url) => {
+      urls.push(url)
+      return serving({ 'index.json': heroIndex })(url)
+    })
+    expect(traders.traders.map((h) => h.address)).toEqual(['0x00000000000000000000000000000000000000aa'])
+    expect(traders.timeCompressed).toBe(false)
+    expect(urls).toEqual(['/data/heroes/31337/index.json'])
   })
 
   it('reads nothing when no wallet is connected or the file is missing', async () => {
-    expect(await fetchSimilarTraders(strategies[1], null, serving({ 'index.json': heroIndex }))).toEqual([])
-    expect(await fetchSimilarTraders(strategies[1], 31337, serving({}))).toEqual([])
+    const none = { traders: [], timeCompressed: false }
+    expect(await fetchSimilarTraders(strategies[1], null, serving({ 'index.json': heroIndex }))).toEqual(none)
+    expect(await fetchSimilarTraders(strategies[1], 31337, serving({}))).toEqual(none)
+  })
+
+  it('says when the connected chain has the time-compressed replay', async () => {
+    const compressed = { ...heroIndex, chainId: 84532, timeCompressed: true }
+    const found = await fetchSimilarTraders(strategies[1], 84532, serving({ 'index.json': compressed }))
+    expect(found.timeCompressed).toBe(true)
+    expect(found.traders.map((h) => h.name)).toEqual(['Momentum Mike'])
   })
 })
 

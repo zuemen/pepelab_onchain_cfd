@@ -1,10 +1,11 @@
 {
- "schemaVersion": 2,
+ "schemaVersion": 3,
  "chainId": 31337,
  "range": {
   "from": "2024-10-01",
   "to": "2026-10-13"
  },
+ "timeCompressed": false,
  "traders": [
   {
    "address": "0xBcd4042DE499D14e55001CcbB24a551F3b954096",

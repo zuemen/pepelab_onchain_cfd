@@ -94,3 +94,28 @@ describe('simulated-trader disclosure copy', () => {
     }
   });
 });
+
+// 公開站的時間壓縮回放（#344）：本機版的事實照樣要有（除了「本機鏈」），再加上這份資料特有的兩句。
+describe('time-compressed simulated-trader disclosure copy', () => {
+  const zh = LOCALES['zh-TW'].catalog.marketplace.hero.disclosureCompressed;
+  const en = LOCALES.en.catalog.marketplace.hero.disclosureCompressed;
+
+  it('zh-TW keeps the simulated-trader facts and adds the issue’s two sentences word for word', () => {
+    for (const must of ['模擬交易者', '程式', '真實歷史價格', '不是真人', '鏈上交易', '鏈下']) expect(zh, must).toContain(must);
+    expect(zh).toContain('在 Base Sepolia 以壓縮時間回放，未計借款費與資金費率，上鏈時間為回放當天');
+    expect(zh).toContain('測試網展示為送出即通過；審核制在本機鏈示範，可驗證憑證（VC）准入由 rwa-poc 租戶示範');
+  });
+
+  it('does not claim the public data was replayed on a local chain', () => {
+    expect(zh).not.toMatch(/在本機鏈上的回放/);
+    expect(en).not.toMatch(/on a local chain/);
+  });
+
+  it('en states the same facts', () => {
+    for (const must of ['Simulated traders', 'program', 'real historical prices', 'not the record of a real person',
+      'on-chain transaction', 'off-chain', 'Base Sepolia', 'compressed time', 'borrow fees and funding are not counted',
+      'day of the replay', 'KYC', 'rwa-poc']) {
+      expect(en, must).toContain(must);
+    }
+  });
+});

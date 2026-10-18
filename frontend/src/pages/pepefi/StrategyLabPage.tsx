@@ -25,6 +25,7 @@ import { t, interpolate } from 'src/locales';
 import { useMode } from 'src/contexts/mode-context';
 import { FEATURE_COPY_TRADING } from 'src/lib/pepefi/featureFlags';
 import { fUsd, fRatio, fDrawdown, fSignedPct, type HeroSummary } from 'src/lib/pepefi/heroData';
+import { heroDisclosure } from 'src/lib/pepefi/heroDisclosure';
 import {
   dayToDate,
   snapParams,
@@ -93,6 +94,7 @@ function StrategyLab() {
   const [index, setIndex] = useState<LabIndex | null | undefined>(undefined);
   const [result, setResult] = useState<LabResult | null | undefined>(undefined);
   const [similar, setSimilar] = useState<HeroSummary[]>([]);
+  const [similarCompressed, setSimilarCompressed] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -137,8 +139,11 @@ function StrategyLab() {
   useEffect(() => {
     let cancelled = false;
     setSimilar([]);
+    setSimilarCompressed(false);
     void fetchSimilarTraders(strategy, wallet.chainId).then((found) => {
-      if (!cancelled) setSimilar(found);
+      if (cancelled) return;
+      setSimilar(found.traders);
+      setSimilarCompressed(found.timeCompressed);
     });
     return () => {
       cancelled = true;
@@ -201,7 +206,7 @@ function StrategyLab() {
 
             {result && <TradesCard result={result} />}
 
-            {similar.length > 0 && <SimilarTraders traders={similar} />}
+            {similar.length > 0 && <SimilarTraders traders={similar} compressed={similarCompressed} />}
 
             <Card variant="outlined" sx={{ p: 3 }}>
               <Typography variant="subtitle2" sx={{ fontWeight: 'bold', mb: 1 }}>{L.noOrder.title}</Typography>
@@ -496,12 +501,12 @@ function TradesCard({ result }: { result: LabResult }) {
 
 // ── 相近的模擬交易者 ──────────────────────────────────────────────────────────
 
-function SimilarTraders({ traders }: { traders: HeroSummary[] }) {
+function SimilarTraders({ traders, compressed }: { traders: HeroSummary[]; compressed: boolean }) {
   return (
     <Card sx={{ p: 3 }}>
       <Typography variant="subtitle2" sx={{ fontWeight: 'bold' }}>{L.similar.title}</Typography>
       <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5, mb: 1.5 }}>{L.similar.body}</Typography>
-      <Alert severity="info" variant="outlined" sx={{ mb: 1.5 }}>{t.marketplace.hero.disclosure}</Alert>
+      <Alert severity="info" variant="outlined" sx={{ mb: 1.5 }}>{heroDisclosure(compressed)}</Alert>
       <Stack spacing={1}>
         {traders.map((h) => (
           <Stack key={h.address} direction="row" alignItems="center" spacing={2}>

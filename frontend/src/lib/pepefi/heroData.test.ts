@@ -31,9 +31,12 @@ const summary: HeroSummary = {
   sparkline: [10000, 10050.5, 9990],
   activeSince: '2024-10-01',
 }
-const index = { schemaVersion: 2, chainId: 31337, range: { from: '2024-10-01', to: '2026-10-09' }, traders: [summary] }
+const index = {
+  schemaVersion: 3, chainId: 31337, range: { from: '2024-10-01', to: '2026-10-09' }, timeCompressed: false, traders: [summary],
+}
 const detail = {
   ...summary,
+  timeCompressed: false,
   equityCurve: [{ date: '2024-10-01', equity: 10000 }],
   monthlyReturns: [{ month: '2024-10', returnPct: 1.2 }],
   exposure: [{ asset: 'sBTC', weightPct: 50, isLong: true, leverage: 1 }],
@@ -64,8 +67,17 @@ describe('parseHeroIndex', () => {
 
   it('refuses a schema version it does not know', () => {
     // 1 是還沒有 activeSince 的舊資料：排行榜靠它判斷能不能列入排名，舊檔整份不收。
+    // 2 沒有 timeCompressed 與模擬日期：公開鏈的資料會被當成本機的，揭露少一句。
     expect(parseHeroIndex({ ...index, schemaVersion: 1 }, 31337)).toBeNull()
-    expect(parseHeroIndex({ ...index, schemaVersion: 3 }, 31337)).toBeNull()
+    expect(parseHeroIndex({ ...index, schemaVersion: 2 }, 31337)).toBeNull()
+    expect(parseHeroIndex({ ...index, schemaVersion: 4 }, 31337)).toBeNull()
+  })
+
+  it('needs to know whether the replay was time-compressed', () => {
+    const { timeCompressed: _omit, ...unknown } = index
+    expect(parseHeroIndex(unknown, 31337)).toBeNull()
+    expect(parseHeroIndex({ ...index, timeCompressed: 'yes' }, 31337)).toBeNull()
+    expect(parseHeroIndex({ ...index, chainId: 84532, timeCompressed: true }, 84532)?.timeCompressed).toBe(true)
   })
 
   it('needs each trader start date, which may be null for a trader who never published', () => {
@@ -98,6 +110,11 @@ describe('parseHeroDetail', () => {
     expect(parseHeroDetail(summary, ADDR)).toBeNull()
   })
 
+  it('refuses a detail file that does not say whether it is time-compressed', () => {
+    const { timeCompressed: _omit, ...older } = detail
+    expect(parseHeroDetail(older, ADDR)).toBeNull()
+  })
+
   it('refuses a detail file from before the risk statistics existed', () => {
     const older: Record<string, unknown> = { ...detail }
     delete older.riskScore
@@ -108,16 +125,28 @@ describe('parseHeroDetail', () => {
 
 // 解析一筆不合格就整份不收，所以管線重新產生的資料若少了欄位，畫面會悄悄退回「沒有資料」。
 // 這裡直接拿進版控的那份資料檔跑解析，讓它在測試裡失敗，而不是在展示時才發現。
+// 每條鏈一個目錄（#344）：31337 是本機回放，84532 是公開站的時間壓縮回放（cutover 之後才有）。
 describe('committed hero data', () => {
-  const dir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..', 'public', 'data', 'heroes')
-  const read = (name: string): unknown => JSON.parse(fs.readFileSync(path.join(dir, name), 'utf8'))
-  const committed = fs.existsSync(path.join(dir, 'index.json')) ? parseHeroIndex(read('index.json'), 31337) : null
+  const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..', 'public', 'data', 'heroes')
+  const chains = fs.existsSync(root) ? fs.readdirSync(root).filter((d) => /^\d+$/.test(d)) : []
 
-  it.runIf(fs.existsSync(path.join(dir, 'index.json')))('every trader in the index has a detail file the page accepts', () => {
+  it('keeps one directory per chain and nothing loose at the top', () => {
+    expect(chains).toContain('31337')
+    expect(fs.readdirSync(root).filter((f) => f.endsWith('.json'))).toEqual([])
+  })
+
+  it.each(chains)('chain %s: every trader in the index has a detail file the page accepts', (chain) => {
+    const read = (name: string): unknown => JSON.parse(fs.readFileSync(path.join(root, chain, name), 'utf8'))
+    const committed = parseHeroIndex(read('index.json'), Number(chain))
     expect(committed).not.toBeNull()
+    // 本機回放的區塊時間就是模擬時間；公開鏈（84532）的回放一定是時間壓縮的
+    expect(committed!.timeCompressed).toBe(chain !== '31337')
     for (const trader of committed!.traders) {
       const name = `${trader.address.toLowerCase()}.json`
-      expect(parseHeroDetail(read(name), trader.address), name).not.toBeNull()
+      const parsed = parseHeroDetail(read(name), trader.address)
+      expect(parsed, name).not.toBeNull()
+      expect(parsed!.timeCompressed, name).toBe(committed!.timeCompressed)
+      for (const trade of parsed!.trades) expect(trade.openDate, name).toMatch(/^\d{4}-\d{2}-\d{2}$/)
     }
   })
 })
@@ -134,6 +163,20 @@ describe('fetching', () => {
     const counting = async () => { calls += 1; return { ok: true, json: async () => index } }
     expect(await fetchHeroIndex(null, counting)).toBeNull()
     expect(calls).toBe(0)
+  })
+
+  it('reads the dataset of the connected chain from its own directory', async () => {
+    const compressed = { ...index, chainId: 84532, timeCompressed: true }
+    const byChain: Record<string, unknown> = { '/data/heroes/31337/index.json': index, '/data/heroes/84532/index.json': compressed }
+    const urls: string[] = []
+    const fetchByUrl = async (url: string) => {
+      urls.push(url)
+      return url in byChain ? { ok: true, json: async () => byChain[url] } : { ok: false, json: async () => ({}) }
+    }
+    expect((await fetchHeroIndex(31337, fetchByUrl))?.timeCompressed).toBe(false)
+    expect((await fetchHeroIndex(84532, fetchByUrl))?.timeCompressed).toBe(true)
+    expect(await fetchHeroIndex(11155111, fetchByUrl)).toBeNull()
+    expect(urls).toEqual(['/data/heroes/31337/index.json', '/data/heroes/84532/index.json', '/data/heroes/11155111/index.json'])
   })
 
   it('reads a detail file only for a trader the index lists', async () => {

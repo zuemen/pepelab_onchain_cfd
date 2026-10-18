@@ -1,15 +1,21 @@
 // 模擬交易者的績效資料（issue #309）——純函式加兩個讀取函式，不含 ethers 或 React。
 //
-// 資料由 heroes/ 的管線從本機鏈的事件算出來，放在 public/data/heroes/：一份索引（排行榜用）
-// 加每位交易者一個詳細檔（個人頁用）。它只補鏈上讀不出來的歷史統計；跟隨者人數、質押、
+// 資料由 heroes/ 的管線從鏈上事件算出來，依鏈分開放在 public/data/heroes/<chainId>/：一份索引
+// （排行榜用）加每位交易者一個詳細檔（個人頁用）。它只補鏈上讀不出來的歷史統計；跟隨者人數、質押、
 // 聲譽、目前策略照舊直接讀鏈。
 //
-// 這份資料只屬於產生它的那條鏈：chainId 不符就當作沒有，畫面走原本的路徑。
+// 31337 是本機 Anvil 的回放（區塊時間就是模擬時間）；84532 是 Base Sepolia 上時間壓縮的回放（#344）：
+// 兩年在幾小時內跑完，上鏈時間是回放當天，模擬日期另外記在每筆交易與每個策略版本上。
+//
+// 這份資料只屬於產生它的那條鏈：讀的是連線那條鏈的目錄，chainId 不符就當作沒有，畫面走原本的路徑。
 
 import { computeTraderScore, type TraderCard } from './leaderboardMetrics'
 
-/** 2：每位交易者多了 activeSince（排行榜用來判斷能不能列入排名）。 */
-export const HERO_SCHEMA_VERSION = 2
+/**
+ * 2：每位交易者多了 activeSince（排行榜用來判斷能不能列入排名）。
+ * 3：timeCompressed；交易多了 openDate／closeDate（模擬日期），策略版本多了 time（上鏈時間）。
+ */
+export const HERO_SCHEMA_VERSION = 3
 
 export interface HeroWindow {
   pnlUsd: number
@@ -41,6 +47,8 @@ export interface HeroIndex {
   schemaVersion: number
   chainId: number
   range: { from: string; to: string }
+  /** 時間壓縮的回放（公開鏈）：上鏈時間是回放當天，借款費與資金費率幾乎沒有計入。 */
+  timeCompressed: boolean
   traders: HeroSummary[]
 }
 
@@ -52,7 +60,10 @@ export interface HeroLeg {
 }
 
 export interface HeroStrategyVersion {
+  /** 模擬日期（YYYY-MM-DD）。 */
   date: string
+  /** 上鏈時間（unix 秒）。本機回放時與模擬日期同一天。 */
+  time: number
   versionId: number
   tx: string
   legs: HeroLeg[]
@@ -65,11 +76,15 @@ export interface HeroTrade {
   leverage: number
   marginUsd: number
   openTx: string
+  /** 上鏈時間（unix 秒）。 */
   openTime: number
+  /** 模擬日期（YYYY-MM-DD）。 */
+  openDate: string
   openPrice: number
-  /** 以下五個欄位在部位還沒平倉時為 null。 */
+  /** 以下七個欄位在部位還沒平倉時為 null。 */
   closeTx: string | null
   closeTime: number | null
+  closeDate: string | null
   closePrice: number | null
   pnlUsd: number | null
   grossPnlUsd: number | null
@@ -77,6 +92,7 @@ export interface HeroTrade {
 }
 
 export interface HeroDetail extends HeroSummary {
+  timeCompressed: boolean
   equityCurve: { date: string; equity: number }[]
   monthlyReturns: { month: string; returnPct: number }[]
   exposure: { asset: string; weightPct: number; isLong: boolean; leverage: number }[]
@@ -119,6 +135,7 @@ const isSummary = (x: unknown): boolean =>
 export function parseHeroIndex(raw: unknown, chainId: number | null): HeroIndex | null {
   if (!isRecord(raw) || raw.schemaVersion !== HERO_SCHEMA_VERSION) return null
   if (chainId === null || raw.chainId !== chainId) return null
+  if (typeof raw.timeCompressed !== 'boolean') return null
   if (!isRecord(raw.range) || typeof raw.range.from !== 'string' || typeof raw.range.to !== 'string') return null
   if (!Array.isArray(raw.traders) || !raw.traders.every(isSummary)) return null
   return raw as unknown as HeroIndex
@@ -131,6 +148,7 @@ export function parseHeroDetail(raw: unknown, address: string): HeroDetail | nul
   const record = raw as Record<string, unknown>
   if ((record.address as string).toLowerCase() !== address.toLowerCase()) return null
   if (!DETAIL_LISTS.every((k) => Array.isArray(record[k]))) return null
+  if (typeof record.timeCompressed !== 'boolean') return null
   if (!isNumOrNull(record.esgCorrelation) || !isNumOrNull(record.avgHoldDays)) return null
   if (!isNumOrNull(record.riskScore) || !isNumOrNull(record.profitableWeeksPct)) return null
   if (!['worstDayLossPct', 'worstWeekLossPct', 'maxDrawdown1yPct', 'tradesPerWeek'].every((k) => isNum(record[k]))) return null
@@ -142,7 +160,8 @@ export function parseHeroDetail(raw: unknown, address: string): HeroDetail | nul
 
 type FetchLike = (url: string) => Promise<{ ok: boolean; json: () => Promise<unknown> }>
 
-const fileUrl = (name: string) => `${import.meta.env.BASE_URL}data/heroes/${name}`
+/** 一條鏈的一個資料檔。每條鏈一個目錄：本機展示與公開站各讀各的。 */
+export const heroDataUrl = (chainId: number, name: string) => `${import.meta.env.BASE_URL}data/heroes/${chainId}/${name}`
 
 /** 讀不到（404、不是 JSON、離線）一律是 null。SPA 的 fallback 會對不存在的檔回 index.html，所以 json() 失敗是常態。 */
 async function readJson(url: string, fetchImpl: FetchLike): Promise<unknown | null> {
@@ -156,7 +175,7 @@ async function readJson(url: string, fetchImpl: FetchLike): Promise<unknown | nu
 
 export async function fetchHeroIndex(chainId: number | null, fetchImpl: FetchLike = fetch): Promise<HeroIndex | null> {
   if (chainId === null) return null
-  return parseHeroIndex(await readJson(fileUrl('index.json'), fetchImpl), chainId)
+  return parseHeroIndex(await readJson(heroDataUrl(chainId, 'index.json'), fetchImpl), chainId)
 }
 
 export async function fetchHeroDetail(
@@ -165,8 +184,8 @@ export async function fetchHeroDetail(
   fetchImpl: FetchLike = fetch,
 ): Promise<HeroDetail | null> {
   const index = await fetchHeroIndex(chainId, fetchImpl)
-  if (!index || !heroByAddress(index).has(address.toLowerCase())) return null
-  return parseHeroDetail(await readJson(fileUrl(`${address.toLowerCase()}.json`), fetchImpl), address)
+  if (!index || chainId === null || !heroByAddress(index).has(address.toLowerCase())) return null
+  return parseHeroDetail(await readJson(heroDataUrl(chainId, `${address.toLowerCase()}.json`), fetchImpl), address)
 }
 
 export const heroByAddress = (index: HeroIndex): Map<string, HeroSummary> =>

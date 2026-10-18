@@ -23,6 +23,7 @@ import TraderRankBadge from 'src/components/pepefi/TraderRankBadge'
 import { useToast } from 'src/components/pepefi/ToastProvider'
 import { belowMinimum, minimumCopyAmount } from 'src/lib/pepefi/copyGuards'
 import { fetchHeroIndex, heroByAddress } from 'src/lib/pepefi/heroData'
+import { heroDisclosure } from 'src/lib/pepefi/heroDisclosure'
 import { useMode } from 'src/contexts/mode-context'
 import StrategySides from 'src/components/pepefi/feed/StrategySides'
 import { useCarbonRouting } from 'src/hooks/useCarbonRouting'
@@ -114,6 +115,7 @@ export default function CopyPage() {
   // 被跟單的對象是模擬交易者（issue #309）。讀的是靜態檔，不依賴任何鏈上讀取；
   // 這條鏈沒有績效資料時維持 false。
   const [isSimulated,      setIsSimulated]      = useState(false)
+  const [heroCompressed,   setHeroCompressed]   = useState(false)
 
   const { isVerified: isKYCVerified, isPending: kycPending, refetch: refetchKYC } = useKYC(
     contracts?.kycRegistry ?? null,
@@ -201,7 +203,9 @@ export default function CopyPage() {
     setIsSimulated(false)
     if (!traderAddress) return undefined
     void fetchHeroIndex(wallet.chainId).then((index) => {
-      if (!cancelled) setIsSimulated(!!index && heroByAddress(index).has(traderAddress.toLowerCase()))
+      if (cancelled) return
+      setIsSimulated(!!index && heroByAddress(index).has(traderAddress.toLowerCase()))
+      setHeroCompressed(index?.timeCompressed ?? false)
     })
     return () => { cancelled = true }
   }, [traderAddress, wallet.chainId])
@@ -406,7 +410,7 @@ export default function CopyPage() {
 
       {isSimulated && (
         <Alert severity="info" variant="outlined">
-          {t.marketplace.hero.disclosure}
+          {heroDisclosure(heroCompressed)}
         </Alert>
       )}
 
