@@ -74,6 +74,19 @@ RWA（其餘 8 檔）             : C_rwa = C × 50%
 
 **取捨：** 在測試網做 demo 時，MockOracle 比較不容易卡住。GuardedOracle 能限制 key 外洩後的損害，代價是凍結時連平倉也會被擋。想用 GuardedOracle 就設 `ORACLE_KIND=guarded`，preflight 會先確認 11 檔都能報價。Oracle 在 exchange 上是 immutable，之後要換只能再重部署一次。
 
+**第三種：`ORACLE_KIND=fresh`（#344，公開站的模擬交易者）。** 腳本在第 0 步部署一顆**新的** MockOracle，以共用
+MockOracle 的現價 `addAsset` 11 檔，owner 是部署者；新 exchange 讀這一顆。理由：時間壓縮回放要把 2024 年的歷史價格
+寫進 exchange 的 oracle 好幾個小時，寫在共用的 `0xeD90…` 上會讓公開站與其他讀它的地方價格亂跳；GuardedOracle
+每次最多動 10%，寫不了。preflight 改查種子來源（共用 MockOracle）是否 11 檔都新鮮。
+
+- broadcast 印出 `ORACLE_NEW`；`Verify130` 要帶 `ORACLE_KIND=fresh ORACLE_NEW=<它>`，會核對它不是兩顆共用 oracle、
+  owner 是 `ORACLE_OWNER`（預設部署者；回放完轉給 keeper 之後帶 keeper 位址）。
+- 中斷續跑：`RESUME_EXCHANGE` 之外一定要帶 `RESUME_ORACLE`（exchange 把 oracle 存成 immutable）。只帶 `RESUME_EXCHANGE`
+  會在送出任何交易前被拒絕；`RESUME_ORACLE` 也不能是共用的兩顆。
+- 回放結束後：`cast send <ORACLE_NEW> "transferOwnership(address)" 0x540aECD37E7A7885824e7b7e996eBddfb842ef17`，
+  keeper workflow 的 MockOracle 位址與 `addresses.ts` 跟著改（OWNER_ACTIONS 第 5 步「#344」）。
+- fork 測試：`test/fork/HeroesCutoverFork.t.sol`；整條流程的演練：`node scripts/heroes-fork-rehearsal.mjs`。
+
 ## 5. 執行
 
 ### 5.0 先 dispatch keeper，確認價格新鮮

@@ -531,6 +531,42 @@ PepeAMM 的修正都只存在於原始碼；平台 FeeRouter 的 `platformTreasu
 
 cutover 演練的第 12 步照這個順序實跑（只在 fork 上），確認可行。
 
+**#344：公開站的模擬交易者（與上面的 cutover 合併成一次做）。** 2026-10-16 決定：評審自己上公開站看 #309 的
+24 位模擬交易者、到 BaseScan 查證、跟單。程式已備（`ORACLE_KIND=fresh`、`replay.ts --public-chain`、schema 3 的
+84532 資料集）；以下只有擁有者能做。差異只在第 1 項與之後的回放：
+
+1. **第 1 項改用 `ORACLE_KIND=fresh`**（`DEPLOY_130_CUTOVER.md` §4）：新 exchange 接一顆部署者持有的新 MockOracle，
+   回放的 2024 年價格寫在那裡，不碰共用的 `0xeD90…`。另外 **OI 上限要容得下回放**：本機完整回放裡單一資產單邊的名目最高約
+   69,000（sBOND），帶 `OI_CAP_NON_RWA_USDC=250000 OI_CAP_RWA_USDC=250000`（預設的保險金庫倍數算法上限只有 50,000，
+   RWA 再減半，回放的開倉會被擋）。驗證：`Verify130` 加 `ORACLE_KIND=fresh ORACLE_NEW=<broadcast 印出的值>`。
+2. 第 4 項（#333 的分流合約、平台 FeeRouter）與第 5 項（PepeIncentives）照常；**EsgRewardDistributor** 也綁新 exchange
+   （`Deploy102RewardDistributor`，`DEPLOY_130_CUTOVER.md` §7 第 8 項）。回放要在第 4 項的 `executeBatch` **之後**跑，
+   跟單費才會進分流合約、每個模擬月份才有退役。
+3. **回放在治理 phase 2（HandoverToTimelock）之前跑**，或部署者多準備約 0.3 ETH：回放開倉付的執行費（全程約 2,500 筆 ×
+   0.0001 ETH）由 exchange 的 owner（部署者）每天領回再發 gas；owner 已是 timelock 時領不回來。
+4. 回放（公開鏈模式，約 2–3 小時；中斷就**原指令**再跑一次，從最後完成的那一天接著跑、不重複送出）：
+   ```bash
+   # 先把排程推到最新收盤日（heroes/README.md「一次跑完」的前兩行）
+   cd agent
+   HEROES_RPC_URL=<Infura/Alchemy 的 Base Sepolia 端點> npx tsx heroes/chainAddresses.ts <EXCHANGE_NEW> ../heroes/out/addresses-84532.json
+   HEROES_RPC_URL=<同上> npx tsx heroes/replay.ts --public-chain \
+     ../heroes/out/schedule.json ../heroes/out/addresses-84532.json ../heroes/out/events-84532.json \
+     --progress ../heroes/out/progress-84532.json --keystore ../heroes/keys/84532.json --deployer-account $ACCOUNT
+   ```
+   會問兩個密碼（部署者的 Foundry keystore、這次回放新產生的帳號金鑰檔）並要求輸入 `replay on 84532`。
+   **`heroes/keys/84532.json` 與它的密碼要保存到不再需要這些帳號為止**（被 git 忽略，不會進 repo）。
+5. 績效資料：`cd heroes && python build_analytics.py out/events-84532.json && python check_pipeline.py out/events-84532.json out/schedule.json`
+   → `frontend/public/data/heroes/84532/`（進版控）。
+6. 新 MockOracle 交給 keeper：`cast send <ORACLE_NEW> "transferOwnership(address)" 0x540aECD37E7A7885824e7b7e996eBddfb842ef17 --rpc-url $RPC --account $ACCOUNT`；
+   `base-sepolia-keeper.yml` 的 `KEEPER_ORACLE_ADDRESS` 改成新 oracle（釘選的 workflow：`node scripts/check-workflow-guards.mjs --print-pins`
+   更新 sha），`addresses.ts` 的 `MockOracle` 跟著改。回放最後一天的價格與現價差很多時，keeper 第一次寫入會走 A-5 的多源確認。
+7. 第 5 步的部署後提交（ABI、`addresses.ts`、monitoring）、84532 資料集、keeper workflow 放在**同一個 PR**；合併後 Vercel 重新部署。
+8. 公開站驗證：#322、#323、#324 的清單；BaseScan 查證；用全新錢包送出 KYC 並跟單一位有股票部位的交易者；#333 的退役；
+   #334 的成就；排行榜載入速度（跟隨人數每次約多讀 150 次鏈上資料）。
+
+事前演練（不需要金鑰）：`node scripts/heroes-fork-rehearsal.mjs`——在 anvil fork 上部署（含上面的 1、2）並以公開鏈模式
+回放小規模排程，中途砍掉一次再續跑，最後跑績效分析與對帳。
+
 **完成後驗證（唯讀）：**
 
 ```bash

@@ -3,7 +3,8 @@
 交易者排行榜上的「模擬交易者」從這裡來：真實歷史價格 → 策略排程 → 在本機 Anvil 上以真合約回放 →
 由鏈上事件算出績效資料。spec 見 GitHub issue #309。
 
-只在本機鏈（chainId 31337）運作。所有腳本連到別的鏈都會直接中止。
+預設只在本機鏈（chainId 31337）運作，連到別的鏈會直接中止。公開站（Base Sepolia，84532）的時間壓縮回放要明確帶
+`--public-chain`，見下面「公開鏈（Base Sepolia，#344）」。
 
 ## 一次跑完
 
@@ -49,10 +50,10 @@ scripts/heroes-replay.sh heroes/tests/fixtures/schedule_smoke.json
 |---|---|---|
 | 策略規則 | `herolab/rules.py` 的 `RULES` | 純函式 `(prices, params, seed) -> list[Rebalance]` |
 | 回放排程 | `out/schedule.json` | Python → Node（`agent/heroes/replay.ts`） |
-| 績效資料 | `../frontend/public/data/heroes/*.json` | Python → 前端 |
+| 績效資料 | `../frontend/public/data/heroes/<chainId>/*.json` | Python → 前端 |
 
 回放與分析之間另有 `out/events.json`（Node → Python）：開倉、平倉、清算、策略發布、跟隨、取消、罰沒，
-各附區塊時間與交易雜湊；另附每位交易者期末從鏈上讀到的淨值與跟隨者人數。
+各附區塊時間與交易雜湊；另附每位交易者期末從鏈上讀到的淨值與跟隨者人數，以及每個模擬日落在哪些區塊（`days`）。
 
 ## 產出
 
@@ -64,7 +65,9 @@ scripts/heroes-replay.sh heroes/tests/fixtures/schedule_smoke.json
 | `out/addresses.json` | 否 | 本機鏈上各合約的位址 |
 | `out/events.json` | 否 | 回放後從鏈上匯出的事件（含碳權退役的 `CarbonRetired` 與鏈上的累計退役噸數） |
 | `out/chain.json` | 否 | 鏈狀態（含歷史區塊與交易收據）；展示時用 `anvil --load-state` 載入 |
-| `../frontend/public/data/heroes/*.json` | 是 | 前端讀取的績效資料 |
+| `../frontend/public/data/heroes/31337/*.json` | 是 | 本機展示讀的績效資料 |
+| `../frontend/public/data/heroes/84532/*.json` | 是 | 公開站讀的績效資料（cutover 後產生，時間壓縮） |
+| `keys/84532.json` | 否（被忽略） | 公開鏈回放的帳號金鑰，加密；擁有者保存 |
 
 ## 展示時的價格
 
@@ -78,6 +81,55 @@ cast rpc evm_setNextBlockTimestamp "$(date +%s)"     # 把鏈的時間對到現�
 ```
 
 鏈重新載入後，錢包對這條鏈的 nonce 快取會錯：在錢包裡清掉這個帳號的活動紀錄再送交易。
+
+## 公開鏈（Base Sepolia，#344）
+
+評審上公開站看模擬交易者、到 BaseScan 查證、跟單，所以同一份排程也要在 Base Sepolia 的新合約上回放一次。
+公開鏈不能把時間撥回過去：兩年的交易在幾小時內跑完，**時間是壓縮的**。部署與上線的步驟只有擁有者能做，
+完整流程在 `docs/OWNER_ACTIONS.md` 第 5 步「#344」；這裡說明程式怎麼做。
+
+```bash
+cd agent
+HEROES_RPC_URL=<Infura/Alchemy> npx tsx heroes/chainAddresses.ts <新 exchange> ../heroes/out/addresses-84532.json
+HEROES_RPC_URL=<Infura/Alchemy> npx tsx heroes/replay.ts --public-chain \
+  ../heroes/out/schedule.json ../heroes/out/addresses-84532.json ../heroes/out/events-84532.json \
+  --progress ../heroes/out/progress-84532.json --keystore ../heroes/keys/84532.json --deployer-account <Foundry keystore 名稱>
+cd ../heroes && .venv/bin/python build_analytics.py out/events-84532.json && .venv/bin/python check_pipeline.py out/events-84532.json out/schedule.json
+```
+
+- **只允許 chainId 84532**，而且要明確帶 `--public-chain`、執行前輸入 `replay on 84532`；交易所讀的必須是部署者持有的
+  專用 MockOracle（cutover 用 `ORACLE_KIND=fresh` 部署），KYC 與 MockUSDC 的 owner 必須是部署者，否則不送任何交易。
+- **不用 Anvil 專屬的 RPC**（設區塊時間、設餘額）：部署者依當天要動的帳號轉 gas（`agent/heroes/gas.ts`），
+  開倉付的執行費由 exchange 的 owner（部署者）每天領回再發。
+- **帳號金鑰是新產生的**（`agent/heroes/keystore.ts`）：交易者、虛擬跟隨者、造市帳號與本機回放同樣的 index，
+  但助記詞是第一次執行時隨機產生、加密寫進 `keys/84532.json`（被 git 忽略；放在 repo 裡沒被忽略的地方會拒絕寫入），
+  絕不用 Anvil 的測試金鑰。
+- **可以中斷續跑**（`agent/heroes/journal.ts`）：每個動作在進度檔裡有一個鍵，廣播前就記下交易雜湊；中斷之後原指令
+  再跑一次，從最後完成的那一天接著跑，已經送出的不會再送（不確定有沒有上鏈的那幾筆先問節點）。
+- **記下每一天的區塊範圍**：`events.json` 的 `days`；分析用它還原模擬日期。
+- **同一天裡不同帳號平行送出**（`agent/heroes/sender.ts`）：同一個帳號依序排 nonce、在本機簽名，不每筆向節點問 nonce。
+  `HEROES_CONCURRENCY`（預設 32）、`HEROES_LOG_CHUNK`（`eth_getLogs` 每段區塊數，預設 1000）可調。
+- 每個模擬月份的最後一天照樣觸發一次 #333 的分流與退役。
+
+時間壓縮的代價（畫面上的揭露都寫了）：借款費照鏈上持有時間計算、資金費率每 8 小時才結算，回放只有幾小時，
+兩者幾乎是 0，槓桿交易者的績效比本機回放好很多；BaseScan 上的時間全是回放當天，頁面同時標示模擬日期與上鏈時間；
+回放結束後模擬交易者不再換倉。
+
+績效分析在壓縮模式（`events.json` 的 `timeCompressed`）下，交易與策略的日期用區塊範圍還原的模擬日，
+不用區塊時間；未平倉部位的借款費照鏈上時間算，與 `getPositionValue` 一致。資料檔是 schema 3：`timeCompressed`，
+每筆交易有 `openDate`／`closeDate`（模擬日期）與 `openTime`／`closeTime`（上鏈時間），每個策略版本有 `date`（模擬）與
+`time`（上鏈）。
+
+**fork 演練**（不需要任何金鑰，擁有者動手之前先跑）：
+
+```bash
+PY=heroes/.venv/bin/python node scripts/heroes-fork-rehearsal.mjs    # PATH 上要有 anvil／forge／cast
+```
+
+在 Base Sepolia 實況的 anvil fork 上照第 5 步部署（含新 MockOracle、#333、PepeIncentives、EsgRewardDistributor），
+讀回核對；確認不帶 `--public-chain` 會拒絕 84532、確認字句不對不送交易；以公開鏈模式回放小規模排程、中途砍掉一次再續跑，
+核對鏈上事件數與排程相同（沒有重複送出）、共用 MockOracle 沒被碰到；最後跑績效分析與對帳。部署者由 anvil 假冒
+（`--impersonate-deployer`，只在節點自稱 anvil 時可用）。結果寫在 `out/fork-rehearsal/summary.md`。
 
 ## 碳權退役（#333）
 
@@ -117,13 +169,14 @@ cd frontend && yarn dev --mode heroes  # 終端機二：前端（Windows 上在 
 
 ```bash
 cd heroes && .venv/Scripts/python -m pytest          # 策略規則、排程、績效指標、策略實驗室的回測與預測（Linux 用 .venv/bin/python）
-cd agent && npm run test:heroes                      # 保證金拆分、清算判斷、位址寫入
+cd agent && npm run test:heroes                      # 保證金拆分、清算判斷、位址寫入；公開鏈模式的守門、續跑、送出、gas、金鑰
 heroes/.venv/Scripts/python heroes/check_pipeline.py # 整條管線對帳（要先跑過回放與分析）
 ```
 
-`check_pipeline.py` 預設對照 `out/schedule.json`；小規模回放要把排程傳進去：
-`python check_pipeline.py out/events.json tests/fixtures/schedule_smoke.json`。它檢查：沒有失敗或被跳過的交易、
-平倉筆數、期末淨值與鏈上相差在本金 2% 以內、鏈上的跟隨者人數與排程一致、匯出的退役事件總噸數等於鏈上的累計退役噸數。
+`check_pipeline.py` 預設對照 `out/schedule.json`，讀 `frontend/public/data/heroes/<events.json 的 chainId>/`；小規模回放要把排程傳進去：
+`python check_pipeline.py out/events.json tests/fixtures/schedule_smoke.json`（`--data <dir>` 指定別的資料目錄）。它檢查：沒有失敗或被跳過的交易、
+平倉筆數、期末淨值與鏈上相差在本金 2% 以內、鏈上的跟隨者人數與排程一致、匯出的退役事件總噸數等於鏈上的累計退役噸數；
+時間壓縮的回放另查每個模擬日都有區塊範圍、依序不重疊。
 
 ## 新增一條策略規則
 
