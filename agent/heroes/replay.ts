@@ -28,7 +28,7 @@ import { crankCarbon, RETIREMENT_ABI, SPLITTER_ABI } from "../keeper/carbon.ts";
 import { assertChain, assertImpersonationAllowed, CONFIRM_PHRASE, confirmed, parseArgs, rpcWarning, USAGE, type ReplayArgs } from "./mode.ts";
 import { fileStore, Journal, memoryStore, type Entry, type Resolution } from "./journal.ts";
 import {
-  cachedFees, contractCall, forEach, isRejected, LocalSender, PublicSender, transferCall,
+  cachedFees, contractCall, forEach, isFatal, isRejected, LocalSender, PublicSender, transferCall,
   type Account, type Call, type Sender,
 } from "./sender.ts";
 import { ANVIL_MNEMONIC, loadOrCreateKeystore, type KeySet } from "./keystore.ts";
@@ -76,7 +76,11 @@ if (!RPC) {
 // 本機：固定網路、不批次、不快取（見 provider.ts）。公開鏈：同樣固定網路與不快取，保留批次。
 const provider = PUBLIC ? publicProvider(RPC) : localProvider(RPC);
 const sender: Sender = PUBLIC
-  ? new PublicSender(provider, cachedFees(provider), PUBLIC_POLLING)
+  ? new PublicSender(provider, cachedFees(provider), {
+    ...PUBLIC_POLLING,
+    // fork 演練的 anvil 即時出塊，不必每秒才問一次
+    intervalMs: Number(process.env.HEROES_RECEIPT_POLL_MS ?? PUBLIC_POLLING.intervalMs),
+  })
   : new LocalSender(provider);
 const CONCURRENCY = Number(process.env.HEROES_CONCURRENCY ?? 32);
 const LOG_CHUNK = Number(process.env.HEROES_LOG_CHUNK ?? 1000);
@@ -119,6 +123,11 @@ async function step(key: string, label: string, build: () => Call | null | Promi
     return receipt;
   } catch (e) {
     const message = (e as Error).message;
+    // 公開鏈：節點拒收或等不到收據，不是交易本身失敗——停下整趟，續跑時重送或問節點（sender.ts）。
+    if (isFatal(e)) {
+      if (e.forget) journal.forget(key);
+      throw new Error(`${label}: ${message}\nstopped; fix the cause and run the same command again (the replay resumes)`);
+    }
     if (isRejected(e) || !journal.entry(key)) journal.markRejected(key, label, message);
     else journal.markResult(key, false, label, message);
     return null;
@@ -181,8 +190,9 @@ async function crankCarbonMonth(date: string, deployer: Account): Promise<void> 
         retire: (amount) => must("carbon:retire", "carbon retire", "retire", [amount]),
       },
     );
-  } catch {
-    // 已由 step() 記錄
+  } catch (e) {
+    // 交易失敗已由 step() 記錄；停下整趟的錯誤（step() 重新丟出的）照樣往上丟。
+    if (!/failed$/.test((e as Error).message)) throw e;
   }
 }
 

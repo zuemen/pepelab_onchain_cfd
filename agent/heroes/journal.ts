@@ -135,6 +135,14 @@ export class Journal {
     this.save();
   }
 
+  /** 節點拒收、什麼都沒送出去：當作沒有這個動作，續跑時重送（sender.ts 的 NotBroadcastError）。 */
+  forget(key: string): void {
+    if (!this.entries[key]) return;
+    delete this.entries[key];
+    this.doc.stats.sent -= 1;
+    this.save();
+  }
+
   /** 連廣播都沒成功（估 gas 就 revert）：也算一筆送出、一筆失敗，與改版前的計數相同。 */
   markRejected(key: string, label: string, message: string): void {
     this.entries[key] = { status: "failed" };

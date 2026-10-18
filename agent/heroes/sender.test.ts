@@ -3,7 +3,7 @@
 //   cd agent && npx tsx heroes/sender.test.ts
 import assert from "node:assert";
 import { ethers } from "ethers";
-import { forEach, isRejected, PublicSender, type Account, type Call } from "./sender.ts";
+import { forEach, isFatal, isRejected, PublicSender, type Account, type Call } from "./sender.ts";
 
 const CHAIN = 84532n;
 
@@ -82,6 +82,51 @@ const bob: Account = (() => { const w = ethers.Wallet.createRandom(); return { a
   const nonces = (a: Account) => broadcast.filter((b) => b.from === a.address).map((b) => b.nonce);
   assert.deepEqual(nonces(alice), [5, 6]);
   assert.deepEqual(nonces(bob), [5, 6]);
+}
+
+// ── 節點拒收（例如餘額不足）：不是 revert，停下整趟、nonce 重讀，進度裡當作沒送過 ─────
+{
+  const { node, broadcast, setPending } = fakeNode();
+  const n = node as unknown as Record<string, unknown>;
+  const real = n.broadcastTransaction as (s: string) => Promise<void>;
+  let refuse = true;
+  n.broadcastTransaction = async (signed: string) => {
+    if (refuse) throw new Error("insufficient funds for gas * price + value");
+    return real(signed);
+  };
+  n.getTransaction = async (hash: string) => (broadcast.some((b) => b.hash === hash) ? { hash } : null);
+  const sender = new PublicSender(node, fees, polling);
+  const err = await sender.submit(call(alice), { onHash: () => {} }).catch((e) => e);
+  assert.ok(isFatal(err) && err.forget, "a refused broadcast stops the run and is forgotten");
+  assert.equal(broadcast.length, 0);
+  refuse = false;
+  setPending(9); // 節點上的 nonce 已經變了：下一筆要重讀，不沿用自己記的
+  await sender.submit(call(alice), { onHash: () => {} });
+  assert.deepEqual(broadcast.map((b) => b.nonce), [9]);
+}
+
+// ── 「already known」但節點其實知道這一筆：照常等收據，不算失敗 ───────────────
+{
+  const { node, broadcast } = fakeNode();
+  const n = node as unknown as Record<string, unknown>;
+  const real = n.broadcastTransaction as (s: string) => Promise<void>;
+  n.broadcastTransaction = async (signed: string) => {
+    await real(signed);
+    throw new Error("already known");
+  };
+  n.getTransaction = async (hash: string) => (broadcast.some((b) => b.hash === hash) ? { hash } : null);
+  const sender = new PublicSender(node, fees, polling);
+  const r = await sender.submit(call(alice), { onHash: () => {} });
+  assert.ok(r);
+}
+
+// ── 等不到收據：停下整趟，但進度保留「已送出」（續跑時問節點，不重送）─────────
+{
+  const { node } = fakeNode();
+  (node as unknown as Record<string, unknown>).getTransactionReceipt = async () => null;
+  const sender = new PublicSender(node, fees, { intervalMs: 5, timeoutMs: 20 });
+  const err = await sender.submit(call(alice), { onHash: () => {} }).catch((e) => e);
+  assert.ok(isFatal(err) && !err.forget, "a missing receipt stops the run but keeps the entry");
 }
 
 // ── forEach：本機依序（順序就是交易順序），公開鏈平行但有上限 ───────────

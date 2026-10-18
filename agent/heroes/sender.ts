@@ -133,7 +133,13 @@ export class PublicSender implements Sender {
     const broadcast = lane.tail.then(() => this.broadcast(lane, call, hooks));
     lane.tail = broadcast.catch(() => undefined);
     const hash = await broadcast;
-    return receiptOf(this.provider, hash, this.polling);
+    try {
+      return await receiptOf(this.provider, hash, this.polling);
+    } catch (e) {
+      if (/^reverted:/.test((e as Error).message)) throw e;
+      // 等不到收據（塞車、RPC 斷線）：這筆可能還會上鏈。停下來，續跑時拿雜湊問節點，不當成失敗也不重送。
+      throw new InFlightError(`${hash}: ${(e as Error).message}`);
+    }
   }
 
   private async broadcast(lane: Lane, call: Call, hooks: Hooks): Promise<string> {
@@ -148,31 +154,53 @@ export class PublicSender implements Sender {
     } catch (e) {
       throw new RejectedError((e as Error).message); // 沒有送出，nonce 不前進
     }
-    try {
-      if (call.from.signer instanceof ethers.BaseWallet) {
-        const signed = await call.from.signer.signTransaction({ ...tx, chainId: (await this.provider.getNetwork()).chainId });
-        const hash = ethers.keccak256(signed);
-        hooks.onHash(hash, nonce);
-        lane.nonce = nonce + 1;
-        try {
-          await this.provider.broadcastTransaction(signed);
-        } catch (e) {
-          // 節點已經有這一筆（重送、或上一次其實送出了）：照常等收據。
-          if (!/already known|known transaction|nonce too low/i.test((e as Error).message)) throw e;
+    if (call.from.signer instanceof ethers.BaseWallet) {
+      const signed = await call.from.signer.signTransaction({ ...tx, chainId: (await this.provider.getNetwork()).chainId });
+      const hash = ethers.keccak256(signed);
+      hooks.onHash(hash, nonce);
+      try {
+        await this.provider.broadcastTransaction(signed);
+      } catch (e) {
+        // 錯誤訊息不可信（「already known」也可能是別筆）：只看節點知不知道這一筆。知道就照常等收據。
+        const known = await this.provider.getTransaction(hash).catch(() => null);
+        if (!known) {
+          lane.nonce = null; // 下一筆向節點重讀
+          throw new NotBroadcastError((e as Error).message);
         }
-        return hash;
       }
-      // anvil fork 演練裡假冒的部署者：沒有私鑰，交給節點簽（eth_sendTransaction）。
-      const response = await call.from.signer.sendTransaction(tx);
       lane.nonce = nonce + 1;
-      hooks.onHash(response.hash, nonce);
-      return response.hash;
-    } catch (e) {
-      if (NONCE_ERROR.test((e as Error).message)) lane.nonce = null; // 下一筆重讀
-      throw e;
+      return hash;
     }
+    // anvil fork 演練裡假冒的部署者：沒有私鑰，交給節點簽（eth_sendTransaction）。
+    let response: ethers.TransactionResponse;
+    try {
+      response = await call.from.signer.sendTransaction(tx);
+    } catch (e) {
+      if (NONCE_ERROR.test((e as Error).message)) lane.nonce = null;
+      throw new NotBroadcastError((e as Error).message);
+    }
+    lane.nonce = nonce + 1;
+    hooks.onHash(response.hash, nonce);
+    return response.hash;
   }
 }
+
+/**
+ * 節點拒收這一筆（餘額不足、nonce 衝突…），什麼都沒送出去。不是 revert：重送可能就成功，所以停下整趟回放，
+ * 讓擁有者處理（例如補部署者的 ETH）後續跑；進度裡這個動作要當作沒送過。
+ */
+export class NotBroadcastError extends Error {
+  readonly fatal = true;
+  readonly forget = true;
+}
+
+/** 送出了但等不到收據：停下整趟回放，進度裡保留「已送出」，續跑時問節點。 */
+export class InFlightError extends Error {
+  readonly fatal = true;
+  readonly forget = false;
+}
+
+export const isFatal = (e: unknown): e is NotBroadcastError | InFlightError => (e as { fatal?: boolean })?.fatal === true;
 
 /** 本機依序、公開鏈平行（上限 limit 個同時進行）。順序不變：本機模式的交易順序與改版前相同。 */
 export async function forEach<T>(parallel: boolean, items: readonly T[], fn: (item: T, i: number) => Promise<void>, limit = 32): Promise<void> {
