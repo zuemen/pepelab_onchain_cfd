@@ -14,3 +14,14 @@ export const localProvider = (rpc: string): ethers.JsonRpcProvider =>
   new ethers.JsonRpcProvider(rpc, LOCAL, {
     staticNetwork: LOCAL, batchMaxCount: 1, cacheTimeout: -1, pollingInterval: 100,
   });
+
+export const BASE_SEPOLIA = ethers.Network.from(84532);
+
+/**
+ * 公開鏈回放（#344）用。網路固定（不每次問 chainId），不快取（同上）。
+ * 批次保留預設：同一天裡幾十個帳號同時輪詢收據，併成一個 HTTP 請求。
+ */
+export const publicProvider = (rpc: string): ethers.JsonRpcProvider =>
+  new ethers.JsonRpcProvider(rpc, BASE_SEPOLIA, {
+    staticNetwork: BASE_SEPOLIA, cacheTimeout: -1, pollingInterval: 2000,
+  });

@@ -1,10 +1,12 @@
 """整條管線的對帳：回放的結果（events.json）和算出來的績效資料必須對得上。
-  python check_pipeline.py [events.json] [schedule.json]
+  python check_pipeline.py [events.json] [schedule.json] [--data <dir>]
 預設 out/events.json 與 out/schedule.json；小規模回放要傳 tests/fixtures/schedule_smoke.json。
+績效資料預設讀 frontend/public/data/heroes/<events.json 的 chainId>/；--data 指定別的目錄（fork 演練）。
 任何一項不符就以非零結束。
 """
 from __future__ import annotations
 
+import argparse
 import json
 import sys
 from pathlib import Path
@@ -19,17 +21,32 @@ EQUITY_TOLERANCE = 0.02
 
 
 def main() -> int:
-    events_path = Path(sys.argv[1]) if len(sys.argv) > 1 else HERE / "out" / "events.json"
-    schedule_path = Path(sys.argv[2]) if len(sys.argv) > 2 else HERE / "out" / "schedule.json"
-    doc = json.loads(events_path.read_text())
+    parser = argparse.ArgumentParser()
+    parser.add_argument("events", nargs="?", default=str(HERE / "out" / "events.json"))
+    parser.add_argument("schedule", nargs="?", default=str(HERE / "out" / "schedule.json"))
+    parser.add_argument("--data", default=None)
+    args = parser.parse_args()
+    schedule_path = Path(args.schedule)
+    doc = json.loads(Path(args.events).read_text())
     schedule = json.loads(schedule_path.read_text())
-    index = json.loads((DATA / "index.json").read_text())
+    data = Path(args.data) if args.data else DATA / str(doc["chainId"])
+    index = json.loads((data / "index.json").read_text())
     problems: list[str] = []
 
     if doc["stats"]["failed"] != 0:
         problems.append(f"{doc['stats']['failed']} of {doc['stats']['sent']} transactions failed: {doc['stats']['failures'][:3]}")
     if (index["chainId"], index["range"]) != (doc["chainId"], doc["range"]):
         problems.append("index.json is from a different replay (chainId or range differs)")
+    if index.get("timeCompressed") != bool(doc.get("timeCompressed")):
+        problems.append("index.json and events.json disagree on timeCompressed")
+    # 時間壓縮：每個模擬日都要有區塊範圍，而且依序、不重疊（分析靠它還原日期）
+    if doc.get("timeCompressed"):
+        days = doc.get("days", [])
+        if [d["date"] for d in days] != [d["date"] for d in schedule["days"]]:
+            problems.append(f"events.json records block ranges for {len(days)} days, the schedule has {len(schedule['days'])}")
+        for prev, cur in zip(days, days[1:]):
+            if cur["fromBlock"] <= prev["toBlock"]:
+                problems.append(f"block ranges overlap: {prev['date']} ends at {prev['toBlock']}, {cur['date']} starts at {cur['fromBlock']}")
     if (schedule["start"], schedule["end"]) != (doc["range"]["from"], doc["range"]["to"]):
         problems.append(f"{schedule_path.name} covers {schedule['start']}..{schedule['end']}, not this replay's range")
     # 回放跳過的動作（例如交易者質押不足、不能發布或被跟隨）會讓鏈上與排程不一致，一律攤出來
@@ -44,7 +61,7 @@ def main() -> int:
     summaries = {t["address"].lower(): t for t in index["traders"]}
     for trader in doc["traders"]:
         address = trader["address"].lower()
-        detail = json.loads((DATA / f"{address}.json").read_text())
+        detail = json.loads((data / f"{address}.json").read_text())
         closes_on_chain = sum(1 for e in doc["events"]
                               if e["name"] == "PositionClosed" and e["args"]["owner"].lower() == address)
         if summaries[address]["closedTrades"] != closes_on_chain:

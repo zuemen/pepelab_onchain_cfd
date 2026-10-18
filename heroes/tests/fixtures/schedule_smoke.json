@@ -577,13 +577,13 @@
        "leverage": 5
       },
       {
-       "asset": "sETH",
+       "asset": "sBOND",
        "weightBps": 3300,
        "isLong": true,
        "leverage": 5
       },
       {
-       "asset": "sICLN",
+       "asset": "sETH",
        "weightBps": 3300,
        "isLong": true,
        "leverage": 5
@@ -672,19 +672,19 @@
      "date": "2024-10-01",
      "legs": [
       {
-       "asset": "sBOND",
+       "asset": "sAAPL",
        "weightBps": 3400,
        "isLong": true,
        "leverage": 2
       },
       {
-       "asset": "sESGU",
+       "asset": "sBOND",
        "weightBps": 3300,
        "isLong": true,
        "leverage": 2
       },
       {
-       "asset": "sICLN",
+       "asset": "sETH",
        "weightBps": 3300,
        "isLong": true,
        "leverage": 2
@@ -692,7 +692,7 @@
      ]
     },
     {
-     "date": "2024-10-09",
+     "date": "2024-10-02",
      "legs": [
       {
        "asset": "sAAPL",
@@ -701,7 +701,7 @@
        "leverage": 2
       },
       {
-       "asset": "sESGU",
+       "asset": "sBOND",
        "weightBps": 3300,
        "isLong": true,
        "leverage": 2
@@ -715,7 +715,7 @@
      ]
     },
     {
-     "date": "2024-10-16",
+     "date": "2024-10-09",
      "legs": [
       {
        "asset": "sAAPL",
@@ -747,7 +747,7 @@
        "leverage": 2
       },
       {
-       "asset": "sESGU",
+       "asset": "sBOND",
        "weightBps": 3300,
        "isLong": true,
        "leverage": 2
@@ -764,7 +764,7 @@
      "date": "2024-10-30",
      "legs": [
       {
-       "asset": "sESGU",
+       "asset": "sAAPL",
        "weightBps": 3400,
        "isLong": true,
        "leverage": 2
