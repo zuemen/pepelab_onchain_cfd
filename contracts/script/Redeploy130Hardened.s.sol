@@ -10,6 +10,7 @@ import "../src/AgentSessionManager.sol";
 import "../src/TraderStake.sol";
 import "../src/FeeRouter.sol";
 import "../src/CarbonTiers.sol";
+import "../src/MockOracle.sol";
 import "./Verify130.s.sol";
 
 interface ISettableExchange130 {
@@ -50,6 +51,18 @@ interface IEsgRegistryV2Tier130 {
 ///         orphaning the first (no funds at risk, only gas and confusion) —
 ///         always resume instead.
 ///
+///         ORACLE_KIND (docs/DEPLOY_130_CUTOVER.md §4):
+///           mock     [default] the shared MockOracle 0xeD90… (keeper-owned)
+///           guarded  the GuardedOracle 0x8E9e…
+///           fresh    a NEW MockOracle deployed by this run (step 0), owned by
+///                    the broadcaster and seeded with the shared MockOracle's
+///                    current 11 prices. #344: the time-compressed replay
+///                    writes 2024 prices into the exchange's oracle for hours;
+///                    on the shared one every other reader (the live site, the
+///                    V1 vault demos) would see prices jump. Transfer its
+///                    ownership to the keeper after the replay. Resume needs
+///                    RESUME_ORACLE (the exchange holds the oracle immutable).
+///
 ///         Fork simulation (no key, nothing sent):
 ///           GUARDIAN=0x… forge script script/Redeploy130Hardened.s.sol:Redeploy130Hardened \
 ///             --fork-url https://sepolia.base.org --sender 0x27C21324D101e867E0634bf2ebe3F9Dcf3ACA585 -vv
@@ -73,6 +86,7 @@ contract Redeploy130Hardened is Cutover130Base {
         address marketOperator;
         address oracle;
         string  oracleKind;
+        bool    freshOracle;   // ORACLE_KIND=fresh: deploy (or resume) a dedicated MockOracle
         uint256 maxProfitBps;
         uint256 oiCapNonRwa;   // 18-dec, whole USDC
         uint256 oiCapRwa;      // 18-dec, whole USDC
@@ -93,8 +107,15 @@ contract Redeploy130Hardened is Cutover130Base {
     Deployed130 internal _resumeOverride;
     bool internal _hasResumeOverride;
     function setResumeOverride(Deployed130 calldata r) external { _resumeOverride = r; _hasResumeOverride = true; }
+    /// @dev ORACLE_KIND / RESUME_ORACLE without process-wide env (parallel tests).
+    string internal _oracleKindOverride;
+    function setOracleKindOverride(string calldata kind) external { _oracleKindOverride = kind; }
+    address internal _resumeOracleOverride;
+    function setResumeOracleOverride(address o) external { _resumeOracleOverride = o; }
 
     Deployed130 public lastDeployed;
+    /// @notice The oracle the new exchange reads (the fresh one under ORACLE_KIND=fresh).
+    address public lastOracle;
 
     function run() external {
         address deployer = broadcasterOverride != address(0) ? broadcasterOverride : msg.sender;
@@ -107,6 +128,7 @@ contract Redeploy130Hardened is Cutover130Base {
         }
         (Deployed130 memory d, bool complete) = _execute(deployer, c, r);
         lastDeployed = d;
+        lastOracle = c.oracle;
         _printAddresses(d, c);
         if (!complete) {
             console.log("!!! HALTED after step", haltAfterStep, "(simulated interruption) - resume with RESUME_*.");
@@ -142,11 +164,18 @@ contract Redeploy130Hardened is Cutover130Base {
         require(c.guardian != deployer || vm.envOr("ALLOW_GUARDIAN_IS_OWNER", false),
             "GUARDIAN must differ from the owner key (ALLOW_GUARDIAN_IS_OWNER=true only for single-key rehearsals)");
 
-        c.oracleKind = vm.envOr("ORACLE_KIND", string("mock"));
+        c.oracleKind = bytes(_oracleKindOverride).length != 0 ? _oracleKindOverride : vm.envOr("ORACLE_KIND", string("mock"));
         bytes32 k = keccak256(bytes(c.oracleKind));
         if (k == keccak256("mock")) c.oracle = MOCK_ORACLE;
         else if (k == keccak256("guarded")) c.oracle = GUARDED_ORACLE;
-        else revert("ORACLE_KIND must be 'mock' or 'guarded'");
+        else if (k == keccak256("fresh")) {
+            c.freshOracle = true;
+            // 0 = deploy one in step 0; otherwise the one a broken run already deployed.
+            c.oracle = _resumeOracleOverride != address(0) ? _resumeOracleOverride : vm.envOr("RESUME_ORACLE", address(0));
+            require(c.oracle != MOCK_ORACLE && c.oracle != GUARDED_ORACLE,
+                "RESUME_ORACLE is a shared oracle - ORACLE_KIND=fresh means a dedicated one");
+        }
+        else revert("ORACLE_KIND must be 'mock', 'guarded' or 'fresh'");
 
         c.maxProfitBps = vm.envOr("MAX_PROFIT_BPS", DEFAULT_MAX_PROFIT_BPS);
         require(c.maxProfitBps >= 10_000 && c.maxProfitBps <= 250_000,
@@ -262,10 +291,23 @@ contract Redeploy130Hardened is Cutover130Base {
         }
         console.log("ok   ESGRegistryV2 schema + seed");
 
-        // 4. Oracle quotes all 11 assets fresh.
+        // 4. Oracle quotes all 11 assets fresh. ORACLE_KIND=fresh: a new oracle
+        //    is seeded from the shared MockOracle, so that one must be fresh; a
+        //    resumed fresh oracle must be the broadcaster's.
+        if (c.freshOracle) {
+            if (resume) require(c.oracle != address(0), "RESUME_EXCHANGE with ORACLE_KIND=fresh needs RESUME_ORACLE (the exchange holds it immutable)");
+            if (c.oracle != address(0)) {
+                require(c.oracle.code.length > 0, "RESUME_ORACLE has no code");
+                require(MockOracle(c.oracle).owner() == deployer, "RESUME_ORACLE not owned by broadcaster");
+            }
+        }
         string[11] memory syms = _syms();
         for (uint256 i = 0; i < N_ASSETS; i++) {
-            try IOracle(c.oracle).getPrice(keccak256(bytes(syms[i]))) returns (uint256 p, uint256 at) {
+            // An asset a resumed fresh oracle does not quote yet (step 0 died midway)
+            // is seeded in step 0 from the shared MockOracle: check that one instead.
+            address quoteSource = c.oracle;
+            if (c.freshOracle && (c.oracle == address(0) || !_quotes(c.oracle, syms[i]))) quoteSource = MOCK_ORACLE;
+            try IOracle(quoteSource).getPrice(keccak256(bytes(syms[i]))) returns (uint256 p, uint256 at) {
                 require(p > 0, string.concat("oracle: zero price for ", syms[i]));
                 require(block.timestamp <= at + MAX_PRICE_AGE,
                     string.concat("oracle: stale price for ", syms[i], " - dispatch the keeper first"));
@@ -273,7 +315,8 @@ contract Redeploy130Hardened is Cutover130Base {
                 revert(string.concat("oracle refused to quote ", syms[i], " (GuardedOracle stale/frozen?)"));
             }
         }
-        console.log("ok   oracle quotes all 11 assets:", c.oracleKind, c.oracle);
+        if (c.freshOracle && c.oracle == address(0)) console.log("ok   seed source quotes all 11 assets (fresh oracle deployed in step 0):", MOCK_ORACLE);
+        else console.log("ok   oracle quotes all 11 assets:", c.oracleKind, c.oracle);
 
         console.log("guardian         :", c.guardian);
         console.log("marketOperator   :", c.marketOperator);
@@ -304,6 +347,14 @@ contract Redeploy130Hardened is Cutover130Base {
         if (r.traderStake != address(0)) return r.traderStake;
         if (c.deployNewTraderStake) return address(0);
         return c.traderStake;
+    }
+
+    function _quotes(address oracle, string memory sym) internal view returns (bool) {
+        try IOracle(oracle).getPrice(keccak256(bytes(sym))) returns (uint256 p, uint256) {
+            return p > 0;
+        } catch {
+            return false;
+        }
     }
 
     function _survey() internal view returns (uint256 openCount, uint256 openMargin) {
@@ -340,6 +391,18 @@ contract Redeploy130Hardened is Cutover130Base {
         uint256 oldVaultShare = old.vaultFeeShareBps();
 
         vm.startBroadcast(deployer);
+
+        // ── 0. ORACLE_KIND=fresh: a dedicated MockOracle at today's prices ──
+        if (c.freshOracle) {
+            if (c.oracle == address(0)) c.oracle = address(new MockOracle());
+            string[11] memory seedSyms = _syms();
+            for (uint256 i = 0; i < N_ASSETS; i++) {
+                if (_quotes(c.oracle, seedSyms[i])) continue;
+                bytes32 id = keccak256(bytes(seedSyms[i]));
+                (uint256 p,) = IOracle(MOCK_ORACLE).getPrice(id);
+                MockOracle(c.oracle).addAsset(id, p);
+            }
+        }
 
         // ── 1. Exchange ────────────────────────────────────────────────────
         PerpetualExchange ex;
@@ -456,6 +519,7 @@ contract Redeploy130Hardened is Cutover130Base {
         console.log("SESSION_MANAGER_NEW   =", d.sessionManager);
         console.log("TRADER_STAKE          =", d.traderStake);
         console.log("oracle                =", c.oracleKind, c.oracle);
+        if (c.freshOracle) console.log("ORACLE_NEW            =", c.oracle);
         console.log("OI_CAP_NON_RWA_USDC   =", c.oiCapNonRwa / 1e18);
         console.log("OI_CAP_RWA_USDC       =", c.oiCapRwa / 1e18);
     }

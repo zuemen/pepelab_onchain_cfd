@@ -9,6 +9,7 @@ import "../src/StrategyRegistry.sol";
 import "../src/AgentSessionManager.sol";
 import "../src/TraderStake.sol";
 import "../src/FeeRouter.sol";
+import "../src/MockOracle.sol";
 
 interface IInsVault130 {
     function exchange() external view returns (address);
@@ -200,7 +201,12 @@ abstract contract Cutover130Base is Script {
 ///         Optional (defaults in brackets):
 ///           EXPECTED_OWNER   [0x27C2…A585]  — the timelock after HandoverToTimelock
 ///           MARKET_OPERATOR  [keeper 0x540a…ef17]
-///           ORACLE_KIND      [mock]         — "guarded" if the cutover used GuardedOracle
+///           ORACLE_KIND      [mock]         — "guarded" if the cutover used GuardedOracle,
+///                                           "fresh" for a dedicated MockOracle (#344):
+///                                           then ORACLE_NEW (the address the broadcast
+///                                           printed) is required, and ORACLE_OWNER
+///                                           [0x27C2…A585; the keeper after the replay
+///                                           handed it over] is checked
 ///           MAX_PROFIT_BPS   [50000]
 ///           OI_CAP_NON_RWA_USDC / OI_CAP_RWA_USDC [0 = assert non-zero only]
 ///           TRADER_STAKE     [0x01aE…28Fe]
@@ -214,11 +220,17 @@ contract Verify130 is Cutover130Base {
             traderStake:      vm.envOr("TRADER_STAKE", TRADER_STK)
         });
         string memory kind = vm.envOr("ORACLE_KIND", string("mock"));
+        bytes32 k = keccak256(bytes(kind));
+        address oracle;
+        if (k == keccak256("mock")) oracle = MOCK_ORACLE;
+        else if (k == keccak256("guarded")) oracle = GUARDED_ORACLE;
+        else if (k == keccak256("fresh")) oracle = _verifyFreshOracle(vm.envAddress("ORACLE_NEW"), vm.envOr("ORACLE_OWNER", DEPLOYER_OWNER));
+        else revert("ORACLE_KIND must be 'mock', 'guarded' or 'fresh'");
         Expect130 memory e = Expect130({
             owner:          vm.envOr("EXPECTED_OWNER", DEPLOYER_OWNER),
             guardian:       vm.envAddress("GUARDIAN"),
             marketOperator: vm.envOr("MARKET_OPERATOR", KEEPER),
-            oracle:         keccak256(bytes(kind)) == keccak256("guarded") ? GUARDED_ORACLE : MOCK_ORACLE,
+            oracle:         oracle,
             maxProfitBps:   vm.envOr("MAX_PROFIT_BPS", DEFAULT_MAX_PROFIT_BPS),
             oiCapNonRwa:    vm.envOr("OI_CAP_NON_RWA_USDC", uint256(0)) * 1e18,
             oiCapRwa:       vm.envOr("OI_CAP_RWA_USDC", uint256(0)) * 1e18
@@ -226,5 +238,15 @@ contract Verify130 is Cutover130Base {
         _verify130(d, e);
         console.log("");
         console.log("=== #130 wiring verified. Frontend/agent/workflow rewiring (runbook sec.7) still required. ===");
+    }
+
+    /// @dev ORACLE_KIND=fresh: the dedicated MockOracle is neither shared oracle,
+    ///      is a MockOracle (owner()), and is held by the expected key.
+    function _verifyFreshOracle(address oracle, address owner) internal view returns (address) {
+        console.log("--- dedicated MockOracle (ORACLE_KIND=fresh) ---");
+        _check(oracle != MOCK_ORACLE && oracle != GUARDED_ORACLE, "ORACLE_NEW is not a shared oracle");
+        _check(oracle.code.length > 0, "ORACLE_NEW has code");
+        _eq("freshOracle.owner", MockOracle(oracle).owner(), owner);
+        return oracle;
     }
 }
