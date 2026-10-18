@@ -1,7 +1,7 @@
 ---
-status: proposed（原始碼、測試與部署腳本已在 PR；未部署）
+status: accepted（本機展示鏈已接上；Base Sepolia 由 #344 的 cutover 部署，見「2026-10-16 更新」）
 date: 2026-10-10
-issue: "#105（#93 的可犧牲項）"
+issue: "#105（#93 的可犧牲項）、#333"
 ---
 
 # 碳權退役：平台收款人換成分流合約，FeeRouter 一行不改；被銷毀的碳權是模擬的，而且這件事寫在鏈上、README 與畫面上
@@ -98,6 +98,30 @@ issue: "#105（#93 的可犧牲項）"
 - **前端**：位址不進 `addresses.ts`。`frontend/src/contracts/carbonRetirement.ts` 讀 `VITE_CARBON_RETIREMENT`
   或 per-chain 表（目前為空）；沒有位址時 ESG 頁的退役區塊**整塊不渲染**，不出現「尚未部署」字樣
   （`frontend/CONTEXT.md` 的 The Vault 詞條）。
+
+## 2026-10-16 更新（#333）：接上平台的跟單手續費
+
+#333 把這組合約接到**平台**的 FeeRouter（不再只是 x402 收入 router 的選項），讓「跟單 → 退役」在畫面上看得見。
+合約原始碼與 `FeeRouter` 一個 byte 都沒改；變的是部署路徑、觸發者與前端。
+
+- **錢從哪裡來**：經過平台 FeeRouter 的收入是跟單費（跟單金額的 0.3%）與跟單部位獲利的績效費；交易手續費不經過它。
+  退役用的是平台 20% 份額的四分之一（`carbonShareBps` = 2,500），不向使用者多收。
+- **本機展示鏈**：`DeployLocalDemo.s.sol` 先部署模擬碳權、退役合約與分流合約，再以分流合約為平台收款人部署
+  FeeRouter，最後 `bindFeeRouter`（`DeployLocalDemo.t.sol` 驗證跟單 → 分配 → 退役與「treasury 沒有繞過的路徑」）。
+- **Base Sepolia**：第 5 步第 4 項 `RedeployInsuranceStack.s.sol` 加上 `CARBON_SPLITTER`：新平台 FeeRouter 的收款人是分流合約，
+  同一次 broadcast 內綁定；`TREASURY` 仍代表「平台收入最後到誰」，必須等於分流合約的 `treasury()`（owner `0x27C2…A585`，
+  不是外洩地址）。分流合約由 `DeployCarbonRetirement.s.sol`（`CARBON_DEPLOY_ROUTER=false`）以同一把 owner 金鑰先部署。
+  `test/fork/CarbonCutoverFork.t.sol` 在 Base Sepolia fork 上跑完 #130 cutover → 碳權堆疊 → 新 FeeRouter → 跟單 → 分配 → 退役；
+  `scripts/cutover-rehearsal.mjs` 的 8.0／8c 在 anvil fork 上以真交易演練同一段。
+- **誰觸發**：一份實作 `agent/keeper/carbon.ts`，三個呼叫端——回放每個模擬月份的最後一天一次（`agent/heroes/replay.ts`）、
+  本機展示時隨價格寫入（`agent/heroes/priceTick.ts`）、Base Sepolia keeper 每次執行順帶（`keeper/run.ts`，失敗只出 warning、
+  不影響喂價）。keeper 從 `EXCHANGE → feeRouter() → platformTreasury()` 找到分流合約，不需要新的設定：cutover 前現行
+  router 付給 EOA，什麼都不做；cutover 後自動開始。
+- **對帳**：回放匯出 `CarbonRetired` 事件與鏈上的 `totalRetiredTonnes()`，`heroes/check_pipeline.py` 要求兩者相等。
+- **前端的位址來源多一條**：`VITE_CARBON_RETIREMENT` → per-chain 表 → 從這條鏈的 FeeRouter 找到的分流合約所指的退役合約
+  （`useCarbonRouting`）。所以 cutover 換上新 FeeRouter 之後不必再改前端；平台收款人不是分流合約時，退役區塊照舊整塊不顯示。
+- **受益人規則**：同一噸只能被一方宣稱。畫面寫「促成平台退役 X 噸」，不寫「你抵銷了 X 噸」，也不寫「碳中和」
+  （比照真實碳權市場的受益人規則與歐盟指令 2024/825）。`frontend/src/locales/carbonWording.test.ts` 釘住退役相關字串。
 
 ## 需要人做的事
 

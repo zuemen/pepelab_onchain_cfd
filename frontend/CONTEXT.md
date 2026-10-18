@@ -157,6 +157,14 @@ _Avoid_: variance, error, spread, confidence
 The token `CarbonRetirement` buys and burns with a fixed share of platform fees ([ADR-022](../docs/ADR-022-carbon-retirement-splitter.md), root `docs/`). Minted by this project on a testnet, issued by no registry, standing for no real reduction or removal — burning it offsets nothing, and the purchase price goes to a project-controlled seller. The fee routing and the irreversible burn are real; the credit is not. Every screen that shows a retirement says 模擬碳權 next to it, in a disclosure that cannot be collapsed and does not depend on any chain read: hiding it would turn the one real-world-impact claim on the platform into a false one.
 _Avoid_: carbon offset, offsetting, carbon neutral, any wording that lets a retired tonne read as a real one
 
+**Carbon Tier Mix (碳分級組成)**:
+How much of a set of holdings sits in each Carbon Tier — low, mid, high, unrated, or unknown — weighted by strategy weight (a trader) or market value (a portfolio). It replaces "carbon footprint": intensities of different Carbon Bases carry different units and cannot be summed into one tonnage. An asset whose tier could not be read is *unknown*, never low; *unrated* is an on-chain fact (no fresh Attestation), *unknown* is a failed read.
+_Avoid_: carbon footprint, total emissions, a tonnage figure
+
+**SDG label (not used)**:
+The platform does not tag assets with UN Sustainable Development Goals. Checked against primary sources in October 2026 (`docs/data/sdg-sources.md`), only three of the eleven assets carry SDGs their issuer itself discloses; tagging the rest would be the platform's own sustainability claim about someone else's asset — the kind of claim this platform declines everywhere else (see Simulated Carbon Credit). Sustainability shows up where it can be verified instead: the Carbon Tier Mix and on-chain retirements.
+_Avoid_: SDG-aligned, SDG score, SDG distribution, filtering traders by SDG
+
 ### Allocation and sharing
 
 Allocation/Adopt is a Simple Mode concept and names a genuinely unleveraged product — buying the same spot token mix a publisher holds, snapshot-style, via `AssetVaultV2_4.mint`. It is a different product from the leveraged CFD position-copying `CopyTracker` already implements; [ADR 0007](../docs/ADR-007-allocation-adoption-is-a-new-unleveraged-product.md) (root `docs/`) is why the two are kept apart rather than merged under one name — reusing CopyTracker's leverage under Allocation's spot-sounding language would let a Simple Mode user take on leverage risk in a screen that is barred from ever saying "leverage" or "liquidation." CopyTracker's existing mechanism lives in Expert Mode only, under its own honest trading-desk words (Trader, Copy, Follow, Position) — Expert Mode isn't bound by this section's `_Avoid_` lists.
