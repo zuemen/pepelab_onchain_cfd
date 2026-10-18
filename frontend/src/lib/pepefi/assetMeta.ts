@@ -41,7 +41,7 @@ export interface AssetCarbon {
    * 碳強度是怎麼得到的:
    *  - `revenue`      營收基準,可直接餵 `tierOf`
    *  - `absolute`     絕對年排放量 + 產業基準(黃金、加密)——不能跨資產類別正規化
-   *  - `qualitative`  依類別組成判定,沒有計算出來的數字(sICLN、待替換的 sBOND)
+   *  - `qualitative`  依類別組成判定,沒有計算出來的數字(sBOND)
    */
   basis: 'revenue' | 'absolute' | 'qualitative'
   /** 對齊 carbon.ts 的 Tier;`revenue` 基準的資產,這個值必須等於 `tierOf(intensity, true)`。 */
@@ -49,6 +49,19 @@ export interface AssetCarbon {
   /** 見證觀測日,ISO `YYYY-MM-DD`;沒有可稽核來源時為 `'—'`(視同過期 → 未評等)。 */
   observed: string
   /** 出處網址——使用者自己去查證那個數字的地方,不是「相信平台」。 */
+  sourceUrl: string
+}
+
+/**
+ * 發行方自己公布的轉型資訊(追蹤指數、產業組成、隱含升溫、SDG)的出處。文字在
+ * catalog 的 `tokens.provenance.transition.assets`。這是轉述,不是平台的評分,
+ * 也不進定價——費率與槓桿只讀碳分級(ADR-003)。碳分級量的是成分公司自己的營運
+ * 排放,這裡講的是它在做什麼;兩件事並排顯示,不合成一個分數
+ * (docs/data/carbon-tier-etf-waci.md)。沒有發行方揭露的資產不帶這個欄位。
+ */
+export interface AssetTransition {
+  /** 讀取發行方資料的日期,ISO `YYYY-MM-DD`。 */
+  observed:  string
   sourceUrl: string
 }
 
@@ -61,6 +74,7 @@ export interface AssetMeta {
   /** issue #100 ①。ASSET_IDS 裡的每一顆都有;PEPE(工具代幣,非追蹤標的)沒有。 */
   provenance?: AssetProvenance
   carbon?:     AssetCarbon
+  transition?: AssetTransition
 }
 
 export const CATEGORY_LABEL: Record<AssetCategory, string> = {
@@ -72,7 +86,8 @@ export const CATEGORY_LABEL: Record<AssetCategory, string> = {
 }
 
 // 碳強度數字、門檻與出處全部對齊 docs/data/carbon-intensity.md（issue #94 的
-// 蒐集產出，2026-09-02 擷取）。營收基準的資產（equity / 部分 ETF）的 `tier`
+// 蒐集產出，2026-09-02 擷取；sICLN、sESGU 於 2026-10-16 改用 iShares 自己公布的
+// MSCI 持股加權碳強度）。營收基準的資產（equity / 兩檔股票 ETF）的 `tier`
 // 必須等於 carbon.ts `tierOf(intensity, true)`——assetMeta.test.ts 釘住這件事。
 // 非營收基準（黃金、加密）用絕對年排放量 + 產業基準判級，不套 tierOf。
 //
@@ -190,13 +205,18 @@ export const ASSET_META: Record<string, AssetMeta> = {
       // #106：從追蹤美國公債（無可稽核發行方碳強度來源）換成綠色債券 ETF。
       // 碳資料表的工作預設值是「依資產類別基準的定性判斷」——投資等級綠色債券
       // 基金依 Green Bond Principles 的准入標準，在碳排意圖上結構性地低於未篩選
-      // 的債券指數（比照 sICLN 的處理）。逐檔避免排放量的真數字要靠 BGRN Impact
-      // Report，須真人下載，見 docs/data/carbon-intensity.md。
+      // 的債券指數。發行方頁面上的 MSCI 持股加權碳強度是 708.64,但它量的是發行人
+      // 整體的營運排放;綠債資金專款用在指名的專案上,所以不採用這個數字——理由在
+      // catalog 的 carbonCaveat 寫明,見 docs/data/carbon-tier-etf-waci.md。
       intensity: null,
       basis:     'qualitative',
       tier:      'low',
       observed:  '2026-09-02',
       sourceUrl: 'https://www.ishares.com/us/literature/fact-sheet/bgrn-ishares-usd-green-bond-etf-fund-fact-sheet-en-us.pdf',
+    },
+    transition: {
+      observed:  '2026-10-16',
+      sourceUrl: 'https://www.ishares.com/us/literature/presentation/bgrn-impact-report.pdf',
     },
   },
   [ASSET_IDS.sNVDA]: {
@@ -268,11 +288,18 @@ export const ASSET_META: Record<string, AssetMeta> = {
       priceSymbol: 'ICLN',
     },
     carbon: {
-      intensity: null,
-      basis:     'qualitative',
-      tier:      'low',
-      observed:  '2026-09-02',
-      sourceUrl: 'https://www.ishares.com/us/literature/fact-sheet/icln-ishares-global-clean-energy-etf-fund-fact-sheet-en-us.pdf',
+      // iShares 產品頁的 MSCI 持股加權碳強度(2026-09-18,涵蓋 92.81%)。原本依產業組成
+      // 質性判為低碳,理由「每營收排放結構性偏低」被這個數字推翻——約 45% 持股是發電業。
+      // 見 docs/data/carbon-tier-etf-waci.md。
+      intensity: 241.74,
+      basis:     'revenue',
+      tier:      'high',
+      observed:  '2026-10-16',
+      sourceUrl: 'https://www.ishares.com/us/products/239738/ishares-global-clean-energy-etf',
+    },
+    transition: {
+      observed:  '2026-10-16',
+      sourceUrl: 'https://www.ishares.com/us/products/239738/ishares-global-clean-energy-etf',
     },
   },
   [ASSET_IDS.sESGU]: {
@@ -287,11 +314,17 @@ export const ASSET_META: Record<string, AssetMeta> = {
       priceSymbol: 'ESGU',
     },
     carbon: {
-      intensity: 4.34,
+      // iShares 產品頁的 MSCI 持股加權碳強度(2026-09-18,涵蓋 99.73%),取代先前只涵蓋
+      // 約 24% 持股(而且剛好是碳強度最低的科技股)的 4.34。
+      intensity: 71.05,
       basis:     'revenue',
-      tier:      'mid',
-      observed:  '2026-09-02',
-      sourceUrl: 'https://www.ishares.com/us/literature/fact-sheet/esgu-ishares-esg-aware-msci-usa-etf-fund-fact-sheet-en-us.pdf',
+      tier:      'high',
+      observed:  '2026-10-16',
+      sourceUrl: 'https://www.ishares.com/us/products/286007/ishares-esg-aware-msci-usa-etf',
+    },
+    transition: {
+      observed:  '2026-10-16',
+      sourceUrl: 'https://www.ishares.com/us/products/286007/ishares-esg-aware-msci-usa-etf',
     },
   },
 }

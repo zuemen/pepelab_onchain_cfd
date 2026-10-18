@@ -215,7 +215,7 @@ export const tokens: Catalog['tokens'] = {
           'iShares USD Green Bond ETF (BGRN), listed on NASDAQ — investment-grade green bonds screened against the Green Bond Principles.',
         carbonSource: 'iShares BGRN fact sheet + holdings disclosure',
         carbonCaveat:
-          "Placed Low qualitatively — an investment-grade green bond fund is, by the Green Bond Principles' eligibility criteria, structurally lower-carbon-intent than an unscreened bond index (same treatment as sICLN). The real per-holding avoided-emissions figure needs the BGRN Impact Report; the issuer's hosts return 403 to automated fetch, so it awaits a human download (see the carbon data table).",
+          "Placed Low qualitatively — under the Green Bond Principles' eligibility criteria, an investment-grade green bond's proceeds are ring-fenced for a named green project. iShares' product page shows an MSCI weighted average carbon intensity of 708.64 tCO2e / $M revenue (2026-09-18), but that measures each issuer's whole operations (the utility or bank that issued the bond), not the project the bond funds, so it is not used. Project-level avoided emissions are in the BGRN annual impact report and have not been transcribed line by line.",
       },
       sNVDA: {
         underlying: 'NVIDIA Corporation common stock, listed on NASDAQ.',
@@ -236,17 +236,38 @@ export const tokens: Catalog['tokens'] = {
       },
       sICLN: {
         underlying:
-          'iShares Global Clean Energy ETF, holding renewable-power generation and equipment companies worldwide.',
-        carbonSource: 'iShares ICLN fact sheet + holdings (stockanalysis.com)',
+          'iShares Global Clean Energy ETF, holding clean-energy companies worldwide: renewable generation, electric utilities, electrical equipment and semiconductors.',
+        carbonSource: 'iShares ICLN product page (MSCI ESG Fund Ratings, 2026-09-18)',
         carbonCaveat:
-          'Placed Low by the sector composition of its top-10 holdings, not a per-constituent carbon computation.',
+          "MSCI weighted average carbon intensity over 92.81% of holdings. It measures the constituents' own operating emissions (Scope 1+2), not the emissions they help others avoid; about 45% of the fund is power generation, which emits a lot per dollar of revenue even when much of it is renewable. Computed by MSCI, a different source from the company-reported figures on the single-stock rows.",
       },
       sESGU: {
         underlying:
-          'iShares ESG Aware MSCI USA ETF, an ESG-screened large-cap US portfolio.',
-        carbonSource: 'iShares ESGU fact sheet + holdings (stockanalysis.com)',
+          'iShares ESG Aware MSCI USA ETF, a US large- and mid-cap portfolio tilted toward stronger ESG characteristics.',
+        carbonSource: 'iShares ESGU product page (MSCI ESG Fund Ratings, 2026-09-18)',
         carbonCaveat:
-          'A weighted partial estimate over only ≈24% of holdings; the remaining ≈76% is not reflected and could shift this figure materially.',
+          'MSCI weighted average carbon intensity over 99.73% of holdings. It replaces the earlier 4.34 estimate, which covered only ≈24% of holdings — and those were the large tech names, the least carbon-intensive in the fund. Measures operating emissions (Scope 1+2); computed by MSCI, a different source from the company-reported figures on the single-stock rows.',
+      },
+    },
+
+    /** 見 `../zh-TW/tokens.ts`。 */
+    transition: {
+      title: "Issuer's transition disclosures",
+      note: "What follows restates the issuer's own published data. The platform does not score it, and it does not affect fees or leverage — those read the carbon tier above only.",
+      readLabel: 'Read on',
+      assets: {
+        sICLN: {
+          text: 'Tracks the S&P Global Clean Energy Transition Index (global clean-energy companies). Sectors: renewable electricity 27.45%, heavy electrical equipment 19.02%, electric utilities 15.36%, semiconductors 14.72%, electrical components 13.41% (2026-10-14). MSCI Implied Temperature Rise 1.5–2.0°C (2026-09-18). iShares publishes no avoided-emissions figures or SDG mapping for this fund.',
+          source: 'iShares ICLN product page',
+        },
+        sESGU: {
+          text: 'Tracks the MSCI USA Extended ESG Focus Index, tilting US large- and mid-caps toward stronger ESG characteristics; excludes civilian firearms, controversial weapons, tobacco, thermal coal and oil sands. MSCI Implied Temperature Rise 2.5–3.0°C (2026-09-18). iShares lists no SDG mapping for this fund.',
+          source: 'iShares ESGU product page',
+        },
+        sBOND: {
+          text: "Tracks the Bloomberg MSCI USD Green Bond Select Index, whose bonds' proceeds must go to eligible categories such as alternative energy, energy efficiency, pollution prevention, sustainable water, green building and climate adaptation. BlackRock's BGRN annual impact report (data as of 2026-06-30) lists the SDGs it aligns with: 7 Affordable and Clean Energy, 11 Sustainable Cities and Communities, 12 Responsible Consumption and Production, 13 Climate Action.",
+          source: 'BlackRock / iShares BGRN Annual Impact Report 2026',
+        },
       },
     },
   },
