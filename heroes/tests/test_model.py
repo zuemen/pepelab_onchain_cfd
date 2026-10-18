@@ -12,7 +12,7 @@ def reb(*legs):
 
 
 def test_a_diversified_strategy_passes():
-    validate(reb(Leg("sETH", 5000, True, 5), Leg("sBOND", 3000, True, 1), Leg("sESGU", 2000, False, 2)))
+    validate(reb(Leg("sETH", 5000, True, 5), Leg("sBOND", 3000, True, 1), Leg("sAAPL", 2000, False, 2)))
 
 
 @pytest.mark.parametrize(

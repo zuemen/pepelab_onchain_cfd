@@ -94,17 +94,17 @@
   },
   {
    "id": "sICLN",
-   "carbonTier": "low",
-   "feeBps": 10,
-   "borrowBpsPerHour": 1,
-   "maxLeverage": 5
+   "carbonTier": "high",
+   "feeBps": 100,
+   "borrowBpsPerHour": 10,
+   "maxLeverage": 1
   },
   {
    "id": "sESGU",
-   "carbonTier": "mid",
-   "feeBps": 40,
-   "borrowBpsPerHour": 4,
-   "maxLeverage": 2
+   "carbonTier": "high",
+   "feeBps": 100,
+   "borrowBpsPerHour": 10,
+   "maxLeverage": 1
   }
  ],
  "baskets": [
@@ -114,8 +114,7 @@
     "sETH",
     "sAAPL",
     "sBOND",
-    "sNVDA",
-    "sICLN"
+    "sNVDA"
    ]
   },
   {
