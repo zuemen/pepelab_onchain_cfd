@@ -7,7 +7,7 @@
 // 唯一和鏈有關的是「相近的模擬交易者」：那些交易者只存在本機鏈，判斷沿用 heroData 的規則
 // （chainId 不符、未連錢包就當作沒有），沒有就整塊不顯示。
 
-import { parseHeroIndex, type HeroSummary } from './heroData'
+import { heroDataUrl, parseHeroIndex, type HeroSummary } from './heroData'
 
 export const LAB_SCHEMA_VERSION = 1
 
@@ -212,15 +212,19 @@ export function similarTraders(
   return heroes.traders.filter((h) => h.rule === strategy.rule)
 }
 
-/** 讀 #309 的績效資料索引，挑出相近的模擬交易者。讀不到就是空陣列。 */
+/**
+ * 讀 #309 的績效資料索引，挑出相近的模擬交易者。讀不到就是空陣列。
+ * timeCompressed 跟著回傳：公開站的資料是時間壓縮的回放，揭露要用另一段（#344）。
+ */
 export async function fetchSimilarTraders(
   strategy: LabStrategy | undefined,
   chainId: number | null,
   fetchImpl: FetchLike = fetch,
-): Promise<HeroSummary[]> {
-  if (!strategy || strategy.kind !== 'portfolio' || chainId === null) return []
-  const raw = await readJson(`${import.meta.env.BASE_URL}data/heroes/index.json`, fetchImpl)
-  return similarTraders(strategy, raw, chainId)
+): Promise<{ traders: HeroSummary[]; timeCompressed: boolean }> {
+  if (!strategy || strategy.kind !== 'portfolio' || chainId === null) return { traders: [], timeCompressed: false }
+  const raw = await readJson(heroDataUrl(chainId, 'index.json'), fetchImpl)
+  const index = parseHeroIndex(raw, chainId)
+  return { traders: similarTraders(strategy, raw, chainId), timeCompressed: index?.timeCompressed ?? false }
 }
 
 /** 依索引裡的參數格點，把每個參數夾回合法值（網址帶進來的值不在格點上時用第一個值）。 */

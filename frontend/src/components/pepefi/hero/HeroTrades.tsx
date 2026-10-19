@@ -14,7 +14,7 @@ import TableHead from '@mui/material/TableHead';
 import Typography from '@mui/material/Typography';
 import TableContainer from '@mui/material/TableContainer';
 
-import { t } from 'src/locales';
+import { t, interpolate } from 'src/locales';
 import { MONO } from 'src/components/pepefi/brandKit';
 import { fUsd, type HeroDetail, type HeroTrade } from 'src/lib/pepefi/heroData';
 
@@ -28,7 +28,20 @@ import TxProof from './TxProof';
 
 // 卡片上只放最新的這麼多筆；完整清單開在彈窗裡（ListDialog）。
 const PREVIEW_ROWS = 10;
-const fDay = (unix: number) => new Date(unix * 1000).toISOString().slice(0, 10);
+// 時間壓縮的回放（#344）：日期欄是模擬日期，下面另外標上鏈時間（UTC 到分鐘）——BaseScan 上看到的是它。
+const fChainTime = (unix: number) => `${new Date(unix * 1000).toISOString().slice(0, 16).replace('T', ' ')} UTC`;
+
+function DateCell({ date, chainTime, compressed }: { date: string | null; chainTime: number | null; compressed: boolean }) {
+  const L = t.traderProfile.hero;
+  return (
+    <>
+      <Box sx={{ fontSize: '0.6875rem', color: 'text.secondary' }}>{date ?? '—'}</Box>
+      {compressed && chainTime !== null && (
+        <Box sx={{ fontSize: '0.625rem', color: 'text.disabled' }}>{interpolate(L.chainTime, { time: fChainTime(chainTime) })}</Box>
+      )}
+    </>
+  );
+}
 
 function PnlCell({ trade }: { trade: HeroTrade }) {
   const L = t.traderProfile.hero;
@@ -87,13 +100,11 @@ export default function HeroTrades({ hero, provider, chainId }: Props) {
               <TableCell align="right" sx={{ fontFamily: MONO }}>{fUsd(trade.marginUsd)}</TableCell>
               <TableCell align="right" sx={{ fontFamily: MONO, whiteSpace: 'nowrap' }}>
                 {fUsd(trade.openPrice)}
-                <Box sx={{ fontSize: '0.6875rem', color: 'text.secondary' }}>{fDay(trade.openTime)}</Box>
+                <DateCell date={trade.openDate} chainTime={trade.openTime} compressed={hero.timeCompressed} />
               </TableCell>
               <TableCell align="right" sx={{ fontFamily: MONO, whiteSpace: 'nowrap' }}>
                 {fUsd(trade.closePrice)}
-                <Box sx={{ fontSize: '0.6875rem', color: 'text.secondary' }}>
-                  {trade.closeTime === null ? '—' : fDay(trade.closeTime)}
-                </Box>
+                <DateCell date={trade.closeDate} chainTime={trade.closeTime} compressed={hero.timeCompressed} />
               </TableCell>
               <TableCell align="right"><PnlCell trade={trade} /></TableCell>
               <TableCell>
@@ -115,6 +126,9 @@ export default function HeroTrades({ hero, provider, chainId }: Props) {
         <Box sx={{ minWidth: 0 }}>
           <Typography variant="subtitle1" sx={{ fontWeight: 'bold' }}>{L.tradesTitle}</Typography>
           <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>{L.tradesNote}</Typography>
+          {hero.timeCompressed && (
+            <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>{L.tradesNoteCompressed}</Typography>
+          )}
         </Box>
         {trades.length > PREVIEW_ROWS && <ExpandListButton count={trades.length} onClick={() => setExpanded(true)} />}
       </Box>

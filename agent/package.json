@@ -17,7 +17,7 @@
     "mcp-server": "npm run start -w mcp-server",
     "demo-agent": "npm run start -w demo-agent",
     "build": "tsc -b --pretty && tsc -p sdk --pretty",
-    "typecheck": "tsc -b --pretty && tsc -p sdk --pretty && tsc -p issuer --pretty",
+    "typecheck": "tsc -b --pretty && tsc -p sdk --pretty && tsc -p issuer --pretty && tsc -p heroes --pretty",
     "bundle:vercel": "npm run bundle:vercel -w signal-api",
     "bundle:check": "npm run bundle:check -w signal-api",
     "//vc-status:init": "ADR-016：在驗證端的持久儲存上只跑一次（不要放進容器啟動腳本）。沒有初始化，所有開倉與平倉都被拒。",
@@ -32,7 +32,7 @@
     "test:signal-api": "tsx signal-api/src/settlement.test.ts && tsx signal-api/src/unknownReconcile.test.ts && tsx signal-api/src/payoutSafety.test.ts && tsx signal-api/src/benchmarks.test.ts && tsx signal-api/src/candlesCache.test.ts && tsx signal-api/src/facilitatorErrors.test.ts && tsx signal-api/src/ledgerFlow.test.ts && tsx signal-api/src/settlementWorker.test.ts && tsx signal-api/src/exposure.test.ts && tsx signal-api/src/x402DefaultGolden.test.ts && tsx signal-api/src/x402v2.test.ts && tsx signal-api/src/kya.test.ts && tsx signal-api/src/vcStatusStore.test.ts && tsx signal-api/src/settlementMode.test.ts && tsx signal-api/src/referencePrices.test.ts && node --test signal-api/src/bundleFingerprint.test.mjs",
     "test:sdk": "tsx sdk/test/addresses.test.ts && tsx sdk/test/abi.test.ts && tsx sdk/test/read.test.ts && tsx sdk/test/write.test.ts && tsx sdk/test/openapi-schema.test.ts && tsx sdk/test/signalApi.test.ts && tsx sdk/test/vc.test.ts && tsx sdk/test/vcStatus.test.ts && tsx sdk/test/delegation.test.ts && tsx sdk/test/live.test.ts",
     "test:issuer": "tsx issuer/issuer.test.ts",
-    "test:heroes": "tsx heroes/plan.test.ts && tsx heroes/addresses.test.ts && tsx heroes/provider.test.ts",
+    "test:heroes": "tsx heroes/plan.test.ts && tsx heroes/addresses.test.ts && tsx heroes/provider.test.ts && tsx heroes/mode.test.ts && tsx heroes/journal.test.ts && tsx heroes/sender.test.ts && tsx heroes/gas.test.ts && tsx heroes/keystore.test.ts && tsx heroes/chainAddresses.test.ts",
     "//issuer": "合格投資人 VC 發證服務 CLI（docs/SSI_RWA_ACCESS.md）：npm run issuer -- issue|revoke|verify|submit|init …",
     "issuer": "tsx issuer/cli.ts",
     "test:sdk:live": "tsx sdk/test/live.test.ts --live"

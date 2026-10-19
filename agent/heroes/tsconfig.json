@@ -1,0 +1,8 @@
+{
+  // #344：公開鏈回放（金鑰、進度檔、平行送出）不能只靠 tsx 跑起來才知道型別錯。
+  // 獨立一份，不放進 agent/tsconfig.json：那份是 signal-api Vercel bundle 指紋的來源之一
+  // （signal-api/check-vercel-bundle.mjs），改它就要重打 bundle。
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": { "types": ["node"] },
+  "include": ["./**/*.ts", "../keeper/**/*.ts"]
+}

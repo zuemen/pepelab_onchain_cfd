@@ -20,14 +20,19 @@ import "../src/SustainabilityBadge.sol";
 ///           forge script script/Deploy102RewardDistributor.s.sol:Deploy102RewardDistributor \
 ///             --rpc-url "$BASE_SEPOLIA_RPC_URL" --private-key "$PRIVATE_KEY" --broadcast -vvv
 contract Deploy102RewardDistributor is Script {
+    address public broadcasterOverride;   // test hook, see Redeploy130Hardened
+    function setBroadcasterOverride(address a) external { broadcasterOverride = a; }
+
     function run() external {
-        address exchange = vm.envAddress("EXCHANGE_NEW");
-        address registry = vm.envAddress("ESG_REGISTRY_V2");
-        address badgeAddr = vm.envAddress("SUSTAINABILITY_BADGE");
+        runWith(vm.envAddress("EXCHANGE_NEW"), vm.envAddress("ESG_REGISTRY_V2"), vm.envAddress("SUSTAINABILITY_BADGE"));
+    }
 
-        vm.startBroadcast();
+    /// @dev The same deployment without process-wide env (parallel fork tests).
+    function runWith(address exchange, address registry, address badgeAddr) public returns (EsgRewardDistributor distributor) {
+        if (broadcasterOverride != address(0)) vm.startBroadcast(broadcasterOverride);
+        else vm.startBroadcast();
 
-        EsgRewardDistributor distributor = new EsgRewardDistributor(exchange, registry, badgeAddr);
+        distributor = new EsgRewardDistributor(exchange, registry, badgeAddr);
 
         // The distributor mints badges — it needs MINTER_ROLE. The deployer
         // holds DEFAULT_ADMIN_ROLE on the badge from step 1, so it can grant.

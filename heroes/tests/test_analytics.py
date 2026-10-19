@@ -5,6 +5,7 @@ import pandas as pd
 import pytest
 
 from herolab.analytics import (
+    Clock,
     build_outputs, build_trades, equity_curve, follower_history, max_drawdown_pct, monthly_returns, net_pnl,
     profitable_weeks_pct, risk_score, sharpe, top_assets, window_stats, worst_loss_pct,
 )
@@ -118,7 +119,8 @@ def test_outputs_follow_the_published_schema():
                                  {"asset": "sICLN", "weightBps": 2000, "isLong": True, "leverage": 1}]}}],
     }
     index, details = build_outputs(doc, PRICES)
-    assert (index["schemaVersion"], index["chainId"], index["range"]) == (2, 31337, doc["range"])
+    assert (index["schemaVersion"], index["chainId"], index["range"]) == (3, 31337, doc["range"])
+    assert index["timeCompressed"] is False and details[OWNER.lower()]["timeCompressed"] is False
     summary = index["traders"][0]
     assert summary["address"] == OWNER and summary["totalReturnPct"] == 10.4
     # 排行榜用它判斷「交易了多久」、夠不夠資格列入排名，所以放在索引裡，不只在詳細檔
@@ -188,3 +190,104 @@ def test_follower_history_is_a_running_count_per_month():
     assert follower_history(events, OWNER.lower(), ["2024-10", "2024-11", "2024-12"]) == [
         {"month": "2024-10", "followers": 2}, {"month": "2024-11", "followers": 1}, {"month": "2024-12", "followers": 1},
     ]
+
+
+# ── 時間壓縮（#344）：公開鏈上兩年在幾小時內跑完，區塊時間是回放當天 ─────────────────────
+# 回放當天 2026-11-05 10:00 起，每個模擬日約 10 分鐘、30 個區塊；分析靠 days 還原模擬日期。
+REPLAY_T0 = 1793872800  # 2026-11-05 10:00 UTC
+COMPRESSED_DAYS = [
+    {"date": "2024-10-01", "fromBlock": 100, "toBlock": 129, "toTimestamp": REPLAY_T0 + 600},
+    {"date": "2024-10-02", "fromBlock": 130, "toBlock": 159, "toTimestamp": REPLAY_T0 + 1200},
+    {"date": "2024-10-03", "fromBlock": 160, "toBlock": 189, "toTimestamp": REPLAY_T0 + 1800},
+]
+
+
+def at_block(event, block, ts):
+    return {**event, "block": block, "timestamp": ts}
+
+
+def compressed_doc(events):
+    return {
+        "schemaVersion": 2, "chainId": 84532, "range": {"from": "2024-10-01", "to": "2024-10-03"},
+        "timeCompressed": True, "days": COMPRESSED_DAYS,
+        "traders": [{"index": 10, "name": "Solo", "rule": "buy_hold", "address": OWNER, "capitalUsd": 1000,
+                     "finalEquity": wei(1104.0), "followerCount": 0}],
+        "events": events,
+    }
+
+
+PUBLISHED = {"name": "StrategyPublished", "logIndex": 0, "tx": "0xpub",
+             "args": {"trader": OWNER, "versionId": "0", "legs": [
+                 {"asset": "sETH", "weightBps": 5000, "isLong": True, "leverage": 1},
+                 {"asset": "sBOND", "weightBps": 3000, "isLong": True, "leverage": 1},
+                 {"asset": "sICLN", "weightBps": 2000, "isLong": True, "leverage": 1}]}}
+
+
+def test_compressed_trades_take_the_simulated_date_from_the_block_not_the_block_time():
+    events = [at_block(EVENTS[0], 105, REPLAY_T0 + 10), at_block(EVENTS[1], 170, REPLAY_T0 + 1210),
+              at_block(PUBLISHED, 104, REPLAY_T0 + 8)]
+    index, details = build_outputs(compressed_doc(events), PRICES)
+    assert index["schemaVersion"] == 3 and index["timeCompressed"] is True
+    detail = details[OWNER.lower()]
+    assert detail["timeCompressed"] is True
+    trade = detail["trades"][0]
+    # 模擬日期來自區塊範圍；上鏈時間原樣保留（BaseScan 上看到的就是它）
+    assert (trade["openDate"], trade["closeDate"]) == ("2024-10-01", "2024-10-03")
+    assert (trade["openTime"], trade["closeTime"]) == (REPLAY_T0 + 10, REPLAY_T0 + 1210)
+    assert trade["closePrice"] == 121.0, "closed at the simulated day's price"
+    assert detail["strategies"][0] == {"date": "2024-10-01", "time": REPLAY_T0 + 8, "versionId": 0,
+                                       "tx": "0xpub", "legs": PUBLISHED["args"]["legs"]}
+    assert detail["activeSince"] == "2024-10-01"
+    # 與本機回放（區塊時間就是模擬時間）算出同樣的績效
+    assert [p["equity"] for p in detail["equityCurve"]] == [999.0, 1049.0, 1104.0]
+    assert detail["avgHoldDays"] == 2.0
+
+
+def test_compressed_open_positions_pay_borrow_fees_for_chain_time_only():
+    # 2 倍、借款費 1 bps／時、一直沒平倉。本機回放兩天 = 48 小時的借款費；
+    # 壓縮回放鏈上只過了 20 分鐘（不到 1 小時），與 getPositionValue 一樣是 0。
+    lev = opened(1, REPLAY_T0 + 10, leverage=2, borrow_bps=1)
+    lev = at_block(lev, 105, REPLAY_T0 + 10)
+    clock = Clock.of(compressed_doc([lev]))
+    equity = equity_curve(1000.0, build_trades([lev], OWNER, clock), prices([100.0] * 3), DAYS, clock)
+    # 1000 − 500 − 開倉費 1 + (500 − 平倉費 1) = 998，借款費 0
+    assert list(equity) == [998.0, 998.0, 998.0]
+
+    local = opened(1, D0, leverage=2, borrow_bps=1)
+    local_equity = equity_curve(1000.0, build_trades([local], OWNER), prices([100.0] * 3), DAYS)
+    assert local_equity.iloc[-1] == pytest.approx(998.0 - 500 * 1 * 48 / 10_000)
+
+
+def test_compressed_follows_count_toward_the_simulated_month():
+    def follow(kind, block):
+        return {"name": kind, "block": block, "logIndex": 0, "timestamp": REPLAY_T0, "tx": "0x",
+                "args": {"follower": "0x1", "trader": OWNER}}
+    clock = Clock.of({"timeCompressed": True, "days": COMPRESSED_DAYS})
+    # 區塊時間全是 2026-11：用它分月的話兩筆都落在 2026-11
+    history = follower_history([follow("TraderFollowed", 110), follow("TraderFollowed", 140)], OWNER.lower(),
+                               ["2024-10", "2024-11"], clock)
+    assert history == [{"month": "2024-10", "followers": 2}, {"month": "2024-11", "followers": 2}]
+
+
+def test_compressed_clock_maps_setup_blocks_to_the_first_day_and_needs_the_block_ranges():
+    clock = Clock.of({"timeCompressed": True, "days": COMPRESSED_DAYS})
+    assert clock.sim_date({"block": 50, "timestamp": 0}) == dt.date(2024, 10, 1)  # 初始化階段
+    assert clock.sim_date({"block": 159, "timestamp": 0}) == dt.date(2024, 10, 2)
+    assert clock.sim_date({"block": 160, "timestamp": 0}) == dt.date(2024, 10, 3)
+    assert clock.valuation_ts(dt.date(2024, 10, 2)) == REPLAY_T0 + 1200
+    with pytest.raises(ValueError, match="block ranges"):
+        Clock.of({"timeCompressed": True, "days": []})
+    # 本機回放（沒有 timeCompressed）：一切照區塊時間，與 schema 2 時相同
+    assert Clock.of({}).sim_date({"block": 1, "timestamp": D0}) == dt.date(2024, 10, 1)
+
+
+def test_local_outputs_only_gain_fields():
+    # 本機資料重新產生後只多欄位：模擬日期就是上鏈時間的日期
+    doc = compressed_doc([EVENTS[0], EVENTS[1], {**PUBLISHED, "block": 0, "timestamp": D0}])
+    doc.pop("timeCompressed")
+    doc.pop("days")
+    _, details = build_outputs(doc, PRICES)
+    trade = details[OWNER.lower()]["trades"][0]
+    assert trade["openTime"] == D0 and trade["openDate"] == "2024-10-01"
+    assert trade["closeTime"] == D0 + 2 * 86400 and trade["closeDate"] == "2024-10-03"
+    assert details[OWNER.lower()]["strategies"][0]["time"] == D0

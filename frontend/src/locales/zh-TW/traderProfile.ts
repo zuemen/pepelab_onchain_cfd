@@ -181,6 +181,10 @@ export const traderProfile = {
     proofSuccess: '成功',
     proofReverted: '失敗',
     proofLogs: '{count} 筆事件',
+    /** 時間壓縮的回放（#344）：日期是模擬的那一天，上鏈時間是回放當天，兩個都標出來。 */
+    simDate: '模擬日期 {date}',
+    chainTime: '上鏈 {time}',
+    tradesNoteCompressed: '日期為模擬日期；上鏈時間是在 Base Sepolia 回放的當天。點交易雜湊可到 BaseScan 查證。',
     riskTitle: '風險與交易統計',
     riskScore: '風險分數',
     riskScoreScale: '1 最低、10 最高',

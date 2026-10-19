@@ -23,6 +23,7 @@ import HeroTrades from 'src/components/pepefi/hero/HeroTrades'
 import HeroRiskStats from 'src/components/pepefi/hero/HeroRiskStats'
 import HeroPerformance from 'src/components/pepefi/hero/HeroPerformance'
 import { fetchHeroDetail, type HeroDetail } from 'src/lib/pepefi/heroData'
+import { heroDisclosure } from 'src/lib/pepefi/heroDisclosure'
 import { followerReaderOf, readActiveFollowers } from 'src/lib/pepefi/activeFollowers'
 import TxProof from 'src/components/pepefi/hero/TxProof'
 import ListDialog, { ExpandListButton } from 'src/components/pepefi/ListDialog'
@@ -270,7 +271,8 @@ function TraderProfileView() {
   // 策略歷史的一列（可以點開看資產明細與發布交易）：卡片上的最新幾版與彈窗裡的全部版本共用。
   const renderVersion = (ver: HistVer) => {
     // 模擬交易者的績效資料裡有每一版的發布交易；展開時附上，可以向節點讀回確認。
-    const publishTx = hero?.strategies.find(s => s.versionId === ver.versionId)?.tx ?? null
+    const heroVer = hero?.strategies.find(s => s.versionId === ver.versionId)
+    const publishTx = heroVer?.tx ?? null
     return (
     <Card key={ver.versionId} sx={{ border: '1px solid', borderColor: 'divider', overflow: 'hidden' }}>
       <Box
@@ -309,7 +311,10 @@ function TraderProfileView() {
         </Box>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, ml: 2, shrink: 0 }}>
           <Typography variant="caption" color="text.secondary">
-            {fmtDate(ver.createdAt)}
+            {/* 時間壓縮的回放：鏈上的發布時間是回放當天，模擬的那一天另外標出來（#344） */}
+            {heroVer && hero?.timeCompressed
+              ? `${interpolate(t.traderProfile.hero.simDate, { date: heroVer.date })} · ${interpolate(t.traderProfile.hero.chainTime, { time: fmtDate(ver.createdAt) })}`
+              : fmtDate(ver.createdAt)}
           </Typography>
           <Typography variant="caption" color="text.secondary">
             {ver.expanded ? '▲' : '▼'}
@@ -400,7 +405,7 @@ function TraderProfileView() {
       {/* 放在 loading 判斷之外：揭露只看資料檔在不在，不等讀鏈。 */}
       {hero && (
         <Alert severity="info" variant="outlined">
-          {t.marketplace.hero.disclosure}
+          {heroDisclosure(hero.timeCompressed)}
         </Alert>
       )}
 

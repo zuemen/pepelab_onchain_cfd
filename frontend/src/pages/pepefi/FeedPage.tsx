@@ -16,7 +16,8 @@ import { t, interpolate } from 'src/locales';
 import { useMode } from 'src/contexts/mode-context';
 import { useChainFeed } from 'src/hooks/useChainFeed';
 import { useContracts } from 'src/hooks/useContracts';
-import { useSimulatedTraders } from 'src/hooks/useSimulatedTraders';
+import { useHeroDataset } from 'src/hooks/useSimulatedTraders';
+import { heroDisclosure } from 'src/lib/pepefi/heroDisclosure';
 import { FEATURE_COPY_TRADING } from 'src/lib/pepefi/featureFlags';
 import { describeScanWindow } from 'src/lib/pepefi/chainLogs';
 import { FEED_TYPES, filterFeed, type FeedType } from 'src/lib/pepefi/feed';
@@ -65,7 +66,8 @@ function Feed() {
   const wallet = usePepefiWallet();
   const contracts = useContracts(wallet.provider, wallet.signer, wallet.chainId);
   const feed = useChainFeed(contracts, wallet.provider, wallet.chainId);
-  const simulated = useSimulatedTraders(wallet.chainId);
+  const heroDataset = useHeroDataset(wallet.chainId);
+  const simulated = heroDataset.addresses;
 
   const [types, setTypes] = useState<FeedType[]>([...VISIBLE_TYPES]);
   const [actor, setActor] = useState('');
@@ -98,7 +100,7 @@ function Feed() {
         </Stack>
 
         {anySimulated && (
-          <Alert severity="info" variant="outlined">{t.marketplace.hero.disclosure}</Alert>
+          <Alert severity="info" variant="outlined">{heroDisclosure(heroDataset.timeCompressed)}</Alert>
         )}
         {feed.incomplete && !feed.loading && <Alert severity="warning">{L.incomplete}</Alert>}
 

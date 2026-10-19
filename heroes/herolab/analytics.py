@@ -3,12 +3,19 @@
 一律從事件算，不從排程算：每個數字都要追溯得到一筆鏈上交易。
 未平倉部位的估值與 PerpetualExchange.getPositionValue 相同：價差損益，扣掉平倉手續費與至今的借款費。
 資金費率不估（鏈上的資金費率指數不在事件裡），平倉時才實現、併入取回金額。
+
+兩種時間（#344）：
+- 本機回放把區塊時間撥到模擬的那一天，區塊時間就是模擬時間。
+- 公開鏈（Base Sepolia）的回放是時間壓縮的：兩年在幾小時內跑完，區塊時間是回放當天。交易日期改用
+  回放記下的「每個模擬日落在哪些區塊」（events.json 的 days）還原；借款費照鏈上時間計算，與
+  getPositionValue 一致（所以幾乎是 0）。
 """
 from __future__ import annotations
 
+import bisect
 import datetime as dt
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import numpy as np
 import pandas as pd
@@ -19,27 +26,9 @@ from .schedule import day_timestamp
 E18 = 10**18
 DAY = 86_400
 # 2：索引的每位交易者多了 activeSince（排行榜用來判斷能不能列入排名）。
-SCHEMA_VERSION = 2
-
-
-@dataclass
-class Trade:
-    position_id: int
-    asset: str
-    is_long: bool
-    leverage: int
-    margin: float
-    entry_price: float
-    open_ts: int
-    open_tx: str
-    open_fee: float
-    fee_bps: int
-    borrow_bps_per_hour: int
-    close_ts: int | None = None
-    close_tx: str | None = None
-    close_amount: float | None = None
-    gross_pnl: float | None = None
-    liquidated: bool = False
+# 3：timeCompressed；每筆交易多了模擬日期（openDate／closeDate，openTime／closeTime 仍是上鏈時間），
+#    每個策略版本多了上鏈時間（time，date 是模擬日期）。資料依鏈分開放（public/data/heroes/<chainId>/）。
+SCHEMA_VERSION = 3
 
 
 def _usd(wei: str) -> float:
@@ -50,7 +39,70 @@ def _date(ts: int) -> dt.date:
     return dt.datetime.fromtimestamp(ts, dt.timezone.utc).date()
 
 
-def build_trades(events: list[dict], owner: str) -> list[Trade]:
+@dataclass(frozen=True)
+class Clock:
+    """事件的模擬時間，與估值用的鏈上時間。
+
+    本機回放（compressed=False）：模擬時間就是區塊時間，每天在當日 21:00 UTC 估值。
+    時間壓縮（compressed=True）：區塊 → 回放記下的模擬日，模擬時間取那一天的 21:00 UTC（與本機回放相同的時刻）；
+    每天以那一天最後一個區塊的時間估值，未平倉部位的借款費才與鏈上的 getPositionValue 相同。
+    """
+    compressed: bool = False
+    days: tuple[dict, ...] = ()
+    _starts: tuple[int, ...] = field(default=(), repr=False)
+
+    @staticmethod
+    def of(doc: dict) -> "Clock":
+        if not doc.get("timeCompressed"):
+            return Clock()
+        days = tuple(sorted(doc["days"], key=lambda d: d["fromBlock"]))
+        if not days:
+            raise ValueError("timeCompressed events.json has no days: the replay did not record its block ranges")
+        return Clock(True, days, tuple(d["fromBlock"] for d in days))
+
+    def sim_date(self, event: dict) -> dt.date:
+        if not self.compressed:
+            return _date(event["timestamp"])
+        # 初始化階段（第一天之前）的區塊算第一天；兩天之間（別人的交易）算前一天
+        i = max(bisect.bisect_right(self._starts, event["block"]) - 1, 0)
+        return dt.date.fromisoformat(self.days[i]["date"])
+
+    def sim_ts(self, event: dict) -> int:
+        return event["timestamp"] if not self.compressed else day_timestamp(self.sim_date(event))
+
+    def valuation_ts(self, day: dt.date) -> int:
+        if not self.compressed:
+            return day_timestamp(day)
+        i = bisect.bisect_right([d["date"] for d in self.days], day.isoformat()) - 1
+        return self.days[max(i, 0)]["toTimestamp"]
+
+
+LOCAL_CLOCK = Clock()
+
+
+@dataclass
+class Trade:
+    position_id: int
+    asset: str
+    is_long: bool
+    leverage: int
+    margin: float
+    entry_price: float
+    open_ts: int  # 模擬時間（本機回放時等於上鏈時間）
+    open_tx: str
+    open_fee: float
+    fee_bps: int
+    borrow_bps_per_hour: int
+    open_chain_ts: int = 0  # 上鏈時間：借款費照它算
+    close_ts: int | None = None
+    close_chain_ts: int | None = None
+    close_tx: str | None = None
+    close_amount: float | None = None
+    gross_pnl: float | None = None
+    liquidated: bool = False
+
+
+def build_trades(events: list[dict], owner: str, clock: Clock = LOCAL_CLOCK) -> list[Trade]:
     owner = owner.lower()
     trades: dict[str, Trade] = {}
     for e in events:
@@ -59,13 +111,13 @@ def build_trades(events: list[dict], owner: str) -> list[Trade]:
             margin, leverage, fee_bps = _usd(a["margin"]), int(a["leverage"]), int(a["tradingFeeBps"])
             trades[a["positionId"]] = Trade(
                 position_id=int(a["positionId"]), asset=a["asset"], is_long=bool(a["isLong"]), leverage=leverage,
-                margin=margin, entry_price=_usd(a["entryPrice"]), open_ts=e["timestamp"], open_tx=e["tx"],
+                margin=margin, entry_price=_usd(a["entryPrice"]), open_ts=clock.sim_ts(e), open_tx=e["tx"],
                 open_fee=margin * leverage * fee_bps / 10_000, fee_bps=fee_bps,
-                borrow_bps_per_hour=int(a["borrowFeeBpsPerHour"]),
+                borrow_bps_per_hour=int(a["borrowFeeBpsPerHour"]), open_chain_ts=e["timestamp"],
             )
         elif e["name"] == "PositionClosed" and a["positionId"] in trades:
             t = trades[a["positionId"]]
-            t.close_ts, t.close_tx = e["timestamp"], e["tx"]
+            t.close_ts, t.close_chain_ts, t.close_tx = clock.sim_ts(e), e["timestamp"], e["tx"]
             t.close_amount, t.gross_pnl = _usd(a["closeAmount"]), _usd(a["pnl"])
         elif e["name"] == "PositionLiquidated" and a["positionId"] in trades:
             trades[a["positionId"]].liquidated = True
@@ -82,13 +134,14 @@ def open_value(t: Trade, price: float, at_ts: int) -> float:
     move = price / t.entry_price - 1.0
     pnl = t.margin * t.leverage * (move if t.is_long else -move)
     close_fee = t.margin * t.leverage * t.fee_bps / 10_000
-    hours = max(at_ts - t.open_ts, 0) // 3600
+    hours = max(at_ts - t.open_chain_ts, 0) // 3600
     borrow_fee = t.margin * (t.leverage - 1) * t.borrow_bps_per_hour * hours / 10_000
     return max(t.margin + pnl - close_fee - borrow_fee, 0.0)
 
 
-def equity_curve(capital: float, trades: list[Trade], prices: pd.DataFrame, days: list[dt.date]) -> pd.Series:
-    """每天以回放當日的區塊時間（21:00 UTC）估值。"""
+def equity_curve(capital: float, trades: list[Trade], prices: pd.DataFrame, days: list[dt.date],
+                 clock: Clock = LOCAL_CLOCK) -> pd.Series:
+    """每個模擬日以那一天的收盤價、鏈上時間估值（本機回放是當日 21:00 UTC，時間壓縮是那一天最後一個區塊）。"""
     values = []
     for day in days:
         cash, marks = capital, 0.0
@@ -99,7 +152,7 @@ def equity_curve(capital: float, trades: list[Trade], prices: pd.DataFrame, days
             if t.close_ts is not None and _date(t.close_ts) <= day:
                 cash += t.close_amount
             else:
-                marks += open_value(t, float(prices.at[day, t.asset]), day_timestamp(day))
+                marks += open_value(t, float(prices.at[day, t.asset]), clock.valuation_ts(day))
         values.append(cash + marks)
     return pd.Series(values, index=days)
 
@@ -179,13 +232,13 @@ def top_assets(trades: list[Trade], k: int = 3) -> list[dict]:
     return [{"asset": a, "trades": n, "sharePct": round(n / total * 100, 1)} for a, n in ranked]
 
 
-def follower_history(events: list[dict], trader: str, months: list[str]) -> list[dict]:
-    """每個月底的跟隨中人數：跟隨 +1、取消 −1。來自鏈上的 TraderFollowed／TraderUnfollowed。"""
+def follower_history(events: list[dict], trader: str, months: list[str], clock: Clock = LOCAL_CLOCK) -> list[dict]:
+    """每個月底的跟隨中人數：跟隨 +1、取消 −1。來自鏈上的 TraderFollowed／TraderUnfollowed，以模擬日期分月。"""
     trader = trader.lower()
     delta: dict[str, int] = {}
     for e in events:
         if e["name"] in ("TraderFollowed", "TraderUnfollowed") and e["args"]["trader"].lower() == trader:
-            month = _date(e["timestamp"]).strftime("%Y-%m")
+            month = clock.sim_date(e).strftime("%Y-%m")
             delta[month] = delta.get(month, 0) + (1 if e["name"] == "TraderFollowed" else -1)
     out, running = [], 0
     for month in months:
@@ -217,14 +270,16 @@ def build_outputs(doc: dict, prices: pd.DataFrame) -> tuple[dict, dict[str, dict
     days = [d for d in prices.index if start <= d <= end]
     months = sorted({d.strftime("%Y-%m") for d in days})
     end_ts = int(dt.datetime(end.year, end.month, end.day, tzinfo=dt.timezone.utc).timestamp()) + DAY
+    clock = Clock.of(doc)
+    compressed = clock.compressed
     summaries, details = [], {}
     for trader in doc["traders"]:
         address, capital = trader["address"], float(trader["capitalUsd"])
-        trades = build_trades(doc["events"], address)
+        trades = build_trades(doc["events"], address, clock)
         closed = [t for t in trades if t.close_ts is not None]
-        equity = equity_curve(capital, trades, prices, days)
+        equity = equity_curve(capital, trades, prices, days, clock)
         strategies = [
-            {"date": _date(e["timestamp"]).isoformat(), "versionId": int(e["args"]["versionId"]),
+            {"date": clock.sim_date(e).isoformat(), "time": e["timestamp"], "versionId": int(e["args"]["versionId"]),
              "tx": e["tx"], "legs": e["args"]["legs"]}
             for e in doc["events"]
             if e["name"] == "StrategyPublished" and e["args"]["trader"].lower() == address.lower()
@@ -247,6 +302,7 @@ def build_outputs(doc: dict, prices: pd.DataFrame) -> tuple[dict, dict[str, dict
         summaries.append(summary)
         details[address.lower()] = {
             **summary,
+            "timeCompressed": compressed,
             "equityCurve": [{"date": d.isoformat(), "equity": round(float(v), 2)} for d, v in equity.items()],
             "monthlyReturns": monthly_returns(equity, capital),
             "exposure": [{"asset": l["asset"], "weightPct": l["weightBps"] / 100, "isLong": l["isLong"],
@@ -260,18 +316,21 @@ def build_outputs(doc: dict, prices: pd.DataFrame) -> tuple[dict, dict[str, dict
             "profitableWeeksPct": profitable_weeks_pct(equity),
             "tradesPerWeek": round(len(trades) / max(len(days) / 7, 1), 2),
             "topAssets": top_assets(trades),
-            "followerHistory": follower_history(doc["events"], address, months),
+            "followerHistory": follower_history(doc["events"], address, months, clock),
             "strategies": strategies,
             "trades": [{
                 "positionId": t.position_id, "asset": t.asset, "isLong": t.is_long, "leverage": t.leverage,
                 "marginUsd": round(t.margin, 2),
-                "openTx": t.open_tx, "openTime": t.open_ts, "openPrice": round(t.entry_price, 4),
-                "closeTx": t.close_tx, "closeTime": t.close_ts,
+                "openTx": t.open_tx, "openTime": t.open_chain_ts, "openDate": _date(t.open_ts).isoformat(),
+                "openPrice": round(t.entry_price, 4),
+                "closeTx": t.close_tx, "closeTime": t.close_chain_ts,
+                "closeDate": _date(t.close_ts).isoformat() if t.close_ts else None,
                 "closePrice": round(float(prices.at[_date(t.close_ts), t.asset]), 4) if t.close_ts else None,
                 "pnlUsd": round(net_pnl(t), 2) if t.close_ts else None,
                 "grossPnlUsd": round(t.gross_pnl, 2) if t.close_ts else None,
                 "liquidated": t.liquidated,
             } for t in trades],
         }
-    index = {"schemaVersion": SCHEMA_VERSION, "chainId": doc["chainId"], "range": doc["range"], "traders": summaries}
+    index = {"schemaVersion": SCHEMA_VERSION, "chainId": doc["chainId"], "range": doc["range"],
+             "timeCompressed": compressed, "traders": summaries}
     return index, details

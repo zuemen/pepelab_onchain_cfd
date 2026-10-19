@@ -34,12 +34,17 @@ contract DeployPepeIncentives is Script {
     function setBroadcasterOverride(address a) external { broadcasterOverride = a; }
 
     function run() external returns (PepeIncentives incentives) {
-        address deployer    = broadcasterOverride != address(0) ? broadcasterOverride : msg.sender;
-        address pepeToken   = vm.envAddress("PEPE_TOKEN");
-        address exchange    = vm.envAddress("PERPETUAL_EXCHANGE");
-        address copyTracker = vm.envAddress("COPY_TRACKER");
-        address esgRegistry = vm.envAddress("ESG_REGISTRY");
+        return runWith(
+            vm.envAddress("PEPE_TOKEN"), vm.envAddress("PERPETUAL_EXCHANGE"),
+            vm.envAddress("COPY_TRACKER"), vm.envAddress("ESG_REGISTRY")
+        );
+    }
 
+    /// @dev The same deployment without process-wide env (parallel fork tests).
+    function runWith(address pepeToken, address exchange, address copyTracker, address esgRegistry)
+        public returns (PepeIncentives incentives)
+    {
+        address deployer = broadcasterOverride != address(0) ? broadcasterOverride : msg.sender;
         require(pepeToken.code.length > 0, "PEPE_TOKEN has no code");
         require(exchange.code.length > 0, "PERPETUAL_EXCHANGE has no code");
         require(copyTracker.code.length > 0, "COPY_TRACKER has no code");

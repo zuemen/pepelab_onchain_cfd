@@ -22,6 +22,7 @@ import ScoreBreakdownPopover from 'src/components/pepefi/ScoreBreakdownPopover';
 import { traderAvatarSrc } from 'src/utils/pepefi-assets';
 import TraderRankBadge from 'src/components/pepefi/TraderRankBadge';
 import { t, interpolate } from 'src/locales';
+import { heroDisclosure } from 'src/lib/pepefi/heroDisclosure';
 import {
   parseAllocs,
   buildVolumeMap,
@@ -169,6 +170,7 @@ export default function TraderLeaderboard() {
   const [progress, setProgress] = useState<{ done: number; total: number }>({ done: 0, total: 0 });
   // 這條鏈有模擬交易者的績效資料時，它的統計期間；null = 沒有，績效欄位走原本的事件掃描。
   const [heroRange, setHeroRange] = useState<{ from: string; to: string } | null>(null);
+  const [heroCompressed, setHeroCompressed] = useState(false);
   // 重新整理或離開頁面時中止還在跑的掃描，避免舊結果蓋掉新結果、也不再白打 RPC。
   const abortRef = useRef<AbortController | null>(null);
   useEffect(() => () => abortRef.current?.abort(), []);
@@ -187,6 +189,7 @@ export default function TraderLeaderboard() {
       const heroIndex = await fetchHeroIndex(wallet.chainId);
       if (ac.signal.aborted) return;
       setHeroRange(heroIndex?.range ?? null);
+      setHeroCompressed(heroIndex?.timeCompressed ?? false);
 
       const currentBlock = await wallet.provider.getBlockNumber();
       const fromBlock    = scanFromBlock({
@@ -564,7 +567,7 @@ export default function TraderLeaderboard() {
 
       {usingHeroData && (
         <Alert severity="info" variant="outlined" icon={<Icon icon="solar:test-tube-bold-duotone" width={20} />}>
-          {t.marketplace.hero.disclosure}
+          {heroDisclosure(heroCompressed)}
         </Alert>
       )}
 
