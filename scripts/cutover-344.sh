@@ -284,9 +284,12 @@ ok "keystore $ACCOUNT = 部署者 $DEPLOYER"
 write_env ACCOUNT "$ACCOUNT"
 BAL=$(cast balance "$DEPLOYER" --rpc-url "$RPC" --ether)
 say "部署者餘額：$BAL ETH"
-if awk "BEGIN{exit !($BAL < 0.1)}"; then
-  warn "少於 0.1 ETH（回放在治理移交之前跑時的建議量）"
-  confirm "仍然繼續？" || die "先補 ETH 再跑"
+# 0.1 是保守估計：部署本身約 0.0002 ETH（0.011 gwei 計），回放開倉付的執行費每天由部署者領回再發 gas。
+# 低於 0.03 才真的可能不夠，停下；0.03–0.1 只提醒（回放中途不夠時會停下，補 ETH 後重跑本腳本就接著跑）。
+if awk "BEGIN{exit !($BAL < 0.03)}"; then
+  die "部署者只有 $BAL ETH，少於 0.03：先補 ETH 再跑"
+elif awk "BEGIN{exit !($BAL < 0.1)}"; then
+  warn "少於建議的 0.1 ETH。繼續；回放中途不夠時會停下，補 ETH 後重跑本腳本就接著跑"
 fi
 pause
 
