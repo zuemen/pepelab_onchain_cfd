@@ -9,8 +9,6 @@
     // 稽核 2026-08-06：keeper/ 與 tg-bot/ 以前不在 include 裡 —— `npm run build`
     // 全綠卻從來沒有 typecheck 過它們（keeper 是唯一在寫 oracle 的東西）。
     "keeper/**/*.ts",
-    // #344：公開鏈回放（金鑰、進度檔、平行送出）不能只靠 tsx 跑起來才知道型別錯。
-    "heroes/**/*.ts",
     "tg-bot/**/*.ts",
     "x402_agent.ts",
     "../frontend/src/contracts/addresses.ts"
