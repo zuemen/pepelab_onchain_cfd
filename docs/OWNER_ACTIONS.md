@@ -533,7 +533,12 @@ cutover 演練的第 12 步照這個順序實跑（只在 fork 上），確認�
 
 **#344：公開站的模擬交易者（與上面的 cutover 合併成一次做）。** 2026-10-16 決定：評審自己上公開站看 #309 的
 24 位模擬交易者、到 BaseScan 查證、跟單。程式已備（`ORACLE_KIND=fresh`、`replay.ts --public-chain`、schema 3 的
-84532 資料集）；以下只有擁有者能做。差異只在第 1 項與之後的回放：
+84532 資料集）；以下只有擁有者能做。差異只在第 1 項與之後的回放。
+
+**互動式腳本：`bash scripts/cutover-344.sh`**（在 WSL／Linux 的終端機、repo 根目錄、最新的 master 上跑；不要用 Git Bash，
+密碼輸入不會隱藏）。它照下面 1–6 的順序執行：預檢、部署、Verify130、碳權、InsuranceStack 與四筆後續呼叫、PepeIncentives、
+EsgRewardDistributor、回放、分析、oracle 交給 keeper。每一步先說明、送交易前再問一次，抓到的位址寫進被 git 忽略的
+`heroes/out/cutover-344.env`；中斷之後重跑，已完成的步驟會跳過。第 7、8 項（部署後的 PR、公開站驗證）不在腳本裡。
 
 1. **第 1 項改用 `ORACLE_KIND=fresh`**（`DEPLOY_130_CUTOVER.md` §4）：新 exchange 接一顆部署者持有的新 MockOracle，
    回放的 2024 年價格寫在那裡，不碰共用的 `0xeD90…`。另外 **OI 上限要容得下回放**：本機完整回放裡單一資產單邊的名目最高約
