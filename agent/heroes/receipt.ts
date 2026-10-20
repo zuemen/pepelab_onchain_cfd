@@ -8,8 +8,11 @@ export interface ReceiptPolling {
 /** 本機 Anvil：即時出塊，每 50ms 問一次，60 秒內沒有就是出事了。 */
 export const LOCAL_POLLING: ReceiptPolling = { intervalMs: 50, timeoutMs: 60_000 };
 
-/** Base Sepolia：2 秒一個區塊，每秒問一次；公開鏈偶爾塞車，等 5 分鐘。 */
-export const PUBLIC_POLLING: ReceiptPolling = { intervalMs: 1_000, timeoutMs: 300_000 };
+/**
+ * Base Sepolia：2 秒一個區塊，每 2 秒問一次；公開鏈偶爾塞車，等 5 分鐘。
+ * 2026-10-20 第一次正式回放：每秒問、同時 25 筆，Alchemy 免費方案限流，查詢逾時就讓整趟停下。
+ */
+export const PUBLIC_POLLING: ReceiptPolling = { intervalMs: 2_000, timeoutMs: 300_000 };
 
 /**
  * 直接輪詢收據，不用 response.wait()：wait() 第一次查不到收據時會改等「下一個區塊」，
@@ -23,7 +26,8 @@ export async function receiptOf(
 ): Promise<ethers.TransactionReceipt> {
   const tries = Math.ceil(polling.timeoutMs / polling.intervalMs);
   for (let i = 0; i < tries; i++) {
-    const receipt = await provider.getTransactionReceipt(hash);
+    // 查詢本身失敗（節點逾時、限流、斷線）不代表交易有問題：下一輪再問，整體仍受 timeoutMs 限制。
+    const receipt = await provider.getTransactionReceipt(hash).catch(() => null);
     if (receipt) {
       if (receipt.status !== 1) throw new Error(`reverted: ${hash}`);
       return receipt;

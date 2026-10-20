@@ -144,14 +144,18 @@ export class PublicSender implements Sender {
 
   private async broadcast(lane: Lane, call: Call, hooks: Hooks): Promise<string> {
     const from = call.from.address;
-    if (lane.nonce === null) lane.nonce = await this.provider.getTransactionCount(from, "pending");
+    if (lane.nonce === null) lane.nonce = await retryNetwork(() => this.provider.getTransactionCount(from, "pending"));
     const nonce = lane.nonce;
     let tx: ethers.TransactionRequest;
     try {
-      const base = { ...(await call.populate()), from };
-      const gas = await this.provider.estimateGas(base);
-      tx = { ...base, nonce, gasLimit: (gas * GAS_PAD_BPS) / 10_000n, ...(await this.feeSource.fees()), type: 2 };
+      // 估 gas 遇到節點逾時或限流不是「會 revert」：重試，只有合約真的拒絕才算這筆失敗。
+      tx = await retryNetwork(async () => {
+        const base = { ...(await call.populate()), from };
+        const gas = await this.provider.estimateGas(base);
+        return { ...base, nonce, gasLimit: (gas * GAS_PAD_BPS) / 10_000n, ...(await this.feeSource.fees()), type: 2 };
+      });
     } catch (e) {
+      if (isNetworkError(e)) throw new InFlightError(`not sent, node unreachable: ${(e as Error).message}`, { forgettable: true });
       throw new RejectedError((e as Error).message); // 沒有送出，nonce 不前進
     }
     if (call.from.signer instanceof ethers.BaseWallet) {
@@ -159,13 +163,16 @@ export class PublicSender implements Sender {
       const hash = ethers.keccak256(signed);
       hooks.onHash(hash, nonce);
       try {
-        await this.provider.broadcastTransaction(signed);
+        await retryNetwork(() => this.provider.broadcastTransaction(signed));
       } catch (e) {
-        // 錯誤訊息不可信（「already known」也可能是別筆）：只看節點知不知道這一筆。知道就照常等收據。
-        const known = await this.provider.getTransaction(hash).catch(() => null);
+        // 錯誤訊息不可信（「already known」也可能是別筆）：先問節點知不知道這一筆，知道就照常等收據。
+        const known = await this.provider.getTransaction(hash).catch(() => undefined);
         if (!known) {
           lane.nonce = null; // 下一筆向節點重讀
-          throw new NotBroadcastError((e as Error).message);
+          // 節點明確拒收（餘額不足、nonce 衝突）：什麼都沒送出去，可以當作沒送過。
+          // 連不上節點、問不到結果：不知道有沒有送出，保留「已送出」，續跑時用 nonce 判斷，絕不直接重送。
+          if (known === null && isDefiniteRejection(e)) throw new NotBroadcastError((e as Error).message);
+          throw new InFlightError(`${hash}: broadcast outcome unknown: ${(e as Error).message}`);
         }
       }
       lane.nonce = nonce + 1;
@@ -194,10 +201,46 @@ export class NotBroadcastError extends Error {
   readonly forget = true;
 }
 
-/** 送出了但等不到收據：停下整趟回放，進度裡保留「已送出」，續跑時問節點。 */
+/**
+ * 節點連不上或結果不明：停下整趟回放。送出了的（有雜湊）進度裡保留「已送出」，續跑時問節點；
+ * 確定還沒送出的（估 gas 就連不上，forgettable）當作沒送過。
+ */
 export class InFlightError extends Error {
   readonly fatal = true;
-  readonly forget = false;
+  readonly forget: boolean;
+  constructor(message: string, { forgettable = false } = {}) {
+    super(message);
+    this.forget = forgettable;
+  }
+}
+
+/** 節點逾時、限流、斷線、5xx：與交易本身無關的錯誤。 */
+export function isNetworkError(e: unknown): boolean {
+  const code = (e as { code?: string })?.code;
+  if (code === "CALL_EXCEPTION" || code === "INSUFFICIENT_FUNDS" || code === "NONCE_EXPIRED" || code === "REPLACEMENT_UNDERPRICED") return false;
+  if (code === "TIMEOUT" || code === "NETWORK_ERROR" || code === "SERVER_ERROR") return true;
+  return /timeout|timed out|ECONNRESET|ECONNREFUSED|ENOTFOUND|socket hang up|429|too many requests|rate limit|capacity|503|502/i
+    .test((e as Error)?.message ?? "");
+}
+
+/** 節點明確拒收、什麼都沒進 mempool 的錯誤。 */
+export function isDefiniteRejection(e: unknown): boolean {
+  const code = (e as { code?: string })?.code;
+  if (code === "INSUFFICIENT_FUNDS" || code === "NONCE_EXPIRED" || code === "REPLACEMENT_UNDERPRICED") return true;
+  return /insufficient funds|nonce too low|nonce too high|replacement|underpriced|intrinsic gas|exceeds block gas limit/i
+    .test((e as Error)?.message ?? "");
+}
+
+/** 網路錯誤重試幾次（2、4、8、16 秒），其他錯誤直接丟出。 */
+export async function retryNetwork<T>(fn: () => Promise<T>, attempts = 5, baseMs = 2_000): Promise<T> {
+  for (let i = 1; ; i++) {
+    try {
+      return await fn();
+    } catch (e) {
+      if (i >= attempts || !isNetworkError(e)) throw e;
+      await new Promise((r) => setTimeout(r, baseMs * 2 ** (i - 1)));
+    }
+  }
 }
 
 export const isFatal = (e: unknown): e is NotBroadcastError | InFlightError => (e as { fatal?: boolean })?.fatal === true;

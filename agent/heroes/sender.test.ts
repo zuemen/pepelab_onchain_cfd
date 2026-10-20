@@ -3,7 +3,7 @@
 //   cd agent && npx tsx heroes/sender.test.ts
 import assert from "node:assert";
 import { ethers } from "ethers";
-import { forEach, isFatal, isRejected, PublicSender, type Account, type Call } from "./sender.ts";
+import { forEach, isFatal, isNetworkError, isRejected, PublicSender, type Account, type Call } from "./sender.ts";
 
 const CHAIN = 84532n;
 
@@ -128,6 +128,53 @@ const bob: Account = (() => { const w = ethers.Wallet.createRandom(); return { a
   const err = await sender.submit(call(alice), { onHash: () => {} }).catch((e) => e);
   assert.ok(isFatal(err) && !err.forget, "a missing receipt stops the run but keeps the entry");
 }
+
+// ── 2026-10-20 正式回放遇到的：節點限流，查收據逾時。查詢失敗要重試，不能讓整趟停下 ─────
+{
+  const { node } = fakeNode();
+  const n = node as unknown as Record<string, unknown>;
+  const real = n.getTransactionReceipt as (h: string) => Promise<unknown>;
+  let flaky = 3;
+  n.getTransactionReceipt = async (h: string) => {
+    if (flaky-- > 0) throw Object.assign(new Error("request timeout"), { code: "TIMEOUT" });
+    return real(h);
+  };
+  const sender = new PublicSender(node, fees, polling);
+  assert.ok(await sender.submit(call(alice), { onHash: () => {} }), "transient receipt errors are retried");
+}
+
+// ── 估 gas 遇到網路錯誤：重試；合約真的 revert 才算失敗 ───────────────────────
+{
+  const { node, broadcast } = fakeNode();
+  const n = node as unknown as Record<string, unknown>;
+  const real = n.estimateGas as (tx: ethers.TransactionRequest) => Promise<bigint>;
+  let flaky = 1;
+  n.estimateGas = async (tx: ethers.TransactionRequest) => {
+    if (flaky-- > 0) throw Object.assign(new Error("429 Too Many Requests"), { code: "SERVER_ERROR" });
+    return real(tx);
+  };
+  const sender = new PublicSender(node, fees, polling);
+  await sender.submit(call(alice), { onHash: () => {} });
+  assert.equal(broadcast.length, 1, "a rate-limited estimate is retried, not counted as a revert");
+}
+
+// ── 廣播連不上、也問不到節點：不知道有沒有送出 → 保留「已送出」，絕不當成沒送過 ─────
+{
+  const { node } = fakeNode();
+  const n = node as unknown as Record<string, unknown>;
+  n.broadcastTransaction = async () => { throw Object.assign(new Error("bad response"), { code: "BAD_DATA" }); };
+  n.getTransaction = async () => { throw Object.assign(new Error("request timeout"), { code: "TIMEOUT" }); };
+  const sender = new PublicSender(node, fees, polling);
+  let journalled = false;
+  const err = await sender.submit(call(alice), { onHash: () => { journalled = true; } }).catch((e) => e);
+  assert.ok(journalled, "the hash was journalled before the broadcast");
+  assert.ok(isFatal(err) && !err.forget, "an ambiguous broadcast keeps the entry (resume decides by nonce)");
+}
+
+assert.ok(isNetworkError(Object.assign(new Error("x"), { code: "TIMEOUT" })));
+assert.ok(isNetworkError(new Error("429 Too Many Requests")));
+assert.ok(!isNetworkError(Object.assign(new Error("execution reverted"), { code: "CALL_EXCEPTION" })));
+assert.ok(!isNetworkError(Object.assign(new Error("insufficient funds"), { code: "INSUFFICIENT_FUNDS" })));
 
 // ── forEach：本機依序（順序就是交易順序），公開鏈平行但有上限 ───────────
 {
