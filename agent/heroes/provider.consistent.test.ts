@@ -92,6 +92,24 @@ const TO = "0x0000000000000000000000000000000000000001";
   assert.equal(calls, 1, "a revert is not retried");
   assert.ok(!isRateLimited(Object.assign(new Error("missing revert data 0x429"), { info: { error: { code: 3, message: "execution reverted" } } })));
   assert.ok(isRateLimited(Object.assign(new Error("x"), { info: { responseStatus: "429 Too Many Requests" } })));
+  // 2026-10-20 正式回放跑到 2025-07-16 停在這一種：UNKNOWN_ERROR「could not coalesce error」，原文在 error
+  assert.ok(isRateLimited(Object.assign(new Error("could not coalesce error"), {
+    code: "UNKNOWN_ERROR", shortMessage: "could not coalesce error",
+    error: { code: 429, message: "Your app has exceeded its compute units per second capacity." },
+  })));
+}
+
+// ── 同一種限流打在一般方法（eth_getBlockByNumber）上：照樣重試 ───────────────
+{
+  const p = new ConsistentProvider("http://127.0.0.1:1", BASE_SEPOLIA, { staticNetwork: BASE_SEPOLIA, cacheTimeout: -1, batchMaxCount: 1 });
+  let limited = 1;
+  (p as unknown as { _send: (x: unknown) => Promise<unknown[]> })._send = async (payload) => {
+    const list = (Array.isArray(payload) ? payload : [payload]) as { id: number; method: string }[];
+    return list.map((q) => (limited-- > 0
+      ? { id: q.id, error: { code: 429, message: "Your app has exceeded its compute units per second capacity." } }
+      : { id: q.id, result: "0x10" }));
+  };
+  assert.equal(await p.getBlockNumber(), 16, "rate-limited eth_blockNumber is retried");
 }
 
 console.log("provider.consistent: ok");
