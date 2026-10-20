@@ -23,8 +23,12 @@ export const BASE_SEPOLIA = ethers.Network.from(84532);
  * 十六進位裡出現「429」不代表限流。
  */
 export function isRateLimited(e: unknown): boolean {
-  const err = e as { status?: unknown; shortMessage?: unknown; info?: { error?: { code?: unknown; message?: unknown } } };
-  const node = err?.info?.error;
+  type NodeError = { code?: unknown; message?: unknown };
+  const err = e as { status?: unknown; shortMessage?: unknown; error?: NodeError; info?: { error?: NodeError } };
+  // ethers 有兩種包法：call／estimateGas 包成 CALL_EXCEPTION，節點原文在 info.error；
+  // 其他方法（例如 eth_getBlockByNumber）包成 UNKNOWN_ERROR「could not coalesce error」，原文在 error
+  // （2026-10-20 正式回放跑到 2025-07-16 停在這一種）。
+  const node = err?.info?.error ?? err?.error;
   if (node?.code === 429 || err?.status === 429) return true;
   // HTTP 層的 429：ethers 自己重試幾次後丟 SERVER_ERROR「exceeded maximum retry limit」，狀態在 info.responseStatus
   if (/^429\b/.test(String((err as { info?: { responseStatus?: unknown } })?.info?.responseStatus ?? ""))) return true;
