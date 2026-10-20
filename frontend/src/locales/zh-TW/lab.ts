@@ -61,7 +61,7 @@ export const lab = {
   },
 
   baskets: {
-    low_carbon: '低碳五檔',
+    low_carbon: '低碳四檔',
     equities: '科技股五檔',
     macro: '總經四檔',
     crypto_mix: '加密與成長四檔',
@@ -128,7 +128,7 @@ export const lab = {
 
   similar: {
     title: '用相近做法的模擬交易者',
-    body: '這些模擬交易者在本機鏈上用同一條規則操作；到個人頁可以看完整績效。',
+    body: '這些模擬交易者用同一條規則操作；到個人頁可以看完整績效。',
     view: '看個人頁',
   },
 

@@ -1,12 +1,16 @@
-import type { Contract, BrowserProvider } from 'ethers'
+import type { BrowserProvider } from 'ethers'
 
+import { Contract } from 'ethers'
 import { useRef, useMemo, useState, useEffect, useCallback } from 'react'
+
+import { CARBON_RETIREMENT_ABI } from 'src/contracts/carbonRetirement'
 
 import { buildFeed, isFeedIncomplete, type FeedEvent, type FeedItem, type FeedLeg } from 'src/lib/pepefi/feed'
 import { mapLimit, withRetry, RPC_CONCURRENCY } from 'src/lib/pepefi/rpcBatch'
 import { isWhaleTrade, WHALE_THRESHOLD } from 'src/lib/pepefi/whale'
 import { UI_RETRIES, avgBlockTime, scanFromBlock, getLogsChunked, isChunkScanAborted } from 'src/lib/pepefi/chainLogs'
 
+import { useCarbonRouting } from './useCarbonRouting'
 import { useExchangeActivity } from './useExchangeActivity'
 import { useRegisteredTraders } from './useRegisteredTraders'
 
@@ -15,6 +19,7 @@ import { useRegisteredTraders } from './useRegisteredTraders'
 // 交易所的開倉、平倉、清算沿用巨鯨追蹤共用的那一份掃描（useExchangeActivity），不再掃一次。
 // 另外只多一趟分段掃描：策略登錄的 StrategyPublished，加上跟單合約的跟隨、取消、罰沒——
 // 兩個合約、四種事件併成一次 getLogs（address 與 topics[0] 都傳陣列就是 OR）。
+// 這條鏈接上了碳權退役（#333，從 FeeRouter 找得到退役合約）時，CarbonRetired 也併進同一次掃描。
 // 掃描範圍沿用 scanFromBlock：本機鏈從頭掃，公開鏈只掃有限的視窗。任何一段讀不到，結果就標成不完整。
 //
 // 時間戳：用出塊時間推估在回放過的本機鏈上會差很遠（兩年的歷史擠在幾萬個區塊裡），
@@ -22,7 +27,7 @@ import { useRegisteredTraders } from './useRegisteredTraders'
 
 const EXACT_BLOCKS = 800
 
-const SOCIAL_EVENTS = ['StrategyPublished', 'TraderFollowed', 'TraderUnfollowed', 'TraderSlashed'] as const
+const SOCIAL_EVENTS = ['StrategyPublished', 'TraderFollowed', 'TraderUnfollowed', 'TraderSlashed', 'CarbonRetired'] as const
 
 interface Contracts {
   exchange: Contract
@@ -51,6 +56,9 @@ export function useChainFeed(
   chainId: number | null,
 ): ChainFeed {
   const activity = useExchangeActivity(contracts?.exchange ?? null, provider, chainId)
+  const carbon = useCarbonRouting(provider, chainId)
+  const retirement = carbon.routing?.retirement ?? null
+  const retirementDecimals = carbon.routing?.decimals ?? null
   const [social, setSocial] = useState<Untimed[]>([])
   const [socialFailed, setSocialFailed] = useState(0)
   const [socialLoading, setSocialLoading] = useState(false)
@@ -83,6 +91,11 @@ export function useChainFeed(
       setSocialLoading(false)
       return
     }
+    // 先等退役合約找完，才知道要不要一起掃——否則公開鏈上會整段掃兩次
+    if (!carbon.loaded) {
+      setSocialLoading(true)
+      return
+    }
     setSocialLoading(true)
     setSocialFailed(0)
     try {
@@ -91,10 +104,14 @@ export function useChainFeed(
       setLatest({ number: block.number, timestamp: block.timestamp })
       const from = scanFromBlock({ chainId, currentBlock: block.number })
 
-      const sources = [contracts.registry, contracts.copyTracker]
-      const topics = SOCIAL_EVENTS.map((name) => {
+      const sources = [
+        contracts.registry,
+        contracts.copyTracker,
+        ...(retirement ? [new Contract(retirement, CARBON_RETIREMENT_ABI, provider)] : []),
+      ]
+      const topics = SOCIAL_EVENTS.flatMap((name) => {
         const source = sources.find((c) => c.interface.getEvent(name))
-        return source!.interface.getEvent(name)!.topicHash
+        return source ? [source.interface.getEvent(name)!.topicHash] : []
       })
       let failed = 0
       const logs = await getLogsChunked(
@@ -124,6 +141,12 @@ export function useChainFeed(
           rows.push({ ...base, kind: 'unfollow', trader: String(a.trader), follower: String(a.follower) })
         } else if (parsed.name === 'TraderSlashed') {
           rows.push({ ...base, kind: 'slash', trader: String(a.trader), follower: String(a.follower), amount: a.slashAmount as bigint })
+        } else if (parsed.name === 'CarbonRetired') {
+          // 金額換成 18 位小數，與動態上其他金額同一個格式；讀不到結算幣的 decimals 時當作 18
+          const decimals = retirementDecimals ?? 18
+          const amount = a.amount as bigint
+          const scaled = decimals <= 18 ? amount * 10n ** BigInt(18 - decimals) : amount / 10n ** BigInt(decimals - 18)
+          rows.push({ ...base, kind: 'retire', amount: scaled, tonnes: a.tonnesCO2e as bigint })
         }
       }
       setSocial(rows)
@@ -136,7 +159,7 @@ export function useChainFeed(
     } finally {
       if (!isStale()) setSocialLoading(false)
     }
-  }, [contracts, provider, chainId])
+  }, [contracts, provider, chainId, carbon.loaded, retirement, retirementDecimals])
 
   useEffect(() => { void scanSocial() }, [scanSocial])
 
@@ -220,7 +243,7 @@ export function useChainFeed(
   }, [contracts, wantedVersions])
 
   const actors = useMemo(
-    () => [...new Set(relevant.map((e) => ('trader' in e ? e.trader : e.owner).toLowerCase()))],
+    () => [...new Set(relevant.flatMap((e) => ('trader' in e ? [e.trader] : 'owner' in e ? [e.owner] : [])).map((a) => a.toLowerCase()))],
     [relevant],
   )
   const registered = useRegisteredTraders(contracts?.registry ?? null, actors)

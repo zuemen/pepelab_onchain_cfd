@@ -11,6 +11,7 @@ import Divider from '@mui/material/Divider';
 import Typography from '@mui/material/Typography';
 
 import { t, interpolate } from 'src/locales';
+import { fUsd } from 'src/lib/pepefi/heroData';
 import { fCompact, timeAgo } from 'src/lib/pepefi/whale';
 import { ASSET_LABEL } from 'src/lib/pepefi/assetMeta';
 import { FEATURE_COPY_TRADING } from 'src/lib/pepefi/featureFlags';
@@ -74,6 +75,12 @@ export function describeFeedItem(item: FeedItem, today: string): string {
         : interpolate(S.unfollowOn, { count: item.count, day: item.day });
     case 'slash':
       return interpolate(S.slash, { amount: fCompact(item.amount) });
+    case 'retirement':
+      return interpolate(S.retirement, {
+        tonnes: (Number(item.tonnes) / 1e18).toFixed(2),
+        // 退役金額常常不到 1 美元，取到分，不用會四捨五入成 $0 的 fCompact
+        amount: `$${fUsd(Number(item.amount) / 1e18)}`,
+      });
     default:
       return '';
   }
@@ -87,6 +94,7 @@ const TONE: Record<FeedType, 'default' | 'primary' | 'success' | 'warning' | 'er
   follow: 'success',
   unfollow: 'warning',
   slash: 'error',
+  retirement: 'success',
 };
 
 const short = (address: string) => `${address.slice(0, 6)}…${address.slice(-4)}`;
@@ -109,6 +117,8 @@ export default function FeedList({ items, simulated, provider, chainId, hideActo
       {items.map((item, i) => {
         // 跟單入口只給註冊過的交易者，而且只在跟單旗標開啟時出現
         const canCopy = FEATURE_COPY_TRADING && item.actorName !== null;
+        // 平台自己的動作（碳權退役）沒有主角：顯示「平台」，不給個人頁
+        const platform = item.actor === '';
         return (
           <Box key={item.id}>
             {i > 0 && <Divider />}
@@ -123,7 +133,9 @@ export default function FeedList({ items, simulated, provider, chainId, hideActo
                 <Typography variant="body2" sx={{ wordBreak: 'break-word' }}>
                   {!hideActor && (
                     <Box component="span" sx={{ fontWeight: 700, mr: 0.75 }}>
-                      {item.actorName ?? <Box component="span" sx={{ fontFamily: MONO }}>{short(item.actor)}</Box>}
+                      {platform
+                        ? L.item.platform
+                        : item.actorName ?? <Box component="span" sx={{ fontFamily: MONO }}>{short(item.actor)}</Box>}
                     </Box>
                   )}
                   {simulated.has(item.actor) && (
@@ -133,7 +145,7 @@ export default function FeedList({ items, simulated, provider, chainId, hideActo
                 </Typography>
                 <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap sx={{ mt: 0.75 }}>
                   <TxProof label={L.item.tx} hash={item.txHash} provider={provider} chainId={chainId} />
-                  {!hideActor && (
+                  {!hideActor && !platform && (
                     <Button size="small" component={RouterLink} to={`/trader/${item.actor}`} sx={{ minWidth: 0, px: 1 }}>
                       {L.item.profile}
                     </Button>

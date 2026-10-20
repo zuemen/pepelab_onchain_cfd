@@ -34,6 +34,7 @@ export const feed = {
     follow: '跟單',
     unfollow: '取消跟單',
     slash: '罰沒',
+    retirement: '碳權退役',
   },
 
   sentence: {
@@ -55,6 +56,7 @@ export const feed = {
     unfollow: '今天有 {count} 人取消跟單',
     unfollowOn: '{day} 有 {count} 人取消跟單',
     slash: '質押被罰沒 {amount}',
+    retirement: '退役了 {tonnes} 噸模擬碳權（花費 {amount}），來自平台手續費的碳權份額',
     long: '做多',
     short: '做空',
     separator: '；',
@@ -62,6 +64,7 @@ export const feed = {
 
   item: {
     simulated: '模擬',
+    platform: '平台',
     profile: '個人頁',
     copy: '跟單',
     tx: '交易',

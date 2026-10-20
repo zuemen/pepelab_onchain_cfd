@@ -61,7 +61,7 @@ export const lab: Catalog['lab'] = {
   },
 
   baskets: {
-    low_carbon: 'Low-carbon five',
+    low_carbon: 'Low-carbon four',
     equities: 'Tech equities five',
     macro: 'Macro four',
     crypto_mix: 'Crypto and growth four',
@@ -128,7 +128,7 @@ export const lab: Catalog['lab'] = {
 
   similar: {
     title: 'Simulated traders with a similar approach',
-    body: 'These simulated traders follow the same rule on the local chain; their profiles show their full performance.',
+    body: 'These simulated traders follow the same rule; their profiles show their full performance.',
     view: 'View profile',
   },
 
