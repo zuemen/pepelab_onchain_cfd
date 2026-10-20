@@ -35,6 +35,7 @@ export const feed: Catalog['feed'] = {
     follow: 'Copy trading',
     unfollow: 'Stopped copying',
     slash: 'Slash',
+    retirement: 'Carbon retirement',
   },
 
   sentence: {
@@ -56,6 +57,7 @@ export const feed: Catalog['feed'] = {
     unfollow: '{count} stopped copying today',
     unfollowOn: '{count} stopped copying on {day}',
     slash: 'had {amount} of stake slashed',
+    retirement: 'retired {tonnes} t of simulated carbon credits ({amount}), paid from the platform fee’s carbon share',
     long: 'long',
     short: 'short',
     separator: '; ',
@@ -63,6 +65,7 @@ export const feed: Catalog['feed'] = {
 
   item: {
     simulated: 'Simulated',
+    platform: 'Platform',
     profile: 'Profile',
     copy: 'Copy',
     tx: 'Transaction',

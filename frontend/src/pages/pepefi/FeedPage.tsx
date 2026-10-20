@@ -77,7 +77,7 @@ function Feed() {
   const filtered = useMemo(() => filterFeed(visible, { types, actor: actor || null }), [visible, types, actor]);
   const actors = useMemo(() => {
     const byAddress = new Map<string, string>();
-    for (const item of visible) byAddress.set(item.actor, item.actorName ?? `${item.actor.slice(0, 6)}…${item.actor.slice(-4)}`);
+    for (const item of visible) if (item.actor) byAddress.set(item.actor, item.actorName ?? `${item.actor.slice(0, 6)}…${item.actor.slice(-4)}`);
     return [...byAddress].sort((a, b) => a[1].localeCompare(b[1]));
   }, [visible]);
   const anySimulated = visible.some((item) => simulated.has(item.actor));
@@ -142,8 +142,8 @@ function Feed() {
         {feed.loading && feed.items.length === 0 ? (
           <Typography color="text.secondary">{L.loading}</Typography>
         ) : filtered.length === 0 ? (
-          // 讀不到時上面已經有「不完整」的提示；這裡只說這段期間沒有符合條件的
-          <Typography color="text.secondary">{L.empty}</Typography>
+          // 讀不到時只留上面「不完整」的提示：再說「沒有符合條件」等於把讀不到當成沒有發生
+          feed.incomplete ? null : <Typography color="text.secondary">{L.empty}</Typography>
         ) : (
           <>
             <FeedList items={filtered.slice(0, shown)} simulated={simulated} provider={wallet.provider} chainId={wallet.chainId} />

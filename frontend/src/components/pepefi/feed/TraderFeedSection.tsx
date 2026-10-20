@@ -42,7 +42,8 @@ export default function TraderFeedSection({ wallet, trader }: { wallet: WalletAP
       {feed.loading && mine.length === 0 ? (
         <Typography variant="body2" color="text.secondary">{L.loading}</Typography>
       ) : mine.length === 0 ? (
-        <Typography variant="body2" color="text.secondary">{L.profile.empty}</Typography>
+        // 讀不到時只留「不完整」的提示，不說「沒有動態」
+        feed.incomplete ? null : <Typography variant="body2" color="text.secondary">{L.profile.empty}</Typography>
       ) : (
         <FeedList items={mine.slice(0, SHOWN)} simulated={simulated} provider={wallet.provider} chainId={wallet.chainId} hideActor />
       )}

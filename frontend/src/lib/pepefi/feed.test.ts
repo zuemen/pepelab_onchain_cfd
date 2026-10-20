@@ -102,6 +102,19 @@ describe('buildFeed — one case per kind of event', () => {
   })
 })
 
+describe('buildFeed — carbon retirement', () => {
+  it('lists every retirement as a platform item without an actor', () => {
+    const events: FeedEvent[] = [{ ...at(6), kind: 'retire', amount: 3n * E18, tonnes: 375n * 10n ** 15n }]
+    const [item] = buildFeed(events, ctx())
+    expect(item).toMatchObject({ type: 'retirement', actor: '', actorName: null, amount: 3n * E18, tonnes: 375n * 10n ** 15n })
+  })
+
+  it('is left out when filtering by a trader', () => {
+    const items = buildFeed([open(1, '1', 9_000n, ALICE), { ...at(2), kind: 'retire', amount: 1n, tonnes: 1n }], ctx())
+    expect(filterFeed(items, { actor: ALICE }).map((i) => i.type)).toEqual(['bigOpen'])
+  })
+})
+
 describe('buildFeed — follows', () => {
   it('merges the same trader’s follows on the same UTC day into one item without follower addresses', () => {
     const events: FeedEvent[] = [

@@ -32,6 +32,8 @@ export type FeedEvent =
   | (EventBase & { kind: 'follow'; trader: string; follower: string; totalMargin: bigint })
   | (EventBase & { kind: 'unfollow'; trader: string; follower: string })
   | (EventBase & { kind: 'slash'; trader: string; follower: string; amount: bigint })
+  /** 碳權退役（#333）。amount 已換成 18 位小數；tonnes 是 1e18 = 1 噸。事件沒有發起人：這是平台的動作。 */
+  | (EventBase & { kind: 'retire'; amount: bigint; tonnes: bigint })
 
 /** 一版策略裡的一檔，與 StrategyRegistry.getStrategyVersion 回傳的相同。 */
 export interface FeedLeg {
@@ -68,7 +70,7 @@ export type FeedItem = {
   timestamp: number
   /** 回鏈上核對用的交易；聚合的項目是當天最後一筆。 */
   txHash: string
-  /** 主角（交易者或開倉的人），小寫。 */
+  /** 主角（交易者或開倉的人），小寫。平台自己的動作（碳權退役）是空字串。 */
   actor: string
   /** 只有在 StrategyRegistry 註冊過才有名稱。 */
   actorName: string | null
@@ -82,11 +84,14 @@ export type FeedItem = {
   | { type: 'follow'; day: string; count: number; totalMargin: bigint }
   | { type: 'unfollow'; day: string; count: number }
   | { type: 'slash'; amount: bigint }
+  | { type: 'retirement'; amount: bigint; tonnes: bigint }
 )
 
 export type FeedType = FeedItem['type']
 
-export const FEED_TYPES: readonly FeedType[] = ['strategy', 'bigOpen', 'bigClose', 'liquidation', 'follow', 'unfollow', 'slash']
+export const FEED_TYPES: readonly FeedType[] = [
+  'strategy', 'bigOpen', 'bigClose', 'liquidation', 'follow', 'unfollow', 'slash', 'retirement',
+]
 
 // ── 轉換 ─────────────────────────────────────────────────────────────────────
 
@@ -122,10 +127,11 @@ const newestFirst = (a: { blockNumber: number; logIndex: number }, b: { blockNum
  * - 清算、罰沒：一律列出——風險事件不能被藏起來。
  * - 策略發布：和前一版比出新增、移除、權重變化與方向翻轉；讀不到前一版時 diff 為 null（畫面只說「發布了新版」）。
  * - 跟隨、取消：同一位交易者同一天各合成一則。
+ * - 碳權退役：一律列出，主角是平台（actor 為空字串）。
  */
 export function buildFeed(events: readonly FeedEvent[], ctx: FeedContext): FeedItem[] {
   const threshold = ctx.threshold ?? WHALE_THRESHOLD
-  const nameOf = (address: string) => ctx.names.get(address.toLowerCase()) || null
+  const nameOf = (address: string) => (address ? ctx.names.get(address.toLowerCase()) || null : null)
   const opens = new Map<string, Extract<FeedEvent, { kind: 'open' }>>()
   for (const e of events) if (e.kind === 'open') opens.set(e.positionId, e)
 
@@ -189,6 +195,10 @@ export function buildFeed(events: readonly FeedEvent[], ctx: FeedContext): FeedI
       }
       case 'slash':
         items.push({ ...base(e, e.trader), type: 'slash', amount: e.amount })
+        break
+      case 'retire':
+        // 一律列出：退役是平台把跟單費的一部分拿去做的事，金額小也要看得到
+        items.push({ ...base(e, ''), type: 'retirement', amount: e.amount, tonnes: e.tonnes })
         break
       default:
         break
