@@ -20,13 +20,14 @@ export const costPerTx = (maxFeePerGas: bigint): bigint => maxFeePerGas * GAS_PE
 export const needWei = (need: Need, maxFeePerGas: bigint): bigint => BigInt(need.txs) * costPerTx(maxFeePerGas) + need.value;
 
 /**
- * 要轉多少給這個帳號：餘額不夠這一段用時，補到這一段需要的兩倍（少發幾次轉帳）；夠用就是 0。
+ * 要轉多少給這個帳號：餘額不夠這一段用時，補到這一段需要的 1.25 倍；夠用就是 0。
+ * 原本補到兩倍：2026-10-20 正式回放跑 126 天，部署者 0.07 ETH 有一半停在各帳號裡沒用到。
  */
 export function topUp(balance: bigint, need: Need, maxFeePerGas: bigint): bigint {
   const want = needWei(need, maxFeePerGas);
   if (want === 0n || balance >= want) return 0n;
-  return want * 2n - balance;
+  return (want * 5n) / 4n - balance;
 }
 
-/** 交易所收的執行費累積到這麼多，就由 owner（部署者）領回來繼續發 gas。 */
-export const RECYCLE_THRESHOLD = 10n ** 16n; // 0.01 ETH
+/** 交易所收的執行費累積到這麼多，就由 owner（部署者）領回來繼續發 gas（原 0.01：領得太晚，錢卡在交易所）。 */
+export const RECYCLE_THRESHOLD = 2n * 10n ** 15n; // 0.002 ETH

@@ -439,6 +439,13 @@ async function main(): Promise<void> {
     await step(`deposit:${t.index}`, `deposit ${t.name}`, () => contractCall(w, exchange, "depositMargin", [usd(t.capitalUsd)]));
   }
 
+  /** 這位交易者在這一天（含）之前最後一次換倉的部位數：跟隨者跟單時開的就是這麼多個部位。 */
+  const legsOn = (traderIndex: number, date: string): number => {
+    const t = traderByIndex.get(traderIndex);
+    const last = t?.rebalances.filter((r) => r.date <= date).at(-1);
+    return last ? last.legs.length : schedule.assets.length;
+  };
+
   // ── 逐日 ──────────────────────────────────────────────────────────────────
   for (let n = firstDay; n < schedule.days.length; n++) {
     const day = schedule.days[n];
@@ -459,7 +466,21 @@ async function main(): Promise<void> {
         const legs = t.rebalances.find((r) => r.date === day.date)!.legs.length;
         return { address: t.wallet.address, txs: 2 * legs + 2, value: BigInt(legs) * executionFee };
       }),
-      ...acting.map((f) => ({ address: f.wallet.address, txs: 3, value: BigInt(schedule.assets.length) * executionFee })),
+      // 跟單的執行費 = 那位交易者當下策略的部位數 × 執行費（不是全部 11 個資產）；取消跟單不附 ETH。
+      ...acting.map((f) => {
+        let txs = 0;
+        let value = 0n;
+        for (const a of f.actions) {
+          if (a.date !== day.date) continue;
+          if (a.type === "follow") {
+            txs += 2;
+            value += executionFee * BigInt(legsOn(a.traderIndex, day.date));
+          } else {
+            txs += 1;
+          }
+        }
+        return { address: f.wallet.address, txs, value };
+      }),
       { address: maker.address, txs: 2 * schedule.assets.length, value: BigInt(schedule.assets.length) * executionFee },
     ]);
 

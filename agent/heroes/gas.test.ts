@@ -12,11 +12,22 @@ assert.equal(want, 8n * costPerTx(fee) + need.value);
 
 assert.equal(topUp(want, need, fee), 0n, "enough: no transfer");
 assert.equal(topUp(want + 1n, need, fee), 0n);
-assert.equal(topUp(0n, need, fee), 2n * want, "empty: fill to twice the need");
-assert.equal(topUp(want - 1n, need, fee), want + 1n, "short by one wei: still top up to twice the need");
+assert.equal(topUp(0n, need, fee), (want * 5n) / 4n, "empty: fill to 1.25x the need");
+assert.equal(topUp(want - 1n, need, fee), (want * 5n) / 4n - want + 1n, "short by one wei: still top up to 1.25x the need");
 assert.equal(topUp(0n, { address: "0x1", txs: 0, value: 0n }, fee), 0n, "nothing to send: nothing to fund");
 
 // 量級：一天換倉約 0.0005 ETH，遠低於部署者手上的 0.08 ETH
 assert.ok(want < 10n ** 15n, `a rebalance should need < 0.001 ETH, got ${want}`);
 
 console.log("gas: ok");
+
+// ── 取回帳號裡剩下的 ETH：扣掉手續費與 L1 保留；不夠付兩倍手續費就不轉 ─────────
+{
+  const { sweepable, L1_RESERVE } = await import("./sweep.ts");
+  const fee = 12_000_000n;
+  const cost = 21_000n * fee + L1_RESERVE;
+  assert.equal(sweepable(10n ** 15n, fee), 10n ** 15n - cost);
+  assert.equal(sweepable(cost * 2n, fee), 0n, "dust is left alone");
+  assert.equal(sweepable(0n, fee), 0n);
+  console.log("sweepable: ok");
+}
