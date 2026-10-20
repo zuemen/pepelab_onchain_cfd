@@ -17,6 +17,21 @@ export const localProvider = (rpc: string): ethers.JsonRpcProvider =>
 
 export const BASE_SEPOLIA = ethers.Network.from(84532);
 
+/**
+ * 節點限流（2026-10-20 正式回放跑到第 126 天：Alchemy 免費方案的 compute units per second）。
+ * 只看節點回的錯誤本身（code 429 或說明文字），不看整段 ethers 訊息：那裡有交易的 calldata，
+ * 十六進位裡出現「429」不代表限流。
+ */
+export function isRateLimited(e: unknown): boolean {
+  const err = e as { status?: unknown; shortMessage?: unknown; info?: { error?: { code?: unknown; message?: unknown } } };
+  const node = err?.info?.error;
+  if (node?.code === 429 || err?.status === 429) return true;
+  // HTTP 層的 429：ethers 自己重試幾次後丟 SERVER_ERROR「exceeded maximum retry limit」，狀態在 info.responseStatus
+  if (/^429\b/.test(String((err as { info?: { responseStatus?: unknown } })?.info?.responseStatus ?? ""))) return true;
+  const said = `${typeof node?.message === "string" ? node.message : ""} ${typeof err?.shortMessage === "string" ? err.shortMessage : ""}`;
+  return /too many requests|compute units per second|rate limit|exceeded its .*capacity|exceeded maximum retry limit/i.test(said);
+}
+
 /** 節點還沒有那個區塊（落後）時的錯誤訊息：等一下再問同一個區塊。 */
 const NOT_YET = /header not found|block not found|unknown block|not found: block|beyond (the )?current head|future block|requested block|block .*(greater|higher) than/i;
 
@@ -57,6 +72,12 @@ export class ConsistentProvider extends ethers.JsonRpcProvider {
         const pinned = (method === "eth_call" || method === "eth_estimateGas") && Array.isArray(params) && params.length > 1;
         // ethers 把節點的錯誤包成 CALL_EXCEPTION（"missing revert data"），原文在 info.error 裡
         const text = `${(e as Error)?.message ?? ""} ${JSON.stringify((e as { info?: { error?: unknown } })?.info?.error ?? "")}`;
+        // 節點限流：任何請求都等一下再送同一個，2、4、8、16、30 秒…，共約 10 分鐘。
+        // 重送同一筆已簽名的交易也安全（雜湊相同）。
+        if (isRateLimited(e) && i < 25) {
+          await new Promise((r) => setTimeout(r, Math.min(30_000, 2_000 * 2 ** Math.min(i, 4))));
+          continue;
+        }
         if (!pinned || i >= 60 || !NOT_YET.test(text)) throw e;
         await new Promise((r) => setTimeout(r, 1000));
       }
