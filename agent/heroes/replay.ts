@@ -82,7 +82,8 @@ const sender: Sender = PUBLIC
     intervalMs: Number(process.env.HEROES_RECEIPT_POLL_MS ?? PUBLIC_POLLING.intervalMs),
   })
   : new LocalSender(provider);
-const CONCURRENCY = Number(process.env.HEROES_CONCURRENCY ?? 32);
+// 同時進行的帳號數。公開鏈預設 12：Alchemy 免費方案的每秒額度下，32 個帳號同時輪詢收據會被限流。
+const CONCURRENCY = Number(process.env.HEROES_CONCURRENCY ?? (PUBLIC ? 12 : 32));
 const LOG_CHUNK = Number(process.env.HEROES_LOG_CHUNK ?? 1000);
 
 const exchange = new ethers.Contract(A.PerpetualExchange, EXCHANGE_ABI, provider);
@@ -136,9 +137,17 @@ async function step(key: string, label: string, build: () => Call | null | Promi
 
 /** 已送出但結果不明的交易：上鏈了就照收據，節點不知道這筆（沒送出去或被丟掉）就重送。 */
 async function resolveEntry(e: Entry): Promise<Resolution> {
-  const receipt = await provider.getTransactionReceipt(e.hash!);
-  if (receipt) return receipt.status === 1 ? "ok" : "failed";
-  return (await provider.getTransaction(e.hash!)) ? "pending" : "unknown";
+  try {
+    const receipt = await provider.getTransactionReceipt(e.hash!);
+    if (receipt) return receipt.status === 1 ? "ok" : "failed";
+    if (await provider.getTransaction(e.hash!)) return "pending";
+    // 節點說不知道這一筆，但負載平衡後面的節點可能落後：這個 nonce 已經被用掉，就是我們這一筆
+    // （同一個 nonce 只簽過一次），等收據出現，不能當成沒送過而重送。
+    if (e.from && e.nonce !== undefined && (await provider.getTransactionCount(e.from, "latest")) > e.nonce) return "pending";
+    return "unknown";
+  } catch {
+    return "pending"; // 查詢本身失敗：稍後再問，絕不因此重送
+  }
 }
 
 // 目前開著的部位（交易者的與跟隨者的都算），清算檢查用。
@@ -333,6 +342,11 @@ async function main(): Promise<void> {
 
   // ── 初始化 ────────────────────────────────────────────────────────────────
   if (!journal.doc.setupDone) {
+    if (journal.doc.setupFromBlock !== null) {
+      // 初始化做到一半停過：先把「已送出、結果未知」的那幾筆問清楚，再接著做。
+      const r = await journal.resolvePending(resolveEntry);
+      console.log(`setup: resuming (${r.resolved} in-flight tx resolved, ${r.dropped} never landed)`);
+    }
     journal.startSetup((await provider.getBlockNumber()) + 1);
     const everyone = [...traders.map((t) => t.wallet.address), ...followers.map((f) => f.wallet.address),
       ...(demo ? [demo.address] : []), maker.address];

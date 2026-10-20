@@ -305,6 +305,8 @@ say "回放要穩定的節點（Alchemy／Infura 的 Base Sepolia 端點）。�
 ask_secret HEROES_RPC_URL "回放用的 RPC 網址（輸入不顯示）："
 [[ "$(cast chain-id --rpc-url "$HEROES_RPC_URL" 2>/dev/null)" == "84532" ]] || die "這個 RPC 不是 Base Sepolia 或連不上"
 write_env HEROES_RPC_URL "$HEROES_RPC_URL"
+# 用環境變數傳給子程序，不放進指令字串：run() 會把指令印在畫面上，網址裡有 API 金鑰。
+export HEROES_RPC_URL
 [[ -n "$PY" ]] || PY="heroes/.venv/bin/python"
 ask PY "heroes 用的 python（直接 Enter 用 $PY）："
 [[ -n "$PY" ]] || PY="heroes/.venv/bin/python"
@@ -480,11 +482,11 @@ if ! done_already REPLAY_DONE; then
     fi
     [[ -f heroes/out/schedule.json ]] || die "沒有 heroes/out/schedule.json"
   fi
-  run 9-addresses.log bash -c "cd agent && HEROES_RPC_URL='$HEROES_RPC_URL' npx tsx heroes/chainAddresses.ts '$EXCHANGE_NEW' ../heroes/out/addresses-84532.json"
+  run 9-addresses.log bash -c "cd agent && npx tsx heroes/chainAddresses.ts '$EXCHANGE_NEW' ../heroes/out/addresses-84532.json"
   say "replay.ts 會問：部署者 keystore 密碼、這次回放帳號金鑰檔的密碼（第一次是新設，要記住），最後要輸入 replay on 84532。"
   warn "heroes/keys/84532.json 與它的密碼要保存到不再需要這些帳號為止。"
   pause "準備好就按 Enter 開始回放"
-  (cd agent && HEROES_RPC_URL="$HEROES_RPC_URL" npx tsx heroes/replay.ts --public-chain \
+  (cd agent && npx tsx heroes/replay.ts --public-chain \
     ../heroes/out/schedule.json ../heroes/out/addresses-84532.json ../heroes/out/events-84532.json \
     --progress ../heroes/out/progress-84532.json --keystore ../heroes/keys/84532.json --deployer-account "$ACCOUNT") \
     2>&1 | tee -a "$LOGS/10-replay.log" || die "回放停了（原因在上面）。處理完重跑本腳本，會從最後完成的那一天接著跑"
