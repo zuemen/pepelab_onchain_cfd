@@ -8,8 +8,7 @@
 //
 // 白標：每個旗標的有效值 = 租戶授權（allowed）且 readFlag(env, 租戶預設)。環境變數可以
 // 把功能關掉，但打不開租戶未授權的功能。default 租戶五個旗標都是 allowed: true；
-// 預設開的是 gamefi（2026-10-12 恢復）、copyTrading（#331）與 showLeverage／showPerpetuals（#344），
-// pepeRewards 預設關。
+// 預設開的是 gamefi（2026-10-12 恢復）、pepeRewards（GameFi 的 PEPE 來源，2026-10-20）、copyTrading（#331）與 showLeverage／showPerpetuals（#344）。
 // 規則在 src/tenant/flags.ts（vite.config.ts 也要用，不能碰 import.meta.env）。
 import { tenant } from 'src/tenant';
 import { resolveFeatureFlag } from 'src/tenant/flags';
@@ -84,7 +83,8 @@ export const FEATURE_GAMEFI = resolveFeatureFlag(
 
 /**
  * PEPE 平台幣獎勵：`/rewards`、帳戶選單的獎勵入口、Exchange 的 PEPE 水龍頭卡片。
- * 預設 **關**。開啟：`VITE_FEATURE_PEPE_REWARDS=1`。
+ * default 租戶預設 **開**（2026-10-20）：GameFi 的 PEPE 從這裡賺——交易挖礦、等級、跟單獎勵。
+ * 機構租戶照舊關（allowed: false）。關閉：`VITE_FEATURE_PEPE_REWARDS=0`。
  */
 export const FEATURE_PEPE_REWARDS = resolveFeatureFlag(
   tenant.features.pepeRewards,

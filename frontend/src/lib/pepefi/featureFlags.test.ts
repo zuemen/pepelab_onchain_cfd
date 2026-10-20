@@ -29,11 +29,11 @@ const ALL_OFF = { gamefi: false, pepeRewards: false, copyTrading: false }
 const ALL_ON = { gamefi: true, pepeRewards: true, copyTrading: true }
 
 describe('商業版功能旗標', () => {
-  it('平台預設：GameFi 開（2026-10-12 恢復）、跟單開（#331）；PEPE 獎勵仍預設關', () => {
+  it('平台預設：GameFi 開（2026-10-12 恢復）、跟單開（#331）、PEPE 獎勵開（GameFi 的 PEPE 從 /rewards 賺）', () => {
     expect(FEATURE_GAMEFI).toBe(true)
-    expect(FEATURE_PEPE_REWARDS).toBe(false)
+    expect(FEATURE_PEPE_REWARDS).toBe(true)
     expect(FEATURE_COPY_TRADING).toBe(true)
-    expect(FEATURES).toEqual({ ...ALL_OFF, gamefi: true, copyTrading: true })
+    expect(FEATURES).toEqual(ALL_ON)
   })
 
   it('旗標關閉時對應路由不可用（含子路徑與 query）', () => {

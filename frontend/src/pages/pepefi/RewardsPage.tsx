@@ -24,12 +24,12 @@ import { t, interpolate } from 'src/locales';
 import { prettyError } from 'src/lib/pepefi/errorMessages';
 import { toStrictlyIncreasingIds } from 'src/lib/pepefi/positionIds';
 import { checkInCopy, checkInErrorContext, dailyRewardFor, probeCheckInUnit, TODAY_INDEX, type CheckInUnit } from 'src/lib/pepefi/achievements';
+import { bpsToPercent, formatWholeTokens, tradeMiningReward, readIncentiveParams, type IncentiveParams, type IncentiveParamsReader } from 'src/lib/pepefi/incentiveParams';
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 
 const TIER_NAMES  = [t.rewards.tier.bronze, t.rewards.tier.silver, t.rewards.tier.gold, t.rewards.tier.diamond];
-const TIER_THRESHOLD = [10_000, 50_000, 200_000, 1_000_000]; // in USDC (18-dec /1e18)
-const TIER_REWARD    = [500,    2_000,  10_000,  50_000];    // PEPE
+// 門檻與獎勵不寫死：它們是合約的 owner 參數，從鏈上讀（incentiveParams.ts）。
 
 const fmt18 = (v: bigint) => Number(v) / 1e18;
 const fmtPepe = (v: bigint) => (Number(v) / 1e18).toFixed(0) + ' PEPE';
@@ -41,7 +41,6 @@ interface OpenPosition {
   margin:  bigint;
   leverage: bigint;
   mined:   boolean;
-  estReward: bigint;
 }
 
 interface CopyEntry {
@@ -122,6 +121,14 @@ export default function RewardsPage() {
 
   const { notify } = useToast();
 
+  // ── Reward values（owner 參數，從鏈上讀；null = 讀不到，畫面不提數字）──────────
+  const [params, setParams] = useState<IncentiveParams | null>(null);
+
+  const fetchParams = useCallback(async () => {
+    if (!contracts || !incentivesLive) { setParams(null); return; }
+    setParams(await readIncentiveParams(contracts.pepeIncentives as unknown as IncentiveParamsReader));
+  }, [contracts, incentivesLive]);
+
   // ── Trade Mining ────────────────────────────────────────────────────────────
   const [positions,   setPositions]   = useState<OpenPosition[]>([]);
   const [posLoading,  setPosLoading]  = useState(false);
@@ -146,12 +153,7 @@ export default function RewardsPage() {
           };
           if (!pos.isOpen) continue;
           const mined = (await contracts.pepeIncentives.minedPosition(id)) as boolean;
-          const notional = pos.margin * pos.leverage;
-          const bps = (await contracts.pepeIncentives.tradeMiningBps()) as bigint;
-          const cap = (await contracts.pepeIncentives.tradeMiningCap()) as bigint;
-          let est = notional * bps / 10_000n;
-          if (est > cap) est = cap;
-          rows.push({ id, margin: pos.margin, leverage: pos.leverage, mined, estReward: est });
+          rows.push({ id, margin: pos.margin, leverage: pos.leverage, mined });
         } catch { /* skip */ }
       }
       setPositions(rows);
@@ -319,9 +321,9 @@ export default function RewardsPage() {
     if (!wallet.isConnected) return;
     // 四個 fetch 各自吞掉自己的錯誤(catch /* not deployed */),所以這裡只關心
     // 「都跑完了沒」,不關心成敗。狀態 chip 要的是「資料到齊了嗎」。
-    void Promise.all([fetchPositions(), fetchTier(), fetchCopy(), fetchCheckin()])
+    void Promise.all([fetchParams(), fetchPositions(), fetchTier(), fetchCopy(), fetchCheckin()])
       .finally(() => setInitialLoaded(true));
-  }, [fetchPositions, fetchTier, fetchCopy, fetchCheckin, wallet.isConnected]);
+  }, [fetchParams, fetchPositions, fetchTier, fetchCopy, fetchCheckin, wallet.isConnected]);
 
   // ── Daily state ─────────────────────────────────────────────────────────────
   const checkedInToday = lastDay === TODAY_INDEX();
@@ -348,7 +350,8 @@ export default function RewardsPage() {
    */
   const tierState = (i: number) => ({
     claimed:  (tierClaimed & (1 << i)) !== 0,
-    eligible: fmt18(cumNotional) >= TIER_THRESHOLD[i],
+    // 門檻讀不到時一律不算達標：按鈕送出去也只會被合約退回。
+    eligible: params !== null && cumNotional >= params.tierThresholds[i],
   });
 
   const miningClaimable = positions.filter(p => !p.mined).length;
@@ -412,7 +415,12 @@ export default function RewardsPage() {
           <SectionCard
             title={t.rewards.mining.title}
             emoji="⛏️"
-            description={t.rewards.mining.description}
+            description={params
+              ? interpolate(t.rewards.mining.description, {
+                  pct: bpsToPercent(params.tradeMiningBps),
+                  cap: formatWholeTokens(params.tradeMiningCap),
+                })
+              : t.rewards.mining.descriptionGeneric}
             status={statusFor(miningClaimable, miningClaimed, positions.length)}
           >
             {posLoading ? (
@@ -434,8 +442,12 @@ export default function RewardsPage() {
                         {interpolate(t.rewards.mining.detail, {
                           notional: (fmt18(p.margin) * Number(p.leverage)).toFixed(0),
                         })}
-                        {' · '}
-                        {interpolate(t.rewards.mining.estReward, { reward: fmtPepe(p.estReward) })}
+                        {params && (<>
+                          {' · '}
+                          {interpolate(t.rewards.mining.estReward, {
+                            reward: fmtPepe(tradeMiningReward(p.margin * p.leverage, params)),
+                          })}
+                        </>)}
                       </Typography>
                     </Box>
                     <Button
@@ -473,14 +485,15 @@ export default function RewardsPage() {
             <Stack spacing={1.5}>
               {TIER_NAMES.map((name, i) => {
                 const { claimed, eligible } = tierState(i);
-                const progress = Math.min(100, (fmt18(cumNotional) / TIER_THRESHOLD[i]) * 100);
+                const threshold = params ? fmt18(params.tierThresholds[i]) : 0;
+                const progress = threshold > 0 ? Math.min(100, (fmt18(cumNotional) / threshold) * 100) : 0;
                 return (
                   <Box key={i}>
                     <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.5 }}>
                       <Typography variant="body2" sx={{ fontWeight: 700 }}>{name}</Typography>
                       <Typography variant="caption" color="text.secondary">
-                        {interpolate(t.rewards.tierSection.reward, {
-                          amount: TIER_REWARD[i].toLocaleString(),
+                        {params && interpolate(t.rewards.tierSection.reward, {
+                          amount: formatWholeTokens(params.tierRewards[i]),
                         })}
                       </Typography>
                     </Box>
@@ -491,8 +504,8 @@ export default function RewardsPage() {
                     />
                     <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                       <Typography variant="caption" color="text.secondary">
-                        {interpolate(t.rewards.tierSection.required, {
-                          amount: TIER_THRESHOLD[i].toLocaleString(),
+                        {params && interpolate(t.rewards.tierSection.required, {
+                          amount: formatWholeTokens(params.tierThresholds[i]),
                         })}
                       </Typography>
                       <Button
@@ -522,7 +535,9 @@ export default function RewardsPage() {
           <SectionCard
             title={t.rewards.copy.title}
             emoji="🤝"
-            description={t.rewards.copy.description}
+            description={params
+              ? interpolate(t.rewards.copy.description, { amount: formatWholeTokens(params.copyReward) })
+              : t.rewards.copy.descriptionGeneric}
             status={statusFor(copyClaimable, copyClaimed, copyEntries.length)}
           >
             {copyEntries.length === 0 ? (
@@ -547,7 +562,9 @@ export default function RewardsPage() {
                         ? t.rewards.copy.claimed
                         : copyBusy[e.trader]
                           ? t.rewards.working
-                          : t.rewards.copy.claim}
+                          : params
+                            ? interpolate(t.rewards.copy.claim, { amount: formatWholeTokens(params.copyReward) })
+                            : t.rewards.copy.claimGeneric}
                     </Button>
                   </Box>
                 ))}

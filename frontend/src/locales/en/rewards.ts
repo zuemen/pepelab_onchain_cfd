@@ -36,8 +36,10 @@ export const rewards: Catalog['rewards'] = {
 
   mining: {
     title: 'Trade Mining',
+    // Owner-tunable on PepeIncentives, read from the chain (incentiveParams.ts); descriptionGeneric when unreadable.
     description:
-      'Claimable once per position opened. Reward = notional × 0.5%, capped at 5,000 PEPE.',
+      'Claimable once per position opened. Reward = notional × {pct}%, capped at {cap} PEPE.',
+    descriptionGeneric: 'Claimable once per position opened; the reward scales with notional.',
     empty: 'No open positions found.',
     position: 'Position #{id}',
     detail: 'Notional: ${notional}',
@@ -62,11 +64,13 @@ export const rewards: Catalog['rewards'] = {
   copy: {
     title: 'Copy Reward',
     description:
-      'After a successful copy, both the copier and the copied trader each get 200 PEPE (once per pair).',
+      'After a successful copy, both the copier and the copied trader each get {amount} PEPE (once per pair).',
+    descriptionGeneric: 'After a successful copy, both the copier and the copied trader get a one-time PEPE reward.',
     empty: 'No active copy trades found.',
     claimed: 'Claimed',
-    claim: '200 PEPE',
-    done: 'Copy reward claimed! 200 PEPE each 🐸',
+    claim: '{amount} PEPE',
+    claimGeneric: 'Claim',
+    done: 'Copy reward claimed! 🐸',
   },
 
   checkIn: {

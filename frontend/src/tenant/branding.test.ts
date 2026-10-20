@@ -204,7 +204,7 @@ describe('default tenant is the current production site, unchanged', () => {
 
   it('keeps the original locale, flags and asset list', () => {
     expect(locale).toBe('zh-TW');
-    expect(FEATURES).toEqual({ gamefi: true, pepeRewards: false, copyTrading: true });
+    expect(FEATURES).toEqual({ gamefi: true, pepeRewards: true, copyTrading: true });
     // #344：公開站打開永續與槓桿（評審要看得到模擬交易者的槓桿部位、能跟單）。
     expect(SHOW_LEVERAGE).toBe(true);
     expect(SHOW_PERPETUALS).toBe(true);
