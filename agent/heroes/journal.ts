@@ -20,6 +20,8 @@ export interface Entry {
   hash?: string;
   nonce?: number;
   from?: string;
+  /** 沒送出就失敗的那一筆在 stats.failures 裡的原文（retryRejected 移除用）。 */
+  failure?: string;
 }
 
 /** 一個模擬日落在哪些區塊。toTimestamp 是那一天最後一個區塊的時間，分析估值用。 */
@@ -145,9 +147,33 @@ export class Journal {
 
   /** 連廣播都沒成功（估 gas 就 revert）：也算一筆送出、一筆失敗，與改版前的計數相同。 */
   markRejected(key: string, label: string, message: string): void {
-    this.entries[key] = { status: "failed" };
+    this.entries[key] = { status: "failed", failure: `${label}: ${message.slice(0, 160)}` };
     this.doc.stats.sent += 1;
     this.fail(label, message);
+  }
+
+  /**
+   * 續跑時：估 gas 就被判失敗、根本沒送出去的動作（失敗、沒有雜湊）重新做一次——它們沒有上鏈，重做不會重複。
+   * 2026-10-20 正式回放：RPC 節點落後，approve 之後估 stake 看到授權 0，35 筆這樣被記成失敗。
+   * 真的會 revert 的，重做一次還是失敗，照樣記下。
+   */
+  retryRejected(): number {
+    let n = 0;
+    for (const [key, e] of Object.entries(this.entries)) {
+      if (e.status !== "failed" || e.hash) continue;
+      delete this.entries[key];
+      this.doc.stats.sent -= 1;
+      this.doc.stats.failed -= 1;
+      if (e.failure) {
+        const i = this.doc.stats.failures.indexOf(e.failure);
+        if (i >= 0) this.doc.stats.failures.splice(i, 1);
+      }
+      n += 1;
+    }
+    // 舊版沒記 failure 原文：失敗數歸零時，清單裡留下的也只會是這些
+    if (this.doc.stats.failed === 0) this.doc.stats.failures = [];
+    if (n) this.save();
+    return n;
   }
 
   markResult(key: string, ok: boolean, label: string, message = ""): void {
@@ -204,6 +230,11 @@ export class Journal {
       this.doc.setupFromBlock = fromBlock;
       this.save();
     }
+  }
+
+  /** 目前這一段（初始化或某一天）裡失敗的動作鍵。 */
+  failedEntries(): string[] {
+    return Object.entries(this.entries).filter(([, e]) => e.status === "failed").map(([k]) => k);
   }
 
   finishSetup(): void {

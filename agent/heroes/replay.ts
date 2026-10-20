@@ -22,7 +22,7 @@ import { join } from "node:path";
 import { ethers } from "ethers";
 import { COPY_ABI, EXCHANGE_ABI, KYC_ABI, ORACLE_ABI, REGISTRY_ABI, STAKE_ABI, USDC_ABI } from "./abi.ts";
 import { isLastDayOfMonth, planHedge, planOpens, shouldLiquidate, type LegPlan, type OpenOrder } from "./plan.ts";
-import { localProvider, publicProvider } from "./provider.ts";
+import { ConsistentProvider, localProvider, publicProvider } from "./provider.ts";
 import { PUBLIC_POLLING } from "./receipt.ts";
 import { crankCarbon, RETIREMENT_ABI, SPLITTER_ABI } from "../keeper/carbon.ts";
 import { assertChain, assertImpersonationAllowed, CONFIRM_PHRASE, confirmed, parseArgs, rpcWarning, USAGE, type ReplayArgs } from "./mode.ts";
@@ -105,6 +105,11 @@ type Receipt = ethers.TransactionReceipt | null;
 
 let journal: Journal;
 
+/** 公開鏈：記下看過的最新區塊，之後的讀取與估 gas 都釘在它（provider.ts 的 ConsistentProvider）。 */
+const noteBlock = (block: number) => {
+  if (provider instanceof ConsistentProvider) provider.noteBlock(block);
+};
+
 /**
  * 送一筆交易並等它上鏈。失敗只記錄、不中斷——結束時由失敗比例決定這趟回放算不算數。
  * key 在整份排程裡唯一：進度裡已經有這個鍵就不再送，回傳記下的那一筆的收據（續跑時接回未平倉部位）。
@@ -114,12 +119,15 @@ async function step(key: string, label: string, build: () => Call | null | Promi
   const done = journal.entry(key);
   if (done) {
     if (done.status !== "ok" || !done.hash) return null;
-    return provider.getTransactionReceipt(done.hash);
+    const r = await provider.getTransactionReceipt(done.hash);
+    if (r) noteBlock(r.blockNumber);
+    return r;
   }
   const call = await build();
   if (!call) return null;
   try {
     const receipt = await sender.submit(call, { onHash: (hash, nonce) => journal.markSent(key, hash, call.from.address, nonce) });
+    noteBlock(receipt.blockNumber);
     journal.markResult(key, true, label);
     return receipt;
   } catch (e) {
@@ -345,7 +353,8 @@ async function main(): Promise<void> {
     if (journal.doc.setupFromBlock !== null) {
       // 初始化做到一半停過：先把「已送出、結果未知」的那幾筆問清楚，再接著做。
       const r = await journal.resolvePending(resolveEntry);
-      console.log(`setup: resuming (${r.resolved} in-flight tx resolved, ${r.dropped} never landed)`);
+      const retried = journal.retryRejected();
+      console.log(`setup: resuming (${r.resolved} in-flight tx resolved, ${r.dropped} never landed, ${retried} rejected-before-send retried)`);
     }
     journal.startSetup((await provider.getBlockNumber()) + 1);
     const everyone = [...traders.map((t) => t.wallet.address), ...followers.map((f) => f.wallet.address),
@@ -398,9 +407,22 @@ async function main(): Promise<void> {
     for (const symbol of schedule.assets) {
       const key = `funding:${symbol}`;
       if (!journal.entry(key) && (await exchange.lastFundingUpdateAt(assetId(symbol))) !== 0n) {
-        throw new Error(`${symbol}: funding clock already started; replay needs a fresh deployment`);
+        // 本機：時鐘已經啟動代表不是乾淨的部署，結算格線對不上，停下。
+        // 公開鏈：同一套合約換一組新帳號重跑時（2026-10-20：第一次回放被節點落後弄壞），時鐘是上一次啟動的；
+        // 時間壓縮的回放整趟只有幾小時，資金費率幾乎不結算，格線無關緊要，照樣接著跑。
+        if (!PUBLIC) throw new Error(`${symbol}: funding clock already started; replay needs a fresh deployment`);
+        // 不記進 stats.skipped：那是「排程裡的動作沒做」，check_pipeline 會當成不符；這裡沒有少做任何排程動作。
+        console.log(`funding clock ${symbol}: already started by an earlier run on this exchange (public chain: harmless)`);
+        continue;
       }
       await step(key, `funding clock ${symbol}`, () => contractCall(deployer, exchange, "settleFunding", [assetId(symbol)]));
+    }
+    // 初始化（鑄幣、質押、存入、KYC）必須全部成功：少一步，那位交易者整趟都不對（不能發布、沒有保證金）。
+    // 有失敗就停在這裡，不進第一天；重跑時沒送出的會重做（retryRejected）。
+    const setupFailures = journal.failedEntries();
+    if (setupFailures.length) {
+      throw new Error(`setup: ${setupFailures.length} step(s) failed (${setupFailures.slice(0, 5).join(", ")}…); ` +
+        "nothing moves to day 1. Run the same command again: steps that failed before sending are retried");
     }
     journal.finishSetup();
   } else {
@@ -421,10 +443,13 @@ async function main(): Promise<void> {
   for (let n = firstDay; n < schedule.days.length; n++) {
     const day = schedule.days[n];
     if (!PUBLIC) await provider.send("evm_setNextBlockTimestamp", [day.timestamp]);
-    const { resumed } = journal.startDay(day.date, (await provider.getBlockNumber()) + 1);
+    const head = await provider.getBlockNumber();
+    noteBlock(head);
+    const { resumed } = journal.startDay(day.date, head + 1);
     if (resumed) {
       const r = await journal.resolvePending(resolveEntry);
-      console.log(`${day.date}: resuming an interrupted day (${r.resolved} in-flight tx resolved, ${r.dropped} never landed)`);
+      const retried = journal.retryRejected();
+      console.log(`${day.date}: resuming an interrupted day (${r.resolved} in-flight tx resolved, ${r.dropped} never landed, ${retried} rejected-before-send retried)`);
     }
 
     const rebalancing = traders.filter((t) => t.rebalances.some((r) => r.date === day.date));
@@ -542,6 +567,11 @@ async function main(): Promise<void> {
 
     const toBlock = await provider.getBlockNumber();
     journal.finishDay(toBlock, (await provider.getBlock(toBlock))!.timestamp, encodeOpen());
+    // 失敗超過 1%（回放算不算數的門檻）就不要再往下跑、讓錯誤累積：停下來看原因，重跑會接著這裡。
+    if (PUBLIC && journal.doc.stats.failed > Math.max(5, journal.doc.stats.sent / 100)) {
+      throw new Error(`${journal.doc.stats.failed} of ${journal.doc.stats.sent} transactions failed (over 1%): stopping after ${day.date}. ` +
+        `First failures:\n  ${journal.doc.stats.failures.slice(0, 5).join("\n  ")}`);
+    }
     const s = journal.doc.stats;
     if (n % 30 === 0 || PUBLIC) console.log(`${day.date}  open=${open.size}  sent=${s.sent}  failed=${s.failed}`);
   }
