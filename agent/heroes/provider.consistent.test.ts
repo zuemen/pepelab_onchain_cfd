@@ -1,7 +1,7 @@
 // 公開鏈的讀取一定看得到我們自己已確認的交易（#344，2026-10-20 正式回放：節點落後讓 35 筆被誤判失敗）。
 //   cd agent && npx tsx heroes/provider.consistent.test.ts
 import assert from "node:assert";
-import { ConsistentProvider, BASE_SEPOLIA } from "./provider.ts";
+import { ConsistentProvider, BASE_SEPOLIA, isRateLimited } from "./provider.ts";
 
 type Call = { method: string; params: unknown[] };
 
@@ -57,6 +57,41 @@ const TO = "0x0000000000000000000000000000000000000001";
   const gas = await p.estimateGas({ to: TO, data: "0x" });
   assert.equal(gas, 21000n);
   assert.equal(calls.filter((c) => c.method === "eth_estimateGas").length, 3, "two lagging answers, then the real one");
+}
+
+// ── 2026-10-20 正式回放跑到第 126 天：Alchemy 限流（429）。任何請求都等一下再送，不能讓整趟停下 ─────
+{
+  const p = new ConsistentProvider("http://127.0.0.1:1", BASE_SEPOLIA, { staticNetwork: BASE_SEPOLIA, cacheTimeout: -1, batchMaxCount: 1 });
+  let limited = 2;
+  let calls = 0;
+  (p as unknown as { _send: (x: unknown) => Promise<unknown[]> })._send = async (payload) => {
+    const list = (Array.isArray(payload) ? payload : [payload]) as { id: number; method: string }[];
+    return list.map((q) => {
+      calls += 1;
+      if (limited-- > 0) {
+        return { id: q.id, error: { code: 429, message: "Your app has exceeded its compute units per second capacity." } };
+      }
+      return { id: q.id, result: "0x" + "00".repeat(31) + "2a" };
+    });
+  };
+  p.noteBlock(100);
+  const out = await p.call({ to: TO, data: "0x0468b467" });
+  assert.equal(BigInt(out), 42n, "rate-limited calls are retried until they answer");
+  assert.equal(calls, 3);
+}
+
+// ── 真的 revert（calldata 裡剛好有 429）不能被當成限流重試 ─────────────────────
+{
+  const p = new ConsistentProvider("http://127.0.0.1:1", BASE_SEPOLIA, { staticNetwork: BASE_SEPOLIA, cacheTimeout: -1, batchMaxCount: 1 });
+  let calls = 0;
+  (p as unknown as { _send: (x: unknown) => Promise<unknown[]> })._send = async (payload) => {
+    const list = (Array.isArray(payload) ? payload : [payload]) as { id: number }[];
+    return list.map((q) => { calls += 1; return { id: q.id, error: { code: 3, message: "execution reverted", data: "0xfb8f41b2" } }; });
+  };
+  await assert.rejects(p.call({ to: TO, data: "0x4290429042904290" }));
+  assert.equal(calls, 1, "a revert is not retried");
+  assert.ok(!isRateLimited(Object.assign(new Error("missing revert data 0x429"), { info: { error: { code: 3, message: "execution reverted" } } })));
+  assert.ok(isRateLimited(Object.assign(new Error("x"), { info: { responseStatus: "429 Too Many Requests" } })));
 }
 
 console.log("provider.consistent: ok");
