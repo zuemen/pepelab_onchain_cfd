@@ -146,3 +146,31 @@ for (let crashAt = 0; crashAt <= expected.length; crashAt++) {
 }
 
 console.log("journal: ok");
+
+// ── 續跑時：沒送出就被判失敗的動作重做一次（節點落後的誤判），送出過的失敗不重做 ─────
+{
+  const j = new Journal(memoryStore(), 84532, IDENTITY);
+  j.markRejected("stake:10", "stake Whale Alpha", "execution reverted (ERC20InsufficientAllowance)");
+  j.markSent("open:10:0", "0xabc", "0xfrom", 3);
+  j.markResult("open:10:0", false, "open Whale Alpha sBTC", "reverted: 0xabc");
+  assert.equal(j.doc.stats.failed, 2);
+  assert.equal(j.retryRejected(), 1);
+  assert.equal(j.entry("stake:10"), undefined, "rejected-before-send is retried");
+  assert.equal(j.entry("open:10:0")!.status, "failed", "a mined revert is kept");
+  assert.deepEqual([j.doc.stats.sent, j.doc.stats.failed], [1, 1]);
+  assert.deepEqual(j.doc.stats.failures, ["open Whale Alpha sBTC: reverted: 0xabc"]);
+}
+
+console.log("journal (retryRejected): ok");
+
+// ── 失敗的動作列得出來（初始化有失敗就不能進第一天）─────────────────────────
+{
+  const j = new Journal(memoryStore(), 84532, IDENTITY);
+  j.markSent("mint:10", "0x1", "0xf");
+  j.markResult("mint:10", true, "mint");
+  j.markRejected("stake:10", "stake Whale Alpha", "reverted");
+  assert.deepEqual(j.failedEntries(), ["stake:10"]);
+  j.retryRejected();
+  assert.deepEqual(j.failedEntries(), []);
+}
+console.log("journal (failedEntries): ok");

@@ -17,11 +17,58 @@ export const localProvider = (rpc: string): ethers.JsonRpcProvider =>
 
 export const BASE_SEPOLIA = ethers.Network.from(84532);
 
+/** 節點還沒有那個區塊（落後）時的錯誤訊息：等一下再問同一個區塊。 */
+const NOT_YET = /header not found|block not found|unknown block|not found: block|beyond (the )?current head|future block|requested block|block .*(greater|higher) than/i;
+
 /**
- * 公開鏈回放（#344）用。網路固定（不每次問 chainId），不快取（同上）。
+ * 讀到的狀態一定包含我們自己已確認的交易（#344，2026-10-20 正式回放）。
+ *
+ * 公開 RPC（Alchemy、Infura）後面是多台節點輪流回應。交易所的收據從一台拿到，下一個請求可能落到
+ * 還沒同步到那個區塊的另一台：approve 剛上鏈，估 stake 的 gas 卻看到授權是 0，判定會 revert
+ * （那一次 35 筆這樣失敗）；同理，平倉之後讀可用保證金會讀到平倉前的數字。
+ *
+ * 所以 eth_call 與 eth_estimateGas 一律指定「我們看過的最新區塊」（noteBlock 記下每一筆收據的區塊），
+ * 不用 latest；節點還沒有那個區塊就等一秒再問，最多 60 次。
+ */
+export class ConsistentProvider extends ethers.JsonRpcProvider {
+  seenBlock = 0;
+
+  noteBlock(block: number): void {
+    if (block > this.seenBlock) this.seenBlock = block;
+  }
+
+  override getRpcRequest(req: Parameters<ethers.JsonRpcProvider["getRpcRequest"]>[0]): ReturnType<ethers.JsonRpcProvider["getRpcRequest"]> {
+    const r = super.getRpcRequest(req);
+    if (!r || this.seenBlock === 0) return r;
+    const pinned = ethers.toQuantity(this.seenBlock);
+    if (r.method === "eth_call" && (r.args[1] === "latest" || r.args[1] === "pending")) {
+      return { method: r.method, args: [r.args[0], pinned] };
+    }
+    if (r.method === "eth_estimateGas" && r.args.length === 1) return { method: r.method, args: [r.args[0], pinned] };
+    return r;
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- 與 ethers 的 send 相同的回傳型別
+  override async send(method: string, params: Array<any> | Record<string, any>): Promise<any> {
+    for (let i = 0; ; i++) {
+      try {
+        return await super.send(method, params);
+      } catch (e) {
+        const pinned = (method === "eth_call" || method === "eth_estimateGas") && Array.isArray(params) && params.length > 1;
+        // ethers 把節點的錯誤包成 CALL_EXCEPTION（"missing revert data"），原文在 info.error 裡
+        const text = `${(e as Error)?.message ?? ""} ${JSON.stringify((e as { info?: { error?: unknown } })?.info?.error ?? "")}`;
+        if (!pinned || i >= 60 || !NOT_YET.test(text)) throw e;
+        await new Promise((r) => setTimeout(r, 1000));
+      }
+    }
+  }
+}
+
+/**
+ * 公開鏈回放（#344）用。網路固定（不每次問 chainId），不快取（同上），讀取釘在看過的最新區塊（見上）。
  * 批次保留預設：同一天裡幾十個帳號同時輪詢收據，併成一個 HTTP 請求。
  */
-export const publicProvider = (rpc: string): ethers.JsonRpcProvider =>
-  new ethers.JsonRpcProvider(rpc, BASE_SEPOLIA, {
+export const publicProvider = (rpc: string): ConsistentProvider =>
+  new ConsistentProvider(rpc, BASE_SEPOLIA, {
     staticNetwork: BASE_SEPOLIA, cacheTimeout: -1, pollingInterval: 2000,
   });
