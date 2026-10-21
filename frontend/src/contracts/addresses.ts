@@ -72,24 +72,28 @@ const SEPOLIA: ChainAddresses = {
 // ── Base Sepolia testnet (chainId 84532) ──────────────────────────────────────
 // Phase 4 live deployment (Deploy.s.sol broadcast 2026-06-14). Contracts not in
 // Deploy.s.sol (ESG/Pepe* AMM/staking) stay 0x0 → UI "not deployed" guards.
+// 2026-10-20 #344 cutover（OWNER_ACTIONS 第 5 步，docs/CUTOVER_LOG_2026-10-20.md）：新的 PerpetualExchange、
+// StrategyRegistry、CopyTracker、InsuranceVault、平台 FeeRouter（收款人＝#333 的分流合約）、PepeIncentives、
+// EsgRewardDistributor，以及交易所專用的 MockOracle（ORACLE_KIND=fresh；之前共用的 0xeD90… 已退役，keeper 不再寫）。
+// 舊交易所 0x827e… 列在 legacyExchanges.ts，使用者從 /legacy 領回保證金。
 const BASE_SEPOLIA: ChainAddresses = {
   MockUSDC:          "0x69fd695Bc7C3aFdb35ABA35cD6890C506400b035",
   MockUSDT:          "0x5c8A1e970D275Cc269e09A949D68693120416d78",
-  MockOracle:        "0xeD90c4F3B48213888870C1FC8486921Cb0990Aa3",
+  MockOracle:        "0x9Cf4E05B08F6cC53be2e04752F2c32A79132deEA",
   TraderStake:       "0x01aEB530bcFc69f036309ffe55acc7eA6C5a28Fe",
-  InsuranceVault:    "0xB364E2e3e1e7a2b033eF03a4ACceF42066F3D812",
-  FeeRouter:         "0x00f6cf0113399a7A451c7f85fe094a28092d3e0c",
-  PerpetualExchange: "0x827eA0c62a32e995927101259042F8A27D99124D",
-  StrategyRegistry:  "0xA103de184A5C76d7b70fB4e908F252199e004b95",
-  CopyTracker:       "0xC9e91f7D36e910C58042164032c625427b23CCB2",
+  InsuranceVault:    "0x899263e34107a36a5216499F9CC7fb7a5afc7aaF",
+  FeeRouter:         "0x89Aa6799b2CdAa43FF7985ff706456Ca6F0e5d29",
+  PerpetualExchange: "0xbF3074C98e17d88B4127899C98C81AE94c9fC979",
+  StrategyRegistry:  "0xe8d807C3BaFB4D3AeCbA094322eE8dD7Ca16C20c",
+  CopyTracker:       "0x15A9Cbf803a3EEee2794B74Ad78252d27Ccd347C",
   MockSwapRouter:    "0xC9b0e5C219AA1B3eB00E92Fd9a883B182F0AE8Ae",
   ESGRegistry:       "0xBF5B9cD78566791d79c687A732b4ed5bc3E95dFf",
   KYCRegistry:       "0x5D95fD9e7a5f80E5369e24783F1f98E0f952360d",
   PepeAMM:           "0x93be44a81a2796d378f65ebcc8d5f8b40166ad63",
   PepeToken:              "0xccd05cbdc2f7961a4c27d3633694022722786a0f",
   PepeClaim:              "0x459d238aC61eC4A0E08608FBcd363227B860CF34",
-  EsgRewardDistributor:   "0x44a8E5195E168e5AdcCa4343Bd8B399B49D5609F",
-  PepeIncentives:         "0xEBfA1dc7dDea032ac6242cB619d982e543A23c12",
+  EsgRewardDistributor:   "0x4C9232eE2caAe2B065eb1Ca9AD966Ef69A0D2433",
+  PepeIncentives:         "0xc257Dd9b9eb392893a89d307664713E8660672F0",
   PepeStaking:            "0xC78D68cA1B217ba241c23Ebad3118c6ec0dc0D34",
   AssetVault:             "0xC30DFe1C9EBb47197b785995aA9Cd0F5B89557A5",
 }

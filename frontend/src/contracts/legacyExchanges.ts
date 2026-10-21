@@ -38,6 +38,14 @@ export const LEGACY_EXCHANGES: readonly LegacyExchange[] = [
     activeUntil: '2026-09-10',
     abiSource: '680cce2 frontend/src/contracts/abi/PerpetualExchange.json',
   },
+  {
+    // #129 的 exchange；2026-10-20 #344 cutover 換成 0xbF30…C979。換下時 0 個未平倉、500 USDC 可用保證金。
+    chainId: 84532,
+    address: '0x827eA0c62a32e995927101259042F8A27D99124D',
+    activeFrom: '2026-09-10',
+    activeUntil: '2026-10-20',
+    abiSource: '1d084d1 frontend/src/contracts/abi/PerpetualExchange.json',
+  },
 
   // ── Ethereum Sepolia（11155111，前端仍可連，標為 legacy demo）──────────────
   {

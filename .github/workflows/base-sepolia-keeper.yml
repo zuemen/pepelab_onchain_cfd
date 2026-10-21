@@ -57,8 +57,10 @@ jobs:
       KEEPER_CHAIN: base-sepolia
       KEEPER_RPC_URL: ${{ secrets.BASE_SEPOLIA_RPC_URL }}
       KEEPER_PRIVATE_KEY: ${{ secrets.KEEPER_PRIVATE_KEY }}
-      KEEPER_ORACLE_ADDRESS: "0xeD90c4F3B48213888870C1FC8486921Cb0990Aa3"
-      EXCHANGE: "0x827eA0c62a32e995927101259042F8A27D99124D"
+      # #344 cutover（2026-10-20）：交易所讀專用的 MockOracle（ORACLE_KIND=fresh，回放完 owner 已轉給 keeper）。
+      # 之前的共用 MockOracle 0xeD90…0Aa3 已沒有任何合約在讀（rwa-poc 租戶只在部署時從它取初始價），不再寫。
+      KEEPER_ORACLE_ADDRESS: "0x9Cf4E05B08F6cC53be2e04752F2c32A79132deEA"
+      EXCHANGE: "0xbF3074C98e17d88B4127899C98C81AE94c9fC979"
       # 部分失敗容忍度：失敗筆數 / 有價可寫筆數 超過這個百分比就讓 job 失敗。
       MAX_FAIL_PCT: "30"
       # KEEPER_RELAY_SOURCE 刻意不設（2026-10-03 移除，原為 AggregatorOracle 0x8215…）。

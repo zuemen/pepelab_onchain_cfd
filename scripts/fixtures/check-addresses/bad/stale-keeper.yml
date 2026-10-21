@@ -26,7 +26,7 @@ jobs:
       # 對：現行 Base Sepolia GuardedOracle
       KEEPER_GUARDED_ORACLE: "0x8E9e59BE9589Ad88EC14F3ef6bdcc43E8B76f842"
       # 錯 6：X402_FEE_ROUTER 填成 MockOracle（位址「認得」，但角色錯了）
-      X402_FEE_ROUTER: "0xeD90c4F3B48213888870C1FC8486921Cb0990Aa3"
+      X402_FEE_ROUTER: "0x9Cf4E05B08F6cC53be2e04752F2c32A79132deEA"
     steps:
       - run: |
           # 錯 3：寫死在 run 腳本裡、前端設定不認得的位址

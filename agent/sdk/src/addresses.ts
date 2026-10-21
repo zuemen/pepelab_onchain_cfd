@@ -31,7 +31,7 @@ export const PRIMARY_CHAIN_ID = 84532;
  *   漂移由 test/addresses.test.ts 擋下，不要只改這裡。
  */
 export const SESSION_MANAGER_BY_CHAIN: Readonly<Record<number, string>> = Object.freeze({
-  84532: "0xdF9C1E53523568709f65Afe3C4AD2E6a6D99d14B",
+  84532: "0x4875966ACA052A38d80ddD2aaE80995A98EAd2AF",
 });
 
 /** SDK 使用的已解析位址（全部 checksum）。未部署的合約為 null。 */

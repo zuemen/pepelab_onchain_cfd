@@ -9,7 +9,10 @@
    這是設計上的正確行為（TraderScore 要求視窗內平倉 ≥ 5 筆），不是 bug。
 
 正式站：<https://pepelab-onchain-cfd-djot.vercel.app>　鏈：Base Sepolia (84532)
-交易所：`0x827eA0c62a32e995927101259042F8A27D99124D`（2026-09-29 重新部署；舊的 `0xEf75…c072` 已退役）
+交易所：`0xbF3074C98e17d88B4127899C98C81AE94c9fC979`（2026-10-20 #344 cutover；之前的 `0x827e…124D`、`0xEf75…c072` 已退役）
+
+> 2026-10-21 #344 cutover：交易所改讀專用的 MockOracle `0x9Cf4…deEA`，第 1 節查的是它。排行榜的交易紀錄改由公開鏈回放產生
+> （`agent/heroes`），第 2 節的三位交易員名單與 `SeedWhaleCloses` 補種是 cutover 前的做法，對新 exchange 不適用。
 
 > 2026-09-30 更正：正式站網址原寫 `pepelab-onchain-cfd.vercel.app`（當日無法連線），改為 README
 > 所列的正式站；下方腳本的 exchange 位址改為現行位址。
@@ -25,7 +28,7 @@ set -a; . agent/.env; set +a
 NOW=$(date +%s)
 for n in sBTC sETH sGOLD sBOND sAAPL sTSLA; do
   H=$(cast keccak "$n")
-  cast call 0xeD90c4F3B48213888870C1FC8486921Cb0990Aa3 "getPrice(bytes32)(uint256,uint256)" "$H" \
+  cast call 0x9Cf4E05B08F6cC53be2e04752F2c32A79132deEA "getPrice(bytes32)(uint256,uint256)" "$H" \
     --rpc-url "$BASE_SEPOLIA_RPC_URL" > /tmp/p.txt
   U=$(sed -n 2p /tmp/p.txt | sed 's/ .*//')
   echo "$n age_h=$(( (NOW - U) / 3600 ))"

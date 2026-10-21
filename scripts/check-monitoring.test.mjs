@@ -98,7 +98,7 @@ test("位址與 addresses.ts 不一致 → 錯（舊 exchange 是 #178 的真實
   const cfg = current();
   ruleOf(cfg, "owner-transferred").contracts[0].address = "0xEf75ECA6514cE96B18382E921aC6190a0cF8c072";
   const p = problemsOf(cfg);
-  assert.ok(p.some((x) => /rules\[owner-transferred\]\.contracts\[0\]\.address = "0xEf75.*來源推得 "0x827eA0c6/.test(x)), p.join("\n"));
+  assert.ok(p.some((x) => /rules\[owner-transferred\]\.contracts\[0\]\.address = "0xEf75.*來源推得 "0xbF3074C9/.test(x)), p.join("\n"));
 });
 
 test("位址來源解析不到 → 錯", () => {
@@ -107,13 +107,11 @@ test("位址來源解析不到 → 錯", () => {
   assert.ok(problemsOf(cfg).some((x) => /NoSuchContract：前端設定裡解析不到/.test(x)));
 });
 
-test("監控 ABI 裡不存在的事件 → 錯（例如對現行 exchange 監控 guardian 暫停）", () => {
+test("監控 ABI 裡不存在的事件 → 錯（例如對現行 exchange 監控已移除的組合保證金開關）", () => {
   const cfg = current();
-  const r = ruleOf(cfg, "exchange-pause");
-  r.status = "active";
-  r.contracts[0].abi = "PerpetualExchange";
+  ruleOf(cfg, "exchange-risk-params").events.push({ sig: "PortfolioMarginEnabledSet(bool)" });
   const p = problemsOf(cfg);
-  assert.ok(p.some((x) => /Paused\(address\) 不在 PerpetualExchange\.json 的 ABI 裡/.test(x)), p.join("\n"));
+  assert.ok(p.some((x) => /PortfolioMarginEnabledSet\(bool\) 不在 PerpetualExchange\.json 的 ABI 裡/.test(x)), p.join("\n"));
 });
 
 test("簽章型別寫錯（uint256 寫成 uint）→ 錯", () => {
@@ -135,16 +133,16 @@ test("topic0／inputs／selector 被手改 → 錯", () => {
 
 test("pending-deploy：事件必須宣告在原始碼裡、且不能帶位址", () => {
   const cfg = current();
-  ruleOf(cfg, "exchange-asset-mode").events.push({ sig: "AssetModeSet(bytes32,uint256,address)" });
-  ruleOf(cfg, "exchange-guardian-roles").contracts[0].address = "0x827eA0c62a32e995927101259042F8A27D99124D";
+  ruleOf(cfg, "guarded-oracle-window").events.push({ sig: "WindowLimitUpdated(uint256)" });
+  ruleOf(cfg, "guarded-oracle-halt-window").contracts[0].address = "0x8E9e59BE9589Ad88EC14F3ef6bdcc43E8B76f842";
   const p = problemsOf(cfg).join("\n");
-  assert.match(p, /AssetModeSet\(bytes32,uint256,address\) 沒有宣告在 contracts\/src\/PerpetualExchange\.sol/);
-  assert.match(p, /exchange-guardian-roles\]\.contracts\[0\]\.address = "0x827e.*來源推得 null/);
+  assert.match(p, /WindowLimitUpdated\(uint256\) 沒有宣告在 contracts\/src\/v2\/GuardedOracle\.sol/);
+  assert.match(p, /guarded-oracle-halt-window\]\.contracts\[0\]\.address = "0x8E9e.*來源推得 null/);
 });
 
 test("pending-deploy 原始碼不存在 → 錯", () => {
   const cfg = current();
-  ruleOf(cfg, "exchange-pause").contracts[0].source = "contracts/src/Nope.sol";
+  ruleOf(cfg, "guarded-oracle-window").contracts[0].source = "contracts/src/Nope.sol";
   assert.ok(problemsOf(cfg).some((x) => /原始碼 contracts\/src\/Nope\.sol 不存在/.test(x)));
 });
 
@@ -289,12 +287,12 @@ test("GitHub 錨點與標題解析（code fence 內的不算）", () => {
 
 test("H2：active 事件的 topic0 不在已部署 bytecode → 錯；標 notDeployed（含說明）才放行", () => {
   const cfg = current();
-  const ev = ruleOf(cfg, "mock-oracle-config").events.find((e) => e.sig.startsWith("StaleThresholdSet"));
-  assert.equal(ev.notDeployed, true, "現況：部署版的 MockOracle 不發 StaleThresholdSet");
+  const ev = ruleOf(cfg, "vault-risk-params").events.find((e) => e.sig.startsWith("RiskParamsUpdated"));
+  assert.equal(ev.notDeployed, true, "現況：部署版的 AssetVaultV2 不發 RiskParamsUpdated");
   delete ev.notDeployed;
   delete ev.note;
   const p = problemsOf(cfg).join("\n");
-  assert.match(p, /mock-oracle-config：StaleThresholdSet\(uint256,uint256\) 的 topic0 不在 MockOracle 已部署的 bytecode 裡/);
+  assert.match(p, /vault-risk-params：RiskParamsUpdated\(uint256,uint256,uint256,uint256\) 的 topic0 不在 AssetVaultV2 已部署的 bytecode 裡/);
 
   const cfg2 = current();
   delete ruleOf(cfg2, "access-role-changed").events.find((e) => e.sig.startsWith("RoleAdminChanged")).note;
@@ -309,23 +307,18 @@ test("H2：標了 notDeployed 但部署版其實會發 → 錯（標記過期）
   assert.match(problemsOf(cfg).join("\n"), /AssetAdded\(bytes32,uint256\) 標了 notDeployed（MockOracle），但部署版其實會發/);
 });
 
-test("H2：審查發現的原狀（insurance／feerouter 接線事件規則是 active）→ 錯：部署版不發、規則永遠不會響", () => {
+test("H2：舊部署不發的事件規則改成 active → 錯：規則永遠不會響（審查原案是 insurance／feerouter 接線，#344 cutover 後已部署）", () => {
   const cfg = current();
-  for (const [id, abi] of [["insurance-wiring-changed", "InsuranceVault"], ["feerouter-config-changed", "FeeRouter"]]) {
-    const r = ruleOf(cfg, id);
-    r.status = "active";
-    for (const c of r.contracts) {
-      delete c.source;
-      c.abi = abi;
-    }
-    // feerouter-config-changed 已是 active（x402 FeeRouter 2026-10-10 重新部署後會發）；拿掉平台
-    // V1 FeeRouter 的 notDeployed 標記，就回到「舊部署不發、規則對它永遠不會響」的原狀。
-    for (const ev of r.events ?? []) delete ev.notDeployed;
+  // KYCRegistry 仍是舊部署：原始碼與 ABI 有 VerifierSet，bytecode 沒有。
+  const r = ruleOf(cfg, "kyc-verifier-changed");
+  r.status = "active";
+  for (const c of r.contracts) {
+    delete c.source;
+    c.abi = "KYCRegistry";
   }
   const p = problemsOf(cfg).join("\n");
-  assert.match(p, /insurance-wiring-changed：ExchangeSet\(address\) 的 topic0 不在 InsuranceVault 已部署的 bytecode 裡/);
-  assert.match(p, /insurance-wiring-changed：沒有任何一個事件出現在已部署的 bytecode 裡/);
-  assert.match(p, /feerouter-config-changed：CopyTrackerSet\(address\) 的 topic0 不在 FeeRouter 已部署的 bytecode 裡/);
+  assert.match(p, /kyc-verifier-changed：VerifierSet\(address,bool\) 的 topic0 不在 KYCRegistry 已部署的 bytecode 裡/);
+  assert.match(p, /kyc-verifier-changed：沒有任何一個事件出現在已部署的 bytecode 裡/);
 });
 
 test("H2：pending-deploy 規則的事件其實已在部署版 → 錯（該改 active）", () => {
@@ -341,8 +334,8 @@ test("H2：pending-deploy 規則的事件其實已在部署版 → 錯（該改 
 
 test("H2：state 規則呼叫部署版沒有的函式 → 錯（ABI 有、bytecode 沒有）", () => {
   const cfg = current();
-  ruleOf(cfg, "oracle-stale").calls.push({ on: "oracle", fn: "staleThreshold()" });
-  assert.match(problemsOf(cfg).join("\n"), /staleThreshold\(\) 的 selector 不在 MockOracle 已部署的 bytecode 裡/);
+  ruleOf(cfg, "guarded-oracle-paused").calls.push({ on: "oracle", fn: "lastGuardianPause()" });
+  assert.match(problemsOf(cfg).join("\n"), /lastGuardianPause\(\) 的 selector 不在 GuardedOracle 已部署的 bytecode 裡/);
 });
 
 test("H2：接線預期值——必須等於鏈上快照；快照型要寫說明；產生欄位不可手改", () => {
@@ -354,10 +347,10 @@ test("H2：接線預期值——必須等於鏈上快照；快照型要寫說明
   ruleOf(cfg, "insurance-wiring").calls[0].expected = "0x00000000000000000000000000000000000000ee";
   ruleOf(cfg, "core-wiring").calls.push({ on: "exchange", fn: "maxPriceAge()", expect: { zero: true } });
   const p = problemsOf(cfg).join("\n");
-  assert.match(p, /FeeRouter\.exchange\(\) 的鏈上快照是 0x827ea0c6.*但預期 0xB364E2e3.*鏈上接線與前端設定不一致/);
+  assert.match(p, /FeeRouter\.exchange\(\) 的鏈上快照是 0xbf3074c9.*但預期 0x899263e3.*鏈上接線與前端設定不一致/);
   assert.match(p, /feeRouter\.platformTreasury\(\) 用鏈上快照當預期值，必須寫 note/);
   assert.match(p, /x402\.exchange\(\) 的 expect 必須恰好指定/);
-  assert.match(p, /insurance-wiring\]\.calls\[0\]\.expected = "0x0000.*ee"，來源推得 "0x827eA0c6/);
+  assert.match(p, /insurance-wiring\]\.calls\[0\]\.expected = "0x0000.*ee"，來源推得 "0xbF3074C9/);
   assert.match(p, /wiring 的 maxPriceAge\(\) 必須是零參數、回傳單一 address 的函式/);
 });
 
@@ -384,13 +377,13 @@ test("H2：deployed.json 完整性——內容被改（雜湊不符）、缺位�
   }
   {
     const { data, ctx: c } = clone();
-    const ex = "0x827ea0c62a32e995927101259042f8a27d99124d";
+    const ex = "0xbf3074c98e17d88b4127899c98c81ae94c9fc979";
     delete data.contracts[ex];
     data.contracts["0x00000000000000000000000000000000000000aa"] = { codeHash: Object.keys(data.codes)[0], impl: null, implCodeHash: null };
     delete data.reads[`${ex}|usdc()`];
     data.chainId = 1;
     const p = checkDeployed(current(), c).join("\n");
-    assert.match(p, /沒有 PerpetualExchange（0x827ea0c6.*）的 bytecode：位址換了或 fixture 過期/);
+    assert.match(p, /沒有 PerpetualExchange（0xbf3074c9.*）的 bytecode：位址換了或 fixture 過期/);
     assert.match(p, /多了沒有規則在用的位址 0x0000.*aa/);
     assert.match(p, /沒有 PerpetualExchange\.usdc\(\) 的鏈上快照/);
     assert.match(p, /chainId 1 不等於/);
@@ -401,7 +394,7 @@ test("H2：addresses.ts 換了位址但 deployed.json 沒重抓 → 錯（不會
   const t = tempRepo();
   try {
     assert.deepEqual(t.check(), [], "未改動的副本必須通過");
-    t.wr("frontend/src/contracts/addresses.ts", t.rd("frontend/src/contracts/addresses.ts").replaceAll("0xB364E2e3e1e7a2b033eF03a4ACceF42066F3D812", "0x1111111111111111111111111111111111111111"));
+    t.wr("frontend/src/contracts/addresses.ts", t.rd("frontend/src/contracts/addresses.ts").replaceAll("0x899263e34107a36a5216499F9CC7fb7a5afc7aaF", "0x1111111111111111111111111111111111111111"));
     t.check(true); // 即使先 --write 讓 monitors.json 跟上位址
     const p = t.check().join("\n");
     assert.match(p, /deployed\.json 沒有 InsuranceVault（0x1111111111111111111111111111111111111111）的 bytecode/);
@@ -418,6 +411,7 @@ test("H2：--refresh-deployed 只用唯讀方法、被限流會重試、結果�
     for (const [a, c] of Object.entries(d.contracts)) {
       codeAt[a] = d.codes[c.codeHash];
       if (c.impl) codeAt[c.impl] = d.codes[c.implCodeHash];
+      for (const l of c.libs ?? []) codeAt[l.address] = d.codes[l.codeHash];
     }
     const methods = new Set();
     let limited = 0;
@@ -469,8 +463,8 @@ test("M4：審查的突變清單——每一項都要讓檢查器變紅", () => 
   // [名稱, 突變, 預期訊息, 突變後是否先 --write（模擬「改了手寫欄位再重新產生」）]
   const cases = [
     ["monitors.json 的 exchange 位址改成舊位址", () => t.editJson((j) => { j.rules[0].contracts[0].address = "0xEf75ECA6514cE96B18382E921aC6190a0cF8c072"; }), /owner-transferred\]\.contracts\[0\]\.address/],
-    ["addresses.ts 換了 exchange 位址、monitors.json 沒跟", () => t.wr("frontend/src/contracts/addresses.ts", t.rd("frontend/src/contracts/addresses.ts").replaceAll("0x827eA0c62a32e995927101259042F8A27D99124D", "0x1111111111111111111111111111111111111111")), /來源推得 "0x1111111111111111111111111111111111111111"/],
-    ["加一個 ABI 沒有的事件", () => t.editJson((j) => { j.rules.find((r) => r.id === "exchange-wiring-changed").events.push({ sig: "Paused(address)" }); }), /Paused\(address\) 不在 PerpetualExchange\.json 的 ABI 裡/],
+    ["addresses.ts 換了 exchange 位址、monitors.json 沒跟", () => t.wr("frontend/src/contracts/addresses.ts", t.rd("frontend/src/contracts/addresses.ts").replaceAll("0xbF3074C98e17d88B4127899C98C81AE94c9fC979", "0x1111111111111111111111111111111111111111")), /來源推得 "0x1111111111111111111111111111111111111111"/],
+    ["加一個 ABI 沒有的事件", () => t.editJson((j) => { j.rules.find((r) => r.id === "exchange-wiring-changed").events.push({ sig: "PortfolioMarginEnabledSet(bool)" }); }), /PortfolioMarginEnabledSet\(bool\) 不在 PerpetualExchange\.json 的 ABI 裡/],
     ["topic0 改錯一個字元", () => t.editJson((j) => { const e = j.rules[0].events[0]; e.topic0 = e.topic0.slice(0, -1) + (e.topic0.endsWith("0") ? "1" : "0"); }), /events\[0\]\.topic0/],
     ["selector 改錯", () => t.editJson((j) => { j.rules.find((r) => r.id === "vault-reserve").calls[0].selector = "0xdeadbeef"; }), /vault-reserve\]\.calls\[0\]\.selector/],
     ["rules.md 手改一行", () => t.wr("ops/monitoring/rules.md", t.rd("ops/monitoring/rules.md").replace("SEV-1", "SEV-4")), /rules\.md 與 monitors\.json 不一致/],
@@ -490,7 +484,8 @@ test("M4：審查的突變清單——每一項都要讓檢查器變紅", () => 
     ["參數預設值不是數字", () => t.editJson((j) => { j.params.LARGE_WITHDRAWAL_USDC.default = "10k"; }), /LARGE_WITHDRAWAL_USDC\.default 必須是非負的十進位數字/, true],
     ["嚴重度降級 SEV-1 → SEV-4", () => t.editJson((j) => { j.rules[0].severity = "SEV-4"; }), /owner-transferred：嚴重度 SEV-4 低於下限 SEV-1/, true],
     ["前端 ABI 新增 admin 事件、沒有任何規則", () => addAbiEvent("TreasurySet"), /PerpetualExchange 的事件 TreasurySet\(address\).*沒有任何規則、也不在 ignoredEvents/],
-    ["事件簽章對、但部署版 bytecode 沒有（審查當時的原狀）", () => t.editJson((j) => { const r = j.rules.find((x) => x.id === "insurance-wiring-changed"); r.status = "active"; for (const c of r.contracts) { delete c.source; c.abi = "InsuranceVault"; } }), /ExchangeSet\(address\) 的 topic0 不在 InsuranceVault 已部署的 bytecode 裡/, true],
+    // 審查原案是 InsuranceVault 的接線事件；#344 cutover 已重新部署它，現存的例子是舊版 KYCRegistry。
+    ["事件簽章對、但部署版 bytecode 沒有（審查當時的原狀）", () => t.editJson((j) => { const r = j.rules.find((x) => x.id === "kyc-verifier-changed"); r.status = "active"; for (const c of r.contracts) { delete c.source; c.abi = "KYCRegistry"; } }), /VerifierSet\(address,bool\) 的 topic0 不在 KYCRegistry 已部署的 bytecode 裡/, true],
     // ── 追加 ──
     [".gitignore 少了 .dev.vars", () => t.wr(".gitignore", t.rd(".gitignore").replace(/^\.dev\.vars$/m, "")), /\.gitignore 沒有 \.dev\.vars/],
     ["wrangler [vars] 把 MAX_BLOCK_RANGE 覆寫成 5000", () => t.wr(toml, t.rd(toml) + '\nMAX_BLOCK_RANGE = "5000"\n'), /\[vars\] 的 MAX_BLOCK_RANGE 必須在 300–1000 之間/],
@@ -524,7 +519,8 @@ test("M4：審查的突變清單——每一項都要讓檢查器變紅", () => 
     ["P7 network.explorer 換成他人網域", () => t.editJson((j) => { j.network.explorer = "https://sepolia.basescan.org.evil.example"; }), /network\.explorer 必須是 https:\/\/sepolia\.basescan\.org/, true],
     ["P8 repoBlobBase 換成他人網域", () => t.editJson((j) => { j.repoBlobBase = "https://evil.example/blob/master"; }), /repoBlobBase 必須以 https:\/\/github\.com\/zuemen\/pepelab_onchain_cfd\/blob\/ 開頭/, true],
     ["P9 network.blockTimeSec 改 0", () => t.editJson((j) => { j.network.blockTimeSec = 0; }), /network\.blockTimeSec 必須是 1–12 的整數/, true],
-    ["L-d 不發事件的 setter 指向「部署版不發」的事件規則", () => t.editJson((j) => { j.adminFunctions.InsuranceVault["setExchange(address)"] = { rule: "insurance-wiring-changed" }; }), /InsuranceVault\.setExchange\(address\) 指向 insurance-wiring-changed，但它不是 active 規則/],
+    // 審查原案是 InsuranceVault.setExchange → insurance-wiring-changed；#344 cutover 後那條已 active，改用仍是舊部署的 GuardedOracle。
+    ["L-d 不發事件的 setter 指向「部署版不發」的事件規則", () => t.editJson((j) => { j.adminFunctions.GuardedOracle["setRiskParams(uint256,uint256)"] = { rule: "guarded-oracle-window" }; }), /GuardedOracle\.setRiskParams\(uint256,uint256\) 指向 guarded-oracle-window，但它不是 active 規則/],
   ];
   try {
     assert.deepEqual(t.check(), [], "基準：未改動的副本必須通過");
@@ -589,14 +585,14 @@ test("M4：事件涵蓋——忽略清單過期、重複、理由、notDeployed 
   assert.deepEqual(eventCoverage(current(), ctx), []);
   const cfg = current();
   cfg.ignoredEvents.push({ abi: "MockOracle", reason: "", events: ["AssetAdded(bytes32,uint256)", "NoSuchEvent(uint256)"] });
-  cfg.ignoredEvents.push({ abi: "CopyTracker", reason: "x", events: ["TraderFollowed(address,address,uint256,uint256)"] });
+  cfg.ignoredEvents.push({ abi: "StrategyRegistry", reason: "x", events: ["TraderRegistered(address,string)"] });
   cfg.ignoredEvents.find((g) => g.abi === "MockOracle" && g.events[0].startsWith("PriceUpdated")).notDeployed = true;
   delete cfg.ignoredEvents.find((g) => g.abi === "PepeAMM" && g.notDeployed).notDeployed;
   const p = eventCoverage(cfg, ctx).join("\n");
   assert.match(p, /ignoredEvents\[\d+\]（MockOracle） 沒有寫 reason/);
   assert.match(p, /AssetAdded\(bytes32,uint256\)（MockOracle）同時在規則與 ignoredEvents 裡/);
   assert.match(p, /NoSuchEvent\(uint256\) 不在 MockOracle\.json 的 ABI 也不在原始碼裡/);
-  assert.match(p, /（CopyTracker） 沒有任何 active 規則在監控這個合約/);
+  assert.match(p, /（StrategyRegistry） 沒有任何 active 規則在監控這個合約/);
   assert.match(p, /ignoredEvents 說 PriceUpdated\(bytes32,uint256,uint256,uint256\) 不在 MockOracle 的部署版，但已部署的 bytecode 裡有/);
   assert.match(p, /MaxOracleAgeSet\(uint256,uint256\)（PepeAMM）不在任何部署版 bytecode 裡 —— 那一組要標 notDeployed/);
 });
@@ -710,6 +706,7 @@ test("L-c：--verify-deployed（每週排程）只讀、不寫檔；鏈上實作
     for (const [a, c] of Object.entries(d.contracts)) {
       codeAt[a] = d.codes[c.codeHash];
       if (c.impl) codeAt[c.impl] = d.codes[c.implCodeHash];
+      for (const l of c.libs ?? []) codeAt[l.address] = d.codes[l.codeHash];
     }
     return async (url, init) => {
       const b = JSON.parse(init.body);
@@ -745,11 +742,13 @@ test("#219：新版 GuardedOracle／PepeIncentives 的事件都有分類；admin
   assert.deepEqual(sigs("guarded-oracle-halt-takeover").sort(), ["AssetFreezeTakenOver(bytes32,address)", "PauseTakenOver(address)"]);
   assert.equal(ids.get("guarded-oracle-halt-takeover").severity, "SEV-1");
   assert.deepEqual(sigs("pepe-incentives-daily-params"), ["DailyParamsSet(uint256,uint256,uint8)"]);
-  for (const id of ["guarded-oracle-halt-window", "guarded-oracle-halt-takeover", "pepe-incentives-daily-params"]) assert.equal(ids.get(id).status, "pending-deploy", id);
+  for (const id of ["guarded-oracle-halt-window", "guarded-oracle-halt-takeover"]) assert.equal(ids.get(id).status, "pending-deploy", id);
+  // #344 cutover 部署了點數版 PepeIncentives：簽到參數規則改 active。
+  assert.equal(ids.get("pepe-incentives-daily-params").status, "active");
   const ignored = cfg.ignoredEvents.flatMap((g) => g.events);
   assert.ok(!ignored.some((e) => e.startsWith("DailyCheckIn(")), "舊版簽到事件已不在原始碼／ABI");
-  assert.ok(cfg.ignoredEvents.some((g) => g.abi === "PepeIncentives" && g.notDeployed && g.events.includes("CheckInPointsCredited(address,uint256,uint8,uint256)")));
+  assert.ok(cfg.ignoredEvents.some((g) => g.abi === "PepeIncentives" && !g.notDeployed && g.events.includes("CheckInPointsCredited(address,uint256,uint8,uint256)")));
   // 部署後這兩個函式會出現在部署版 bytecode，adminFunctions 就必須分類它們。
   for (const fn of ["takeOverAssetFreeze", "takeOverPause"]) assert.ok(ADMIN_FN.test(fn), fn);
-  assert.match(cfg.adminFunctions.PepeIncentives["setDailyParams(uint256,uint256,uint8)"].reason, /pepe-incentives-daily-params/);
+  assert.equal(cfg.adminFunctions.PepeIncentives["setDailyParams(uint256,uint256,uint8)"].rule, "pepe-incentives-daily-params");
 });

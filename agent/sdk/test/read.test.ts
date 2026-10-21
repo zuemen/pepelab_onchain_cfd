@@ -38,7 +38,6 @@ function exchangeFns(p1: boolean, mode = 0) {
     globalLongNotional: ([a]) => (a === sBTC ? 1_000n * E18 : 0n),
     globalShortNotional: ([a]) => (a === sBTC ? 400n * E18 : 0n),
     freeMargin: () => 1234n * E18 + 5n, // 帶一個最小單位，確認格式化不失真
-    getAccountHealth: () => [900n * E18, 50n * E18, true],
     getUserPositions: () => [7n, 8n],
     getPosition: ([id]) => ({
       id,
@@ -170,7 +169,6 @@ function contracts(p1: boolean, mode = 0, priceUpdatedAt?: (bn: bigint) => bigin
   assert.equal(p.unrealizedPnL, null, "getUnrealizedPnL revert → null");
   assert.equal(p.pendingFunding!.formatted, "-1");
   assert.equal(p.copiedFrom, null);
-  assert.equal(acct.health!.healthy, true);
   assert.ok(m.callBlockTags.every((t) => BigInt(t) === acct.blockNumber));
   const all = await read.getAccount(USER, { includeClosed: true, blockNumber: acct.blockNumber });
   assert.equal(all.positions.length, 2);

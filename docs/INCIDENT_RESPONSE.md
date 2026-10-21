@@ -30,8 +30,9 @@
 
 ## 3. 暫停與凍結：現行部署能做什麼
 
-**現行 exchange（`0x827eA0c62a32e995927101259042F8A27D99124D`）沒有全域暫停、也沒有逐資產停單功能。**
-可用的手段有限，而且大多是鈍器：
+**#344 cutover（2026-10-20）之後，現行 exchange（`0xbF3074C98e17d88B4127899C98C81AE94c9fC979`）有全域暫停與逐資產 ReduceOnly／Halted，見第 4 節**
+（guardian `0x1A5E03Ab2c96Dbc8A6E9CA80a3396eEa9e71EC6f`、marketOperator＝keeper `0x540aECD37E7A7885824e7b7e996eBddfb842ef17`，2026-10-21 鏈上讀取）。
+下表是其他可用的手段，大多是鈍器：
 
 | 對象 | 手段 | 權限 | 效果與代價 |
 |---|---|---|---|
@@ -61,9 +62,9 @@ timelock 解除 oracle 停機時，若懷疑 guardian 金鑰外洩，要在同�
 也代表單一金鑰外洩的影響範圍涵蓋上述所有角色。目前角色持有者以部署與角色分離紀錄為準（見 [`ROLE_SEPARATION.md`](ROLE_SEPARATION.md)、
 [`DEPLOY_129_CUTOVER.md`](DEPLOY_129_CUTOVER.md)），本文**未逐一驗證**。
 
-## 4. 原始碼版（PR #191，未部署）多了什麼
+## 4. 暫停與停單（PR #191，#344 cutover 已部署）
 
-完成 cutover 後才會生效：
+2026-10-20 隨 #344 cutover 部署（exchange `0xbF30…C979`）：
 
 | 手段 | 權限 | 效果 |
 |---|---|---|
@@ -73,8 +74,8 @@ timelock 解除 oracle 停機時，若懷疑 guardian 金鑰外洩，要在同�
 | 暫停後寬限期 | 自動 | 解除後 30 分鐘內禁止清算與開倉，讓交易者補保證金 |
 | OI 與獲利上限 | owner（部署腳本設定） | 限制資金池的最大曝險 |
 
-keeper 熔斷時會自動嘗試把資產切成 ReduceOnly，但**只有在新 exchange 上線、且 keeper 被設為 marketOperator 後
-才做得到**；現行部署下這一步一律記錄為「做不到」，只剩告警（見 [`RUNBOOK_KEEPER.md`](RUNBOOK_KEEPER.md)
+keeper 熔斷時會自動嘗試把資產切成 ReduceOnly。#344 cutover 後 keeper 是新 exchange 的 marketOperator，
+這一步做得到（keeper workflow 的第二輪；`KEEPER_MARKET_OPERATOR=0` 可關，見 [`RUNBOOK_KEEPER.md`](RUNBOOK_KEEPER.md)
 「價格熔斷」）。
 
 ## 5. keeper 熔斷處置
@@ -82,7 +83,7 @@ keeper 熔斷時會自動嘗試把資產切成 ReduceOnly，但**只有在新 ex
 依 [`RUNBOOK_KEEPER.md`](RUNBOOK_KEEPER.md) 的「價格熔斷」一節執行。重點：
 
 1. keeper 拒寫時會讓 job 失敗並開 issue「[keeper] Base Sepolia 價格熔斷」。
-2. **先判斷是否需要立刻停止交易**：現行部署在 6 小時內仍以舊價成交；可用手段見第 3 節。
+2. **先判斷是否需要立刻停止交易**：價格停更時 6 小時內仍以舊價成交；可用手段見第 3、4 節（guardian `pause()` 或逐資產 ReduceOnly）。
 3. 至少兩個人工來源獨立核價，確認是否有拆股等公司行動。
 4. 依原因處置：來源壞了就修來源、不寫價；拆股不得直接寫新價；真實跳空由 owner 以人工核過的價格寫入，
    並由第二人覆核。

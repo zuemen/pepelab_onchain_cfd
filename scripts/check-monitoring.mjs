@@ -91,22 +91,22 @@ const GITIGNORE_REQUIRED = [".dev.vars", ".wrangler/"];
  * 新增規則時一併登記。
  */
 export const REQUIRED_RULES = {
-  "owner-transferred": ["SEV-1", "active", "b4179173a5c8b87d675ad353fe1d9da0c970f66405fd5d29e396966432b57bd1"],
+  "owner-transferred": ["SEV-1", "active", "ef20d34127c93b084e1dc169e305a172b3a57f93b20457a68d64502d70838152"],
   "access-role-changed": ["SEV-1", "active", "d679eab5c775a27b1ee4ee03187b1b316f5b915e9250ebff731f5f9f6a7d449c"],
   "vault-upgraded": ["SEV-1", "active", "5a6c261e65b05b0b4ccca2d06f2bebe82285638a042936840ae5999be4d74d7b"],
   "exchange-agent-authorization": ["SEV-1", "active", "7cf697df61737e236db237b1a55114a3c1eed52196fe2d8c2cdaa2335cd5ad24"],
   "traderstake-copytracker-set": ["SEV-1", "active", "8f70b24fecc090ad1a51c8947fedb4ca7027a371d0637bfc6f55f199452bf562"],
   "kyc-verifier-changed": ["SEV-2", "pending-deploy", "a0699690843f2dac33afdfd940dcf336151409ca2484fce32f746559a9b59856"],
   "exchange-wiring-changed": ["SEV-1", "active", "ccb08201fca6ece947c84dc10cec73596dbd2ff0c62ce18d5513913b596e4922"],
-  "insurance-wiring-changed": ["SEV-1", "pending-deploy", "e19d5e91e842124fca33ea1c953fea7ad088744739c69d9de80be9ada5181356"],
-  "feerouter-config-changed": ["SEV-2", "active", "c63d3b4dc57a756379882b88c995157a1a150475ac958d628c5cdf3e7bc4b3c0"],
+  "insurance-wiring-changed": ["SEV-1", "active", "5c4d930584cd5be57652b3b7c0e2d576dc72c9f51de37a670cca3d81e283018a"],
+  "feerouter-config-changed": ["SEV-2", "active", "370a60ec5855d909a475b2f2e8730148f9ee0b7eab614de5d35952d4c4c79008"],
   "insurance-wiring": ["SEV-1", "active", "25b90b1bacb9f7824292a324f30b0e38acc31f0804c5f0844c8e0d003837394f"],
   "feerouter-wiring": ["SEV-1", "active", "eeaff5fa6b357e09352609a40f8cbba8ae5819b9a54871861f24e96d0aef739b"],
   "core-wiring": ["SEV-1", "active", "9ca3f119fdb8ce10197000521708eb733b19ced04930976daba48a22d5f96100"],
   "proxy-implementation": ["SEV-1", "active", "4dac4c95cf758408e8876bd33cfa59fb8b5ca54197de199039cd54b50e93198f"],
   "pepe-incentives-wiring": ["SEV-2", "active", "9d1100819a86f3d49729e3f030b2c9cddd3e00ba0fd1b4a0a570df753741a5d8"],
   "x402-payto": ["SEV-1", "active", "120e8c0092751a13807a6f7fdd0f9043bc87c37b46e4901609151770c0e73452"],
-  "exchange-risk-params": ["SEV-3", "active", "1c9a902b822a3af688e97329971d71f2da2b0b29597a81136580eb5c6c434259"],
+  "exchange-risk-params": ["SEV-3", "active", "d9ead7bbc982f1c1d103d56765d334feda1d9923dee1f28ea350532681f81aeb"],
   "exchange-funding-clamped": ["SEV-3", "active", "f3a7f769cf509be28ac4e2ed86a0a704c36776522e58f8123dd6aeb5fc6b1b5b"],
   "vault-pause-changed": ["SEV-2", "active", "05614cf07553c73bd6ce64b24d07206ce694c25d8ad0c6df1ad4cc209088bb8b"],
   "pepe-incentives-pause": ["SEV-3", "active", "bfda7e66b8d8eb2fbc4178e6f46d17f72603bd7557a0c655865950bc1e46c015"],
@@ -118,7 +118,7 @@ export const REQUIRED_RULES = {
   "vault-reserve-breached": ["SEV-2", "active", "e0ba958e802b3bc7ab8df2e4e60c37e15403c2b7af938028de60b721c0c01a25"],
   "guarded-oracle-guardian": ["SEV-2", "active", "340ca6fefe24812ee025f9759ff00c1bbd3883bb784b351c5c95f7ee76c1a94e"],
   "guarded-oracle-price-rejected": ["SEV-3", "active", "10732cf9d712ec8cad72ef7cbc9637b818ef1da52617537b32ecc496215f3ee9"],
-  "mock-oracle-config": ["SEV-2", "active", "bb07e053e4e3873ff1b9a8b273b6fc6fb59b8c3881c3cb5b121d36b8deeb6be3"],
+  "mock-oracle-config": ["SEV-2", "active", "ff6daff75b114742d8711c9b30381e2b8e1982d6a398a04639fb1e9abfee0035"],
   "aggregator-oracle-config": ["SEV-2", "active", "91adce9f3f2e8a2a99f8ac3598a2de56795ef36b02785c293cf1de57bf740564"],
   "chainlink-adapter-config": ["SEV-2", "active", "63847006c9712ee3e438b513c914242836e845a7642dcfd4e2fd073d3908cb61"],
   "pyth-adapter-config": ["SEV-2", "active", "9a29c35fc92f3b560e62c60bae0a9ed29b16cc6ce528d618f6e06b56282f53ed"],
@@ -139,17 +139,17 @@ export const REQUIRED_RULES = {
   "vault-reserve": ["SEV-2", "active", "4bb5187ed6df9d7a5341cf371968a80bf7067e0bfe34b435baff954ab8c823a8"],
   "keeper-gas": ["SEV-3", "active", "6c1973e862837b5e5e232da2931436b599276e949ad7dc024563dfc1320d30e8"],
   "signal-api-health": ["SEV-3", "active", "1ec853ee2afd0cf3ee8bd6a9232ffb27e107bc0464f0d96d0cbdff9d0151ec69"],
-  "exchange-pause": ["SEV-1", "pending-deploy", "5fe895a21c13de8449c5f91bfaca597b67cc9d3042161da199f2023df9121afd"],
-  "exchange-asset-mode": ["SEV-2", "pending-deploy", "ed30b8f122a0263551e930d18c7204655d447f4c4131df694e4eef510116cff7"],
-  "exchange-guardian-roles": ["SEV-1", "pending-deploy", "1d91732b5d90fcfe2311ce4014517a81079034aae6117fd3ecedee03cc0e84bb"],
-  "exchange-exposure-caps": ["SEV-3", "pending-deploy", "d9b49399d08536d08944c5f32dcf84aaac2ea521f6d5835c89c17aafc613e63e"],
+  "exchange-pause": ["SEV-1", "active", "840ef4637b15b91f34c3d8cfc49e7948e54fd88e9fad463976fa6cccf33b1a25"],
+  "exchange-asset-mode": ["SEV-2", "active", "31bb8ca1022803b7768904162988dce32c5a77d4438aa98162fb7d4f8852c40c"],
+  "exchange-guardian-roles": ["SEV-1", "active", "485ac62522746974f55b77253b17454f9b97e80005f6e9f65ecfb18963ee0266"],
+  "exchange-exposure-caps": ["SEV-3", "active", "9a9801b2f90c706b7465476b23afe345a339f7aa0d2ba03e3180d4d9947fdb29"],
   "timelock-operations": ["SEV-2", "pending-deploy", "0d275c5eae13b8ef21b4ad53512fb53b32cdff4af23b46be91298d3463107ee1"],
   "vault-unpriced-exemption": ["SEV-2", "pending-deploy", "9e6b3f9ddbb957cc04d6ed0f0be608d1220e7a98df1290f63df0c1c525893505"],
   "guarded-oracle-window": ["SEV-3", "pending-deploy", "3cb1cb7086d1f110bad42185a852f2676206856c8e653836297a0ca159c72b4e"],
-  "copytracker-slash-reserve": ["SEV-2", "pending-deploy", "d28fa46a7e82c7224d01f9545d83008dce38ded17d9056e91b10744155e30bec"],
+  "copytracker-slash-reserve": ["SEV-2", "active", "d2959ecb5d32b21ee4a8c3803f269a6fb66e75fdcc64526e1e97a73680d63024"],
   "guarded-oracle-halt-window": ["SEV-2", "pending-deploy", "7a7a5276534fe0a7f217266ab0b16f84a9894b4f62ccf99c41a894d3b29917d4"],
   "guarded-oracle-halt-takeover": ["SEV-1", "pending-deploy", "e0e0c332c4162fa39ac63b1e98a63c2fd25c4b6cc9a878beabc089151c78b6f2"],
-  "pepe-incentives-daily-params": ["SEV-3", "pending-deploy", "eebc20b3321d42ec0a142221791d336c658bbcbbf1a7c95b6c12c6c30a243b92"],
+  "pepe-incentives-daily-params": ["SEV-3", "active", "4ea2876efaa5cf0db8c843b00d76697bed0b7ba0a646b10f597afba921c94daa"],
 };
 
 /**
@@ -479,7 +479,11 @@ export function loadDeployed(root) {
     if (c) {
       const own = data.codes?.[c.codeHash];
       const impl = c.implCodeHash ? data.codes?.[c.implCodeHash] : "";
-      if (typeof own === "string" && typeof impl === "string") code = (own + impl.replace(/^0x/, "")).toLowerCase();
+      // 外部 library 以 DELEGATECALL 執行：它 emit 的事件記在這個位址上，topic0 常數在 library 的 bytecode 裡。
+      const libs = (c.libs ?? []).map((l) => data.codes?.[l.codeHash]);
+      if (typeof own === "string" && typeof impl === "string" && libs.every((l) => typeof l === "string")) {
+        code = [own, impl, ...libs].map((x) => x.replace(/^0x/, "")).join("").toLowerCase();
+      }
     }
     cache.set(k, code);
     return code;
@@ -570,6 +574,35 @@ export function checkDeployed(cfg, ctx) {
  * 以唯讀 RPC 重抓 deployed.json。只用 eth_chainId／eth_blockNumber／eth_getCode／eth_getStorageAt／
  * eth_call，全部釘在同一個區塊；不送交易、不需要任何金鑰。CI 不跑這個（CI 不連網）。
  */
+/**
+ * runtime bytecode 裡 PUSH20 寫死的位址（線性反組譯；全 0／全 f 的遮罩不算）。只用來挑 library 的候選，
+ * 被資料段帶偏多出來的候選會被 isLibraryCode 濾掉。
+ */
+export function push20Constants(code) {
+  const hex = String(code).replace(/^0x/, "").toLowerCase();
+  const out = new Set();
+  for (let i = 0; i < hex.length; ) {
+    const op = parseInt(hex.slice(i, i + 2), 16);
+    if (op === 0x73) {
+      const v = hex.slice(i + 2, i + 42);
+      if (v.length === 40 && !/^(0{40}|f{40})$/.test(v)) out.add("0x" + v);
+    }
+    i += 2 + (op >= 0x60 && op <= 0x7f ? (op - 0x5f) * 2 : 0);
+  }
+  return [...out].sort();
+}
+
+/**
+ * Solidity library 的 runtime code 開頭是呼叫保護「自己的位址 == ADDRESS」：legacy 編譯是
+ * `PUSH20 <位址> ADDRESS EQ`（73…3014）開頭；via-IR 是 `ADDRESS PUSH32 <補零的位址> EQ`（30 7f 00…<位址> 14），
+ * 落在前 16 bytes 內（ExchangeOpsLib，2026-10-21 實測 0x608080604052307f…）。
+ */
+export const isLibraryCode = (address, code) => {
+  const a = lc(address).slice(2);
+  const c = lc(code);
+  return c.startsWith(`0x73${a}3014`) || c.slice(0, 2 + 32 + 2 + 66 + 2).includes(`307f${a.padStart(64, "0")}14`);
+};
+
 export async function refreshDeployed({ root, rpcUrl, fetchImpl = fetch, log = console.log, sleep = (ms) => new Promise((r) => setTimeout(r, ms)), today = new Date().toISOString().slice(0, 10), write = true }) {
   const ctx = loadContext(root);
   const cfg = JSON.parse(readFileSync(join(root, "ops/monitoring/monitors.json"), "utf8"));
@@ -618,12 +651,22 @@ export async function refreshDeployed({ root, rpcUrl, fetchImpl = fetch, log = c
     if (code === "0x") throw new Error(`${ref}（${a}）在鏈上沒有程式碼`);
     const slot = await must("eth_getStorageAt", [a, IMPL_SLOT, block]);
     const entry = { ref, codeHash: addCode(code), impl: null, implCodeHash: null };
+    let implCode = "";
     if (BigInt(slot) !== 0n) {
       entry.impl = wordToAddr(slot);
-      entry.implCodeHash = addCode(await must("eth_getCode", [entry.impl, block]));
+      implCode = await must("eth_getCode", [entry.impl, block]);
+      entry.implCodeHash = addCode(implCode);
     }
+    // 連結的外部 library（例如 PerpetualExchange 的 ExchangeOpsLib，#344）：pause／資產模式的事件從那裡 emit。
+    const libs = [];
+    for (const cand of push20Constants(code + implCode.replace(/^0x/, ""))) {
+      if (cand === lc(a) || cand === entry.impl) continue;
+      const libCode = await must("eth_getCode", [cand, block]);
+      if (libCode !== "0x" && isLibraryCode(cand, libCode)) libs.push({ address: cand, codeHash: addCode(libCode) });
+    }
+    if (libs.length) entry.libs = libs;
     out.contracts[a] = entry;
-    log(`  ${ref} ${a} ${(code.length - 2) / 2} bytes${entry.impl ? `（實作 ${entry.impl}）` : ""}`);
+    log(`  ${ref} ${a} ${(code.length - 2) / 2} bytes${entry.impl ? `（實作 ${entry.impl}）` : ""}${libs.length ? `（library ${libs.map((l) => l.address).join("、")}）` : ""}`);
   }
   const call = async (to, fn) => {
     const j = await rpc("eth_call", [{ to, data: selector(fn) }, block]);
@@ -675,6 +718,7 @@ export async function verifyDeployed(opts) {
       if (x.codeHash !== y.codeHash) diffs.push(`${y.ref} ${a}：runtime bytecode 變了（${x.codeHash.slice(0, 10)}… → ${y.codeHash.slice(0, 10)}…）`);
       if ((x.impl ?? null) !== (y.impl ?? null)) diffs.push(`${y.ref} ${a}：EIP-1967 實作 ${x.impl} → ${y.impl}（升級了）`);
       else if ((x.implCodeHash ?? null) !== (y.implCodeHash ?? null)) diffs.push(`${y.ref} ${a}：實作 bytecode 變了`);
+      if (JSON.stringify(x.libs ?? []) !== JSON.stringify(y.libs ?? [])) diffs.push(`${y.ref} ${a}：連結的 library 變了`);
     }
   }
   for (const k of new Set([...Object.keys(cur.reads ?? {}), ...Object.keys(fresh.reads ?? {})])) {

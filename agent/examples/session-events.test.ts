@@ -16,8 +16,8 @@ const fullAbi = ((fullAbiJson as { abi?: unknown }).abi ?? fullAbiJson) as ether
 const full = new ethers.Interface(fullAbi);
 const shared = new ethers.Interface(AGENT_SESSION_MANAGER_ABI);
 
-const MANAGER = "0xdF9C1E53523568709f65Afe3C4AD2E6a6D99d14B";
-const OTHER = "0x827eA0c62a32e995927101259042F8A27D99124D";
+const MANAGER = "0x4875966ACA052A38d80ddD2aaE80995A98EAd2AF";
+const OTHER = "0xbF3074C98e17d88B4127899C98C81AE94c9fC979";
 const AGENT = "0x" + "22".repeat(20);
 
 function logOf(address: string, iface: ethers.Interface, name: string, values: unknown[]) {

@@ -8,6 +8,9 @@ name: Admin — Base Sepolia owner call
 #   - 該地址在 Base Sepolia 的餘額約 **0.05 ETH**（不再是 0），gas 沒問題
 #   - `MockOracle 0xeD90c4F3…0Aa3` 的 owner **已是** 0x540aECD3…ef17
 #     → 對 MockOracle 的 owner-only 呼叫（updatePrice / addAsset…）可以從這裡送
+#   - #344 cutover（2026-10-20）之後：交易所 `0xbF30…C979` 讀的專用 `MockOracle 0x9Cf4…deEA`
+#     owner 也已轉給 0x540a…ef17（同上，可從這裡送）；新交易所本身的 owner 是部署者 0x27C2…A585，
+#     預設 target 指向它，但它的 owner-only 呼叫從這裡送會 revert。
 #   - 但 `PerpetualExchange 0xEf75…c072`、`MockUSDC`、`PepeToken`、`InsuranceVault`
 #     的 owner **仍是舊部署者 0xE80A8136…Eb93**
 #     → 針對這些合約（含本 workflow 的預設 target）的呼叫仍會 revert
@@ -62,7 +65,7 @@ on:
       target:
         description: "Target contract address (default: PerpetualExchange)"
         required: true
-        default: "0x827eA0c62a32e995927101259042F8A27D99124D"
+        default: "0xbF3074C98e17d88B4127899C98C81AE94c9fC979"
       function:
         description: "Function signature (whitelist)"
         required: true

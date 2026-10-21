@@ -25,8 +25,9 @@ const API = (process.env.X402_API_URL ?? "https://agent-git-master-zuemens-proje
 const PK = process.env.AGENT_PRIVATE_KEY?.trim();
 const RPC = process.env.BASE_SEPOLIA_RPC_URL?.trim() || "https://sepolia.base.org";
 // session id 是每個 manager 各自獨立的。現行 AgentSessionManager
-// (0xdF9C1E53523568709f65Afe3C4AD2E6a6D99d14B，綁現行 exchange）目前只有 #0（到期 2027-07）。
-// 舊的 0x4E7cC1B7… / 0x5Ebcc64C… 上的 session id 在這裡無效，不可混用。
+// (0x4875966ACA052A38d80ddD2aaE80995A98EAd2AF，綁現行 exchange）還沒有 session（2026-10-21 nextSessionId=0），
+// 先用根目錄 create-session.sh 建一個再設 DEMO_SESSION_ID。#344 cutover 前的 0xdF9C…d14B、
+// 更舊的 0x4E7cC1B7… / 0x5Ebcc64C… 上的 session id 在這裡無效，不可混用。
 const SESSION_ID = Number(process.env.DEMO_SESSION_ID ?? "0");
 const ASSETS = (process.env.ASSETS ?? "sBTC,sETH").split(",").map((s) => s.trim()).filter(Boolean);
 const INTERVAL_MS = Number(process.env.INTERVAL_MIN ?? "15") * 60_000;
