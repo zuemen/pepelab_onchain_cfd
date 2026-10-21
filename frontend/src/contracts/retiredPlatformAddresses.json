@@ -235,6 +235,66 @@
       "role": "TraderStake",
       "chainId": null,
       "source": "git 歷史（曾在平台設定檔中，現已移除）"
+    },
+    {
+      "address": "0x827eA0c62a32e995927101259042F8A27D99124D",
+      "role": "PerpetualExchange",
+      "chainId": 84532,
+      "source": "#344 cutover（2026-10-20）換下（docs/CUTOVER_LOG_2026-10-20.md）"
+    },
+    {
+      "address": "0xA103de184A5C76d7b70fB4e908F252199e004b95",
+      "role": "StrategyRegistry",
+      "chainId": 84532,
+      "source": "#344 cutover（2026-10-20）換下（docs/CUTOVER_LOG_2026-10-20.md）"
+    },
+    {
+      "address": "0xC9e91f7D36e910C58042164032c625427b23CCB2",
+      "role": "CopyTracker",
+      "chainId": 84532,
+      "source": "#344 cutover（2026-10-20）換下（docs/CUTOVER_LOG_2026-10-20.md）"
+    },
+    {
+      "address": "0x5434d74b3a40e696746ff84A82B987F315c1B2A5",
+      "role": "CopyTracker",
+      "chainId": 84532,
+      "source": "#344 cutover（2026-10-20）：Redeploy130Hardened 建出、綁舊 FeeRouter 的中間 CopyTracker，隨即由 RedeployInsuranceStack 的 CopyTracker 取代，從未進 addresses.ts"
+    },
+    {
+      "address": "0xdF9C1E53523568709f65Afe3C4AD2E6a6D99d14B",
+      "role": "AgentSessionManager",
+      "chainId": 84532,
+      "source": "#344 cutover（2026-10-20）換下（docs/CUTOVER_LOG_2026-10-20.md）"
+    },
+    {
+      "address": "0xB364E2e3e1e7a2b033eF03a4ACceF42066F3D812",
+      "role": "InsuranceVault",
+      "chainId": 84532,
+      "source": "#344 cutover（2026-10-20）換下（docs/CUTOVER_LOG_2026-10-20.md）"
+    },
+    {
+      "address": "0x00f6cf0113399a7A451c7f85fe094a28092d3e0c",
+      "role": "FeeRouter",
+      "chainId": 84532,
+      "source": "#344 cutover（2026-10-20）換下（docs/CUTOVER_LOG_2026-10-20.md）"
+    },
+    {
+      "address": "0xEBfA1dc7dDea032ac6242cB619d982e543A23c12",
+      "role": "PepeIncentives",
+      "chainId": 84532,
+      "source": "#344 cutover（2026-10-20）換下（docs/CUTOVER_LOG_2026-10-20.md）"
+    },
+    {
+      "address": "0x44a8E5195E168e5AdcCa4343Bd8B399B49D5609F",
+      "role": "EsgRewardDistributor",
+      "chainId": 84532,
+      "source": "#344 cutover（2026-10-20）換下（docs/CUTOVER_LOG_2026-10-20.md）"
+    },
+    {
+      "address": "0xeD90c4F3B48213888870C1FC8486921Cb0990Aa3",
+      "role": "MockOracle",
+      "chainId": 84532,
+      "source": "#344 cutover（2026-10-20）換下：交易所改讀專用的 0x9Cf4…deEA，keeper 不再寫它（docs/CUTOVER_LOG_2026-10-20.md）"
     }
   ]
 }

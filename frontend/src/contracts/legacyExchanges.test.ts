@@ -29,10 +29,12 @@ describe('legacy exchange registry', () => {
     }
   });
 
-  it('lists both retired Base Sepolia exchanges', () => {
+  it('lists every retired Base Sepolia exchange', () => {
+    // 0x827e…124D：#129 的 exchange，#344 cutover（2026-10-20）退役。
     expect(legacyExchangesFor(84532).map((e) => e.address)).toEqual([
       '0xEf75ECA6514cE96B18382E921aC6190a0cF8c072',
       '0xfAEf549C687C37064cEaB5728989a839B08955cf',
+      '0x827eA0c62a32e995927101259042F8A27D99124D',
     ]);
   });
 

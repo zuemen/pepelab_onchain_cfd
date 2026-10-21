@@ -5,7 +5,8 @@
 
 > **2026-09-30 更正**：本文件主體寫於 2026-06-27。其中「§4 幣價資料來源」（Stooq、每 30 分鐘）
 > 與「目前 live demo 交易所（`0xEf75…`）」的描述已過期：現行 exchange 為
-> `0x827eA0c62a32e995927101259042F8A27D99124D`（2026-09-29 重新部署），keeper 來源見
+> `0x827eA0c62a32e995927101259042F8A27D99124D`（2026-09-29 重新部署；2026-10-20 #344 cutover 再換成
+> `0xbF3074C98e17d88B4127899C98C81AE94c9fC979`），keeper 來源見
 > [`RUNBOOK_KEEPER.md`](RUNBOOK_KEEPER.md)。ADL 與償付性的說法已在下文更正。
 > 損失吸收順序的現行版本見 [`RISK_WATERFALL.md`](RISK_WATERFALL.md)。
 

@@ -10,8 +10,8 @@
 > - 「**部署版不發此事件**」：合約已部署，但鏈上那一版不發這個事件（前端 ABI 來自 master 原始碼，比部署版新）。
 >   這些事件**現在不會響**；有對應 setter 的由「狀態」規則每輪讀 getter 比對。依據是 [`deployed.json`](deployed.json)（唯讀 RPC 抓的 runtime bytecode，CI 離線比對 topic0）。
 
-共 **59** 條規則：運作中 46 條（事件 31、狀態 13、HTTP 2），部署版不發此事件 12 條，待部署 1 條。鏈：base-sepolia（84532）。
-已部署 bytecode 快照：區塊 47937890（2026-10-10）。
+共 **59** 條規則：運作中 53 條（事件 38、狀態 13、HTTP 2），部署版不發此事件 5 條，待部署 1 條。鏈：base-sepolia（84532）。
+已部署 bytecode 快照：區塊 48393754（2026-10-21）。
 
 ## 總表
 
@@ -24,7 +24,7 @@
 | [`traderstake-copytracker-set`](#traderstake-copytracker-set) TraderStake 的 slash 權限地址變更 | 權限 | 事件 | SEV-1 | 運作中 | 每一筆 | [§1](../../docs/INCIDENT_RESPONSE.md#1-嚴重度分級) [§3](../../docs/INCIDENT_RESPONSE.md#3-暫停與凍結現行部署能做什麼) |
 | [`kyc-verifier-changed`](#kyc-verifier-changed) KYC 驗證者變更 | 權限 | 事件 | SEV-2 | 部署版不發此事件 | 每一筆 | [§1](../../docs/INCIDENT_RESPONSE.md#1-嚴重度分級) [§3](../../docs/INCIDENT_RESPONSE.md#3-暫停與凍結現行部署能做什麼) |
 | [`exchange-wiring-changed`](#exchange-wiring-changed) 交易所資金接線變更 | x402／FeeRouter 設定 | 事件 | SEV-1 | 運作中 | 每一筆 | [§1](../../docs/INCIDENT_RESPONSE.md#1-嚴重度分級) [§3](../../docs/INCIDENT_RESPONSE.md#3-暫停與凍結現行部署能做什麼) |
-| [`insurance-wiring-changed`](#insurance-wiring-changed) 保險金庫接線變更 | x402／FeeRouter 設定 | 事件 | SEV-1 | 部署版不發此事件 | 每一筆 | [§1](../../docs/INCIDENT_RESPONSE.md#1-嚴重度分級) [§3](../../docs/INCIDENT_RESPONSE.md#3-暫停與凍結現行部署能做什麼) |
+| [`insurance-wiring-changed`](#insurance-wiring-changed) 保險金庫接線變更 | x402／FeeRouter 設定 | 事件 | SEV-1 | 運作中 | 每一筆 | [§1](../../docs/INCIDENT_RESPONSE.md#1-嚴重度分級) [§3](../../docs/INCIDENT_RESPONSE.md#3-暫停與凍結現行部署能做什麼) |
 | [`feerouter-config-changed`](#feerouter-config-changed) FeeRouter 設定變更（含 x402 分潤路由） | x402／FeeRouter 設定 | 事件 | SEV-2 | 運作中 | 每一筆 | [§1](../../docs/INCIDENT_RESPONSE.md#1-嚴重度分級) [§3](../../docs/INCIDENT_RESPONSE.md#3-暫停與凍結現行部署能做什麼) |
 | [`insurance-wiring`](#insurance-wiring) 保險金庫接線被改 | x402／FeeRouter 設定 | 狀態 | SEV-1 | 運作中 | 任一 getter 的讀值 ≠ 預期位址 | [§1](../../docs/INCIDENT_RESPONSE.md#1-嚴重度分級) [§3](../../docs/INCIDENT_RESPONSE.md#3-暫停與凍結現行部署能做什麼) |
 | [`feerouter-wiring`](#feerouter-wiring) FeeRouter 接線被改（含 x402 分潤路由） | x402／FeeRouter 設定 | 狀態 | SEV-1 | 運作中 | 任一 getter 的讀值 ≠ 預期位址 | [§1](../../docs/INCIDENT_RESPONSE.md#1-嚴重度分級) [§3](../../docs/INCIDENT_RESPONSE.md#3-暫停與凍結現行部署能做什麼) |
@@ -65,17 +65,17 @@
 | [`vault-reserve`](#vault-reserve) 代幣化金庫儲備率 | 保險金與儲備 | 狀態 | SEV-2 | 運作中 | 儲備率 < `minReserveRatioBps()` → SEV-2；< 下限 + `RESERVE_WARN_MARGIN_BPS`（預設 500 bps） → SEV-3；mint 自動停止 → SEV-2；無法定價或暫停 → SEV-3 | [§1](../../docs/INCIDENT_RESPONSE.md#1-嚴重度分級) [§3](../../docs/INCIDENT_RESPONSE.md#3-暫停與凍結現行部署能做什麼) |
 | [`keeper-gas`](#keeper-gas) keeper 錢包 gas 過低 | keeper | 狀態 | SEV-3 | 運作中 | < `GAS_MIN_ETH`（預設 0.02 ETH） → SEV-3；< `GAS_CRIT_ETH`（預設 0.005 ETH） → SEV-2 | [§5](../../docs/INCIDENT_RESPONSE.md#5-keeper-熔斷處置) |
 | [`signal-api-health`](#signal-api-health) signal-api 健康檢查失敗 | 服務健康 | HTTP | SEV-3 | 運作中 | 非 200 或內容不是 `ok`，連續 `HTTP_FAILS_BEFORE_ALERT`（預設 2 次） | [§6](../../docs/INCIDENT_RESPONSE.md#6-vercel-回滾前端與-signal-api) |
-| [`exchange-pause`](#exchange-pause) 交易所全域暫停 | 暫停與資產模式 | 事件 | SEV-1 | 部署版不發此事件 | 每一筆 | [§4](../../docs/INCIDENT_RESPONSE.md#4-原始碼版pr-191未部署多了什麼) [§7](../../docs/INCIDENT_RESPONSE.md#7-對外溝通與客戶通報目標值可調整) |
-| [`exchange-asset-mode`](#exchange-asset-mode) 交易所資產模式變更 | 暫停與資產模式 | 事件 | SEV-2 | 部署版不發此事件 | 每一筆 | [§4](../../docs/INCIDENT_RESPONSE.md#4-原始碼版pr-191未部署多了什麼) [§5](../../docs/INCIDENT_RESPONSE.md#5-keeper-熔斷處置) |
-| [`exchange-guardian-roles`](#exchange-guardian-roles) 交易所 guardian／marketOperator 變更 | 權限 | 事件 | SEV-1 | 部署版不發此事件 | 每一筆 | [§1](../../docs/INCIDENT_RESPONSE.md#1-嚴重度分級) [§4](../../docs/INCIDENT_RESPONSE.md#4-原始碼版pr-191未部署多了什麼) |
-| [`exchange-exposure-caps`](#exchange-exposure-caps) 交易所 OI／獲利上限變更與觸發 | 風險參數 | 事件 | SEV-3 | 部署版不發此事件 | 每一筆 | [§4](../../docs/INCIDENT_RESPONSE.md#4-原始碼版pr-191未部署多了什麼) |
+| [`exchange-pause`](#exchange-pause) 交易所全域暫停 | 暫停與資產模式 | 事件 | SEV-1 | 運作中 | 每一筆 | [§4](../../docs/INCIDENT_RESPONSE.md#4-暫停與停單pr-191344-cutover-已部署) [§7](../../docs/INCIDENT_RESPONSE.md#7-對外溝通與客戶通報目標值可調整) |
+| [`exchange-asset-mode`](#exchange-asset-mode) 交易所資產模式變更 | 暫停與資產模式 | 事件 | SEV-2 | 運作中 | 每一筆 | [§4](../../docs/INCIDENT_RESPONSE.md#4-暫停與停單pr-191344-cutover-已部署) [§5](../../docs/INCIDENT_RESPONSE.md#5-keeper-熔斷處置) |
+| [`exchange-guardian-roles`](#exchange-guardian-roles) 交易所 guardian／marketOperator 變更 | 權限 | 事件 | SEV-1 | 運作中 | 每一筆 | [§1](../../docs/INCIDENT_RESPONSE.md#1-嚴重度分級) [§4](../../docs/INCIDENT_RESPONSE.md#4-暫停與停單pr-191344-cutover-已部署) |
+| [`exchange-exposure-caps`](#exchange-exposure-caps) 交易所 OI／獲利上限變更與觸發 | 風險參數 | 事件 | SEV-3 | 運作中 | 每一筆 | [§4](../../docs/INCIDENT_RESPONSE.md#4-暫停與停單pr-191344-cutover-已部署) |
 | [`timelock-operations`](#timelock-operations) Timelock 排程與執行 | 權限 | 事件 | SEV-2 | 待部署 | 每一筆 | [§1](../../docs/INCIDENT_RESPONSE.md#1-嚴重度分級) [§2](../../docs/INCIDENT_RESPONSE.md#2-角色) |
 | [`vault-unpriced-exemption`](#vault-unpriced-exemption) 金庫定價豁免變更（V2.5） | 保險金與儲備 | 事件 | SEV-2 | 部署版不發此事件 | 每一筆 | [§3](../../docs/INCIDENT_RESPONSE.md#3-暫停與凍結現行部署能做什麼) |
 | [`guarded-oracle-window`](#guarded-oracle-window) GuardedOracle 時間窗偏離上限變更 | Oracle | 事件 | SEV-3 | 部署版不發此事件 | 每一筆 | [§5](../../docs/INCIDENT_RESPONSE.md#5-keeper-熔斷處置) |
 | [`guarded-oracle-halt-window`](#guarded-oracle-halt-window) GuardedOracle guardian 停機開始／解除（有期限版） | 暫停與資產模式 | 事件 | SEV-2 | 部署版不發此事件 | 每一筆 | [§3](../../docs/INCIDENT_RESPONSE.md#3-暫停與凍結現行部署能做什麼) [§5](../../docs/INCIDENT_RESPONSE.md#5-keeper-熔斷處置) |
 | [`guarded-oracle-halt-takeover`](#guarded-oracle-halt-takeover) GuardedOracle 停機被 admin 接手（不再到期） | 權限 | 事件 | SEV-1 | 部署版不發此事件 | 每一筆 | [§1](../../docs/INCIDENT_RESPONSE.md#1-嚴重度分級) [§3](../../docs/INCIDENT_RESPONSE.md#3-暫停與凍結現行部署能做什麼) |
-| [`copytracker-slash-reserve`](#copytracker-slash-reserve) CopyTracker 罰沒準備金提領 | 大額提領 | 事件 | SEV-2 | 部署版不發此事件 | 每一筆 | [§1](../../docs/INCIDENT_RESPONSE.md#1-嚴重度分級) |
-| [`pepe-incentives-daily-params`](#pepe-incentives-daily-params) PepeIncentives 簽到點數參數變更 | 風險參數 | 事件 | SEV-3 | 部署版不發此事件 | 每一筆 | [§3](../../docs/INCIDENT_RESPONSE.md#3-暫停與凍結現行部署能做什麼) |
+| [`copytracker-slash-reserve`](#copytracker-slash-reserve) CopyTracker 罰沒準備金提領 | 大額提領 | 事件 | SEV-2 | 運作中 | 每一筆 | [§1](../../docs/INCIDENT_RESPONSE.md#1-嚴重度分級) |
+| [`pepe-incentives-daily-params`](#pepe-incentives-daily-params) PepeIncentives 簽到點數參數變更 | 風險參數 | 事件 | SEV-3 | 運作中 | 每一筆 | [§3](../../docs/INCIDENT_RESPONSE.md#3-暫停與凍結現行部署能做什麼) |
 
 「嚴重度」是規則的預設等級；狀態規則依門檻在 SEV-1～SEV-3 之間升降（見各規則）。恢復通知固定標為 SEV-4，但依原嚴重度決定是否送出。
 
@@ -128,16 +128,17 @@ Ownable 合約的 owner 被轉移。未經排程的轉移等同特權金鑰外�
 
 | 合約 | 位址來源 | 位址 |
 |---|---|---|
-| PerpetualExchange（ABI `PerpetualExchange`） | addresses.ts BASE_SEPOLIA.PerpetualExchange | `0x827eA0c62a32e995927101259042F8A27D99124D` |
-| InsuranceVault（ABI `InsuranceVault`） | addresses.ts BASE_SEPOLIA.InsuranceVault | `0xB364E2e3e1e7a2b033eF03a4ACceF42066F3D812` |
-| FeeRouter（ABI `FeeRouter`） | addresses.ts BASE_SEPOLIA.FeeRouter | `0x00f6cf0113399a7A451c7f85fe094a28092d3e0c` |
+| PerpetualExchange（ABI `PerpetualExchange`） | addresses.ts BASE_SEPOLIA.PerpetualExchange | `0xbF3074C98e17d88B4127899C98C81AE94c9fC979` |
+| InsuranceVault（ABI `InsuranceVault`） | addresses.ts BASE_SEPOLIA.InsuranceVault | `0x899263e34107a36a5216499F9CC7fb7a5afc7aaF` |
+| FeeRouter（ABI `FeeRouter`） | addresses.ts BASE_SEPOLIA.FeeRouter | `0x89Aa6799b2CdAa43FF7985ff706456Ca6F0e5d29` |
 | X402FeeRouter（ABI `FeeRouter`） | x402.ts X402_FEE_ROUTER[84532] | `0x780E18146Bc77E50c3e5EcaED913FC31F62c0f6A` |
-| MockOracle（ABI `MockOracle`） | addresses.ts BASE_SEPOLIA.MockOracle | `0xeD90c4F3B48213888870C1FC8486921Cb0990Aa3` |
+| MockOracle（ABI `MockOracle`） | addresses.ts BASE_SEPOLIA.MockOracle | `0x9Cf4E05B08F6cC53be2e04752F2c32A79132deEA` |
 | AggregatorOracle（ABI `AggregatorOracleAdapter`） | addresses.ts BASE_SEPOLIA_ORACLE_SHOWCASE.AggregatorOracle | `0x8215158642350a3f329aB9597186d21f957A813D` |
 | ChainlinkAdapter（ABI `ChainlinkOracleAdapter`） | addresses.ts BASE_SEPOLIA_ORACLE_SHOWCASE.ChainlinkAdapter | `0x37DC7b70899BFfB17949366a5b6a86203C428E2f` |
 | PythAdapter（ABI `PythOracleAdapter`） | addresses.ts BASE_SEPOLIA_ORACLE_SHOWCASE.PythAdapter | `0x551C0B2e75a9129fe697210223F1Ca6e64F3C6d5` |
 | KYCRegistry（ABI `KYCRegistry`） | addresses.ts BASE_SEPOLIA.KYCRegistry | `0x5D95fD9e7a5f80E5369e24783F1f98E0f952360d` |
 | TraderStake（ABI `TraderStake`） | addresses.ts BASE_SEPOLIA.TraderStake | `0x01aEB530bcFc69f036309ffe55acc7eA6C5a28Fe` |
+| CopyTracker（ABI `CopyTracker`） | addresses.ts BASE_SEPOLIA.CopyTracker | `0x15A9Cbf803a3EEee2794B74Ad78252d27Ccd347C` |
 | AssetVault（ABI `AssetVault`） | addresses.ts BASE_SEPOLIA.AssetVault | `0xC30DFe1C9EBb47197b785995aA9Cd0F5B89557A5` |
 | MockUSDC（ABI `MockUSDC`） | addresses.ts BASE_SEPOLIA.MockUSDC | `0x69fd695Bc7C3aFdb35ABA35cD6890C506400b035` |
 | MockUSDT（ABI `MockUSDT`） | addresses.ts BASE_SEPOLIA.MockUSDT | `0x5c8A1e970D275Cc269e09A949D68693120416d78` |
@@ -145,8 +146,8 @@ Ownable 合約的 owner 被轉移。未經排程的轉移等同特權金鑰外�
 | PepeAMM（ABI `PepeAMM`） | addresses.ts BASE_SEPOLIA.PepeAMM | `0x93be44a81a2796d378f65ebcc8d5f8b40166ad63` |
 | PepeClaim（ABI `PepeClaim`） | addresses.ts BASE_SEPOLIA.PepeClaim | `0x459d238aC61eC4A0E08608FBcd363227B860CF34` |
 | PepeStaking（ABI `PepeStaking`） | addresses.ts BASE_SEPOLIA.PepeStaking | `0xC78D68cA1B217ba241c23Ebad3118c6ec0dc0D34` |
-| PepeIncentives（ABI `PepeIncentives`） | addresses.ts BASE_SEPOLIA.PepeIncentives | `0xEBfA1dc7dDea032ac6242cB619d982e543A23c12` |
-| EsgRewardDistributor（ABI `EsgRewardDistributor`） | addresses.ts BASE_SEPOLIA.EsgRewardDistributor | `0x44a8E5195E168e5AdcCa4343Bd8B399B49D5609F` |
+| PepeIncentives（ABI `PepeIncentives`） | addresses.ts BASE_SEPOLIA.PepeIncentives | `0xc257Dd9b9eb392893a89d307664713E8660672F0` |
+| EsgRewardDistributor（ABI `EsgRewardDistributor`） | addresses.ts BASE_SEPOLIA.EsgRewardDistributor | `0x4C9232eE2caAe2B065eb1Ca9AD966Ef69A0D2433` |
 
 - 事件：`OwnershipTransferred(address,address)`
 - 門檻：每一筆
@@ -204,7 +205,7 @@ setAgentAuthorized：被授權的地址可以代使用者開平倉。新增未�
 
 | 合約 | 位址來源 | 位址 |
 |---|---|---|
-| PerpetualExchange（ABI `PerpetualExchange`） | addresses.ts BASE_SEPOLIA.PerpetualExchange | `0x827eA0c62a32e995927101259042F8A27D99124D` |
+| PerpetualExchange（ABI `PerpetualExchange`） | addresses.ts BASE_SEPOLIA.PerpetualExchange | `0xbF3074C98e17d88B4127899C98C81AE94c9fC979` |
 
 - 事件：`AgentAuthorizationSet(address,bool)`
 - 門檻：每一筆
@@ -246,7 +247,7 @@ KYCRegistry 的驗證者名單變更；驗證者可以讓任意地址通過 RWA 
 
 | 合約 | 位址來源 | 位址 |
 |---|---|---|
-| PerpetualExchange（ABI `PerpetualExchange`） | addresses.ts BASE_SEPOLIA.PerpetualExchange | `0x827eA0c62a32e995927101259042F8A27D99124D` |
+| PerpetualExchange（ABI `PerpetualExchange`） | addresses.ts BASE_SEPOLIA.PerpetualExchange | `0xbF3074C98e17d88B4127899C98C81AE94c9fC979` |
 
 - 事件：`FeeRouterSet(address)`、`InsuranceVaultSet(address)`、`CopyTrackerSet(address)`、`KycRegistrySet(address)`
 - 門檻：每一筆
@@ -254,13 +255,13 @@ KYCRegistry 的驗證者名單變更；驗證者可以讓任意地址通過 RWA 
 
 ### insurance-wiring-changed
 
-**保險金庫接線變更**｜x402／FeeRouter 設定｜事件｜SEV-1｜部署版不發此事件
+**保險金庫接線變更**｜x402／FeeRouter 設定｜事件｜SEV-1｜運作中
 
-InsuranceVault 的 exchange（唯一能呼叫 bailout 的地址）或 FeeRouter 被改。**已部署的 InsuranceVault 有 setExchange／setFeeRouter，但不發這兩個事件**（事件是 master 原始碼後來才加的），所以這條事件規則現在不會響；接線變更由狀態規則 insurance-wiring 每輪讀 getter 比對。重新部署 InsuranceVault 並更新 deployed.json 後改為 active。
+InsuranceVault 的 exchange（唯一能呼叫 bailout 的地址）或 FeeRouter 被改。#344 cutover（2026-10-20）重新部署的 InsuranceVault 會發 ExchangeSet／FeeRouterSet；狀態規則 insurance-wiring 每輪另外讀 getter 比對。
 
 | 合約 | 位址來源 | 位址 |
 |---|---|---|
-| InsuranceVault | addresses.ts BASE_SEPOLIA.InsuranceVault（`0xB364E2e3e1e7a2b033eF03a4ACceF42066F3D812`）；部署版不發此事件，事件宣告於 `contracts/src/InsuranceVault.sol` | — |
+| InsuranceVault（ABI `InsuranceVault`） | addresses.ts BASE_SEPOLIA.InsuranceVault | `0x899263e34107a36a5216499F9CC7fb7a5afc7aaF` |
 
 - 事件：`ExchangeSet(address)`、`FeeRouterSet(address)`
 - 門檻：每一筆
@@ -270,14 +271,14 @@ InsuranceVault 的 exchange（唯一能呼叫 bailout 的地址）或 FeeRouter 
 
 **FeeRouter 設定變更（含 x402 分潤路由）**｜x402／FeeRouter 設定｜事件｜SEV-2｜運作中
 
-V1 FeeRouter 與 x402 FeeRouter（官方 USDC）的 exchange／copyTracker 被改。x402 FeeRouter 已於 2026-10-10 以目前原始碼重新部署（0x780E…0f6A），會發 ExchangeSet／CopyTrackerSet，所以這條規則改為 active。**平台 V1 FeeRouter 仍是舊部署，不會發這兩個事件**（events 的 notDeployed 已標明），它的變更只能靠狀態規則 feerouter-wiring 每輪讀 getter 抓；第 5 步重新部署後移除 notDeployed。
+V1 FeeRouter 與 x402 FeeRouter（官方 USDC）的 exchange／copyTracker 被改。兩顆都以目前原始碼部署（x402 FeeRouter 2026-10-10，V1 FeeRouter 2026-10-20 #344 cutover），都會發 ExchangeSet／CopyTrackerSet；狀態規則 feerouter-wiring 每輪另外讀 getter 比對。
 
 | 合約 | 位址來源 | 位址 |
 |---|---|---|
-| FeeRouter（ABI `FeeRouter`） | addresses.ts BASE_SEPOLIA.FeeRouter | `0x00f6cf0113399a7A451c7f85fe094a28092d3e0c` |
+| FeeRouter（ABI `FeeRouter`） | addresses.ts BASE_SEPOLIA.FeeRouter | `0x89Aa6799b2CdAa43FF7985ff706456Ca6F0e5d29` |
 | X402FeeRouter（ABI `FeeRouter`） | x402.ts X402_FEE_ROUTER[84532] | `0x780E18146Bc77E50c3e5EcaED913FC31F62c0f6A` |
 
-- 事件：`ExchangeSet(address)`（**部署版不發此事件**：FeeRouter；平台 V1 FeeRouter 是舊部署，bytecode 不含這個事件；x402 FeeRouter（2026-10-10 重新部署）會發）、`CopyTrackerSet(address)`（**部署版不發此事件**：FeeRouter；平台 V1 FeeRouter 是舊部署，bytecode 不含這個事件；x402 FeeRouter（2026-10-10 重新部署）會發）
+- 事件：`ExchangeSet(address)`、`CopyTrackerSet(address)`
 - 門檻：每一筆
 - 處置：[INCIDENT_RESPONSE「1. 嚴重度分級」](../../docs/INCIDENT_RESPONSE.md#1-嚴重度分級)、[INCIDENT_RESPONSE「3. 暫停與凍結：現行部署能做什麼」](../../docs/INCIDENT_RESPONSE.md#3-暫停與凍結現行部署能做什麼)
 - 相關：[RUNBOOK_KEY_ROTATION.md「6.2 x402 payTo / platformTreasury」](../../docs/RUNBOOK_KEY_ROTATION.md#62-x402-payto--platformtreasury)
@@ -290,10 +291,10 @@ V1 FeeRouter 與 x402 FeeRouter（官方 USDC）的 exchange／copyTracker 被�
 
 | 合約 | 位址來源 | 位址 |
 |---|---|---|
-| InsuranceVault（ABI `InsuranceVault`） | addresses.ts BASE_SEPOLIA.InsuranceVault | `0xB364E2e3e1e7a2b033eF03a4ACceF42066F3D812` |
+| InsuranceVault（ABI `InsuranceVault`） | addresses.ts BASE_SEPOLIA.InsuranceVault | `0x899263e34107a36a5216499F9CC7fb7a5afc7aaF` |
 
-- 預期：`InsuranceVault.exchange()` = `PerpetualExchange`（`0x827eA0c62a32e995927101259042F8A27D99124D`）
-- 預期：`InsuranceVault.feeRouter()` = `FeeRouter`（`0x00f6cf0113399a7A451c7f85fe094a28092d3e0c`）
+- 預期：`InsuranceVault.exchange()` = `PerpetualExchange`（`0xbF3074C98e17d88B4127899C98C81AE94c9fC979`）
+- 預期：`InsuranceVault.feeRouter()` = `FeeRouter`（`0x89Aa6799b2CdAa43FF7985ff706456Ca6F0e5d29`）
 - 門檻：任一 getter 的讀值 ≠ 預期位址
 - 處置：[INCIDENT_RESPONSE「1. 嚴重度分級」](../../docs/INCIDENT_RESPONSE.md#1-嚴重度分級)、[INCIDENT_RESPONSE「3. 暫停與凍結：現行部署能做什麼」](../../docs/INCIDENT_RESPONSE.md#3-暫停與凍結現行部署能做什麼)
 
@@ -305,13 +306,13 @@ V1 FeeRouter 與 x402 FeeRouter（官方 USDC）的 exchange／copyTracker 被�
 
 | 合約 | 位址來源 | 位址 |
 |---|---|---|
-| FeeRouter（ABI `FeeRouter`） | addresses.ts BASE_SEPOLIA.FeeRouter | `0x00f6cf0113399a7A451c7f85fe094a28092d3e0c` |
+| FeeRouter（ABI `FeeRouter`） | addresses.ts BASE_SEPOLIA.FeeRouter | `0x89Aa6799b2CdAa43FF7985ff706456Ca6F0e5d29` |
 | X402FeeRouter（ABI `FeeRouter`） | x402.ts X402_FEE_ROUTER[84532] | `0x780E18146Bc77E50c3e5EcaED913FC31F62c0f6A` |
 
-- 預期：`FeeRouter.exchange()` = `PerpetualExchange`（`0x827eA0c62a32e995927101259042F8A27D99124D`）
-- 預期：`FeeRouter.copyTracker()` = `CopyTracker`（`0xC9e91f7D36e910C58042164032c625427b23CCB2`）
-- 預期：`FeeRouter.insuranceVault()` = `InsuranceVault`（`0xB364E2e3e1e7a2b033eF03a4ACceF42066F3D812`）
-- 預期：`FeeRouter.platformTreasury()` = 鏈上快照 `0xe80a81360608c1342e66743f70a00f75d792eb93`（platformTreasury 是 immutable，前端設定沒有這個位址；快照只用來確認這顆 FeeRouter 沒有被換成另一顆）
+- 預期：`FeeRouter.exchange()` = `PerpetualExchange`（`0xbF3074C98e17d88B4127899C98C81AE94c9fC979`）
+- 預期：`FeeRouter.copyTracker()` = `CopyTracker`（`0x15A9Cbf803a3EEee2794B74Ad78252d27Ccd347C`）
+- 預期：`FeeRouter.insuranceVault()` = `InsuranceVault`（`0x899263e34107a36a5216499F9CC7fb7a5afc7aaF`）
+- 預期：`FeeRouter.platformTreasury()` = 鏈上快照 `0xe5b1b4009c41dd5c02e216f42f33b3a8d4ee0a0c`（platformTreasury 是 immutable，前端設定沒有這個位址；快照只用來確認這顆 FeeRouter 沒有被換成另一顆）
 - 預期：`X402FeeRouter.exchange()` = 零位址
 - 預期：`X402FeeRouter.copyTracker()` = 零位址
 - 預期：`X402FeeRouter.insuranceVault()` = 鏈上快照 `0xc7afe2064106a608e0e21bfbf9aff89b0ead7b9f`（x402 FeeRouter 部署時指定的保險金收款地址（immutable），前端設定沒有這個位址）
@@ -327,15 +328,15 @@ V1 FeeRouter 與 x402 FeeRouter（官方 USDC）的 exchange／copyTracker 被�
 
 | 合約 | 位址來源 | 位址 |
 |---|---|---|
-| PerpetualExchange（ABI `PerpetualExchange`） | addresses.ts BASE_SEPOLIA.PerpetualExchange | `0x827eA0c62a32e995927101259042F8A27D99124D` |
+| PerpetualExchange（ABI `PerpetualExchange`） | addresses.ts BASE_SEPOLIA.PerpetualExchange | `0xbF3074C98e17d88B4127899C98C81AE94c9fC979` |
 | TraderStake（ABI `TraderStake`） | addresses.ts BASE_SEPOLIA.TraderStake | `0x01aEB530bcFc69f036309ffe55acc7eA6C5a28Fe` |
 | AssetVaultV2（ABI `AssetVaultV2`） | addresses.ts V2_STACK[84532].AssetVaultV2 | `0x916D7Fc399d9afd23BAa113E2c2Cc601341ff10a` |
 
-- 預期：`PerpetualExchange.oracle()` = `MockOracle`（`0xeD90c4F3B48213888870C1FC8486921Cb0990Aa3`）
-- 預期：`PerpetualExchange.feeRouter()` = `FeeRouter`（`0x00f6cf0113399a7A451c7f85fe094a28092d3e0c`）
-- 預期：`PerpetualExchange.insuranceVault()` = `InsuranceVault`（`0xB364E2e3e1e7a2b033eF03a4ACceF42066F3D812`）
+- 預期：`PerpetualExchange.oracle()` = `MockOracle`（`0x9Cf4E05B08F6cC53be2e04752F2c32A79132deEA`）
+- 預期：`PerpetualExchange.feeRouter()` = `FeeRouter`（`0x89Aa6799b2CdAa43FF7985ff706456Ca6F0e5d29`）
+- 預期：`PerpetualExchange.insuranceVault()` = `InsuranceVault`（`0x899263e34107a36a5216499F9CC7fb7a5afc7aaF`）
 - 預期：`PerpetualExchange.kyc()` = `KYCRegistry`（`0x5D95fD9e7a5f80E5369e24783F1f98E0f952360d`）
-- 預期：`TraderStake.copyTracker()` = `CopyTracker`（`0xC9e91f7D36e910C58042164032c625427b23CCB2`）
+- 預期：`TraderStake.copyTracker()` = `CopyTracker`（`0x15A9Cbf803a3EEee2794B74Ad78252d27Ccd347C`）
 - 預期：`AssetVaultV2.oracle()` = `GuardedOracle`（`0x8E9e59BE9589Ad88EC14F3ef6bdcc43E8B76f842`）
 - 預期：`AssetVaultV2.esgRegistry()` = `ESGRegistryV2`（`0xBF5B9cD78566791d79c687A732b4ed5bc3E95dFf`）
 - 門檻：任一 getter 的讀值 ≠ 預期位址
@@ -363,7 +364,7 @@ V1 FeeRouter 與 x402 FeeRouter（官方 USDC）的 exchange／copyTracker 被�
 
 | 合約 | 位址來源 | 位址 |
 |---|---|---|
-| PepeIncentives（ABI `PepeIncentives`） | addresses.ts BASE_SEPOLIA.PepeIncentives | `0xEBfA1dc7dDea032ac6242cB619d982e543A23c12` |
+| PepeIncentives（ABI `PepeIncentives`） | addresses.ts BASE_SEPOLIA.PepeIncentives | `0xc257Dd9b9eb392893a89d307664713E8660672F0` |
 
 - 預期：`PepeIncentives.esgRegistry()` = 零位址
 - 門檻：任一 getter 的讀值 ≠ 預期位址
@@ -384,13 +385,13 @@ V1 FeeRouter 與 x402 FeeRouter（官方 USDC）的 exchange／copyTracker 被�
 
 **交易所風險參數變更**｜風險參數｜事件｜SEV-3｜運作中
 
-槓桿上限、維持保證金、maxPriceAge、各項費率、ADL、組合保證金、RWA 標記的變更。正常營運也會改，所以是 SEV-3 稽核通知；非預期的變更應升級處理。
+槓桿上限、維持保證金、maxPriceAge、各項費率、ADL、RWA 標記的變更。正常營運也會改，所以是 SEV-3 稽核通知；非預期的變更應升級處理。
 
 | 合約 | 位址來源 | 位址 |
 |---|---|---|
-| PerpetualExchange（ABI `PerpetualExchange`） | addresses.ts BASE_SEPOLIA.PerpetualExchange | `0x827eA0c62a32e995927101259042F8A27D99124D` |
+| PerpetualExchange（ABI `PerpetualExchange`） | addresses.ts BASE_SEPOLIA.PerpetualExchange | `0xbF3074C98e17d88B4127899C98C81AE94c9fC979` |
 
-- 事件：`MaxLeverageSet(bytes32,uint256)`、`MaintenanceMarginSet(bytes32,uint256)`、`MaxPriceAgeSet(uint256)`、`TradingFeeBpsSet(uint256)`、`LiquidationPenaltyBpsSet(uint256)`、`MarkPremiumCapBpsSet(uint256)`、`VaultFeeShareSet(uint256)`、`ExecutionFeeSet(uint256)`、`BorrowFeeBpsPerHourSet(uint256)`、`AdlEnabledSet(bool)`、`PortfolioMarginEnabledSet(bool)`、`RwaAssetSet(bytes32,bool)`
+- 事件：`MaxLeverageSet(bytes32,uint256)`、`MaintenanceMarginSet(bytes32,uint256)`、`MaxPriceAgeSet(uint256)`、`TradingFeeBpsSet(uint256)`、`LiquidationPenaltyBpsSet(uint256)`、`MarkPremiumCapBpsSet(uint256)`、`VaultFeeShareSet(uint256)`、`ExecutionFeeSet(uint256)`、`BorrowFeeBpsPerHourSet(uint256)`、`AdlEnabledSet(bool)`、`RwaAssetSet(bytes32,bool)`
 - 門檻：每一筆
 - 處置：[INCIDENT_RESPONSE「3. 暫停與凍結：現行部署能做什麼」](../../docs/INCIDENT_RESPONSE.md#3-暫停與凍結現行部署能做什麼)
 
@@ -402,7 +403,7 @@ settleFunding 發現積欠的 funding 區間超過 MAX_FUNDING_CATCHUP_INTERVALS
 
 | 合約 | 位址來源 | 位址 |
 |---|---|---|
-| PerpetualExchange（ABI `PerpetualExchange`） | addresses.ts BASE_SEPOLIA.PerpetualExchange | `0x827eA0c62a32e995927101259042F8A27D99124D` |
+| PerpetualExchange（ABI `PerpetualExchange`） | addresses.ts BASE_SEPOLIA.PerpetualExchange | `0xbF3074C98e17d88B4127899C98C81AE94c9fC979` |
 
 - 事件：`FundingCatchupClamped(bytes32,uint256,uint256)`
 - 門檻：每一筆
@@ -431,7 +432,7 @@ PepeIncentives（交易挖礦、簽到、跟單獎勵）被 owner 暫停或解�
 
 | 合約 | 位址來源 | 位址 |
 |---|---|---|
-| PepeIncentives（ABI `PepeIncentives`） | addresses.ts BASE_SEPOLIA.PepeIncentives | `0xEBfA1dc7dDea032ac6242cB619d982e543A23c12` |
+| PepeIncentives（ABI `PepeIncentives`） | addresses.ts BASE_SEPOLIA.PepeIncentives | `0xc257Dd9b9eb392893a89d307664713E8660672F0` |
 
 - 事件：`Paused(address)`、`Unpaused(address)`
 - 門檻：每一筆
@@ -487,7 +488,7 @@ EsgRewardDistributor 的最高獎勵等級或最短持有時間被改：直接�
 
 | 合約 | 位址來源 | 位址 |
 |---|---|---|
-| EsgRewardDistributor（ABI `EsgRewardDistributor`） | addresses.ts BASE_SEPOLIA.EsgRewardDistributor | `0x44a8E5195E168e5AdcCa4343Bd8B399B49D5609F` |
+| EsgRewardDistributor（ABI `EsgRewardDistributor`） | addresses.ts BASE_SEPOLIA.EsgRewardDistributor | `0x4C9232eE2caAe2B065eb1Ca9AD966Ef69A0D2433` |
 
 - 事件：`MaxRewardTierSet(uint8,uint8)`、`MinHoldSecondsSet(uint256,uint256)`
 - 門檻：每一筆
@@ -554,13 +555,13 @@ keeper 送出的價格超過偏離上限被拒。單次可能是真實跳空；�
 
 **交易所 oracle 設定變更**｜Oracle｜事件｜SEV-2｜運作中
 
-交易所讀的 MockOracle 的資產清單被改（部署版的過期門檻是常數，不能改）。
+交易所讀的 MockOracle（#344 cutover 部署的 0x9Cf4…deEA）的資產清單或過期門檻被改。
 
 | 合約 | 位址來源 | 位址 |
 |---|---|---|
-| MockOracle（ABI `MockOracle`） | addresses.ts BASE_SEPOLIA.MockOracle | `0xeD90c4F3B48213888870C1FC8486921Cb0990Aa3` |
+| MockOracle（ABI `MockOracle`） | addresses.ts BASE_SEPOLIA.MockOracle | `0x9Cf4E05B08F6cC53be2e04752F2c32A79132deEA` |
 
-- 事件：`StaleThresholdSet(uint256,uint256)`（**部署版不發此事件**；部署版的 MockOracle 沒有 setStaleThreshold／staleThreshold()，過期門檻是常數 STALE_THRESHOLD，無法被改）、`AssetAdded(bytes32,uint256)`
+- 事件：`StaleThresholdSet(uint256,uint256)`、`AssetAdded(bytes32,uint256)`
 - 門檻：每一筆
 - 處置：[INCIDENT_RESPONSE「3. 暫停與凍結：現行部署能做什麼」](../../docs/INCIDENT_RESPONSE.md#3-暫停與凍結現行部署能做什麼)、[INCIDENT_RESPONSE「5. keeper 熔斷處置」](../../docs/INCIDENT_RESPONSE.md#5-keeper-熔斷處置)
 
@@ -614,7 +615,7 @@ AggregatorOracle 的來源之一（PythAdapter）某個資產改指向別的 Pyt
 
 | 合約 | 位址來源 | 位址 |
 |---|---|---|
-| PerpetualExchange（ABI `PerpetualExchange`） | addresses.ts BASE_SEPOLIA.PerpetualExchange | `0x827eA0c62a32e995927101259042F8A27D99124D` |
+| PerpetualExchange（ABI `PerpetualExchange`） | addresses.ts BASE_SEPOLIA.PerpetualExchange | `0xbF3074C98e17d88B4127899C98C81AE94c9fC979` |
 
 - 事件：`BadDebt(uint256,bytes32,uint256)`、`AutoDeleveraged(uint256,uint256,uint256,uint256)`
 - 門檻：每一筆
@@ -628,7 +629,7 @@ AggregatorOracle 的來源之一（PythAdapter）某個資產改指向別的 Pyt
 
 | 合約 | 位址來源 | 位址 |
 |---|---|---|
-| PerpetualExchange（ABI `PerpetualExchange`） | addresses.ts BASE_SEPOLIA.PerpetualExchange | `0x827eA0c62a32e995927101259042F8A27D99124D` |
+| PerpetualExchange（ABI `PerpetualExchange`） | addresses.ts BASE_SEPOLIA.PerpetualExchange | `0xbF3074C98e17d88B4127899C98C81AE94c9fC979` |
 
 - 事件：`MarginWithdrawn(address,uint256)`
 - 門檻：單筆 ≥ `LARGE_WITHDRAWAL_USDC`（預設 10000 USDC（MockUSDC）），或 ≥ 合約提領前餘額的 `LARGE_WITHDRAWAL_BPS`（預設 2000 bps）；`WITHDRAWAL_WINDOW_SEC`（預設 3600 秒） 內累計 ≥ `LARGE_WITHDRAWAL_WINDOW_USDC`（預設 50000 USDC（MockUSDC））；金額 18 位小數（MockUSDC）
@@ -642,7 +643,7 @@ LP 從保險金庫贖回達門檻，或一小時內累計達門檻。保險金�
 
 | 合約 | 位址來源 | 位址 |
 |---|---|---|
-| InsuranceVault（ABI `InsuranceVault`） | addresses.ts BASE_SEPOLIA.InsuranceVault | `0xB364E2e3e1e7a2b033eF03a4ACceF42066F3D812` |
+| InsuranceVault（ABI `InsuranceVault`） | addresses.ts BASE_SEPOLIA.InsuranceVault | `0x899263e34107a36a5216499F9CC7fb7a5afc7aaF` |
 
 - 事件：`Withdrawn(address,uint256,uint256)`
 - 門檻：單筆 ≥ `INSURANCE_WITHDRAW_USDC`（預設 5000 USDC（MockUSDC）），或 ≥ 合約提領前餘額的 `LARGE_WITHDRAWAL_BPS`（預設 2000 bps）；`WITHDRAWAL_WINDOW_SEC`（預設 3600 秒） 內累計 ≥ `LARGE_WITHDRAWAL_WINDOW_USDC`（預設 50000 USDC（MockUSDC））；金額 18 位小數（MockUSDC）
@@ -656,7 +657,7 @@ LP 從保險金庫贖回達門檻，或一小時內累計達門檻。保險金�
 
 | 合約 | 位址來源 | 位址 |
 |---|---|---|
-| InsuranceVault（ABI `InsuranceVault`） | addresses.ts BASE_SEPOLIA.InsuranceVault | `0xB364E2e3e1e7a2b033eF03a4ACceF42066F3D812` |
+| InsuranceVault（ABI `InsuranceVault`） | addresses.ts BASE_SEPOLIA.InsuranceVault | `0x899263e34107a36a5216499F9CC7fb7a5afc7aaF` |
 
 - 事件：`Bailout(address,uint256)`
 - 門檻：每一筆（`BAILOUT_MIN_USDC`（預設 0 USDC（MockUSDC）））；金額 18 位小數（MockUSDC）
@@ -684,7 +685,7 @@ owner 提領平台手續費。正常營運也會發生，作為稽核通知；�
 
 | 合約 | 位址來源 | 位址 |
 |---|---|---|
-| FeeRouter（ABI `FeeRouter`） | addresses.ts BASE_SEPOLIA.FeeRouter | `0x00f6cf0113399a7A451c7f85fe094a28092d3e0c` |
+| FeeRouter（ABI `FeeRouter`） | addresses.ts BASE_SEPOLIA.FeeRouter | `0x89Aa6799b2CdAa43FF7985ff706456Ca6F0e5d29` |
 
 - 事件：`PlatformFeesWithdrawn(address,uint256,uint256)`
 - 門檻：每一筆（`FEE_WITHDRAW_ALERT_USDC`（預設 0 USDC））；金額 18 位小數（MockUSDC）
@@ -727,8 +728,8 @@ AssetVaultV2 累積的 mint／redeem 手續費被提出，稽核通知。
 
 | 合約 | 位址來源 | 位址 |
 |---|---|---|
-| MockOracle（ABI `MockOracle`） | addresses.ts BASE_SEPOLIA.MockOracle | `0xeD90c4F3B48213888870C1FC8486921Cb0990Aa3` |
-| PerpetualExchange（ABI `PerpetualExchange`） | addresses.ts BASE_SEPOLIA.PerpetualExchange | `0x827eA0c62a32e995927101259042F8A27D99124D` |
+| MockOracle（ABI `MockOracle`） | addresses.ts BASE_SEPOLIA.MockOracle | `0x9Cf4E05B08F6cC53be2e04752F2c32A79132deEA` |
+| PerpetualExchange（ABI `PerpetualExchange`） | addresses.ts BASE_SEPOLIA.PerpetualExchange | `0xbF3074C98e17d88B4127899C98C81AE94c9fC979` |
 
 - 讀取：`oracle.getPrice(bytes32)`、`exchange.maxPriceAge()`
 - 資產：sBTC、sETH、sAAPL、sTSLA、sGOLD、sBOND、sNVDA、sMSFT、sGOOGL、sICLN、sESGU（加密：sBTC、sETH）
@@ -744,7 +745,7 @@ AssetVaultV2 累積的 mint／redeem 手續費被提出，稽核通知。
 
 | 合約 | 位址來源 | 位址 |
 |---|---|---|
-| MockOracle（ABI `MockOracle`） | addresses.ts BASE_SEPOLIA.MockOracle | `0xeD90c4F3B48213888870C1FC8486921Cb0990Aa3` |
+| MockOracle（ABI `MockOracle`） | addresses.ts BASE_SEPOLIA.MockOracle | `0x9Cf4E05B08F6cC53be2e04752F2c32A79132deEA` |
 | AggregatorOracle（ABI `AggregatorOracleAdapter`） | addresses.ts BASE_SEPOLIA_ORACLE_SHOWCASE.AggregatorOracle | `0x8215158642350a3f329aB9597186d21f957A813D` |
 
 - 讀取：`primary.getPrice(bytes32)`、`reference.getPrice(bytes32)`
@@ -776,7 +777,7 @@ GuardedOracle.paused() 為 true（事件規則可能因掃描中斷漏掉，狀�
 | 合約 | 位址來源 | 位址 |
 |---|---|---|
 | MockUSDC（ABI `MockUSDC`） | addresses.ts BASE_SEPOLIA.MockUSDC | `0x69fd695Bc7C3aFdb35ABA35cD6890C506400b035` |
-| PerpetualExchange（ABI `PerpetualExchange`） | addresses.ts BASE_SEPOLIA.PerpetualExchange | `0x827eA0c62a32e995927101259042F8A27D99124D` |
+| PerpetualExchange（ABI `PerpetualExchange`） | addresses.ts BASE_SEPOLIA.PerpetualExchange | `0xbF3074C98e17d88B4127899C98C81AE94c9fC979` |
 
 - 讀取：`token.balanceOf(address)`
 - 門檻：餘額較 24 小時高點下降 ≥ `EXCHANGE_BALANCE_DROP_BPS`（預設 3000 bps） → SEV-2
@@ -791,7 +792,7 @@ GuardedOracle.paused() 為 true（事件規則可能因掃描中斷漏掉，狀�
 | 合約 | 位址來源 | 位址 |
 |---|---|---|
 | PepeToken（ABI `PepeToken`） | addresses.ts BASE_SEPOLIA.PepeToken | `0xccd05cbdc2f7961a4c27d3633694022722786a0f` |
-| PepeIncentives（ABI `PepeIncentives`） | addresses.ts BASE_SEPOLIA.PepeIncentives | `0xEBfA1dc7dDea032ac6242cB619d982e543A23c12` |
+| PepeIncentives（ABI `PepeIncentives`） | addresses.ts BASE_SEPOLIA.PepeIncentives | `0xc257Dd9b9eb392893a89d307664713E8660672F0` |
 
 - 讀取：`token.balanceOf(address)`
 - 門檻：餘額較 24 小時高點下降 ≥ `INCENTIVES_BALANCE_DROP_BPS`（預設 3000 bps） → SEV-2
@@ -805,7 +806,7 @@ InsuranceVault.totalAssets() 低於 INSURANCE_MIN_USDC，或較 24 小時內高�
 
 | 合約 | 位址來源 | 位址 |
 |---|---|---|
-| InsuranceVault（ABI `InsuranceVault`） | addresses.ts BASE_SEPOLIA.InsuranceVault | `0xB364E2e3e1e7a2b033eF03a4ACceF42066F3D812` |
+| InsuranceVault（ABI `InsuranceVault`） | addresses.ts BASE_SEPOLIA.InsuranceVault | `0x899263e34107a36a5216499F9CC7fb7a5afc7aaF` |
 
 - 讀取：`vault.totalAssets()`
 - 門檻：`totalAssets()` < `INSURANCE_MIN_USDC`（預設 100 USDC（MockUSDC）），或較 24 小時高點下降 ≥ `INSURANCE_DROP_BPS`（預設 2000 bps） → SEV-2
@@ -833,7 +834,7 @@ keeper 錢包＝MockOracle.owner()（keeper 以 MockOracle owner 身分寫價，
 
 | 合約 | 位址來源 | 位址 |
 |---|---|---|
-| MockOracle（ABI `MockOracle`） | addresses.ts BASE_SEPOLIA.MockOracle | `0xeD90c4F3B48213888870C1FC8486921Cb0990Aa3` |
+| MockOracle（ABI `MockOracle`） | addresses.ts BASE_SEPOLIA.MockOracle | `0x9Cf4E05B08F6cC53be2e04752F2c32A79132deEA` |
 
 - 讀取：`oracle.owner()`
 - 門檻：< `GAS_MIN_ETH`（預設 0.02 ETH） → SEV-3；< `GAS_CRIT_ETH`（預設 0.005 ETH） → SEV-2
@@ -852,59 +853,59 @@ GET {SIGNAL_API_URL}/healthz 應回 200 與 "ok"；連續 HTTP_FAILS_BEFORE_ALER
 
 ### exchange-pause
 
-**交易所全域暫停**｜暫停與資產模式｜事件｜SEV-1｜部署版不發此事件
+**交易所全域暫停**｜暫停與資產模式｜事件｜SEV-1｜運作中
 
-guardian／owner 暫停交易所、暫停自動失效、owner 清除失效時間。暫停本身就代表事故處置中。新 exchange 部署並更新 addresses.ts 與前端 ABI 後改為 active。
+guardian／owner 暫停交易所、暫停自動失效、owner 清除失效時間。暫停本身就代表事故處置中。
 
 | 合約 | 位址來源 | 位址 |
 |---|---|---|
-| PerpetualExchange | addresses.ts BASE_SEPOLIA.PerpetualExchange（`0x827eA0c62a32e995927101259042F8A27D99124D`）；部署版不發此事件，事件宣告於 `contracts/src/PerpetualExchange.sol` | — |
+| PerpetualExchange（ABI `PerpetualExchange`） | addresses.ts BASE_SEPOLIA.PerpetualExchange | `0xbF3074C98e17d88B4127899C98C81AE94c9fC979` |
 
 - 事件：`Paused(address)`、`Unpaused(address)`、`PauseLapsed(uint256)`、`PauseExpiryCleared(address)`
 - 門檻：每一筆
-- 處置：[INCIDENT_RESPONSE「4. 原始碼版（PR #191，未部署）多了什麼」](../../docs/INCIDENT_RESPONSE.md#4-原始碼版pr-191未部署多了什麼)、[INCIDENT_RESPONSE「7. 對外溝通與客戶通報（目標值，可調整）」](../../docs/INCIDENT_RESPONSE.md#7-對外溝通與客戶通報目標值可調整)
+- 處置：[INCIDENT_RESPONSE「4. 暫停與停單（PR #191，#344 cutover 已部署）」](../../docs/INCIDENT_RESPONSE.md#4-暫停與停單pr-191344-cutover-已部署)、[INCIDENT_RESPONSE「7. 對外溝通與客戶通報（目標值，可調整）」](../../docs/INCIDENT_RESPONSE.md#7-對外溝通與客戶通報目標值可調整)
 
 ### exchange-asset-mode
 
-**交易所資產模式變更**｜暫停與資產模式｜事件｜SEV-2｜部署版不發此事件
+**交易所資產模式變更**｜暫停與資產模式｜事件｜SEV-2｜運作中
 
 逐資產 Active／ReduceOnly／Halted 切換與 guardian 鎖定。keeper 休市切換也會觸發，訊息帶 by 地址以區分。
 
 | 合約 | 位址來源 | 位址 |
 |---|---|---|
-| PerpetualExchange | addresses.ts BASE_SEPOLIA.PerpetualExchange（`0x827eA0c62a32e995927101259042F8A27D99124D`）；部署版不發此事件，事件宣告於 `contracts/src/PerpetualExchange.sol` | — |
+| PerpetualExchange（ABI `PerpetualExchange`） | addresses.ts BASE_SEPOLIA.PerpetualExchange | `0xbF3074C98e17d88B4127899C98C81AE94c9fC979` |
 
 - 事件：`AssetModeSet(bytes32,uint8,address)`、`AssetGuardianLockSet(bytes32,bool)`
 - 門檻：每一筆
-- 處置：[INCIDENT_RESPONSE「4. 原始碼版（PR #191，未部署）多了什麼」](../../docs/INCIDENT_RESPONSE.md#4-原始碼版pr-191未部署多了什麼)、[INCIDENT_RESPONSE「5. keeper 熔斷處置」](../../docs/INCIDENT_RESPONSE.md#5-keeper-熔斷處置)
+- 處置：[INCIDENT_RESPONSE「4. 暫停與停單（PR #191，#344 cutover 已部署）」](../../docs/INCIDENT_RESPONSE.md#4-暫停與停單pr-191344-cutover-已部署)、[INCIDENT_RESPONSE「5. keeper 熔斷處置」](../../docs/INCIDENT_RESPONSE.md#5-keeper-熔斷處置)
 
 ### exchange-guardian-roles
 
-**交易所 guardian／marketOperator 變更**｜權限｜事件｜SEV-1｜部署版不發此事件
+**交易所 guardian／marketOperator 變更**｜權限｜事件｜SEV-1｜運作中
 
 能暫停交易所或切換資產模式的地址被更換。
 
 | 合約 | 位址來源 | 位址 |
 |---|---|---|
-| PerpetualExchange | addresses.ts BASE_SEPOLIA.PerpetualExchange（`0x827eA0c62a32e995927101259042F8A27D99124D`）；部署版不發此事件，事件宣告於 `contracts/src/PerpetualExchange.sol` | — |
+| PerpetualExchange（ABI `PerpetualExchange`） | addresses.ts BASE_SEPOLIA.PerpetualExchange | `0xbF3074C98e17d88B4127899C98C81AE94c9fC979` |
 
 - 事件：`GuardianSet(address)`、`MarketOperatorSet(address)`
 - 門檻：每一筆
-- 處置：[INCIDENT_RESPONSE「1. 嚴重度分級」](../../docs/INCIDENT_RESPONSE.md#1-嚴重度分級)、[INCIDENT_RESPONSE「4. 原始碼版（PR #191，未部署）多了什麼」](../../docs/INCIDENT_RESPONSE.md#4-原始碼版pr-191未部署多了什麼)
+- 處置：[INCIDENT_RESPONSE「1. 嚴重度分級」](../../docs/INCIDENT_RESPONSE.md#1-嚴重度分級)、[INCIDENT_RESPONSE「4. 暫停與停單（PR #191，#344 cutover 已部署）」](../../docs/INCIDENT_RESPONSE.md#4-暫停與停單pr-191344-cutover-已部署)
 
 ### exchange-exposure-caps
 
-**交易所 OI／獲利上限變更與觸發**｜風險參數｜事件｜SEV-3｜部署版不發此事件
+**交易所 OI／獲利上限變更與觸發**｜風險參數｜事件｜SEV-3｜運作中
 
 OI 上限、獲利上限的設定變更，以及平倉獲利被上限截斷。
 
 | 合約 | 位址來源 | 位址 |
 |---|---|---|
-| PerpetualExchange | addresses.ts BASE_SEPOLIA.PerpetualExchange（`0x827eA0c62a32e995927101259042F8A27D99124D`）；部署版不發此事件，事件宣告於 `contracts/src/PerpetualExchange.sol` | — |
+| PerpetualExchange（ABI `PerpetualExchange`） | addresses.ts BASE_SEPOLIA.PerpetualExchange | `0xbF3074C98e17d88B4127899C98C81AE94c9fC979` |
 
 - 事件：`MaxOpenInterestSet(bytes32,uint256,uint256)`、`MaxProfitBpsSet(bytes32,uint256)`、`ProfitCapped(uint256,int256,int256)`
 - 門檻：每一筆
-- 處置：[INCIDENT_RESPONSE「4. 原始碼版（PR #191，未部署）多了什麼」](../../docs/INCIDENT_RESPONSE.md#4-原始碼版pr-191未部署多了什麼)
+- 處置：[INCIDENT_RESPONSE「4. 暫停與停單（PR #191，#344 cutover 已部署）」](../../docs/INCIDENT_RESPONSE.md#4-暫停與停單pr-191344-cutover-已部署)
 
 ### timelock-operations
 
@@ -979,13 +980,13 @@ V2.5 允許把無法定價的資產豁免於儲備率計算；豁免會讓儲備
 
 ### copytracker-slash-reserve
 
-**CopyTracker 罰沒準備金提領**｜大額提領｜事件｜SEV-2｜部署版不發此事件
+**CopyTracker 罰沒準備金提領**｜大額提領｜事件｜SEV-2｜運作中
 
-原始碼版 CopyTracker 的罰沒準備金被提出。
+CopyTracker 的罰沒準備金被提出。
 
 | 合約 | 位址來源 | 位址 |
 |---|---|---|
-| CopyTracker | addresses.ts BASE_SEPOLIA.CopyTracker（`0xC9e91f7D36e910C58042164032c625427b23CCB2`）；部署版不發此事件，事件宣告於 `contracts/src/CopyTracker.sol` | — |
+| CopyTracker（ABI `CopyTracker`） | addresses.ts BASE_SEPOLIA.CopyTracker | `0x15A9Cbf803a3EEee2794B74Ad78252d27Ccd347C` |
 
 - 事件：`SlashReserveWithdrawn(address,uint256)`
 - 門檻：每一筆
@@ -993,13 +994,13 @@ V2.5 允許把無法定價的資產豁免於儲備率計算；豁免會讓儲備
 
 ### pepe-incentives-daily-params
 
-**PepeIncentives 簽到點數參數變更**｜風險參數｜事件｜SEV-3｜部署版不發此事件
+**PepeIncentives 簽到點數參數變更**｜風險參數｜事件｜SEV-3｜運作中
 
-原始碼版（#219，點數版）PepeIncentives 的每日簽到基本點數、連續加成或連續上限被 owner 改（合約內有上限 MAX_DAILY_*）。部署版的 setDailyParams 不發事件。
+PepeIncentives（#219 點數版，#344 cutover 部署）的每日簽到基本點數、連續加成或連續上限被 owner 改（合約內有上限 MAX_DAILY_*）。
 
 | 合約 | 位址來源 | 位址 |
 |---|---|---|
-| PepeIncentives | addresses.ts BASE_SEPOLIA.PepeIncentives（`0xEBfA1dc7dDea032ac6242cB619d982e543A23c12`）；部署版不發此事件，事件宣告於 `contracts/src/PepeIncentives.sol` | — |
+| PepeIncentives（ABI `PepeIncentives`） | addresses.ts BASE_SEPOLIA.PepeIncentives | `0xc257Dd9b9eb392893a89d307664713E8660672F0` |
 
 - 事件：`DailyParamsSet(uint256,uint256,uint8)`
 - 門檻：每一筆
@@ -1041,6 +1042,8 @@ V2.5 允許把無法定價的資產豁免於儲備率計算；豁免會讓儲備
 | ChainlinkOracleAdapter | `renounceOwnership()` | [`owner-transferred`](#owner-transferred) |
 | ChainlinkOracleAdapter | `transferOwnership(address)` | [`owner-transferred`](#owner-transferred) |
 | ChainlinkOracleAdapter | `setFeed(bytes32,address)` | [`chainlink-adapter-config`](#chainlink-adapter-config) |
+| CopyTracker | `transferOwnership(address)` | [`owner-transferred`](#owner-transferred) |
+| CopyTracker | `withdrawSlashReserve(address,uint256)` | [`copytracker-slash-reserve`](#copytracker-slash-reserve) |
 | ESGRegistryV2 | `grantRole(bytes32,address)` | [`access-role-changed`](#access-role-changed) |
 | ESGRegistryV2 | `renounceRole(bytes32,address)` | [`access-role-changed`](#access-role-changed) |
 | ESGRegistryV2 | `revokeRole(bytes32,address)` | [`access-role-changed`](#access-role-changed) |
@@ -1075,6 +1078,7 @@ V2.5 允許把無法定價的資產豁免於儲備率計算；豁免會讓儲備
 | MockOracle | `transferOwnership(address)` | [`owner-transferred`](#owner-transferred) |
 | MockOracle | `addAsset(bytes32,uint256)` | [`mock-oracle-config`](#mock-oracle-config) |
 | MockOracle | `updatePrice(bytes32,uint256)` | 不監控：keeper 例行寫價，不是設定變更；價格是否過期由 oracle-stale 看，GuardedOracle 拒收的價格由 guarded-oracle-price-rejected 看 |
+| MockOracle | `setStaleThreshold(uint256)` | [`mock-oracle-config`](#mock-oracle-config) |
 | MockUSDC | `renounceOwnership()` | [`owner-transferred`](#owner-transferred) |
 | MockUSDC | `transferOwnership(address)` | [`owner-transferred`](#owner-transferred) |
 | MockUSDC | `setSwapRouter(address)` | 不監控：一次性：require(swapRouter == address(0))，部署版已設定，再呼叫只會 revert |
@@ -1095,7 +1099,7 @@ V2.5 允許把無法定價的資產豁免於儲備率計算；豁免會讓儲備
 | PepeIncentives | `setEsgRegistry(address)` | [`pepe-incentives-wiring`](#pepe-incentives-wiring) |
 | PepeIncentives | `withdraw(uint256)` | [`pepe-incentives-balance-drop`](#pepe-incentives-balance-drop) |
 | PepeIncentives | `setCopyReward(uint256)` | 不監控：獎勵參數（PEPE 測試代幣的發放額），部署版不發事件。最壞情況是獎勵被調高而加速抽乾池子——那會被 pepe-incentives-balance-drop 看到 |
-| PepeIncentives | `setDailyParams(uint256,uint256,uint8)` | 不監控：部署版（舊版）：簽到獎勵參數（PEPE 發放額），不發事件，最壞情況是獎勵被調高而加速抽乾池子，由 pepe-incentives-balance-drop 看到。原始碼版（#219，點數版）簽到不再轉 PEPE、改發 DailyParamsSet，由 pending 規則 pepe-incentives-daily-params 涵蓋；cutover 後該規則改 active，這裡改指向它 |
+| PepeIncentives | `setDailyParams(uint256,uint256,uint8)` | [`pepe-incentives-daily-params`](#pepe-incentives-daily-params) |
 | PepeIncentives | `setEsgParams(uint256,uint256,uint256,uint8)` | 不監控：同 setCopyReward：獎勵參數，後果由 pepe-incentives-balance-drop 看到 |
 | PepeIncentives | `setTierParams(uint256[4],uint256[4])` | 不監控：同 setCopyReward：獎勵參數，後果由 pepe-incentives-balance-drop 看到 |
 | PepeIncentives | `setTradeMining(uint256,uint256)` | 不監控：同 setCopyReward：獎勵參數，後果由 pepe-incentives-balance-drop 看到 |
@@ -1104,26 +1108,32 @@ V2.5 允許把無法定價的資產豁免於儲備率計算；豁免會讓儲備
 | PepeStaking | `withdraw(uint256)` | 不監控：質押者取回自己的質押（使用者操作，會發 Withdrawn） |
 | PepeToken | `renounceOwnership()` | [`owner-transferred`](#owner-transferred) |
 | PepeToken | `transferOwnership(address)` | [`owner-transferred`](#owner-transferred) |
+| PerpetualExchange | `pause()` | [`exchange-pause`](#exchange-pause) |
 | PerpetualExchange | `renounceOwnership()` | [`owner-transferred`](#owner-transferred) |
-| PerpetualExchange | `transferOwnership(address)` | [`owner-transferred`](#owner-transferred) |
+| PerpetualExchange | `setAdlEnabled(bool)` | [`exchange-risk-params`](#exchange-risk-params) |
 | PerpetualExchange | `setAgentAuthorized(address,bool)` | [`exchange-agent-authorization`](#exchange-agent-authorization) |
+| PerpetualExchange | `setAssetMode(bytes32,uint8)` | [`exchange-asset-mode`](#exchange-asset-mode) |
+| PerpetualExchange | `setBorrowFeePerHour(uint256)` | [`exchange-risk-params`](#exchange-risk-params) |
 | PerpetualExchange | `setCopyTracker(address)` | [`exchange-wiring-changed`](#exchange-wiring-changed) |
+| PerpetualExchange | `setExecutionFee(uint256)` | [`exchange-risk-params`](#exchange-risk-params) |
 | PerpetualExchange | `setFeeRouter(address)` | [`exchange-wiring-changed`](#exchange-wiring-changed)、[`core-wiring`](#core-wiring) |
+| PerpetualExchange | `setGuardian(address)` | [`exchange-guardian-roles`](#exchange-guardian-roles) |
 | PerpetualExchange | `setInsuranceVault(address)` | [`exchange-wiring-changed`](#exchange-wiring-changed)、[`core-wiring`](#core-wiring) |
 | PerpetualExchange | `setKycRegistry(address)` | [`exchange-wiring-changed`](#exchange-wiring-changed)、[`core-wiring`](#core-wiring) |
-| PerpetualExchange | `setAdlEnabled(bool)` | [`exchange-risk-params`](#exchange-risk-params) |
-| PerpetualExchange | `setBorrowFeePerHour(uint256)` | [`exchange-risk-params`](#exchange-risk-params) |
-| PerpetualExchange | `setExecutionFee(uint256)` | [`exchange-risk-params`](#exchange-risk-params) |
 | PerpetualExchange | `setLiquidationPenaltyBps(uint256)` | [`exchange-risk-params`](#exchange-risk-params) |
 | PerpetualExchange | `setMaintenanceMarginFor(bytes32,uint256)` | [`exchange-risk-params`](#exchange-risk-params) |
 | PerpetualExchange | `setMarkPremiumCapBps(uint256)` | [`exchange-risk-params`](#exchange-risk-params) |
+| PerpetualExchange | `setMarketOperator(address)` | [`exchange-guardian-roles`](#exchange-guardian-roles) |
 | PerpetualExchange | `setMaxLeverageFor(bytes32,uint256)` | [`exchange-risk-params`](#exchange-risk-params) |
+| PerpetualExchange | `setMaxOpenInterest(bytes32,uint256,uint256)` | [`exchange-exposure-caps`](#exchange-exposure-caps) |
 | PerpetualExchange | `setMaxPriceAge(uint256)` | [`exchange-risk-params`](#exchange-risk-params) |
-| PerpetualExchange | `setPortfolioMarginEnabled(bool)` | [`exchange-risk-params`](#exchange-risk-params) |
+| PerpetualExchange | `setMaxProfitBps(bytes32,uint256)` | [`exchange-exposure-caps`](#exchange-exposure-caps) |
 | PerpetualExchange | `setRwaAsset(bytes32,bool)` | [`exchange-risk-params`](#exchange-risk-params) |
 | PerpetualExchange | `setTradingFeeBps(uint256)` | [`exchange-risk-params`](#exchange-risk-params) |
 | PerpetualExchange | `setVaultFeeShareBps(uint256)` | [`exchange-risk-params`](#exchange-risk-params) |
 | PerpetualExchange | `settleFunding(bytes32)` | 不監控：keeper 例行結算 funding（FundingSettled）；補算被夾住時由 exchange-funding-clamped 告警 |
+| PerpetualExchange | `transferOwnership(address)` | [`owner-transferred`](#owner-transferred) |
+| PerpetualExchange | `unpause()` | [`exchange-pause`](#exchange-pause) |
 | PerpetualExchange | `withdrawExecutionFees()` | 不監控：onlyOwner 提走合約累積的 ETH 執行費（使用者為 keeper gas 預付的手續費），不是保證金或 USDC，部署版不發事件；owner 本身的變更由 owner-transferred 看 |
 | PerpetualExchange | `withdrawMargin(uint256)` | [`large-margin-withdrawal`](#large-margin-withdrawal)、[`exchange-balance-drop`](#exchange-balance-drop) |
 | PythOracleAdapter | `renounceOwnership()` | [`owner-transferred`](#owner-transferred) |
@@ -1145,13 +1155,14 @@ V2.5 允許把無法定價的資產豁免於儲備率計算；豁免會讓儲備
 
 | 合約（ABI） | 事件 | 理由 |
 |---|---|---|
-| PerpetualExchange | `FundingSettled`、`MarginDeposited`、`PerformanceFeePaid`、`PositionClosed`、`PositionLiquidated`、`PositionOpened`、`VaultFeeRouted` | 使用者自己的操作或例行結算，不是管理操作；資金面由大額提領、保險金與儲備率規則涵蓋 |
+| PerpetualExchange | `FundingRealized`、`FundingSettled`、`MarginDeposited`、`PerformanceFeePaid`、`PositionClosed`、`PositionLiquidated`、`PositionOpened`、`VaultFeeRouted` | 使用者自己的操作或例行結算，不是管理操作；資金面由大額提領、保險金與儲備率規則涵蓋 |
 | InsuranceVault | `Approval`、`Deposited`、`ProtocolDeposit`、`Transfer` | 存入與份額轉移（資金流入或 LP 之間轉讓）；流出由 insurance-withdrawal、insurance-bailout 與 insurance-fund 涵蓋 |
-| InsuranceVault | `Recapitalized` | **部署版不發此事件**：部署版沒有 recapitalize()，不會發這個事件；而且是資金流入 |
+| InsuranceVault | `Recapitalized` | owner 以 recapitalize() 補資本：資金流入；流出由 insurance-withdrawal、insurance-bailout 與 insurance-fund 涵蓋 |
 | FeeRouter | `CopyFeeDistributed`、`ExternalRevenueRouted`、`PerformanceFeeDistributed`、`TraderEarningsWithdrawn` | 例行分潤與交易員自行提領自己的收益；平台手續費提領另有 fee-withdrawals／x402-fee-withdrawals |
 | MockOracle | `PriceUpdated` | keeper 的例行寫價；沒有寫價由 oracle-stale 監控 |
 | GuardedOracle | `PriceUpdated` | keeper 的例行寫價；被拒絕的寫價由 guarded-oracle-price-rejected 監控 |
 | TraderStake | `ReputationUpdated`、`Slashed`、`Staked`、`UnstakeCancelled`、`UnstakeRequested`、`Unstaked` | 交易員自己的質押操作，與 CopyTracker 依協議規則執行的 slash／聲譽更新；能執行 slash 的地址由 traderstake-copytracker-set 與 core-wiring 監控 |
+| CopyTracker | `PositionCloseSkipped`、`RecordDeactivatedWithoutScoring`、`SlashFailed`、`SlashScoringWaived`、`TraderFollowed`、`TraderSlashed`、`TraderUnfollowed` | 使用者自己的跟單／取消跟單，與依協議規則執行的平倉記錄、slash 與評分結果；能執行 slash 的 CopyTracker 由 traderstake-copytracker-set 與 core-wiring 監控，罰沒準備金提出由 copytracker-slash-reserve 監控 |
 | KYCRegistry | `KYCBatchVerified`、`KYCVerified` | owner 的例行 KYC 核准；owner 變更由 owner-transferred 監控 |
 | KYCRegistry | `KYCRevoked`、`KYCSubmitted` | **部署版不發此事件**：部署版是舊的 KYCRegistry，沒有送件與撤銷流程 |
 | AssetVault | `Minted`、`Redeemed`、`VaultFunded` | 使用者自己的操作或例行結算，不是管理操作；資金面由大額提領、保險金與儲備率規則涵蓋 |
@@ -1168,5 +1179,5 @@ V2.5 允許把無法定價的資產豁免於儲備率計算；豁免會讓儲備
 | PepeClaim | `Claimed` | 使用者自己的操作或例行結算，不是管理操作；資金面由大額提領、保險金與儲備率規則涵蓋 |
 | PepeStaking | `RewardNotified`、`Staked`、`Withdrawn`、`YieldClaimed` | 使用者的質押操作與 owner 例行注入獎勵（資金流入） |
 | PepeIncentives | `CopyClaimed`、`EsgHoldClaimed`、`TierClaimed`、`TradeMined` | 使用者自己的操作或例行結算，不是管理操作；資金面由大額提領、保險金與儲備率規則涵蓋 |
-| PepeIncentives | `CheckInPointsCredited` | **部署版不發此事件**：原始碼版（#219，點數版）的每日簽到：使用者自己的操作，只記不可轉讓的成就點數、不轉 PEPE。部署版是舊版（簽到發 DailyCheckIn 並轉 PEPE），沒有這個事件 |
+| PepeIncentives | `CheckInPointsCredited` | #219 點數版的每日簽到：使用者自己的操作，只記不可轉讓的成就點數、不轉 PEPE |
 | EsgRewardDistributor | `EsgRewardClaimed` | 使用者自己的操作或例行結算，不是管理操作；資金面由大額提領、保險金與儲備率規則涵蓋 |

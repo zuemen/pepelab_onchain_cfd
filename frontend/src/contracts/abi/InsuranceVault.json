@@ -12,6 +12,19 @@
   },
   {
     "type": "function",
+    "name": "DECIMALS_OFFSET",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint8",
+        "internalType": "uint8"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "allowance",
     "inputs": [
       {
@@ -765,6 +778,11 @@
   {
     "type": "error",
     "name": "VaultInsolvent",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "ZeroShares",
     "inputs": []
   }
 ]

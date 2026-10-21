@@ -44,17 +44,17 @@
 
 | 合約 | 位址 | 備註 |
 |---|---|---|
-| PerpetualExchange | `0x827eA0c62a32e995927101259042F8A27D99124D` | `FUNDING_INTERVAL` 8h、`maxPriceAge` 6h、`adlEnabled` true、`portfolioMarginEnabled` false（2026-09-30 鏈上讀取） |
-| AgentSessionManager | `0xdF9C1E53523568709f65Afe3C4AD2E6a6D99d14B` | `exchange()` 指向上列 exchange，且已被 exchange 授權 |
+| PerpetualExchange | `0xbF3074C98e17d88B4127899C98C81AE94c9fC979` | #344 cutover（2026-10-20）。`FUNDING_INTERVAL` 8h、`maxPriceAge` 6h、`adlEnabled` true（2026-10-21 鏈上讀取）。上一顆 `0x827e…124D` 的保證金從 `/legacy` 取回 |
+| AgentSessionManager | `0x4875966ACA052A38d80ddD2aaE80995A98EAd2AF` | `exchange()` 指向上列 exchange，且已被 exchange 授權 |
 | AssetVaultV2（proxy） | `0x916D7Fc399d9afd23BAa113E2c2Cc601341ff10a` | `version()` = 2.4.0；`minReserveRatioBps` 11000 |
 | GuardedOracle | `0x8E9e59BE9589Ad88EC14F3ef6bdcc43E8B76f842` | V2.4 金庫的價格來源 |
-| MockOracle | `0xeD90c4F3B48213888870C1FC8486921Cb0990Aa3` | **交易所實際讀取的價格來源**（keeper 寫入） |
+| MockOracle | `0x9Cf4E05B08F6cC53be2e04752F2c32A79132deEA` | **交易所實際讀取的價格來源**（#344 回放寫入 2024–2025 價格，之後由 keeper 寫入） |
 | ESGRegistryV2 | `0xBF5B9cD78566791d79c687A732b4ed5bc3E95dFf` | 碳分級見證登錄（`addresses.ts` 的 `ESGRegistry` 欄位與 `V2_STACK.ESGRegistryV2` 為同一位址） |
-| InsuranceVault | `0xB364E2e3e1e7a2b033eF03a4ACceF42066F3D812` | 保險金庫（LP 份額 pIV） |
-| FeeRouter（MockUSDC） | `0x00f6cf0113399a7A451c7f85fe094a28092d3e0c` | 分配跟單績效費與 copy fee。交易費不經過 FeeRouter，留在 exchange（`vaultFeeShareBps` = 0） |
+| InsuranceVault | `0x899263e34107a36a5216499F9CC7fb7a5afc7aaF` | 保險金庫（LP 份額 pIV） |
+| FeeRouter（MockUSDC） | `0x89Aa6799b2CdAa43FF7985ff706456Ca6F0e5d29` | 分配跟單績效費與 copy fee。交易費不經過 FeeRouter，留在 exchange（`vaultFeeShareBps` = 0） |
 | FeeRouter（x402，Circle USDC） | `0x29e5732AC62254d9b92A1C7d3F38EbFA8809B57d` | 分配 x402 收入的 70/20/10（trader／平台／保險金庫）。⚠ treasury 仍為已外洩的舊地址，**需重新部署**（使用者待辦） |
-| StrategyRegistry | `0xA103de184A5C76d7b70fB4e908F252199e004b95` | |
-| CopyTracker | `0xC9e91f7D36e910C58042164032c625427b23CCB2` | 跟單在商業版預設關閉 |
+| StrategyRegistry | `0xe8d807C3BaFB4D3AeCbA094322eE8dD7Ca16C20c` | |
+| CopyTracker | `0x15A9Cbf803a3EEee2794B74Ad78252d27Ccd347C` | 跟單在商業版預設關閉 |
 | TraderStake | `0x01aEB530bcFc69f036309ffe55acc7eA6C5a28Fe` | |
 | KYCRegistry | `0x5D95fD9e7a5f80E5369e24783F1f98E0f952360d` | 只擋標記為 RWA 的資產 |
 | MockUSDC（保證金，測試幣） | `0x69fd695Bc7C3aFdb35ABA35cD6890C506400b035` | 已部署的是舊版，`mint` 無限制（任何人可鑄）；原始碼已限制為 owner／swapRouter，需重新部署才生效。僅限測試網 |

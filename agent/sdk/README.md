@@ -65,7 +65,7 @@ const exposure = await api.getRiskExposure();
 const ctx = await read.getBlockContext();                    // { blockNumber, blockTimestamp }
 const at = { blockNumber: ctx.blockNumber };                 // 讓多次呼叫對齊同一區塊
 
-const acct = await read.getAccount(user, at);                // freeMargin、health、未平倉部位（含 uPnL、pending funding）
+const acct = await read.getAccount(user, at);                // freeMargin、未平倉部位（含 uPnL、pending funding）
 const all  = await read.getAccount(user, { ...at, includeClosed: true });
 const pos  = await read.getPosition(7n, at);
 const mkts = await read.getMarkets(["sBTC", "sETH"], at);    // 省略 = 全部 11 個資產

@@ -28,9 +28,9 @@ test("含錯誤位址的 fixture 必須以非零結束並列出每一個錯", ()
   const r = spawnSync(process.execPath, [script, "--workflows", fixtures], { encoding: "utf8" });
   assert.equal(r.status, 1, r.stdout + r.stderr);
   const out = r.stdout;
-  assert.match(out, /EXCHANGE=0xEf75ECA6514cE96B18382E921aC6190a0cF8c072 —— chain 84532 的 PerpetualExchange 應為 0x827eA0c6/);
+  assert.match(out, /EXCHANGE=0xEf75ECA6514cE96B18382E921aC6190a0cF8c072 —— chain 84532 的 PerpetualExchange 應為 0xbF3074C9/);
   assert.match(out, /inputs\.target\.default=0xEf75/);
-  assert.match(out, /KEEPER_ORACLE_ADDRESS=0x17CA20A3.*MockOracle 應為 0xeD90c4F3/);
+  assert.match(out, /KEEPER_ORACLE_ADDRESS=0x17CA20A3.*MockOracle 應為 0x9Cf4E05B/);
   assert.match(out, /0x4E7cC1B79B72ab72531a6C790e14304370f70764（jobs\.keep\.steps\.run） —— 寫死在非 env 位置/);
   assert.match(out, /KEEPER_VAULT_ADDRESS=0x0{40} —— 零位址/);
   // 審查 Medium 4 的三種盲點：
@@ -38,7 +38,7 @@ test("含錯誤位址的 fixture 必須以非零結束並列出每一個錯", ()
     "run: 裡對 Sepolia exchange 的 cast send 要依鏈抓出來");
   assert.match(out, /0x32A19D04ef2ca5A7DA02Df39419729fA745749A1（jobs\.keep\.steps\.with\.address） —— .*chain 84532/,
     "with: 帶 Sepolia 位址要依鏈抓出來");
-  assert.match(out, /X402_FEE_ROUTER=0xeD90c4F3B48213888870C1FC8486921Cb0990Aa3 —— chain 84532 的 X402FeeRouter 應為 0x780E1814/,
+  assert.match(out, /X402_FEE_ROUTER=0x9Cf4E05B08F6cC53be2e04752F2c32A79132deEA —— chain 84532 的 X402FeeRouter 應為 0x780E1814/,
     "X402_FEE_ROUTER 填成 MockOracle 要抓出來");
   assert.match(out, /8 個位址與 frontend\/src\/contracts 不一致/);
   // 正確的兩個 GuardedOracle（含 Sepolia 專用那顆）不得誤報。
@@ -79,11 +79,11 @@ test("allowlist 可以放行前端設定裡沒有的位址", () => {
 });
 
 test("前端設定解析：兩條鏈的核心角色與 session manager", () => {
-  assert.equal(chains["84532"].roles.PerpetualExchange, "0x827eA0c62a32e995927101259042F8A27D99124D");
-  assert.equal(chains["84532"].roles.MockOracle, "0xeD90c4F3B48213888870C1FC8486921Cb0990Aa3");
+  assert.equal(chains["84532"].roles.PerpetualExchange, "0xbF3074C98e17d88B4127899C98C81AE94c9fC979");
+  assert.equal(chains["84532"].roles.MockOracle, "0x9Cf4E05B08F6cC53be2e04752F2c32A79132deEA");
   assert.equal(chains["84532"].roles.GuardedOracle, "0x8E9e59BE9589Ad88EC14F3ef6bdcc43E8B76f842");
   assert.equal(chains["84532"].roles.AssetVaultV2, "0x916D7Fc399d9afd23BAa113E2c2Cc601341ff10a");
-  assert.equal(chains["84532"].roles.AgentSessionManager, "0xdF9C1E53523568709f65Afe3C4AD2E6a6D99d14B");
+  assert.equal(chains["84532"].roles.AgentSessionManager, "0x4875966ACA052A38d80ddD2aaE80995A98EAd2AF");
   assert.equal(chains["11155111"].roles.GuardedOracle, "0x32A19D04ef2ca5A7DA02Df39419729fA745749A1");
   assert.equal(chains["84532"].roles.X402FeeRouter, "0x780E18146Bc77E50c3e5EcaED913FC31F62c0f6A");
   assert.notEqual(chains["84532"].roles.X402FeeRouter, chains["84532"].roles.FeeRouter, "x402 router ≠ V1 FeeRouter");
@@ -98,7 +98,7 @@ test("run: 與 with: 的位址依 job 的鏈檢查（單元）", () => {
     "    steps:",
     "      - run: |",
     "          cast send 0x0c6459d38617E60017bDc4ed69ec26137DA5c32b 'x()'",
-    "          cast call 0x827eA0c62a32e995927101259042F8A27D99124D 'y()'",
+    "          cast call 0xbF3074C98e17d88B4127899C98C81AE94c9fC979 'y()'",
     "      - uses: some/action@0123456789012345678901234567890123456789",
     "        with:",
     '          address: "0x17CA20A37Cf04F2f589B2573EC95f1411D29d958"',
@@ -118,8 +118,8 @@ test("agent/.env.example 也要與設定來源一致（複審 Low）", () => {
   const bad = join(here, "fixtures/check-addresses/bad.env.example");
   const r = spawnSync(process.execPath, [script, "--env", bad], { encoding: "utf8" });
   assert.equal(r.status, 1, r.stdout);
-  assert.match(r.stdout, /X402_FEE_ROUTER=0xeD90.*X402FeeRouter 應為 0x780E1814/);
-  assert.match(r.stdout, /PERP_ADDRESS=0xEf75.*PerpetualExchange 應為 0x827eA0c6/);
+  assert.match(r.stdout, /X402_FEE_ROUTER=0x9Cf4.*X402FeeRouter 應為 0x780E1814/);
+  assert.match(r.stdout, /PERP_ADDRESS=0xEf75.*PerpetualExchange 應為 0xbF3074C9/);
   assert.doesNotMatch(r.stdout, /SESSION_MANAGER_ADDRESS|X402_SETTLEMENT_TOKEN|:2 /, "正確的鍵、前端不管的鍵、註解都不報");
   assert.match(r.stdout, /2 個位址與 frontend\/src\/contracts 不一致/);
 });
@@ -347,7 +347,7 @@ test("部署登記：JSON 重複的鍵要紅（JSON.parse 取最後一個，審�
   writeFileSync(join(dir, "bank-a.json"), dup);
   const out = checkDeployments({ dir, chains: chainsFull, universe }).problems.join("\n");
   assert.match(out, /bank-a\.json: JSON 重複的鍵 contracts: PerpetualExchange/);
-  assert.match(out, /contracts\.PerpetualExchange=0x827eA0c6.* 是平台部署（default）的位址/);
+  assert.match(out, /contracts\.PerpetualExchange=0xbF3074C9.* 是平台部署（default）的位址/);
 });
 
 test("部署登記：兩個租戶不得共用合約（同一條規則）；每個前端租戶都要有登記檔", () => {
@@ -450,7 +450,7 @@ test("租戶 keeper：位址以該租戶的部署登記比對；共用上游價�
 test("租戶 keeper：指向平台的 exchange／oracle 要擋", () => {
   assert.match(
     wf({ exchange: live.PerpetualExchange }),
-    /EXCHANGE=0x827eA0c6.* —— 租戶 bank-a 的部署登記 的 PerpetualExchange 應為/,
+    /EXCHANGE=0xbF3074C9.* —— 租戶 bank-a 的部署登記 的 PerpetualExchange 應為/,
   );
   assert.match(
     wf({ oracle: live.MockOracle }),
@@ -494,8 +494,8 @@ test("平台的 workflow 用了租戶的位址照樣擋（沒有 KEEPER_TENANT �
     allowlist: [],
     deployments,
   }).problems.join("\n");
-  assert.match(out, /EXCHANGE=.* —— chain 84532 的 PerpetualExchange 應為 0x827eA0c6/);
-  assert.match(out, /KEEPER_ORACLE_ADDRESS=.* —— chain 84532 的 MockOracle 應為 0xeD90c4F3/);
+  assert.match(out, /EXCHANGE=.* —— chain 84532 的 PerpetualExchange 應為 0xbF3074C9/);
+  assert.match(out, /KEEPER_ORACLE_ADDRESS=.* —— chain 84532 的 MockOracle 應為 0x9Cf4E05B/);
 });
 
 test("沿用平台部署的租戶（kind: platform）的 keeper 就是平台的位址", () => {

@@ -23,14 +23,15 @@ command -v jq >/dev/null || { echo "需要 jq" >&2; exit 1; }
 
 # Base Sepolia 現行 AgentSessionManager（可用 SESSION_MGR 覆寫）。
 #
+# 2026-10-20 #344 cutover：manager 換成 Redeploy130Hardened 部署的那顆（上一顆 0xdF9C…d14B 綁 #129 的 exchange）。
 # 2026-09-29 更正：這裡原本寫 0x4E7cC1B79B72ab72531a6C790e14304370f70764 —— 那個 manager
 # 綁的是**舊** exchange 0xEf75ECA6514cE96B18382E921aC6190a0cF8c072，在上面建的 session
 # 下單會打到已退役的交易所。現行 manager 來源：
-#   contracts/broadcast/Redeploy129Exchange.s.sol/84532/run-latest.json（AgentSessionManager）
-# 鏈上核對：exchange() == 0x827eA0c62a32e995927101259042F8A27D99124D（現行 PerpetualExchange，
+#   contracts/broadcast/Redeploy130Hardened.s.sol/84532/run-latest.json（AgentSessionManager）
+# 鏈上核對：exchange() == 0xbF3074C98e17d88B4127899C98C81AE94c9fC979（現行 PerpetualExchange，
 # = frontend/src/contracts/addresses.ts BASE_SEPOLIA.PerpetualExchange），且該 exchange 的
 # authorizedAgents(本 manager) == true。
-SESSION_MGR="${SESSION_MGR:-0xdF9C1E53523568709f65Afe3C4AD2E6a6D99d14B}"
+SESSION_MGR="${SESSION_MGR:-0x4875966ACA052A38d80ddD2aaE80995A98EAd2AF}"
 
 # Session 參數（可改）：每筆最高保證金 / 總額度 / 槓桿上限 / 到期
 MAX_PER_TRADE="${MAX_PER_TRADE:-50000000000000000000}"   # 50e18

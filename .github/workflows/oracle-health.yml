@@ -32,8 +32,9 @@ jobs:
     env:
       KEEPER_CHAIN: base-sepolia
       KEEPER_RPC_URL: ${{ secrets.BASE_SEPOLIA_RPC_URL }}
-      KEEPER_ORACLE_ADDRESS: "0xeD90c4F3B48213888870C1FC8486921Cb0990Aa3"
-      KEEPER_EXCHANGE_ADDRESS: "0x827eA0c62a32e995927101259042F8A27D99124D"
+      # 交易所讀的專用 MockOracle（#344 cutover，2026-10-20；之前的 0xeD90… 已退役）。
+      KEEPER_ORACLE_ADDRESS: "0x9Cf4E05B08F6cC53be2e04752F2c32A79132deEA"
+      KEEPER_EXCHANGE_ADDRESS: "0xbF3074C98e17d88B4127899C98C81AE94c9fC979"
       # 門檻必須大於巡檢間隔，否則「排程晚了一次」與「keeper 真的掛了」無法區分。
       # cron 每 3 小時（10800s），而 GitHub 排程實測會延遲到 68–169 分鐘，
       # 所以門檻取 5 小時（18000s）＝ 一次巡檢間隔 + 充裕的延遲餘裕。

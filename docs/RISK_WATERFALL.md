@@ -9,15 +9,15 @@
 
 | 版本 | 位置 | 狀態 |
 |---|---|---|
-| **現行部署版** | Base Sepolia exchange `0x827eA0c62a32e995927101259042F8A27D99124D`（由 `contracts/script/Redeploy129Exchange.s.sol` 部署）。「現行部署＝`master` 原始碼」**只適用於 exchange**；其他合約（例如 MockUSDC、InsuranceVault）的已部署版本可能比 `master` 舊 | 已上線 |
-| **原始碼版** | PR #191（已合併到 master） | **僅原始碼**：未部署，需要使用者執行 cutover |
+| **現行部署版** | Base Sepolia exchange `0xbF3074C98e17d88B4127899C98C81AE94c9fC979`（#344 cutover，由 `contracts/script/Redeploy130Hardened.s.sol` 部署）。「現行部署＝`master` 原始碼」**只適用於 exchange**；其他合約（例如 MockUSDC、InsuranceVault）的已部署版本可能比 `master` 舊 | 已上線 |
+| **原始碼版** | PR #191（已合併到 master） | 2026-10-20 隨 #344 cutover 部署：現行部署版就是這一版 |
 
 現行部署的相關參數（2026-09-30 鏈上讀取或部署腳本設定）：
 
 | 參數 | 值 | 來源 |
 |---|---|---|
 | `adlEnabled` | true | 鏈上 |
-| `portfolioMarginEnabled` | false（逐倉） | 鏈上 |
+| 組合保證金 | 無（#344 版已移除，一律逐倉） | 原始碼 |
 | `maxPriceAge` | 21600 秒（6 小時） | 鏈上 |
 | `FUNDING_INTERVAL` | 8 小時（常數） | 鏈上 |
 | 維持保證金 | 預設 500 bps（5%），可逐資產覆寫 | 原始碼預設；腳本未覆寫 |
@@ -72,7 +72,7 @@
 
 **結論**：現行部署版**不保證恆償付**。三層後盾都有上限，第四層是揭露而不是吸收。
 
-## 3. 原始碼版（PR #191，未部署）新增了什麼
+## 3. PR #191 新增了什麼（#344 cutover 已部署）
 
 瀑布的順序不變，新增的是「讓瀑布更少被觸發」與「觸發時可以停下來」的控制：
 

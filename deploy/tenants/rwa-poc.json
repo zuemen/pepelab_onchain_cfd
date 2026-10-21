@@ -1,5 +1,5 @@
 {
-  "$comment": "RWA＋SSI 正式 PoC（Base Sepolia 測試網，平台團隊自營）。所有角色都是測試網 EOA，以加密 keystore 簽署（~/.foundry/keystores/pepelab-rwa-<角色>），secretsEnv 只是格式欄位、沒有使用。錢包與角色見 docs/tenants/rwa-poc/WALLETS.md。測試網 PoC 不收租戶費，所以收費模式定為 0／0。",
+  "$comment": "RWA＋SSI 正式 PoC（Base Sepolia 測試網，平台團隊自營）。所有角色都是測試網 EOA，以加密 keystore 簽署（~/.foundry/keystores/pepelab-rwa-<角色>），secretsEnv 只是格式欄位、沒有使用。錢包與角色見 docs/tenants/rwa-poc/WALLETS.md。測試網 PoC 不收租戶費，所以收費模式定為 0／0。shared.priceSource 只在部署時替租戶 oracle 取初始價：部署時用的是當時的平台 MockOracle 0xeD90…0Aa3，#344 cutover（2026-10-20）後改指平台現行的 MockOracle，重新部署時從它取價。",
   "schemaVersion": 4,
   "tenantId": "rwa-poc",
   "status": "deployed",
@@ -22,7 +22,7 @@
   },
   "shared": {
     "settlementToken": "0x69fd695Bc7C3aFdb35ABA35cD6890C506400b035",
-    "priceSource": "0xeD90c4F3B48213888870C1FC8486921Cb0990Aa3",
+    "priceSource": "0x9Cf4E05B08F6cC53be2e04752F2c32A79132deEA",
     "referenceSource": "none"
   },
   "params": {

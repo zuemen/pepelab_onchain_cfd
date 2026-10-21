@@ -184,17 +184,17 @@
         {
           "ref": "PerpetualExchange",
           "abi": "PerpetualExchange",
-          "address": "0x827eA0c62a32e995927101259042F8A27D99124D"
+          "address": "0xbF3074C98e17d88B4127899C98C81AE94c9fC979"
         },
         {
           "ref": "InsuranceVault",
           "abi": "InsuranceVault",
-          "address": "0xB364E2e3e1e7a2b033eF03a4ACceF42066F3D812"
+          "address": "0x899263e34107a36a5216499F9CC7fb7a5afc7aaF"
         },
         {
           "ref": "FeeRouter",
           "abi": "FeeRouter",
-          "address": "0x00f6cf0113399a7A451c7f85fe094a28092d3e0c"
+          "address": "0x89Aa6799b2CdAa43FF7985ff706456Ca6F0e5d29"
         },
         {
           "ref": "X402FeeRouter",
@@ -204,7 +204,7 @@
         {
           "ref": "MockOracle",
           "abi": "MockOracle",
-          "address": "0xeD90c4F3B48213888870C1FC8486921Cb0990Aa3"
+          "address": "0x9Cf4E05B08F6cC53be2e04752F2c32A79132deEA"
         },
         {
           "ref": "AggregatorOracle",
@@ -230,6 +230,11 @@
           "ref": "TraderStake",
           "abi": "TraderStake",
           "address": "0x01aEB530bcFc69f036309ffe55acc7eA6C5a28Fe"
+        },
+        {
+          "ref": "CopyTracker",
+          "abi": "CopyTracker",
+          "address": "0x15A9Cbf803a3EEee2794B74Ad78252d27Ccd347C"
         },
         {
           "ref": "AssetVault",
@@ -269,12 +274,12 @@
         {
           "ref": "PepeIncentives",
           "abi": "PepeIncentives",
-          "address": "0xEBfA1dc7dDea032ac6242cB619d982e543A23c12"
+          "address": "0xc257Dd9b9eb392893a89d307664713E8660672F0"
         },
         {
           "ref": "EsgRewardDistributor",
           "abi": "EsgRewardDistributor",
-          "address": "0x44a8E5195E168e5AdcCa4343Bd8B399B49D5609F"
+          "address": "0x4C9232eE2caAe2B065eb1Ca9AD966Ef69A0D2433"
         }
       ],
       "events": [
@@ -557,7 +562,7 @@
         {
           "ref": "PerpetualExchange",
           "abi": "PerpetualExchange",
-          "address": "0x827eA0c62a32e995927101259042F8A27D99124D"
+          "address": "0xbF3074C98e17d88B4127899C98C81AE94c9fC979"
         }
       ],
       "events": [
@@ -669,7 +674,7 @@
         {
           "ref": "PerpetualExchange",
           "abi": "PerpetualExchange",
-          "address": "0x827eA0c62a32e995927101259042F8A27D99124D"
+          "address": "0xbF3074C98e17d88B4127899C98C81AE94c9fC979"
         }
       ],
       "events": [
@@ -729,14 +734,14 @@
       "title": "保險金庫接線變更",
       "category": "x402／FeeRouter 設定",
       "kind": "event",
-      "status": "pending-deploy",
+      "status": "active",
       "severity": "SEV-1",
-      "description": "InsuranceVault 的 exchange（唯一能呼叫 bailout 的地址）或 FeeRouter 被改。**已部署的 InsuranceVault 有 setExchange／setFeeRouter，但不發這兩個事件**（事件是 master 原始碼後來才加的），所以這條事件規則現在不會響；接線變更由狀態規則 insurance-wiring 每輪讀 getter 比對。重新部署 InsuranceVault 並更新 deployed.json 後改為 active。",
+      "description": "InsuranceVault 的 exchange（唯一能呼叫 bailout 的地址）或 FeeRouter 被改。#344 cutover（2026-10-20）重新部署的 InsuranceVault 會發 ExchangeSet／FeeRouterSet；狀態規則 insurance-wiring 每輪另外讀 getter 比對。",
       "contracts": [
         {
           "ref": "InsuranceVault",
-          "source": "contracts/src/InsuranceVault.sol",
-          "address": null
+          "abi": "InsuranceVault",
+          "address": "0x899263e34107a36a5216499F9CC7fb7a5afc7aaF"
         }
       ],
       "events": [
@@ -776,12 +781,12 @@
       "kind": "event",
       "status": "active",
       "severity": "SEV-2",
-      "description": "V1 FeeRouter 與 x402 FeeRouter（官方 USDC）的 exchange／copyTracker 被改。x402 FeeRouter 已於 2026-10-10 以目前原始碼重新部署（0x780E…0f6A），會發 ExchangeSet／CopyTrackerSet，所以這條規則改為 active。**平台 V1 FeeRouter 仍是舊部署，不會發這兩個事件**（events 的 notDeployed 已標明），它的變更只能靠狀態規則 feerouter-wiring 每輪讀 getter 抓；第 5 步重新部署後移除 notDeployed。",
+      "description": "V1 FeeRouter 與 x402 FeeRouter（官方 USDC）的 exchange／copyTracker 被改。兩顆都以目前原始碼部署（x402 FeeRouter 2026-10-10，V1 FeeRouter 2026-10-20 #344 cutover），都會發 ExchangeSet／CopyTrackerSet；狀態規則 feerouter-wiring 每輪另外讀 getter 比對。",
       "contracts": [
         {
           "ref": "FeeRouter",
           "abi": "FeeRouter",
-          "address": "0x00f6cf0113399a7A451c7f85fe094a28092d3e0c"
+          "address": "0x89Aa6799b2CdAa43FF7985ff706456Ca6F0e5d29"
         },
         {
           "ref": "X402FeeRouter",
@@ -792,10 +797,6 @@
       "events": [
         {
           "sig": "ExchangeSet(address)",
-          "notDeployed": [
-            "FeeRouter"
-          ],
-          "note": "平台 V1 FeeRouter 是舊部署，bytecode 不含這個事件；x402 FeeRouter（2026-10-10 重新部署）會發",
           "topic0": "0x1b3baff3cd6acb01bcbb187b5b9cb66fabc651693fc14e518c71feeddf4f864b",
           "inputs": [
             {
@@ -807,10 +808,6 @@
         },
         {
           "sig": "CopyTrackerSet(address)",
-          "notDeployed": [
-            "FeeRouter"
-          ],
-          "note": "平台 V1 FeeRouter 是舊部署，bytecode 不含這個事件；x402 FeeRouter（2026-10-10 重新部署）會發",
           "topic0": "0x784a563dd1eca667244c2b0d2815d35bd69d026835117e5341f742420433ca0e",
           "inputs": [
             {
@@ -844,7 +841,7 @@
           "ref": "InsuranceVault",
           "abi": "InsuranceVault",
           "as": "insurance",
-          "address": "0xB364E2e3e1e7a2b033eF03a4ACceF42066F3D812"
+          "address": "0x899263e34107a36a5216499F9CC7fb7a5afc7aaF"
         }
       ],
       "calls": [
@@ -855,7 +852,7 @@
             "ref": "PerpetualExchange"
           },
           "selector": "0xd2f7265a",
-          "expected": "0x827eA0c62a32e995927101259042F8A27D99124D"
+          "expected": "0xbF3074C98e17d88B4127899C98C81AE94c9fC979"
         },
         {
           "on": "insurance",
@@ -864,7 +861,7 @@
             "ref": "FeeRouter"
           },
           "selector": "0xf29ebf61",
-          "expected": "0x00f6cf0113399a7A451c7f85fe094a28092d3e0c"
+          "expected": "0x89Aa6799b2CdAa43FF7985ff706456Ca6F0e5d29"
         }
       ],
       "runbook": [
@@ -887,7 +884,7 @@
           "ref": "FeeRouter",
           "abi": "FeeRouter",
           "as": "feeRouter",
-          "address": "0x00f6cf0113399a7A451c7f85fe094a28092d3e0c"
+          "address": "0x89Aa6799b2CdAa43FF7985ff706456Ca6F0e5d29"
         },
         {
           "ref": "X402FeeRouter",
@@ -904,7 +901,7 @@
             "ref": "PerpetualExchange"
           },
           "selector": "0xd2f7265a",
-          "expected": "0x827eA0c62a32e995927101259042F8A27D99124D"
+          "expected": "0xbF3074C98e17d88B4127899C98C81AE94c9fC979"
         },
         {
           "on": "feeRouter",
@@ -913,7 +910,7 @@
             "ref": "CopyTracker"
           },
           "selector": "0x49f3260b",
-          "expected": "0xC9e91f7D36e910C58042164032c625427b23CCB2"
+          "expected": "0x15A9Cbf803a3EEee2794B74Ad78252d27Ccd347C"
         },
         {
           "on": "feeRouter",
@@ -922,7 +919,7 @@
             "ref": "InsuranceVault"
           },
           "selector": "0xe6fa0ef7",
-          "expected": "0xB364E2e3e1e7a2b033eF03a4ACceF42066F3D812"
+          "expected": "0x899263e34107a36a5216499F9CC7fb7a5afc7aaF"
         },
         {
           "on": "feeRouter",
@@ -932,7 +929,7 @@
           },
           "note": "platformTreasury 是 immutable，前端設定沒有這個位址；快照只用來確認這顆 FeeRouter 沒有被換成另一顆",
           "selector": "0xe138818c",
-          "expected": "0xe80a81360608c1342e66743f70a00f75d792eb93"
+          "expected": "0xe5b1b4009c41dd5c02e216f42f33b3a8d4ee0a0c"
         },
         {
           "on": "x402",
@@ -993,7 +990,7 @@
           "ref": "PerpetualExchange",
           "abi": "PerpetualExchange",
           "as": "exchange",
-          "address": "0x827eA0c62a32e995927101259042F8A27D99124D"
+          "address": "0xbF3074C98e17d88B4127899C98C81AE94c9fC979"
         },
         {
           "ref": "TraderStake",
@@ -1016,7 +1013,7 @@
             "ref": "MockOracle"
           },
           "selector": "0x7dc0d1d0",
-          "expected": "0xeD90c4F3B48213888870C1FC8486921Cb0990Aa3"
+          "expected": "0x9Cf4E05B08F6cC53be2e04752F2c32A79132deEA"
         },
         {
           "on": "exchange",
@@ -1025,7 +1022,7 @@
             "ref": "FeeRouter"
           },
           "selector": "0xf29ebf61",
-          "expected": "0x00f6cf0113399a7A451c7f85fe094a28092d3e0c"
+          "expected": "0x89Aa6799b2CdAa43FF7985ff706456Ca6F0e5d29"
         },
         {
           "on": "exchange",
@@ -1034,7 +1031,7 @@
             "ref": "InsuranceVault"
           },
           "selector": "0xe6fa0ef7",
-          "expected": "0xB364E2e3e1e7a2b033eF03a4ACceF42066F3D812"
+          "expected": "0x899263e34107a36a5216499F9CC7fb7a5afc7aaF"
         },
         {
           "on": "exchange",
@@ -1052,7 +1049,7 @@
             "ref": "CopyTracker"
           },
           "selector": "0x49f3260b",
-          "expected": "0xC9e91f7D36e910C58042164032c625427b23CCB2"
+          "expected": "0x15A9Cbf803a3EEee2794B74Ad78252d27Ccd347C"
         },
         {
           "on": "vault",
@@ -1118,7 +1115,7 @@
           "ref": "PepeIncentives",
           "abi": "PepeIncentives",
           "as": "incentives",
-          "address": "0xEBfA1dc7dDea032ac6242cB619d982e543A23c12"
+          "address": "0xc257Dd9b9eb392893a89d307664713E8660672F0"
         }
       ],
       "calls": [
@@ -1165,12 +1162,12 @@
       "kind": "event",
       "status": "active",
       "severity": "SEV-3",
-      "description": "槓桿上限、維持保證金、maxPriceAge、各項費率、ADL、組合保證金、RWA 標記的變更。正常營運也會改，所以是 SEV-3 稽核通知；非預期的變更應升級處理。",
+      "description": "槓桿上限、維持保證金、maxPriceAge、各項費率、ADL、RWA 標記的變更。正常營運也會改，所以是 SEV-3 稽核通知；非預期的變更應升級處理。",
       "contracts": [
         {
           "ref": "PerpetualExchange",
           "abi": "PerpetualExchange",
-          "address": "0x827eA0c62a32e995927101259042F8A27D99124D"
+          "address": "0xbF3074C98e17d88B4127899C98C81AE94c9fC979"
         }
       ],
       "events": [
@@ -1295,17 +1292,6 @@
           ]
         },
         {
-          "sig": "PortfolioMarginEnabledSet(bool)",
-          "topic0": "0x98d954b015bbba8e0b522bbe09f59132729b1145000de1f678ec137e8d0944aa",
-          "inputs": [
-            {
-              "name": "enabled",
-              "type": "bool",
-              "indexed": false
-            }
-          ]
-        },
-        {
           "sig": "RwaAssetSet(bytes32,bool)",
           "topic0": "0x6dc9feaab8b05166e951bfb219f24e9dc4d9de1e6100f2f08c95e1987d841903",
           "inputs": [
@@ -1339,7 +1325,7 @@
         {
           "ref": "PerpetualExchange",
           "abi": "PerpetualExchange",
-          "address": "0x827eA0c62a32e995927101259042F8A27D99124D"
+          "address": "0xbF3074C98e17d88B4127899C98C81AE94c9fC979"
         }
       ],
       "events": [
@@ -1451,7 +1437,7 @@
         {
           "ref": "PepeIncentives",
           "abi": "PepeIncentives",
-          "address": "0xEBfA1dc7dDea032ac6242cB619d982e543A23c12"
+          "address": "0xc257Dd9b9eb392893a89d307664713E8660672F0"
         }
       ],
       "events": [
@@ -1685,7 +1671,7 @@
         {
           "ref": "EsgRewardDistributor",
           "abi": "EsgRewardDistributor",
-          "address": "0x44a8E5195E168e5AdcCa4343Bd8B399B49D5609F"
+          "address": "0x4C9232eE2caAe2B065eb1Ca9AD966Ef69A0D2433"
         }
       ],
       "events": [
@@ -1971,19 +1957,17 @@
       "kind": "event",
       "status": "active",
       "severity": "SEV-2",
-      "description": "交易所讀的 MockOracle 的資產清單被改（部署版的過期門檻是常數，不能改）。",
+      "description": "交易所讀的 MockOracle（#344 cutover 部署的 0x9Cf4…deEA）的資產清單或過期門檻被改。",
       "contracts": [
         {
           "ref": "MockOracle",
           "abi": "MockOracle",
-          "address": "0xeD90c4F3B48213888870C1FC8486921Cb0990Aa3"
+          "address": "0x9Cf4E05B08F6cC53be2e04752F2c32A79132deEA"
         }
       ],
       "events": [
         {
           "sig": "StaleThresholdSet(uint256,uint256)",
-          "notDeployed": true,
-          "note": "部署版的 MockOracle 沒有 setStaleThreshold／staleThreshold()，過期門檻是常數 STALE_THRESHOLD，無法被改",
           "topic0": "0xbbdef213979afab4bc82df04484ba84bcc61c5e7b975f05e9fa44604adaff755",
           "inputs": [
             {
@@ -2232,7 +2216,7 @@
         {
           "ref": "PerpetualExchange",
           "abi": "PerpetualExchange",
-          "address": "0x827eA0c62a32e995927101259042F8A27D99124D"
+          "address": "0xbF3074C98e17d88B4127899C98C81AE94c9fC979"
         }
       ],
       "events": [
@@ -2303,7 +2287,7 @@
         {
           "ref": "PerpetualExchange",
           "abi": "PerpetualExchange",
-          "address": "0x827eA0c62a32e995927101259042F8A27D99124D"
+          "address": "0xbF3074C98e17d88B4127899C98C81AE94c9fC979"
         }
       ],
       "events": [
@@ -2355,7 +2339,7 @@
         {
           "ref": "InsuranceVault",
           "abi": "InsuranceVault",
-          "address": "0xB364E2e3e1e7a2b033eF03a4ACceF42066F3D812"
+          "address": "0x899263e34107a36a5216499F9CC7fb7a5afc7aaF"
         }
       ],
       "events": [
@@ -2412,7 +2396,7 @@
         {
           "ref": "InsuranceVault",
           "abi": "InsuranceVault",
-          "address": "0xB364E2e3e1e7a2b033eF03a4ACceF42066F3D812"
+          "address": "0x899263e34107a36a5216499F9CC7fb7a5afc7aaF"
         }
       ],
       "events": [
@@ -2524,7 +2508,7 @@
         {
           "ref": "FeeRouter",
           "abi": "FeeRouter",
-          "address": "0x00f6cf0113399a7A451c7f85fe094a28092d3e0c"
+          "address": "0x89Aa6799b2CdAa43FF7985ff706456Ca6F0e5d29"
         }
       ],
       "events": [
@@ -2671,13 +2655,13 @@
           "ref": "MockOracle",
           "abi": "MockOracle",
           "as": "oracle",
-          "address": "0xeD90c4F3B48213888870C1FC8486921Cb0990Aa3"
+          "address": "0x9Cf4E05B08F6cC53be2e04752F2c32A79132deEA"
         },
         {
           "ref": "PerpetualExchange",
           "abi": "PerpetualExchange",
           "as": "exchange",
-          "address": "0x827eA0c62a32e995927101259042F8A27D99124D"
+          "address": "0xbF3074C98e17d88B4127899C98C81AE94c9fC979"
         }
       ],
       "calls": [
@@ -2732,7 +2716,7 @@
           "ref": "MockOracle",
           "abi": "MockOracle",
           "as": "primary",
-          "address": "0xeD90c4F3B48213888870C1FC8486921Cb0990Aa3"
+          "address": "0x9Cf4E05B08F6cC53be2e04752F2c32A79132deEA"
         },
         {
           "ref": "AggregatorOracle",
@@ -2819,7 +2803,7 @@
           "ref": "PerpetualExchange",
           "abi": "PerpetualExchange",
           "as": "holder",
-          "address": "0x827eA0c62a32e995927101259042F8A27D99124D"
+          "address": "0xbF3074C98e17d88B4127899C98C81AE94c9fC979"
         }
       ],
       "calls": [
@@ -2858,7 +2842,7 @@
           "ref": "PepeIncentives",
           "abi": "PepeIncentives",
           "as": "holder",
-          "address": "0xEBfA1dc7dDea032ac6242cB619d982e543A23c12"
+          "address": "0xc257Dd9b9eb392893a89d307664713E8660672F0"
         }
       ],
       "calls": [
@@ -2891,7 +2875,7 @@
           "ref": "InsuranceVault",
           "abi": "InsuranceVault",
           "as": "vault",
-          "address": "0xB364E2e3e1e7a2b033eF03a4ACceF42066F3D812"
+          "address": "0x899263e34107a36a5216499F9CC7fb7a5afc7aaF"
         }
       ],
       "calls": [
@@ -2966,7 +2950,7 @@
           "ref": "MockOracle",
           "abi": "MockOracle",
           "as": "oracle",
-          "address": "0xeD90c4F3B48213888870C1FC8486921Cb0990Aa3"
+          "address": "0x9Cf4E05B08F6cC53be2e04752F2c32A79132deEA"
         }
       ],
       "calls": [
@@ -3006,14 +2990,14 @@
       "title": "交易所全域暫停",
       "category": "暫停與資產模式",
       "kind": "event",
-      "status": "pending-deploy",
+      "status": "active",
       "severity": "SEV-1",
-      "description": "guardian／owner 暫停交易所、暫停自動失效、owner 清除失效時間。暫停本身就代表事故處置中。新 exchange 部署並更新 addresses.ts 與前端 ABI 後改為 active。",
+      "description": "guardian／owner 暫停交易所、暫停自動失效、owner 清除失效時間。暫停本身就代表事故處置中。",
       "contracts": [
         {
           "ref": "PerpetualExchange",
-          "source": "contracts/src/PerpetualExchange.sol",
-          "address": null
+          "abi": "PerpetualExchange",
+          "address": "0xbF3074C98e17d88B4127899C98C81AE94c9fC979"
         }
       ],
       "events": [
@@ -3063,24 +3047,24 @@
         }
       ],
       "runbook": [
-        "4. 原始碼版（PR #191，未部署）多了什麼",
+        "4. 暫停與停單（PR #191，#344 cutover 已部署）",
         "7. 對外溝通與客戶通報（目標值，可調整）"
       ],
-      "runbookUrl": "https://github.com/zuemen/pepelab_onchain_cfd/blob/master/docs/INCIDENT_RESPONSE.md#4-原始碼版pr-191未部署多了什麼"
+      "runbookUrl": "https://github.com/zuemen/pepelab_onchain_cfd/blob/master/docs/INCIDENT_RESPONSE.md#4-暫停與停單pr-191344-cutover-已部署"
     },
     {
       "id": "exchange-asset-mode",
       "title": "交易所資產模式變更",
       "category": "暫停與資產模式",
       "kind": "event",
-      "status": "pending-deploy",
+      "status": "active",
       "severity": "SEV-2",
       "description": "逐資產 Active／ReduceOnly／Halted 切換與 guardian 鎖定。keeper 休市切換也會觸發，訊息帶 by 地址以區分。",
       "contracts": [
         {
           "ref": "PerpetualExchange",
-          "source": "contracts/src/PerpetualExchange.sol",
-          "address": null
+          "abi": "PerpetualExchange",
+          "address": "0xbF3074C98e17d88B4127899C98C81AE94c9fC979"
         }
       ],
       "events": [
@@ -3123,24 +3107,24 @@
         }
       ],
       "runbook": [
-        "4. 原始碼版（PR #191，未部署）多了什麼",
+        "4. 暫停與停單（PR #191，#344 cutover 已部署）",
         "5. keeper 熔斷處置"
       ],
-      "runbookUrl": "https://github.com/zuemen/pepelab_onchain_cfd/blob/master/docs/INCIDENT_RESPONSE.md#4-原始碼版pr-191未部署多了什麼"
+      "runbookUrl": "https://github.com/zuemen/pepelab_onchain_cfd/blob/master/docs/INCIDENT_RESPONSE.md#4-暫停與停單pr-191344-cutover-已部署"
     },
     {
       "id": "exchange-guardian-roles",
       "title": "交易所 guardian／marketOperator 變更",
       "category": "權限",
       "kind": "event",
-      "status": "pending-deploy",
+      "status": "active",
       "severity": "SEV-1",
       "description": "能暫停交易所或切換資產模式的地址被更換。",
       "contracts": [
         {
           "ref": "PerpetualExchange",
-          "source": "contracts/src/PerpetualExchange.sol",
-          "address": null
+          "abi": "PerpetualExchange",
+          "address": "0xbF3074C98e17d88B4127899C98C81AE94c9fC979"
         }
       ],
       "events": [
@@ -3169,7 +3153,7 @@
       ],
       "runbook": [
         "1. 嚴重度分級",
-        "4. 原始碼版（PR #191，未部署）多了什麼"
+        "4. 暫停與停單（PR #191，#344 cutover 已部署）"
       ],
       "runbookUrl": "https://github.com/zuemen/pepelab_onchain_cfd/blob/master/docs/INCIDENT_RESPONSE.md#1-嚴重度分級"
     },
@@ -3178,14 +3162,14 @@
       "title": "交易所 OI／獲利上限變更與觸發",
       "category": "風險參數",
       "kind": "event",
-      "status": "pending-deploy",
+      "status": "active",
       "severity": "SEV-3",
       "description": "OI 上限、獲利上限的設定變更，以及平倉獲利被上限截斷。",
       "contracts": [
         {
           "ref": "PerpetualExchange",
-          "source": "contracts/src/PerpetualExchange.sol",
-          "address": null
+          "abi": "PerpetualExchange",
+          "address": "0xbF3074C98e17d88B4127899C98C81AE94c9fC979"
         }
       ],
       "events": [
@@ -3249,9 +3233,9 @@
         }
       ],
       "runbook": [
-        "4. 原始碼版（PR #191，未部署）多了什麼"
+        "4. 暫停與停單（PR #191，#344 cutover 已部署）"
       ],
-      "runbookUrl": "https://github.com/zuemen/pepelab_onchain_cfd/blob/master/docs/INCIDENT_RESPONSE.md#4-原始碼版pr-191未部署多了什麼"
+      "runbookUrl": "https://github.com/zuemen/pepelab_onchain_cfd/blob/master/docs/INCIDENT_RESPONSE.md#4-暫停與停單pr-191344-cutover-已部署"
     },
     {
       "id": "timelock-operations",
@@ -3601,14 +3585,14 @@
       "title": "CopyTracker 罰沒準備金提領",
       "category": "大額提領",
       "kind": "event",
-      "status": "pending-deploy",
+      "status": "active",
       "severity": "SEV-2",
-      "description": "原始碼版 CopyTracker 的罰沒準備金被提出。",
+      "description": "CopyTracker 的罰沒準備金被提出。",
       "contracts": [
         {
           "ref": "CopyTracker",
-          "source": "contracts/src/CopyTracker.sol",
-          "address": null
+          "abi": "CopyTracker",
+          "address": "0x15A9Cbf803a3EEee2794B74Ad78252d27Ccd347C"
         }
       ],
       "events": [
@@ -3639,14 +3623,14 @@
       "title": "PepeIncentives 簽到點數參數變更",
       "category": "風險參數",
       "kind": "event",
-      "status": "pending-deploy",
+      "status": "active",
       "severity": "SEV-3",
-      "description": "原始碼版（#219，點數版）PepeIncentives 的每日簽到基本點數、連續加成或連續上限被 owner 改（合約內有上限 MAX_DAILY_*）。部署版的 setDailyParams 不發事件。",
+      "description": "PepeIncentives（#219 點數版，#344 cutover 部署）的每日簽到基本點數、連續加成或連續上限被 owner 改（合約內有上限 MAX_DAILY_*）。",
       "contracts": [
         {
           "ref": "PepeIncentives",
-          "source": "contracts/src/PepeIncentives.sol",
-          "address": null
+          "abi": "PepeIncentives",
+          "address": "0xc257Dd9b9eb392893a89d307664713E8660672F0"
         }
       ],
       "events": [
@@ -3683,6 +3667,7 @@
       "abi": "PerpetualExchange",
       "reason": "使用者自己的操作或例行結算，不是管理操作；資金面由大額提領、保險金與儲備率規則涵蓋",
       "events": [
+        "FundingRealized(uint256,int256)",
         "FundingSettled(bytes32,int256,int256,int256)",
         "MarginDeposited(address,uint256)",
         "PerformanceFeePaid(uint256,address,uint256)",
@@ -3704,8 +3689,7 @@
     },
     {
       "abi": "InsuranceVault",
-      "notDeployed": true,
-      "reason": "部署版沒有 recapitalize()，不會發這個事件；而且是資金流入",
+      "reason": "owner 以 recapitalize() 補資本：資金流入；流出由 insurance-withdrawal、insurance-bailout 與 insurance-fund 涵蓋",
       "events": [
         "Recapitalized(address,uint256)"
       ]
@@ -3744,6 +3728,19 @@
         "UnstakeCancelled(address)",
         "UnstakeRequested(address,uint256,uint256)",
         "Unstaked(address,uint256)"
+      ]
+    },
+    {
+      "abi": "CopyTracker",
+      "reason": "使用者自己的跟單／取消跟單，與依協議規則執行的平倉記錄、slash 與評分結果；能執行 slash 的 CopyTracker 由 traderstake-copytracker-set 與 core-wiring 監控，罰沒準備金提出由 copytracker-slash-reserve 監控",
+      "events": [
+        "PositionCloseSkipped(address,uint256)",
+        "RecordDeactivatedWithoutScoring(address,uint256)",
+        "SlashFailed(address,address,uint256)",
+        "SlashScoringWaived(address,uint256)",
+        "TraderFollowed(address,address,uint256,uint256)",
+        "TraderSlashed(address,address,uint256)",
+        "TraderUnfollowed(address,address,uint256)"
       ]
     },
     {
@@ -3885,8 +3882,7 @@
     },
     {
       "abi": "PepeIncentives",
-      "notDeployed": true,
-      "reason": "原始碼版（#219，點數版）的每日簽到：使用者自己的操作，只記不可轉讓的成就點數、不轉 PEPE。部署版是舊版（簽到發 DailyCheckIn 並轉 PEPE），沒有這個事件",
+      "reason": "#219 點數版的每日簽到：使用者自己的操作，只記不可轉讓的成就點數、不轉 PEPE",
       "events": [
         "CheckInPointsCredited(address,uint256,uint8,uint256)"
       ]
@@ -3987,6 +3983,14 @@
       },
       "setFeed(bytes32,address)": {
         "rule": "chainlink-adapter-config"
+      }
+    },
+    "CopyTracker": {
+      "transferOwnership(address)": {
+        "rule": "owner-transferred"
+      },
+      "withdrawSlashReserve(address,uint256)": {
+        "rule": "copytracker-slash-reserve"
       }
     },
     "ESGRegistryV2": {
@@ -4112,6 +4116,9 @@
       },
       "updatePrice(bytes32,uint256)": {
         "reason": "keeper 例行寫價，不是設定變更；價格是否過期由 oracle-stale 看，GuardedOracle 拒收的價格由 guarded-oracle-price-rejected 看"
+      },
+      "setStaleThreshold(uint256)": {
+        "rule": "mock-oracle-config"
       }
     },
     "MockUSDC": {
@@ -4184,7 +4191,7 @@
         "reason": "獎勵參數（PEPE 測試代幣的發放額），部署版不發事件。最壞情況是獎勵被調高而加速抽乾池子——那會被 pepe-incentives-balance-drop 看到"
       },
       "setDailyParams(uint256,uint256,uint8)": {
-        "reason": "部署版（舊版）：簽到獎勵參數（PEPE 發放額），不發事件，最壞情況是獎勵被調高而加速抽乾池子，由 pepe-incentives-balance-drop 看到。原始碼版（#219，點數版）簽到不再轉 PEPE、改發 DailyParamsSet，由 pending 規則 pepe-incentives-daily-params 涵蓋；cutover 後該規則改 active，這裡改指向它"
+        "rule": "pepe-incentives-daily-params"
       },
       "setEsgParams(uint256,uint256,uint256,uint8)": {
         "reason": "同 setCopyReward：獎勵參數，後果由 pepe-incentives-balance-drop 看到"
@@ -4216,23 +4223,38 @@
       }
     },
     "PerpetualExchange": {
+      "pause()": {
+        "rule": "exchange-pause"
+      },
       "renounceOwnership()": {
         "rule": "owner-transferred"
       },
-      "transferOwnership(address)": {
-        "rule": "owner-transferred"
+      "setAdlEnabled(bool)": {
+        "rule": "exchange-risk-params"
       },
       "setAgentAuthorized(address,bool)": {
         "rule": "exchange-agent-authorization"
       },
+      "setAssetMode(bytes32,uint8)": {
+        "rule": "exchange-asset-mode"
+      },
+      "setBorrowFeePerHour(uint256)": {
+        "rule": "exchange-risk-params"
+      },
       "setCopyTracker(address)": {
         "rule": "exchange-wiring-changed"
+      },
+      "setExecutionFee(uint256)": {
+        "rule": "exchange-risk-params"
       },
       "setFeeRouter(address)": {
         "rule": [
           "exchange-wiring-changed",
           "core-wiring"
         ]
+      },
+      "setGuardian(address)": {
+        "rule": "exchange-guardian-roles"
       },
       "setInsuranceVault(address)": {
         "rule": [
@@ -4246,15 +4268,6 @@
           "core-wiring"
         ]
       },
-      "setAdlEnabled(bool)": {
-        "rule": "exchange-risk-params"
-      },
-      "setBorrowFeePerHour(uint256)": {
-        "rule": "exchange-risk-params"
-      },
-      "setExecutionFee(uint256)": {
-        "rule": "exchange-risk-params"
-      },
       "setLiquidationPenaltyBps(uint256)": {
         "rule": "exchange-risk-params"
       },
@@ -4264,14 +4277,20 @@
       "setMarkPremiumCapBps(uint256)": {
         "rule": "exchange-risk-params"
       },
+      "setMarketOperator(address)": {
+        "rule": "exchange-guardian-roles"
+      },
       "setMaxLeverageFor(bytes32,uint256)": {
         "rule": "exchange-risk-params"
+      },
+      "setMaxOpenInterest(bytes32,uint256,uint256)": {
+        "rule": "exchange-exposure-caps"
       },
       "setMaxPriceAge(uint256)": {
         "rule": "exchange-risk-params"
       },
-      "setPortfolioMarginEnabled(bool)": {
-        "rule": "exchange-risk-params"
+      "setMaxProfitBps(bytes32,uint256)": {
+        "rule": "exchange-exposure-caps"
       },
       "setRwaAsset(bytes32,bool)": {
         "rule": "exchange-risk-params"
@@ -4284,6 +4303,12 @@
       },
       "settleFunding(bytes32)": {
         "reason": "keeper 例行結算 funding（FundingSettled）；補算被夾住時由 exchange-funding-clamped 告警"
+      },
+      "transferOwnership(address)": {
+        "rule": "owner-transferred"
+      },
+      "unpause()": {
+        "rule": "exchange-pause"
       },
       "withdrawExecutionFees()": {
         "reason": "onlyOwner 提走合約累積的 ETH 執行費（使用者為 keeper gas 預付的手續費），不是保證金或 USDC，部署版不發事件；owner 本身的變更由 owner-transferred 看"

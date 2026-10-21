@@ -145,8 +145,8 @@ export const GUARD_SHA256 = {
  * 更新——這是刻意的。新增一支持鑰 workflow 時也要加進來，否則檢查失敗。
  */
 export const PINNED_WORKFLOWS = {
-  "admin-base-sepolia.yml": "e8b89234c0bc83d584792aacf587b548634e60b44a5d38efae9fd1b8d11ba9cf",
-  "base-sepolia-keeper.yml": "98bdbcd9cfc2d6b23839e1a3b8ee9269848eed4e09a975b78f8a3adacee3396c",
+  "admin-base-sepolia.yml": "8df9986b12144f64b0e7df584f0b96270880a3cf32bea537bdeb5aafefb09130",
+  "base-sepolia-keeper.yml": "27c61c6cc8ca0782c4d7c956b1a61ecb6ffeeebfe537282b58b829a01767c54f",
   "price-keeper.yml": "5048608805fa691f7249ee5a24b21bc1d008b01517c969395a7e2efaf42808c9",
   "x402-settlement-worker.yml": "c8558cd02626ff245bc26aa17102e7c24009305f2bd4c8f01e9d5138ce53dce1",
 };

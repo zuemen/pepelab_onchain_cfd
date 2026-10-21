@@ -116,7 +116,8 @@ export interface PositionView {
 export interface AccountView extends BlockContext {
   user: Address;
   freeMargin: Amount;
-  health: { equity: Amount; maintenance: Amount; healthy: boolean } | null;
+  // 帳戶層級的 health（getAccountHealth）隨組合保證金一起移除（#344 cutover 的 exchange 只有逐倉）；
+  // 每個部位的風險看 positions[].unrealizedPnL 與 margin。
   /** 此地址曾經開過的全部部位 id（含已平倉）。 */
   positionIds: bigint[];
   /** 預設只含未平倉；`includeClosed: true` 時全部。 */
@@ -381,16 +382,14 @@ export function createReadClient(cfg: ReadClientConfig): PepeReadClient {
   async function getAccount(user: string, opts: ReadOptions & { includeClosed?: boolean } = {}): Promise<AccountView> {
     const owner = getAddress(user);
     const ctx = await getBlockContext(opts);
-    const calls = [ex("freeMargin", [owner]), ex("getAccountHealth", [owner]), ex("getUserPositions", [owner])];
-    const [fm, health, ids] = await batch(calls, ctx.blockNumber);
-    const positionIds = need<readonly bigint[]>(ids!, calls[2]!).slice();
-    const h = maybe<readonly [bigint, bigint, boolean]>(health!);
+    const calls = [ex("freeMargin", [owner]), ex("getUserPositions", [owner])];
+    const [fm, ids] = await batch(calls, ctx.blockNumber);
+    const positionIds = need<readonly bigint[]>(ids!, calls[1]!).slice();
     const all = await readPositions(positionIds, ctx.blockNumber);
     return {
       ...ctx,
       user: owner,
       freeMargin: margin(need<bigint>(fm!, calls[0]!)),
-      health: h ? { equity: margin(h[0]), maintenance: margin(h[1]), healthy: h[2] } : null,
       positionIds,
       positions: opts.includeClosed ? all : all.filter((p) => p.isOpen),
     };

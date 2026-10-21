@@ -1,14 +1,14 @@
 {
  "$comment": "由 node scripts/check-deployment-status.mjs 產生（唯讀 RPC），不要手改；docs/RELEASE_STATUS.md 是這份 JSON 的渲染結果。",
- "generatedAt": "2026-10-10",
+ "generatedAt": "2026-10-21",
  "compiler": "0.8.36",
  "denylistSize": 1,
  "chains": {
   "84532": {
    "name": "Base Sepolia",
    "role": "正式測試網（交易、agent session、x402 都在這條鏈）",
-   "rpc": "https://sepolia.base.org",
-   "block": 47938324,
+   "rpc": "（自訂 RPC）",
+   "block": 48394001,
    "components": [
     {
      "id": "PerpetualExchange",
@@ -22,11 +22,11 @@
      "addresses": [
       {
        "key": "PerpetualExchange",
-       "address": "0x827eA0c62a32e995927101259042F8A27D99124D"
+       "address": "0xbF3074C98e17d88B4127899C98C81AE94c9fC979"
       }
      ],
-     "status": "behind",
-     "detail": "與原始碼現行版不一致：長度不同（鏈上 18861 B，原始碼 23911 B）",
+     "status": "equal",
+     "detail": "程式碼一致；只有 CBOR metadata（原始碼文字雜湊）不同",
      "leaked": [],
      "reads": [
       {
@@ -36,11 +36,13 @@
       },
       {
        "fn": "guardian()",
-       "error": "呼叫失敗（部署版沒有這個函式？）"
+       "value": "0x1a5e03ab2c96dbc8a6e9ca80a3396eea9e71ec6f",
+       "leaked": false
       },
       {
        "fn": "marketOperator()",
-       "error": "呼叫失敗（部署版沒有這個函式？）"
+       "value": "0x540aecd37e7a7885824e7b7e996ebddfb842ef17",
+       "leaked": false
       },
       {
        "fn": "authorizedAgents(0xe80a…eb93)",
@@ -55,7 +57,7 @@
       "evidence": [],
       "note": "docs/DEPLOY_130_CUTOVER.md §11 的畫面驗收（開倉、平倉、跟單、agent session 下單）未勾；docs/VERIFICATION_REPORT.md B2 待錢包"
      },
-     "matched": null
+     "matched": "PerpetualExchange.sol:PerpetualExchange"
     },
     {
      "id": "MockOracle",
@@ -69,11 +71,11 @@
      "addresses": [
       {
        "key": "MockOracle",
-       "address": "0xeD90c4F3B48213888870C1FC8486921Cb0990Aa3"
+       "address": "0x9Cf4E05B08F6cC53be2e04752F2c32A79132deEA"
       }
      ],
-     "status": "behind",
-     "detail": "與原始碼現行版不一致：長度不同（鏈上 1088 B，原始碼 1311 B）",
+     "status": "equal",
+     "detail": "程式碼一致；只有 CBOR metadata（原始碼文字雜湊）不同",
      "leaked": [],
      "reads": [
       {
@@ -89,7 +91,7 @@
       "evidence": [],
       "note": null
      },
-     "matched": null
+     "matched": "MockOracle.sol:MockOracle"
     },
     {
      "id": "GuardedOracle",
@@ -147,11 +149,11 @@
      "addresses": [
       {
        "key": "InsuranceVault",
-       "address": "0xB364E2e3e1e7a2b033eF03a4ACceF42066F3D812"
+       "address": "0x899263e34107a36a5216499F9CC7fb7a5afc7aaF"
       }
      ],
-     "status": "behind",
-     "detail": "與原始碼現行版不一致：長度不同（鏈上 4205 B，原始碼 4641 B）",
+     "status": "equal",
+     "detail": "程式碼一致；只有 CBOR metadata（原始碼文字雜湊）不同",
      "leaked": [],
      "reads": [
       {
@@ -167,7 +169,7 @@
       "evidence": [],
       "note": null
      },
-     "matched": null
+     "matched": "InsuranceVault.sol:InsuranceVault"
     },
     {
      "id": "FeeRouter",
@@ -181,17 +183,12 @@
      "addresses": [
       {
        "key": "FeeRouter",
-       "address": "0x00f6cf0113399a7A451c7f85fe094a28092d3e0c"
+       "address": "0x89Aa6799b2CdAa43FF7985ff706456Ca6F0e5d29"
       }
      ],
-     "status": "behind",
-     "detail": "與原始碼現行版不一致：長度不同（鏈上 2879 B，原始碼 2984 B）",
-     "leaked": [
-      {
-       "what": "platformTreasury()",
-       "holder": "0xe80a…eb93"
-      }
-     ],
+     "status": "equal",
+     "detail": "程式碼一致；只有 CBOR metadata（原始碼文字雜湊）不同",
+     "leaked": [],
      "reads": [
       {
        "fn": "owner()",
@@ -200,8 +197,8 @@
       },
       {
        "fn": "platformTreasury()",
-       "value": "0xe80a…eb93",
-       "leaked": true
+       "value": "0xe5b1b4009c41dd5c02e216f42f33b3a8d4ee0a0c",
+       "leaked": false
       }
      ],
      "snapshot": "same",
@@ -211,15 +208,15 @@
       "evidence": [],
       "note": null
      },
-     "matched": null
+     "matched": "FeeRouter.sol:FeeRouter"
     },
     {
      "id": "X402FeeRouter",
      "label": "x402 FeeRouter（官方 USDC；treasury 為 immutable）",
      "merged": {
-      "pr": 182,
-      "commit": "fa99346",
-      "date": "2026-09-30"
+      "pr": 301,
+      "commit": "c7c0b7e",
+      "date": "2026-10-11"
      },
      "sourceDigest": "5cb3ce90b42529e5",
      "addresses": [
@@ -267,11 +264,11 @@
      "addresses": [
       {
        "key": "AgentSessionManager",
-       "address": "0xdF9C1E53523568709f65Afe3C4AD2E6a6D99d14B"
+       "address": "0x4875966ACA052A38d80ddD2aaE80995A98EAd2AF"
       }
      ],
-     "status": "behind",
-     "detail": "與原始碼現行版不一致：長度不同（鏈上 3798 B，原始碼 3803 B）",
+     "status": "equal",
+     "detail": "程式碼一致；只有 CBOR metadata（原始碼文字雜湊）不同",
      "leaked": [],
      "reads": [],
      "snapshot": "absent",
@@ -281,7 +278,7 @@
       "evidence": [],
       "note": "只有部署腳本建立的 session #0，沒有 agent 實際下單的 tx 紀錄（docs/VERIFICATION_REPORT.md D 項待貼）"
      },
-     "matched": null
+     "matched": "AgentSessionManager.sol:AgentSessionManager"
     },
     {
      "id": "TraderStake",
@@ -329,16 +326,17 @@
      "addresses": [
       {
        "key": "CopyTracker",
-       "address": "0xC9e91f7D36e910C58042164032c625427b23CCB2"
+       "address": "0x15A9Cbf803a3EEee2794B74Ad78252d27Ccd347C"
       }
      ],
-     "status": "behind",
-     "detail": "與原始碼現行版不一致：長度不同（鏈上 6056 B，原始碼 9764 B）",
+     "status": "equal",
+     "detail": "程式碼一致；只有 CBOR metadata（原始碼文字雜湊）不同",
      "leaked": [],
      "reads": [
       {
        "fn": "owner()",
-       "error": "呼叫失敗（部署版沒有這個函式？）"
+       "value": "0x27c21324d101e867e0634bf2ebe3f9dcf3aca585",
+       "leaked": false
       }
      ],
      "snapshot": "same",
@@ -348,7 +346,7 @@
       "evidence": [],
       "note": null
      },
-     "matched": null
+     "matched": "CopyTracker.sol:CopyTracker"
     },
     {
      "id": "StrategyRegistry",
@@ -362,7 +360,7 @@
      "addresses": [
       {
        "key": "StrategyRegistry",
-       "address": "0xA103de184A5C76d7b70fB4e908F252199e004b95"
+       "address": "0xe8d807C3BaFB4D3AeCbA094322eE8dD7Ca16C20c"
       }
      ],
      "status": "equal",
@@ -900,16 +898,16 @@
      "addresses": [
       {
        "key": "PepeIncentives",
-       "address": "0xEBfA1dc7dDea032ac6242cB619d982e543A23c12"
+       "address": "0xc257Dd9b9eb392893a89d307664713E8660672F0"
       }
      ],
-     "status": "behind",
-     "detail": "與原始碼現行版不一致：長度不同（鏈上 7031 B，原始碼 6820 B）",
+     "status": "equal",
+     "detail": "程式碼一致；只有 CBOR metadata（原始碼文字雜湊）不同",
      "leaked": [],
      "reads": [
       {
        "fn": "owner()",
-       "value": "0x858b36c788296051b09512fc6ce9edbeef0ba972",
+       "value": "0x27c21324d101e867e0634bf2ebe3f9dcf3aca585",
        "leaked": false
       }
      ],
@@ -920,7 +918,7 @@
       "evidence": [],
       "note": null
      },
-     "matched": null
+     "matched": "PepeIncentives.sol:PepeIncentives"
     },
     {
      "id": "PepeToken",
@@ -1036,7 +1034,7 @@
      "addresses": [
       {
        "key": "EsgRewardDistributor",
-       "address": "0x44a8E5195E168e5AdcCa4343Bd8B399B49D5609F"
+       "address": "0x4C9232eE2caAe2B065eb1Ca9AD966Ef69A0D2433"
       }
      ],
      "status": "equal",
@@ -1262,7 +1260,7 @@
    "name": "Sepolia",
    "role": "legacy 展示鏈（不是產品路徑；合約未做金鑰輪替）",
    "rpc": "https://ethereum-sepolia-rpc.publicnode.com",
-   "block": 11885339,
+   "block": 11959990,
    "components": [
     {
      "id": "PerpetualExchange",
@@ -2246,11 +2244,11 @@
    "id": "signal-api",
    "label": "x402 付費 API（Vercel）",
    "merged": {
-    "pr": 290,
-    "commit": "737d6bf",
-    "date": "2026-10-07"
+    "pr": 299,
+    "commit": "72826e0",
+    "date": "2026-10-11"
    },
-   "sourceDigest": "d2c9b7c758e947db",
+   "sourceDigest": "4bd98553d4fd0361",
    "deployed": "已部署：Vercel 分支網域（agent/sdk/src/signalApi.ts 的 SIGNAL_API_TESTNET_URL）；健康與付費端點狀態由 scripts/post-deploy-smoke.mjs 檢查",
    "acceptance": {
     "status": "部分驗收",
@@ -2266,11 +2264,11 @@
    "id": "keeper",
    "label": "寫價 keeper（GitHub Actions 排程）",
    "merged": {
-    "pr": 288,
-    "commit": "eda801d",
-    "date": "2026-10-07"
+    "pr": 346,
+    "commit": "0a4b5cd",
+    "date": "2026-10-18"
    },
-   "sourceDigest": "623dfbc31b50cb04",
+   "sourceDigest": "628c343187be1268",
    "deployed": "已上線：master 上的 base-sepolia-keeper.yml 排程；最近寫價時間由 scripts/post-deploy-smoke.mjs 讀鏈上 oracle",
    "acceptance": {
     "status": "未驗收",
@@ -2300,11 +2298,11 @@
    "id": "monitoring",
    "label": "鏈上監控 Worker（Cloudflare）",
    "merged": {
-    "pr": 216,
-    "commit": "281102f",
-    "date": "2026-10-02"
+    "pr": 301,
+    "commit": "c7c0b7e",
+    "date": "2026-10-11"
    },
-   "sourceDigest": "ec872ec2ab860ee4",
+   "sourceDigest": "3621d469e2607dd3",
    "deployed": "未部署（ops/monitoring/README.md；2026-10-01 只做過唯讀試跑）",
    "acceptance": {
     "status": "未驗收",

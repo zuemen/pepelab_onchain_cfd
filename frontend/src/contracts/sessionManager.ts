@@ -18,16 +18,17 @@ const ZERO = '0x0000000000000000000000000000000000000000'
 export const SESSION_MANAGER_ADDRESS: Record<number, string> = {
   31337:    ZERO, // Anvil：跑 deploy-anvil.sh 後填入
   11155111: ZERO, // Sepolia：跑 deploy-sepolia.sh 後填入
-  // Base Sepolia. 2026-09-29 切到綁定現行 exchange 的實例：
-  //   0xdF9C…d14B.exchange() == 0x827eA0c62a32e995927101259042F8A27D99124D（addresses.ts
-  //   的 PerpetualExchange），且該 exchange 的 authorizedAgents(0xdF9C…d14B) == true
-  //   （2026-09-29 以唯讀 eth_call 對 sepolia.base.org 核對）。
+  // Base Sepolia. 2026-10-20 #344 cutover 切到綁定新 exchange 的實例：
+  //   0x4875…d2AF.exchange() == 0xbF3074C98e17d88B4127899C98C81AE94c9fC979（addresses.ts
+  //   的 PerpetualExchange），且該 exchange 的 authorizedAgents(0x4875…d2AF) == true
+  //   （Redeploy130Hardened 部署並授權，Verify130 讀回核對）。上一個實例 0xdF9C…d14B（綁 #129 的
+  //   0x827e…）在 cutover 時已於舊 exchange 撤銷授權。
   // 前兩個實例（2026-07-27 部署、帶 per-session 資產白名單的那一顆綁的是舊 exchange
   // 0xEf75ECA6514cE96B18382E921aC6190a0cF8c072，現行 exchange 對它 authorizedAgents == false；
   // 更早的一顆沒有資產白名單）已退役，位址在機器可讀的退役清單
   // ./retiredPlatformAddresses.json（role: AgentSessionManager）。它們的 session 仍可在鏈上讀到。
   // 新實例的 session id 從 0 重新開始。
-  84532:    '0xdF9C1E53523568709f65Afe3C4AD2E6a6D99d14B',
+  84532:    '0x4875966ACA052A38d80ddD2aaE80995A98EAd2AF',
 }
 
 // 租戶隔離：專屬部署的 AgentSessionManager 不得就是平台的那一顆。其餘位址在

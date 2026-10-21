@@ -20,7 +20,6 @@ export const PERPETUAL_EXCHANGE_ABI = parseAbi([
   `function getPosition(uint256 positionId) view returns (${POSITION_TUPLE})`,
   "function getUnrealizedPnL(uint256 positionId) view returns (int256)",
   "function pendingFunding(uint256 positionId) view returns (int256)",
-  "function getAccountHealth(address owner) view returns (int256 equity, uint256 maintenance, bool healthy)",
   "function getFundingRate(bytes32 asset) view returns (int256 rateBps)",
   "function globalLongNotional(bytes32) view returns (uint256)",
   "function globalShortNotional(bytes32) view returns (uint256)",
