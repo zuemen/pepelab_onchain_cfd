@@ -70,12 +70,20 @@
 - `docs/RELEASE_STATUS.md`／`release-status.json` 重跑：Base Sepolia 鏈上＝原始碼 19、指向外洩地址 0。
 - 回放價格表 `heroes/prices/*.csv` 與部署 broadcast 紀錄。
 
+## 合併之後（2026-10-21）
+
+- #360 合併（05:39Z），Vercel 自動部署 Production（`pepelab-onchain-cfd-djot`、`pepelab-onchain-cfd`、`agent`）；線上 bundle 已是新位址。
+- 手動觸發 keeper（05:40Z）：11 個資產全部寫入新 MockOracle `0x9Cf4…deEA`、0 失敗；休市中的股票／債券／ESG 切成 ReduceOnly。
+- #355 合併後重跑 `cutover-344.sh`，第 9 步套用 GameFi 設定（`ConfigurePepeIncentivesGameFi`，4 筆皆成功）：
+  交易挖礦 2%（每倉上限 1,000）、跟單 500、等級 5千/2.5萬/10萬/50萬 → 1千/3千/1萬/4萬，
+  mint 1,000,000 PEPE 進 PepeIncentives（`0x631aeaf5…`）。鏈上讀回相符。
+
 ## 待擁有者
 
-- 合併本 PR 後 Vercel 重新部署前端與 signal-api，照 #322／#323／#324 的清單驗收公開網站
+
+- 照 #322／#323／#324 的清單驗收公開網站
   （BaseScan、KYC 後用新錢包跟單股票交易員、#333 碳權註銷、#334 成就、排行榜載入速度）。
 - 舊 exchange `0x827e…124D` 還有 **500 USDC** 使用者保證金，從 `/legacy` 取回。
-- 合併 #355（GameFi 的 PepeIncentives 設定）後 `git pull`、再跑一次 `cutover-344.sh`，第 9 步答 y 套用設定。
 - **輪替 Alchemy API key**：回放用的 RPC URL（含 key）出現在擁有者的截圖裡。repo 與本紀錄都沒有它。
 - 新 session manager 上還沒有 session：要跑 x402 範例或 demo agent 先用 `create-session.sh` 建一個。
 - 決定是否把新 exchange 等合約移交 timelock（`HandoverToTimelock.s.sol` 的位址常數仍是舊的，移交前要更新）。
