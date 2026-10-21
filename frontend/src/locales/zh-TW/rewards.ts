@@ -45,7 +45,9 @@ export const rewards = {
 
   mining: {
     title: '交易挖礦',
-    description: '每筆開倉可領一次。獎勵 = 名義價值 × 0.5%，封頂 5,000 PEPE。',
+    // 數值是 PepeIncentives 的 owner 參數，從鏈上讀（incentiveParams.ts）；讀不到時用 descriptionGeneric。
+    description: '每筆開倉可領一次。獎勵 = 名義價值 × {pct}%，封頂 {cap} PEPE。',
+    descriptionGeneric: '每筆開倉可領一次，獎勵依名義價值計算。',
     empty: '找不到未平倉部位。',
     position: '部位 #{id}',
     detail: '名義價值：${notional}',
@@ -69,11 +71,13 @@ export const rewards = {
 
   copy: {
     title: '跟單獎勵',
-    description: '跟單成功後，跟單者與被跟單者各領 200 PEPE（每對一次）。',
+    description: '跟單成功後，跟單者與被跟單者各領 {amount} PEPE（每對一次）。',
+    descriptionGeneric: '跟單成功後，跟單者與被跟單者各領一次 PEPE（每對一次）。',
     empty: '找不到進行中的跟單。',
     claimed: '已領取',
-    claim: '200 PEPE',
-    done: '跟單獎勵已領取！雙方各得 200 PEPE 🐸',
+    claim: '{amount} PEPE',
+    claimGeneric: '領取',
+    done: '跟單獎勵已領取！🐸',
   },
 
   checkIn: {

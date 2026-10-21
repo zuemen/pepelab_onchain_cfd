@@ -501,6 +501,18 @@ export default function PepeLabPage() {
           <Typography variant="subtitle2" sx={{ color: 'var(--palette-primary-main)', fontWeight: 'bold' }}>
             {interpolate(t.pepelab.header.balance, { amount: finalPepeBal.toLocaleString() })}
           </Typography>
+          {/* Every tab spends PEPE; this is where it is earned. Without the link a
+              new wallet sits at 0 with nothing on the page saying what to do. */}
+          {FEATURE_PEPE_REWARDS && (
+            <Button
+              component={RouterLink}
+              href={paths.pepefi.rewards}
+              size="small"
+              sx={{ fontWeight: 'bold', textTransform: 'none', minWidth: 0, py: 0 }}
+            >
+              {t.pepelab.header.earn}
+            </Button>
+          )}
         </Box>
       </Box>
 
@@ -557,14 +569,16 @@ export default function PepeLabPage() {
         </Box>
       </Box>
 
-      {/* 🐸 Evolution roadmap — Lv.0 蛙蛋 → Lv.6 蛙神 */}
+      {/* 🐸 Evolution roadmap — 蛙蛋 (Lv.1) → 蛙神 (Lv.30). "Lv." here is always the
+          player level; the stage index used to be printed as "Lv.0…6" right
+          next to the real level, so the header said Lv.1 and the tree Lv.0. */}
       {/* No borderTop: the hero above already draws the dividing line. */}
       <Box sx={{ px: 3, py: 2, background: `linear-gradient(180deg, ${evoStage.color}0f 0%, transparent 100%)` }}>
         <Stack direction="row" alignItems="center" justifyContent="space-between" flexWrap="wrap" gap={1} sx={{ mb: 1.5 }}>
           <Typography variant="caption" sx={{ fontWeight: 'bold', color: 'text.secondary' }}>
             {t.pepelab.roadmap.heading}{' '}
             <Box component="span" sx={{ color: evoStage.color, fontWeight: 900 }}>
-              Lv.{evoStage.stage} {evoStage.label} {evoStage.emoji}
+              {evoStage.label} {evoStage.emoji}
             </Box>
           </Typography>
           <Typography variant="caption" sx={{ color: nextEvo ? '#ffb300' : 'var(--palette-primary-main)', fontWeight: 'bold' }}>
@@ -590,7 +604,7 @@ export default function PepeLabPage() {
                 )}
                 <Box
                   title={interpolate(t.pepelab.roadmap.tileTooltip, {
-                    stage: s.stage,
+                    level: s.minLevel,
                     label: s.label,
                     desc: s.desc,
                   })}
@@ -610,7 +624,7 @@ export default function PepeLabPage() {
                   </Typography>
                   <Typography variant="caption" sx={{ display: 'block', fontSize: '0.6rem', color: isCurrent ? s.color : 'text.secondary' }}>
                     {reached
-                      ? interpolate(t.pepelab.roadmap.tileReached, { stage: s.stage })
+                      ? interpolate(t.pepelab.roadmap.tileReached, { level: s.minLevel })
                       : interpolate(t.pepelab.roadmap.tileLocked, { level: s.minLevel })}
                   </Typography>
                 </Box>
@@ -691,7 +705,7 @@ export default function PepeLabPage() {
                 {activeMountObj.emoji} {activeMountObj.name}
               </Typography>
               <Typography variant="body2" color="text.secondary" sx={{ mb: 2.5, lineHeight: 1.6 }}>
-                {activeMountObj.desc}{t.pepelab.markup.currentMountBefore}<strong>{t.pepelab.markup.currentMountStrongPrefix}{level}{t.pepelab.markup.currentMountStrongMid}{evoStage.stage} {evoStage.label} {evoStage.emoji}</strong>{t.pepelab.markup.currentMountAfter}
+                {activeMountObj.desc}{t.pepelab.markup.currentMountBefore}<strong>{t.pepelab.markup.currentMountStrongPrefix}{level}{t.pepelab.markup.currentMountStrongMid}{evoStage.label} {evoStage.emoji}</strong>{t.pepelab.markup.currentMountAfter}
               </Typography>
               <Stack direction="row" spacing={1.5} flexWrap="wrap" useFlexGap>
                 <Box sx={{ bgcolor: 'rgba(255,255,255,0.04)', px: 2.5, py: 1, borderRadius: 1.5, border: '1px solid rgba(255,255,255,0.06)', minWidth: 120 }}>

@@ -11,10 +11,10 @@ export const pepelab = {
   },
 
   toast: {
-    insufficientPepe: 'PEPE 餘額不足。可到 Rewards 頁面簽到或交易挖礦取得更多。',
+    insufficientPepe: 'PEPE 餘額不足。可到 Rewards 頁面簽到，或用交易挖礦、等級獎勵等平台獎勵取得更多。',
     /** 還不知道簽到發不發 PEPE 時：只指向交易挖礦。 */
-    insufficientPepeUnknown: 'PEPE 餘額不足。可到 Rewards 頁面以交易挖礦取得更多。',
-    insufficientPepeNoCheckIn: 'PEPE 餘額不足。可到 Rewards 頁面以交易挖礦取得更多（每日簽到改記成就點數，不發 PEPE）。',
+    insufficientPepeUnknown: 'PEPE 餘額不足。可到 Rewards 頁面用交易挖礦、等級獎勵等平台獎勵取得更多。',
+    insufficientPepeNoCheckIn: 'PEPE 餘額不足。可到 Rewards 頁面用交易挖礦、等級獎勵等平台獎勵取得更多（每日簽到改記成就點數，不發 PEPE）。',
     txCancelled: '鏈上交易已取消或扣款失敗，未扣除任何 PEPE。',
     mountLocked: '此坐騎需 Pepe 等級 Lv.{level} 解鎖，目前 Lv.{current}。',
     gachaInsufficientPepe: 'PEPE 餘額不足，抽取一次需要 {cost} PEPE。',
@@ -40,15 +40,17 @@ export const pepelab = {
     title: 'Pepe GameFi & MemeFi 實驗室 🧪',
     subtitle: 'DeFi · SocialFi · GameFi · MemeFi 一體化升級中心',
     balance: '💰 餘額: {amount} PEPE',
+    /** 餘額旁的入口：PEPE 是在 /rewards 用平台功能賺的。 */
+    earn: '賺 PEPE →',
   },
 
   roadmap: {
     heading: '🐸 佩佩蛙進化樹 · 目前',
     nextStage: '⚡ 再升 {levels} 級 (Lv.{level}) 即可進化為 {label} {emoji}',
     maxStage: '🏆 已進化至最終形態 蛙神 🌌',
-    tileReached: 'Lv.{stage}',
+    tileReached: 'Lv.{level}',
     tileLocked: '需 Lv.{level}',
-    tileTooltip: 'Lv.{stage} {label} — {desc}',
+    tileTooltip: '{label}（Lv.{level} 起）— {desc}',
   },
 
   tab: {
@@ -139,7 +141,7 @@ export const pepelab = {
   markup: {
     currentMountBefore: ' 目前您已達到了 ',
     currentMountStrongPrefix: 'Lv. ',
-    currentMountStrongMid: ' · 進化型態 Lv.',
+    currentMountStrongMid: ' · 進化型態 ',
     currentMountAfter: ' 的尊貴段位。',
 
     nextUnlockBefore: '距離解鎖下一隻坐騎 ',

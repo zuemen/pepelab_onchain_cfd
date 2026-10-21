@@ -32,7 +32,7 @@
   },
   "features": {
     "gamefi": { "allowed": true, "default": true },
-    "pepeRewards": { "allowed": true, "default": false },
+    "pepeRewards": { "allowed": true, "default": true },
     "copyTrading": { "allowed": true, "default": true },
     "showLeverage": { "allowed": true, "default": true },
     "showPerpetuals": { "allowed": true, "default": true }

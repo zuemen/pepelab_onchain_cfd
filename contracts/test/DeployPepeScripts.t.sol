@@ -4,6 +4,7 @@ pragma solidity ^0.8.20;
 import "forge-std/Test.sol";
 import "../script/DeployPepeIncentives.s.sol";
 import "../script/DeployAMM.s.sol";
+import "../script/ConfigurePepeIncentivesGameFi.s.sol";
 import "../src/MockOracle.sol";
 import "../src/PepeToken.sol";
 
@@ -84,5 +85,39 @@ contract DeployPepeScriptsTest is Test {
         PepeAMM atOracle = s.run();
         assertEq(atOracle.usdcReserve(), 2_697.57e18, "seed = SEED_ETH x oracle price");
         assertEq(atOracle.getPrice(), 2_697.57e18, "opens at the oracle");
+    }
+
+    /// @dev runWith, not run: no process-wide env, so it cannot race the tests above.
+    function test_gameFiConfig_setsRewardValues_andMintsOnlyTheShortfall() public {
+        vm.startPrank(deployer);
+        PepeToken pepe = new PepeToken();
+        PepeIncentives inc = new PepeIncentives(address(pepe), address(new MockUSDC()), address(new MockUSDC()), address(0));
+        vm.stopPrank();
+
+        ConfigurePepeIncentivesGameFi s = new ConfigurePepeIncentivesGameFi();
+
+        s.setBroadcasterOverride(stranger);
+        vm.expectRevert(bytes("the broadcaster does not own PEPE_INCENTIVES"));
+        s.runWith(address(pepe), address(inc), 1_000_000e18);
+
+        s.setBroadcasterOverride(deployer);
+        address otherToken = address(new PepeToken());
+        vm.expectRevert(bytes("PEPE_INCENTIVES pays a different token"));
+        s.runWith(otherToken, address(inc), 1_000_000e18);
+
+        uint256 supply = pepe.totalSupply();
+        s.runWith(address(pepe), address(inc), 1_000_000e18);
+        assertEq(inc.tradeMiningBps(), 200);
+        assertEq(inc.tradeMiningCap(), 1_000e18);
+        assertEq(inc.copyReward(), 500e18);
+        assertEq(inc.tierThresholds(0), 5_000e18);
+        assertEq(inc.tierThresholds(3), 500_000e18);
+        assertEq(inc.tierRewards(0), 1_000e18);
+        assertEq(inc.tierRewards(3), 40_000e18);
+        assertEq(pepe.balanceOf(address(inc)), 1_000_000e18, "pool minted");
+        assertEq(pepe.totalSupply(), supply + 1_000_000e18, "minted, not moved from the deployer");
+
+        s.runWith(address(pepe), address(inc), 1_000_000e18);
+        assertEq(pepe.balanceOf(address(inc)), 1_000_000e18, "a re-run tops up, it does not double");
     }
 }

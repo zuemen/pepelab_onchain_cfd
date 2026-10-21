@@ -226,7 +226,7 @@ same() { [[ "$(lower "$1")" == "$(lower "$2")" ]]; }
 load() { local v; v=$(_existing "$1" || true); printf -v "$1" '%s' "$v"; }
 for k in ACCOUNT GUARDIAN HEROES_RPC_URL PY EXCHANGE_NEW COPYTRACKER_NEW STRATEGY_REGISTRY_NEW SESSION_MANAGER_NEW \
          TRADER_STAKE ORACLE_NEW VERIFIED_130 PLATFORM_FEE_SPLITTER CARBON_RETIREMENT INSURANCE_VAULT_NEW FEE_ROUTER_NEW \
-         COPYTRACKER_FINAL FOLLOWUPS_SENT PEPE_INCENTIVES ESG_REWARD_DISTRIBUTOR REPLAY_DONE ANALYTICS_DONE ORACLE_HANDED_OVER; do
+         COPYTRACKER_FINAL FOLLOWUPS_SENT PEPE_INCENTIVES PEPE_GAMEFI_CONFIGURED ESG_REWARD_DISTRIBUTOR REPLAY_DONE ANALYTICS_DONE ORACLE_HANDED_OVER; do
   load "$k"
 done
 
@@ -468,6 +468,20 @@ fi
 same "$(call "$PEPE_INCENTIVES" 'exchange()(address)')" "$EXCHANGE_NEW" || die "PepeIncentives 沒綁新交易所"
 same "$(call "$ESG_REWARD_DISTRIBUTOR" 'exchange()(address)')" "$EXCHANGE_NEW" || die "EsgRewardDistributor 沒綁新交易所"
 ok "兩個合約都綁新交易所"
+# GameFi 的獎勵數值與 PEPE 獎勵池（2026-10-20 決定，數值見 ConfigurePepeIncentivesGameFi.s.sol）。
+# 獎勵池用 mint：舊的 0xEBfA… 屬於 0x858b…，部署者提不出那裡的 PEPE。
+if [[ -z "$PEPE_GAMEFI_CONFIGURED" ]]; then
+  say "設定 GameFi 獎勵數值（交易挖礦 2%、每倉上限 1,000；跟單 500；等級 5千/2.5萬/10萬/50萬 → 1千/3千/1萬/4萬），"
+  say "並 mint 1,000,000 PEPE 進 PepeIncentives 當獎勵池。"
+  confirm "設定並注資？" || die "沒有設定"
+  export PEPE_TOKEN PEPE_INCENTIVES
+  forge_broadcast 6b-pepe-gamefi.log ConfigurePepeIncentivesGameFi.s.sol:ConfigurePepeIncentivesGameFi || die "設定失敗，見 $LOGS/6b-pepe-gamefi.log"
+  write_env PEPE_GAMEFI_CONFIGURED "yes"
+else
+  ok "GameFi 獎勵數值已設定"
+fi
+[[ "$(call "$PEPE_INCENTIVES" 'tradeMiningBps()(uint256)')" == "200" ]] || die "PepeIncentives 的交易挖礦不是 2%"
+ok "GameFi 獎勵數值與獎勵池就緒"
 pause
 
 # ── 10 ───────────────────────────────────────────────────────────────────

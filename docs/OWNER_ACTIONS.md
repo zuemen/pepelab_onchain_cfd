@@ -544,7 +544,11 @@ EsgRewardDistributor、回放、分析、oracle 交給 keeper。每一步先說�
    回放的 2024 年價格寫在那裡，不碰共用的 `0xeD90…`。另外 **OI 上限要容得下回放**：本機完整回放裡單一資產單邊的名目最高約
    69,000（sBOND），帶 `OI_CAP_NON_RWA_USDC=250000 OI_CAP_RWA_USDC=250000`（預設的保險金庫倍數算法上限只有 50,000，
    RWA 再減半，回放的開倉會被擋）。驗證：`Verify130` 加 `ORACLE_KIND=fresh ORACLE_NEW=<broadcast 印出的值>`。
-2. 第 4 項（#333 的分流合約、平台 FeeRouter）與第 5 項（PepeIncentives）照常；**EsgRewardDistributor** 也綁新 exchange
+2. 第 4 項（#333 的分流合約、平台 FeeRouter）與第 5 項（PepeIncentives）照常；PepeIncentives 部署後腳本接著跑
+   `ConfigurePepeIncentivesGameFi`：把獎勵數值設成 GameFi 用的（交易挖礦 2%、每倉上限 1,000；跟單 500；等級
+   5千/2.5萬/10萬/50萬 → 1千/3千/1萬/4萬，2026-10-20 決定），並 mint 1,000,000 PEPE 進獎勵池（舊的 `0xEBfA…`
+   屬於 `0x858b…`，部署者提不出那裡的 PEPE）。cutover 之後的 PR 要把新的 PepeIncentives 寫進 `addresses.ts`；
+**EsgRewardDistributor** 也綁新 exchange
    （`Deploy102RewardDistributor`，`DEPLOY_130_CUTOVER.md` §7 第 8 項）。回放要在第 4 項的 `executeBatch` **之後**跑，
    跟單費才會進分流合約、每個模擬月份才有退役。
 3. **回放在治理 phase 2（HandoverToTimelock）之前跑**，或部署者多準備約 0.3 ETH：回放開倉付的執行費（全程約 2,500 筆 ×

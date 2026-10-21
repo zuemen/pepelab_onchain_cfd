@@ -12,9 +12,9 @@ export const pepelab: Catalog['pepelab'] = {
   },
 
   toast: {
-    insufficientPepe: 'Not enough PEPE. Check in or trade-mine on the Rewards page to get more.',
-    insufficientPepeUnknown: 'Not enough PEPE. Trade-mine on the Rewards page to get more.',
-    insufficientPepeNoCheckIn: 'Not enough PEPE. Trade-mine on the Rewards page to get more (daily check-in now records achievement points, not PEPE).',
+    insufficientPepe: 'Not enough PEPE. Check in on the Rewards page, or earn more there from trade mining, tier and other platform rewards.',
+    insufficientPepeUnknown: 'Not enough PEPE. Earn more on the Rewards page from trade mining, tier and other platform rewards.',
+    insufficientPepeNoCheckIn: 'Not enough PEPE. Earn more on the Rewards page from trade mining, tier and other platform rewards (daily check-in now records achievement points, not PEPE).',
     txCancelled: 'The on-chain transaction was cancelled or failed — no PEPE was deducted.',
     mountLocked: "This mount unlocks at Pepe level Lv.{level} — you're currently Lv.{current}.",
     gachaInsufficientPepe: 'Not enough PEPE — one draw costs {cost} PEPE.',
@@ -42,15 +42,17 @@ export const pepelab: Catalog['pepelab'] = {
     title: 'Pepe GameFi & MemeFi Lab 🧪',
     subtitle: 'DeFi · SocialFi · GameFi · MemeFi, all in one growth hub',
     balance: '💰 Balance: {amount} PEPE',
+    /** Next to the balance: PEPE is earned on /rewards by using the platform. */
+    earn: 'Earn PEPE →',
   },
 
   roadmap: {
     heading: '🐸 Pepe Evolution Tree · Current',
     nextStage: '⚡ Level up {levels} more (Lv.{level}) to evolve into {label} {emoji}',
     maxStage: '🏆 Evolved to the final form — Lord 🌌',
-    tileReached: 'Lv.{stage}',
+    tileReached: 'Lv.{level}',
     tileLocked: 'Requires Lv.{level}',
-    tileTooltip: 'Lv.{stage} {label} — {desc}',
+    tileTooltip: '{label} (from Lv.{level}) — {desc}',
   },
 
   tab: {
@@ -142,7 +144,7 @@ export const pepelab: Catalog['pepelab'] = {
   markup: {
     currentMountBefore: ' You have reached the rank of ',
     currentMountStrongPrefix: 'Lv. ',
-    currentMountStrongMid: ' · Evolution Lv.',
+    currentMountStrongMid: ' · Evolution ',
     currentMountAfter: '.',
 
     nextUnlockBefore: 'Next mount to unlock: ',
