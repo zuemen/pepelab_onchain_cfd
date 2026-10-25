@@ -142,16 +142,21 @@ export default function Podium({
             </Typography>
           </Box>
         </Box>
-        <Typography sx={{ fontSize: '1.375rem', lineHeight: 1, flexShrink: 0 }} title={`#${rank}`}>
+        {/* 獎牌是一眼分出名次的唯一記號，要比頭貼還大。 */}
+        <Typography sx={{ fontSize: '2.5rem', lineHeight: 1, flexShrink: 0 }} title={`#${rank}`}>
           {MEDALS[rank - 1]}
         </Typography>
       </Box>
 
-      {/* 策略配置:這個人押什麼、做多還做空——卡片的主角。ESG 評等接在後面,
-          跟表格「策略」欄的排法一致。 */}
+      {/* 策略配置:這個人押什麼、做多還做空——卡片的主角。 */}
       {/* 疊在卡片連結上面：圖示的提示（資產名稱、權重）要能滑鼠移上去看。 */}
-      <Box sx={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 1, position: 'relative', zIndex: 1, alignSelf: 'flex-start' }}>
+      <Box sx={{ position: 'relative', zIndex: 1, alignSelf: 'flex-start' }}>
         <AllocationRow allocs={trader.allocs} hasStrategy={trader.hasStrategy} size={26} />
+      </Box>
+
+      {/* ESG 評等獨立一行，而且沒有評等時也留著這一行的高度：接在資產圖示後面的話，
+          資產多的那張會被擠到換行，三張卡片下面的數字就對不齊。 */}
+      <Box sx={{ minHeight: 24, display: 'flex', alignItems: 'center', position: 'relative', zIndex: 1, alignSelf: 'flex-start' }}>
         {esg && <ESGBadge composite={esg.composite} rating={esg.rating} size="sm" />}
       </Box>
 
@@ -214,6 +219,7 @@ export default function Podium({
         </Typography>
       </Box>
 
+      {/* mt: auto 把按鈕推到卡片底部：三張卡片等高，按鈕也排在同一條線上。 */}
       {trader.hasStrategy ? (
         <Button
           fullWidth
@@ -222,7 +228,7 @@ export default function Podium({
           color="primary"
           component={RouterLink}
           to={`/copy/${trader.address}`}
-          sx={{ textTransform: 'none', fontWeight: 'bold', fontSize: '0.75rem', position: 'relative', zIndex: 1 }}
+          sx={{ mt: 'auto', textTransform: 'none', fontWeight: 'bold', fontSize: '0.75rem', position: 'relative', zIndex: 1 }}
         >
           {t.marketplace.card.copy}
         </Button>
@@ -232,7 +238,7 @@ export default function Podium({
           disabled
           variant="contained"
           size="small"
-          sx={{ textTransform: 'none', fontWeight: 'bold', fontSize: '0.75rem' }}
+          sx={{ mt: 'auto', textTransform: 'none', fontWeight: 'bold', fontSize: '0.75rem' }}
         >
           {t.marketplace.card.noStrategyButton}
         </Button>

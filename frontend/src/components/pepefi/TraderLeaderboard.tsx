@@ -20,7 +20,6 @@ import AllocationRow from 'src/components/pepefi/AllocationRow';
 import Podium from 'src/components/pepefi/Podium';
 import ScoreBreakdownPopover from 'src/components/pepefi/ScoreBreakdownPopover';
 import { traderAvatarSrc } from 'src/utils/pepefi-assets';
-import TraderRankBadge from 'src/components/pepefi/TraderRankBadge';
 import { t, interpolate } from 'src/locales';
 import { heroDisclosure } from 'src/lib/pepefi/heroDisclosure';
 import {
@@ -765,8 +764,8 @@ export default function TraderLeaderboard() {
                               '& .MuiAvatar-img': { objectFit: 'contain', padding: '2px' },
                             }}
                           />
-                          {/* 名稱、地址、RANK 徽章各自獨立一行——固定寬度的 sticky 欄位裡沒有
-                              足夠的水平空間讓地址跟徽章擠在同一行,用垂直空間換,不硬疊。 */}
+                          {/* 名稱、地址各自獨立一行。聲譽徽章拿掉了：TraderScore 欄已經把聲譽算進去，
+                              這裡再放一次只是重複，而且多數人是「—」。 */}
                           <Box sx={{ minWidth: 0, overflow: 'hidden' }}>
                             <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
                               <Link
@@ -797,9 +796,6 @@ export default function TraderLeaderboard() {
                             >
                               {shortAddr(trader.address)}
                             </Typography>
-                            <Box sx={{ mt: 0.25 }}>
-                              <TraderRankBadge reputation={trader.reputation} />
-                            </Box>
                           </Box>
                         </Box>
                       </TableCell>
