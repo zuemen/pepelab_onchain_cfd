@@ -18,7 +18,7 @@ type Contracts = any
 
 /**
  * 回溯多少個 block。Base Sepolia 約 2 秒一個 block，5000 ≈ 2.8 小時。
- * 公開節點單次 getLogs 只接受 1,000 塊（chainLogs.ts 實測），所以走分段掃描；
+ * 公開節點單次 getLogs 只接受 201 塊（chainLogs.ts 實測），所以走分段掃描；
  * 以前單發 5,000 塊的 queryFilter 在公開節點上必定失敗。
  */
 const FETCH_BLOCKS = 5_000

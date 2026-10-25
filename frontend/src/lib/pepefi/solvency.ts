@@ -4,8 +4,8 @@
 // getUnrealizedPnL，與 useMarketActivity 同一種讀法）、保險金庫 totalAssets、ADL 開關、
 // AssetVaultV2 的 reserveStatus。任何一項讀不到都是「讀取失敗」，不是 0。
 //
-// 準備率歷史讀 AssetVaultV2 的 ReserveObserved 事件。2026-10-06 實測公開節點
-// sepolia.base.org 的 eth_getLogs 上限是 500 塊；分段（chainLogs.CHUNK_SIZE）、重試與
+// 準備率歷史讀 AssetVaultV2 的 ReserveObserved 事件。2026-10-25 實測公開節點
+// sepolia.base.org 的 eth_getLogs 上限是 201 塊；分段（chainLogs.CHUNK_SIZE）、重試與
 // 「範圍太大自動對半」都交給 chainLogs 的 getLogsChunkedDetailed，並限制總段數。
 
 import type { Reading, FnSupport } from './contractProbe'
@@ -266,9 +266,9 @@ export function buildWaterfall(s: SolvencySnapshot): WaterfallLayer[] {
 
 // ── 準備率歷史 ───────────────────────────────────────────────────────────────
 
-/** 每段塊數＝chainLogs 的預設段長（公開節點上限 500 塊，留餘裕）。 */
+/** 每段塊數＝chainLogs 的預設段長（公開節點上限 201 塊）。 */
 export const HISTORY_CHUNK = CHUNK_SIZE
-/** Base Sepolia 約 2 秒一塊：24 小時 ≈ 43,200 塊 ≈ 108 段（≤ MAX_CHUNKS）。 */
+/** Base Sepolia 約 2 秒一塊：24 小時 ≈ 43,200 塊 ≈ 216 段（≤ MAX_CHUNKS）。 */
 export const HISTORY_WINDOW_BLOCKS = 43_200
 export const HISTORY_MAX_CHUNKS = MAX_CHUNKS
 

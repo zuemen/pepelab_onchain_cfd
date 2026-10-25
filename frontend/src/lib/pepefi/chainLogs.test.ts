@@ -18,6 +18,7 @@ import {
   scanContractEventsStrict,
   MEASURED_GETLOGS_MAX_BLOCKS,
   isRangeLimitError,
+  rangeLimitFromError,
   UI_RETRIES,
   isChunkScanAborted,
   ChunkScanAbortedError,
@@ -239,13 +240,17 @@ describe('describeScanWindow', () => {
 })
 
 describe('CHUNK_SIZE 對齊實測上限', () => {
-  it('每段塊數不超過實測上限的約八成（2026-10-06 sepolia.base.org = 501 塊）', () => {
-    expect(MEASURED_GETLOGS_MAX_BLOCKS).toBe(501)
-    expect(CHUNK_SIZE).toBeLessThanOrEqual(Math.ceil(MEASURED_GETLOGS_MAX_BLOCKS * 0.8))
+  it('每段塊數不超過實測上限（2026-10-25 sepolia.base.org = 201 塊）', () => {
+    expect(MEASURED_GETLOGS_MAX_BLOCKS).toBe(201)
+    expect(CHUNK_SIZE).toBeLessThan(MEASURED_GETLOGS_MAX_BLOCKS)
     for (const [from, to] of chunkRanges(47_000_000, 47_050_000)) {
-      // 節點看的是 toBlock − fromBlock ≤ 500
-      expect(to - from).toBeLessThan(MEASURED_GETLOGS_MAX_BLOCKS - 1)
+      // 節點看的是 toBlock − fromBlock ≤ 200
+      expect(to - from).toBeLessThanOrEqual(MEASURED_GETLOGS_MAX_BLOCKS - 1)
     }
+  })
+
+  it('預設 24 小時視窗在 Base 上不會被 MAX_CHUNKS 截短', () => {
+    expect(MAX_CHUNKS * CHUNK_SIZE).toBeGreaterThanOrEqual(blocksForSeconds(84532, DEFAULT_SCAN_WINDOW_SEC))
   })
 })
 
@@ -458,11 +463,72 @@ describe('節點範圍上限變動時的自動對半切開', () => {
     for (const l of r.logs) expect(l.to - l.from).toBeLessThanOrEqual(100)
   })
 
-  it('預設段長在 2026-10-06 的 500 上限下不需要切開', async () => {
-    const node = limitedNode(500)
+  it('預設段長在 2026-10-25 的 200 上限下不需要切開（一次 413 都沒有）', async () => {
+    const node = limitedNode(200)
     const r = await getLogsChunkedDetailed(node, {}, 0, CHUNK_SIZE * 3 - 1)
     expect(r.failedChunks).toBe(0)
     expect(node.getLogs).toHaveBeenCalledTimes(3)
+  })
+
+  it('撞到上限後，同一趟掃描接下來的段直接用學到的段長，不再每段先吃一次 413', async () => {
+    const node = limitedNode(100)
+    const r = await getLogsChunkedDetailed(node, {}, 0, 1_599, { chunkSize: 400 })
+    expect(r.failedChunks).toBe(0)
+    expect(r.totalChunks).toBe(4)
+    const rejected = node.getLogs.mock.calls.filter(([f]) => f.toBlock - f.fromBlock > 100)
+    expect(rejected).toHaveLength(1) // 只有第一段的第一次
+    expect(node.getLogs).toHaveBeenCalledTimes(1 + 16) // 之後全是 100 塊一段
+    for (let i = 1; i < r.logs.length; i++) expect(r.logs[i].from).toBe(r.logs[i - 1].to + 1)
+  })
+
+  it('錯誤沒講上限時對半切，學到的段長一樣沿用到後面的段', async () => {
+    const node = {
+      getLogs: vi.fn(async (f: { fromBlock: number; toBlock: number }) => {
+        if (f.toBlock - f.fromBlock >= 100) throw new Error('block range is too large')
+        return [{ from: f.fromBlock, to: f.toBlock }]
+      }),
+    }
+    const r = await getLogsChunkedDetailed(node, {}, 0, 1_599, { chunkSize: 400 })
+    expect(r.failedChunks).toBe(0)
+    const rejected = node.getLogs.mock.calls.filter(([f]) => f.toBlock - f.fromBlock >= 100)
+    expect(rejected).toHaveLength(2) // 400 → 200 → 100，之後的段直接 100
+  })
+
+  it('範圍錯誤不走退避重試：重送同一個範圍只會再被拒', async () => {
+    const p = { getLogs: vi.fn(async () => { throw new Error('eth_getLogs is limited to a 0 range') }) }
+    const noRetry = await getLogsChunkedDetailed(p, {}, 0, 7, { chunkSize: 8, retryDelayMs: 0 })
+    const callsWithoutRetry = p.getLogs.mock.calls.length
+    p.getLogs.mockClear()
+    const withRetry = await getLogsChunkedDetailed(p, {}, 0, 7, { chunkSize: 8, retries: UI_RETRIES, retryDelayMs: 0 })
+    expect(noRetry.failedChunks).toBe(1)
+    expect(withRetry.failedChunks).toBe(1)
+    expect(p.getLogs.mock.calls.length).toBe(callsWithoutRetry)
+  })
+
+  it('經過 MetaMask 的範圍錯誤（-32603 包住、原文在 data）也認得，並讀出上限', () => {
+    const viaWallet = {
+      code: 'UNKNOWN_ERROR',
+      error: {
+        code: -32603,
+        message: 'Internal JSON-RPC error.',
+        data: { code: -32614, message: 'eth_getLogs is limited to a 200 range' },
+      },
+    }
+    expect(isRangeLimitError(viaWallet)).toBe(true)
+    expect(rangeLimitFromError(viaWallet)).toBe(200)
+    expect(isRangeLimitError({ error: { code: -32603, message: 'Internal JSON-RPC error.', data: { cause: { message: 'Non-200 status code: 413' } } } })).toBe(true)
+    expect(isRangeLimitError({ error: { code: -32603, message: 'Internal JSON-RPC error.', data: { httpStatus: 413 } } })).toBe(true)
+    // 錢包包起來的 429 仍是暫時性錯誤
+    expect(isRangeLimitError({ error: { code: -32603, message: 'Internal JSON-RPC error.', data: { message: '25/second request limit reached' } } })).toBe(false)
+  })
+
+  it('rangeLimitFromError 讀出訊息裡的上限，沒有數字就是 undefined', () => {
+    expect(rangeLimitFromError(new Error('eth_getLogs is limited to a 200 range'))).toBe(200)
+    expect(rangeLimitFromError(new Error('eth_getLogs is limited to a 1,000 range'))).toBe(1_000)
+    expect(rangeLimitFromError({ info: { error: { message: 'query exceeds max block range 2000' } } })).toBe(2_000)
+    expect(rangeLimitFromError(new Error('block range is too large'))).toBeUndefined()
+    expect(rangeLimitFromError(new Error('eth_getLogs is limited to a 0 range'))).toBeUndefined()
+    expect(rangeLimitFromError(new Error('429 Too Many Requests'))).toBeUndefined()
   })
 
   it('chunkSize 可由呼叫端覆寫（queryLogsChunked 的 run 參數也吃得到）', async () => {
