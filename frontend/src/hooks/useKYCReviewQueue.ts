@@ -31,9 +31,9 @@ export type { ReviewBucket }
 
 /** 審核佇列的回看視窗：7 天。 */
 const KYC_SCAN_WINDOW_SEC = 7 * 24 * 3600;
-/** 7 天 ÷ 2 秒 ÷ CHUNK_SIZE(400) ≈ 756 段；留一點餘裕（2026-10-06 節點上限降為 500 塊後段長減半）。 */
-const KYC_SCAN_MAX_CHUNKS = 800;
-/** 378 段序列要一分半；併發 3 實測約 40 秒（同樣 7 天視窗的排行榜掃描）。 */
+/** 7 天 ÷ 2 秒 ÷ CHUNK_SIZE(200) = 1,512 段；留一點餘裕（2026-10-25 節點上限降為 200 塊後段長再減半）。 */
+const KYC_SCAN_MAX_CHUNKS = 1_600;
+/** 併發 3；每次往返約 0.5 秒（2026-10-25 實測），1,512 段約五分鐘（有進度條）。 */
 const KYC_SCAN_CONCURRENCY = 3;
 
 export interface ReviewApplication {
@@ -102,7 +102,7 @@ export function useKYCReviewQueue(
       if (isStale()) return;
 
       // 審核佇列刻意維持 7 天視窗（全站預設已降為 24 小時）：漏掉一段就是漏掉一位
-      // 申請人。公開節點 getLogs 上限 1,000 塊，7 天在 Base 上約 378 段，較慢但有進度條。
+      // 申請人。公開節點 getLogs 上限 201 塊，7 天在 Base 上約 1,512 段，較慢但有進度條。
       const from = scanFromBlock({
         chainId,
         currentBlock: latest,

@@ -39,7 +39,7 @@ export const DEFAULT_AVG_BLOCK_TIME = 12
  *
  * 2026-09-29 以前是 7 天——但公開節點的 getLogs 範圍上限只有數百到一千塊（見
  * MEASURED_GETLOGS_MAX_BLOCKS），7 天在 Base Sepolia 是 302,400 塊，分段數不可行。
- * 24 小時 = 43,200 塊 = 108 段（CHUNK_SIZE 400），落在 MAX_CHUNKS 之內。
+ * 24 小時 = 43,200 塊 = 216 段（CHUNK_SIZE 200），落在 MAX_CHUNKS 之內。
  */
 export const DEFAULT_SCAN_WINDOW_SEC = 24 * 3600
 
@@ -62,26 +62,37 @@ export const DEFAULT_SCAN_WINDOW_SEC = 24 * 3600
  * 失敗，錯誤 -32614 "eth_getLogs is limited to a 500 range"。原本 800 塊一段在這個
  * 節點上每一段都被拒。節點會再調整，所以除了把預設段長降下來，scanChunks 也會在
  * 收到這類「範圍太大」的錯誤時把那一段對半切開重試（isRangeLimitError）。
+ *
+ * 2026-10-25 再實測（同一節點，curl，toBlock = 最新塊 − 10，約 50,065,551）：上限**降為
+ * 200**。201 塊（toBlock − fromBlock = 200）成功，202 塊失敗，HTTP 413、錯誤 -32614
+ * "eth_getLogs is limited to a 200 range"。400 塊一段在這個節點上每一段都先吃一次 413、
+ * 再切成兩段重抓——個人頁上約三分之一的 getLogs 是 413。
  */
-export const MEASURED_GETLOGS_MAX_BLOCKS = 501
+export const MEASURED_GETLOGS_MAX_BLOCKS = 201
 
 /**
- * 單次 getLogs 的塊數（閉區間含頭尾）。取實測上限的約八成，給不同 RPC 後端或
- * 節點日後調整留餘裕。改這個值之前請重新實測，並更新上面的常數與日期。
- * 個別呼叫可用 ChunkScanOptions.chunkSize 覆寫；節點上限再往下調時，
- * 「範圍太大」的錯誤會自動對半切開重試，不必等這個常數更新。
+ * 單次 getLogs 的塊數（閉區間含頭尾）。貼著實測上限（201 塊）只留一塊，不再取八成：
+ * 段長每縮一成，同一個視窗就多一成的 getLogs，而全站讀取共用每秒 20 筆的額度。
+ * 節點上限再往下調時不靠這裡的餘裕——「範圍太大」的錯誤會切開重抓，而且同一趟掃描
+ * 接下來的段都改用學到的段長（見 fetchRangeAdaptive），不必等這個常數更新。
+ * 改這個值之前請重新實測，並更新上面的常數與日期。
+ * 個別呼叫可用 ChunkScanOptions.chunkSize 覆寫。
  */
-export const CHUNK_SIZE = 400
+export const CHUNK_SIZE = 200
 
 /**
  * 一次掃描最多切幾段。就算視窗算出來很大，也不讓頁面送出上百次 RPC；
  * 超過就從尾端截斷（保留最新的區塊，那才是使用者在看的東西）。
  *
- * 以 CHUNK_SIZE = 400 計，110 段 = 44,000 塊 ≈ Base Sepolia 上 24.4 小時，
- * 足以涵蓋 DEFAULT_SCAN_WINDOW_SEC（24 小時）。總塊數與段長 800 時的 60 段相當。
+ * 以 CHUNK_SIZE = 200 計，220 段 = 44,000 塊 ≈ Base Sepolia 上 24.4 小時，
+ * 足以涵蓋 DEFAULT_SCAN_WINDOW_SEC（24 小時）。總塊數與段長 400 時的 110 段相同；
+ * 請求數是兩倍，但比 400 塊一段時實際送出的少（那時每段是一次 413 加兩次重抓，共 330 次）。
+ * 2026-10-25 對 sepolia.base.org 實測 24 小時（217 段）：併發 3 約 41 秒，218 次請求全部
+ * HTTP 200、0 段失敗。瓶頸是每次往返約 0.5 秒，不是每秒 20 筆的讀取額度；序列（預設
+ * concurrency 1）約兩分鐘——仍比 400 塊一段、每段三次往返時快。
  * 呼叫端以 describeScanWindow 把實際掃到的長度告訴使用者。
  */
-export const MAX_CHUNKS = 110
+export const MAX_CHUNKS = 220
 
 export function avgBlockTime(chainId: number | null | undefined): number {
   if (chainId === null || chainId === undefined) return DEFAULT_AVG_BLOCK_TIME
@@ -257,31 +268,45 @@ const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms))
 
 /**
  * 節點以「區塊範圍太大」拒絕這次 getLogs。各家措辭不同，常見的有：
- *   - "eth_getLogs is limited to a 500 range"（Base 公開節點，code -32614）
+ *   - "eth_getLogs is limited to a 200 range"（Base 公開節點，code -32614）
  *   - "block range is too large" / "block range too wide"
  *   - "exceed maximum block range" / "query exceeds max block range 2000"
  *   - "range exceeds limit"
  * Base 公開節點拒絕時的 HTTP 狀態是 **413 Payload Too Large**（body 仍是上面那個 JSON-RPC
  * 錯誤），所以 ethers 可能只給出「server response 413」——413 也視為範圍太大（getLogs 的
  * 413 只會是請求或回應太大，對半切開一樣是對的處置）。
- * ethers 會把原始錯誤包在 error / info.error / info.responseBody 裡，所以把整串訊息都看過一遍。
+ * ethers 會把原始錯誤包在 error / info.error / info.responseBody 裡；經過 MetaMask 時，節點的
+ * 錯誤常被包成 -32603 "Internal JSON-RPC error."、原文放在 data（或 data.cause）——
+ * 所以把整串訊息都看過一遍。
+ *
+ * 這類錯誤**不是暫時性的**：同一個範圍重送幾次都一樣被拒。scanChunks 只會把它切開，
+ * 不會拿它走退避重試。
  */
-export function isRangeLimitError(e: unknown): boolean {
+function rangeErrorText(e: unknown): string {
   const parts: string[] = []
   const visit = (x: unknown, depth: number) => {
-    if (!x || depth > 4) return
+    if (!x || depth > 5) return
     if (typeof x === 'string') { parts.push(x); return }
     if (typeof x !== 'object') return
     const o = x as Record<string, unknown>
     for (const k of ['message', 'shortMessage', 'body', 'responseBody']) if (typeof o[k] === 'string') parts.push(o[k] as string)
     if (o.code === -32614) parts.push('limited to a range')
-    if (o.status === 413 || o.responseStatus === 413 || o.responseStatus === '413 Payload Too Large') parts.push('payload too large')
+    if (
+      o.status === 413 || o.httpStatus === 413 || o.responseStatus === 413 ||
+      o.responseStatus === '413 Payload Too Large'
+    ) parts.push('payload too large')
     visit(o.error, depth + 1)
     visit(o.info, depth + 1)
     visit(o.response, depth + 1)
+    visit(o.data, depth + 1)
+    visit(o.cause, depth + 1)
   }
   visit(e, 0)
-  const text = parts.join(' ').toLowerCase()
+  return parts.join(' ').toLowerCase()
+}
+
+export function isRangeLimitError(e: unknown): boolean {
+  const text = rangeErrorText(e)
   return (
     /limited to a [\d,]+ ?(block )?range/.test(text) ||
     text.includes('limited to a range') ||
@@ -292,11 +317,32 @@ export function isRangeLimitError(e: unknown): boolean {
   )
 }
 
-/** 範圍太大時最多對半切幾層（800 → 400 → … → 1，10 層足以切到單塊）。 */
+/**
+ * 錯誤訊息裡講明的上限（"limited to a 200 range" → 200；"max block range 2000" → 2000），
+ * 當成「一段最多幾塊（閉區間）」用。Base 的 200 其實是 toBlock − fromBlock ≤ 200（201 塊），
+ * 照字面當 200 塊只少用一塊，切出來的段一定不會再被拒。訊息裡沒有數字 → undefined。
+ */
+export function rangeLimitFromError(e: unknown): number | undefined {
+  const m = rangeErrorText(e).match(/(?:limited to a|max(?:imum)? block range(?: of)?)\s*([\d,]+)/)
+  if (!m) return undefined
+  const n = Number(m[1].replace(/,/g, ''))
+  return Number.isFinite(n) && n >= 1 ? n : undefined
+}
+
+/** 範圍太大時最多切幾層（每層至少減半：400 → 200 → … → 1，10 層足以切到單塊）。 */
 const MAX_SPLIT_DEPTH = 10
 
+/** 一趟掃描期間學到的段長上限，所有 worker 共用。 */
+interface RangeBudget {
+  maxBlocks: number
+}
+
 /**
- * 抓一段；節點回「範圍太大」就對半切開分別再抓、依區塊順序串接。
+ * 抓一段；節點回「範圍太大」就切開分別再抓、依區塊順序串接。
+ *
+ * 切開時把學到的段長記進 budget：錯誤講明上限就用那個數字，否則取這一段的一半。
+ * 同一趟掃描接下來的段一開始就照這個段長切，不必每段都先吃一次 413——節點上限往下調
+ * 的那天，多付的只有最先撞到的那幾段（併發幾段就幾次），而不是每段一次。
  * 其他錯誤照常丟出，由外層的重試與失敗計數處理。
  */
 async function fetchRangeAdaptive<T>(
@@ -305,17 +351,28 @@ async function fetchRangeAdaptive<T>(
   fetchRange: (from: number, to: number) => Promise<T[]>,
   timeoutMs: number,
   checkAbort: () => void,
+  budget: RangeBudget,
   depth = 0,
 ): Promise<T[]> {
+  const fetchPieces = async (size: number): Promise<T[]> => {
+    const out: T[] = []
+    for (const [a, b] of chunkRanges(from, to, size)) {
+      checkAbort()
+      out.push(...(await fetchRangeAdaptive(a, b, fetchRange, timeoutMs, checkAbort, budget, depth + 1)))
+    }
+    return out
+  }
+
+  if (to - from + 1 > budget.maxBlocks && depth < MAX_SPLIT_DEPTH) return fetchPieces(budget.maxBlocks)
   try {
     return await withChunkTimeout(fetchRange(from, to), timeoutMs)
   } catch (e) {
     if (to <= from || depth >= MAX_SPLIT_DEPTH || !isRangeLimitError(e)) throw e
     checkAbort()
-    const mid = from + Math.floor((to - from) / 2)
-    const left = await fetchRangeAdaptive(from, mid, fetchRange, timeoutMs, checkAbort, depth + 1)
-    const right = await fetchRangeAdaptive(mid + 1, to, fetchRange, timeoutMs, checkAbort, depth + 1)
-    return [...left, ...right]
+    const span = to - from + 1
+    const stated = rangeLimitFromError(e)
+    budget.maxBlocks = Math.min(budget.maxBlocks, stated !== undefined && stated < span ? stated : Math.ceil(span / 2))
+    return fetchPieces(budget.maxBlocks)
   }
 }
 
@@ -334,6 +391,7 @@ async function scanChunks<T>(
   const checkAbort = () => {
     if (opts.signal?.aborted) throw new ChunkScanAbortedError()
   }
+  const budget: RangeBudget = { maxBlocks: Number.POSITIVE_INFINITY }
   let failedChunks = 0
   let done = 0
   let next = 0
@@ -354,10 +412,12 @@ async function scanChunks<T>(
           checkAbort()
         }
         try {
-          perRange[i] = await fetchRangeAdaptive(from, to, fetchRange, timeoutMs, checkAbort)
+          perRange[i] = await fetchRangeAdaptive(from, to, fetchRange, timeoutMs, checkAbort, budget)
           ok = true
         } catch (e) {
           lastErr = e
+          // 切到底還是「範圍太大」：同一個範圍重送只會再被拒，不是 429 那種等一下就好的錯。
+          if (isRangeLimitError(e)) break
         }
       }
       // 已中止的掃描不再記錄結果、不再回報進度（呼叫端可能已經開了新的一輪）。

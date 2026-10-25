@@ -159,7 +159,7 @@ describe('loadReserveHistory', () => {
     args: { reserve: 2n * E18, liability: E18, ratioBps: ratio, unpriced, timestamp: BigInt(1_791_000_000 + block) },
   })
 
-  it('每段不超過 500 塊（公開節點上限），結果依區塊排序', async () => {
+  it('每段不超過 201 塊（公開節點上限），結果依區塊排序', async () => {
     const ranges: Array<[number, number]> = []
     const h = await loadReserveHistory({
       latestBlock: async () => 10_000,
@@ -171,7 +171,7 @@ describe('loadReserveHistory', () => {
     })
     expect(h.status).toBe('ok')
     expect(Math.max(...ranges.map(([a, b]) => b - a + 1))).toBeLessThanOrEqual(HISTORY_CHUNK)
-    expect(HISTORY_CHUNK).toBeLessThanOrEqual(500)
+    expect(HISTORY_CHUNK).toBeLessThanOrEqual(201)
     expect(h.fromBlock).toBe(8_001)
     expect(HISTORY_CHUNK).toBe(CHUNK_SIZE)
     expect(h.points.map((p) => p.block)).toEqual([8_100, 9_500])

@@ -127,7 +127,7 @@ export default function AdminTreasuryPage() {
   }, [contracts, wallet.address, wallet.provider])
 
   // ── Fetch history ─────────────────────────────────────────────────────────
-  // 回看 scanFromBlock 的預設視窗，走分段 getLogs（公開節點單次上限 1,000 塊，
+  // 回看 scanFromBlock 的預設視窗，走分段 getLogs（公開節點單次上限 201 塊，
   // 以前單發 10,000 塊必定失敗、再被 catch 吞成「尚無兌現紀錄」）。
   const [historyFailed, setHistoryFailed] = useState(false)
   /** 掃描進行中。載入中不能顯示「尚無兌現紀錄」。 */

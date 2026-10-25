@@ -105,11 +105,15 @@ const STICKY_RIGHT_EDGE_SHADOW = '-6px 0 6px -6px rgba(0,0,0,0.35)';
  * 排行榜的「7 日量／7 日 PnL」與領獎台資格（7 天內平倉滿 5 筆）都是 7 天的定義，
  * 所以這裡單獨掃 7 天，不吃全站 24 小時的預設視窗。
  *
- * 成本（2026-09-29 對 sepolia.base.org 實測）：7 天 = 302,401 塊 = 379 段 × 800 塊，
- * 併發 3、每段重試 2 次，約 40 秒、0 段失敗。畫面上有段數進度條。
+ * 但段數有上限：800 段 × CHUNK_SIZE 200 = 160,000 塊，在 Base 上約 3.7 天（7 天要
+ * 1,512 段；2026-10-25 實測每次往返約 0.5 秒，併發 3 下 800 段就要兩分半）。這個上限從
+ * 2026-10-06 段長降為 400 時就是 160,000 塊；10-25 段長再降為 200，段數加倍以維持同樣
+ * 的塊數。畫面上的視窗長度是依實際掃到的塊數算的（fWindow），不會說成 7 天。
+ * Base Sepolia 有績效資料（heroData），正式站其實不走這段掃描；這是沒有績效資料時的後備。
+ * 畫面上有段數進度條。
  */
 const LEADERBOARD_WINDOW_SEC   = 7 * 24 * 3600;
-const LEADERBOARD_MAX_CHUNKS   = 400;
+const LEADERBOARD_MAX_CHUNKS   = 800;
 const LEADERBOARD_CONCURRENCY  = 3;
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -165,8 +169,8 @@ export default function TraderLeaderboard() {
   // 實際掃了幾塊、換算成多久。寫死的常數不能再拿來當文案,因為同一個數字在
   // 不同鏈上代表的時間差六倍——footer 與空狀態都要講真話。
   const [scan, setScan] = useState<{ blocks: number; hours: number }>({ blocks: 0, hours: 0 });
-  // 7 天的視窗在 Base 上是 379 段 getLogs（公開節點單次上限 1,000 塊），併發 3 實測約
-  // 40 秒。骨架屏撐 40 秒看起來像當掉了——把段數進度講出來,等待才是「在做事」。
+  // 排行榜的視窗在 Base 上是 800 段 getLogs（公開節點單次上限 201 塊），併發 3 約兩分半。
+  // 骨架屏撐這麼久看起來像當掉了——把段數進度講出來,等待才是「在做事」。
   const [progress, setProgress] = useState<{ done: number; total: number }>({ done: 0, total: 0 });
   // 這條鏈有模擬交易者的績效資料時，它的統計期間；null = 沒有，績效欄位走原本的事件掃描。
   const [heroRange, setHeroRange] = useState<{ from: string; to: string } | null>(null);
@@ -205,7 +209,7 @@ export default function TraderLeaderboard() {
       });
 
       // 兩種事件合成**一趟**掃描:topics[0] 傳陣列就是 OR。分開查等於同樣的
-      // 答案付兩倍的 getLogs,而 7 天的視窗在 Base 上已經是 379 段。
+      // 答案付兩倍的 getLogs,而排行榜的視窗在 Base 上已經是 800 段。
       const iface    = contracts.exchange.interface;
       const topicOf  = (name: string) => iface.getEvent(name)!.topicHash;
       const chunks   = chunkRanges(fromBlock, currentBlock).length;
