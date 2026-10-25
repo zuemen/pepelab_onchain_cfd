@@ -1,5 +1,6 @@
 import { it, expect, describe } from 'vitest'
 
+import { RPC_CONCURRENCY } from './rpcBatch'
 import { activeFollowers, readActiveFollowers, type CopyRecordView, type FollowerReader } from './activeFollowers'
 
 const T = '0x00000000000000000000000000000000000000AA'
@@ -66,6 +67,43 @@ describe('readActiveFollowers', () => {
     const result = await readActiveFollowers([T, X], reader)
     expect(result.get(T.toLowerCase())).toBeNull()
     expect(result.get(X.toLowerCase())).toEqual([C])
+  })
+
+  // sepolia.base.org 每秒 25 筆，超過回 429；第一次被擋、第二次讀到，就不能說成讀不到。
+  it('retries a read that was rate-limited once instead of giving null', async () => {
+    let failedOnce = false
+    const reader: FollowerReader = {
+      followerCount: async () => 1n,
+      followerAt: async () => A,
+      copyRecords: async () => {
+        if (!failedOnce) {
+          failedOnce = true
+          throw new Error('25/second request limit reached')
+        }
+        return [{ trader: T, active: true }]
+      },
+    }
+    expect((await readActiveFollowers([T], reader)).get(T.toLowerCase())).toEqual([A])
+  })
+
+  it('keeps at most RPC_CONCURRENCY reads in flight', async () => {
+    let inFlight = 0
+    let peak = 0
+    const track = async <V>(value: V): Promise<V> => {
+      inFlight += 1
+      peak = Math.max(peak, inFlight)
+      await new Promise((r) => { setTimeout(r, 1) })
+      inFlight -= 1
+      return value
+    }
+    const traders = Array.from({ length: 20 }, (_, i) => `0x${(i + 1).toString(16).padStart(40, '0')}`)
+    const reader: FollowerReader = {
+      followerCount: (trader) => track(BigInt(traders.indexOf(trader) % 3)),
+      followerAt: (trader, i) => track(`0x${(100 + i).toString(16).padStart(40, '0')}`),
+      copyRecords: () => track([]),
+    }
+    await readActiveFollowers(traders, reader)
+    expect(peak).toBeLessThanOrEqual(RPC_CONCURRENCY)
   })
 
   it('gives null when the follower list itself cannot be read', async () => {

@@ -25,6 +25,7 @@ import HeroPerformance from 'src/components/pepefi/hero/HeroPerformance'
 import { fetchHeroDetail, type HeroDetail } from 'src/lib/pepefi/heroData'
 import { heroDisclosure } from 'src/lib/pepefi/heroDisclosure'
 import { followerReaderOf, readActiveFollowers } from 'src/lib/pepefi/activeFollowers'
+import { mapLimit, withRetry, RPC_CONCURRENCY } from 'src/lib/pepefi/rpcBatch'
 import TxProof from 'src/components/pepefi/hero/TxProof'
 import ListDialog, { ExpandListButton } from 'src/components/pepefi/ListDialog'
 import StrategySides from 'src/components/pepefi/feed/StrategySides'
@@ -172,16 +173,20 @@ function TraderProfileView() {
       }
 
       // strategy + history
+      // 每一版一筆 eth_call：模擬交易者有幾十版，全部同時送出會撞上公開 RPC 的每秒上限（429），
+      // 任何一版讀不到這整段就落到 catch，跟單按鈕變成「尚無可跟單的策略」。限制併發並重試。
       let count = 0
       try {
-        count = Number((await contracts.registry.getStrategyCount(traderAddr)) as bigint)
+        count = Number((await withRetry(() => contracts.registry.getStrategyCount(traderAddr))) as bigint)
       } catch { count = 0 }
       if (alive()) setStratCount(count)
       if (count > 0) {
         try {
-          const vers = await Promise.all(
-            Array.from({ length: count }, (_, i) => i).map(async (i): Promise<HistVer> => {
-              const res = (await contracts.registry.getStrategyVersion(traderAddr, BigInt(i))) as unknown as [unknown[], bigint]
+          const vers = await mapLimit(
+            Array.from({ length: count }, (_, i) => i),
+            RPC_CONCURRENCY,
+            async (i): Promise<HistVer> => {
+              const res = (await withRetry(() => contracts.registry.getStrategyVersion(traderAddr, BigInt(i)))) as unknown as [unknown[], bigint]
               return {
                 versionId: i,
                 createdAt: res[1],
@@ -191,7 +196,7 @@ function TraderProfileView() {
                 }),
                 expanded: false,
               }
-            }),
+            },
           )
           const sorted = [...vers].reverse()
           if (alive()) setStratHistory(sorted)

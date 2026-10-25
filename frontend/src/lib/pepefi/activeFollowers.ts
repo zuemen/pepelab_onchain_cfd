@@ -7,6 +7,8 @@
 //
 // 定義跟 eToro 的 copiers 相同：目前至少有一筆 active 跟單的人數，同一個人只算一次。
 
+import { mapLimit, withRetry, RPC_CONCURRENCY } from './rpcBatch'
+
 export interface CopyRecordView {
   trader: string
   active: boolean
@@ -44,34 +46,49 @@ export function activeFollowers(
 /**
  * 讀出每位交易者目前的跟隨者，key 是小寫地址。跟同一個人只讀一次跟單紀錄。
  * 某位交易者的清單、或其中任何一位跟單者的紀錄讀不到時，他的值是 null——讀不到不能說成 0 人。
+ *
+ * 每一筆都限制併發並重試：排行榜一次讀幾十位交易者，全部同時送出會撞上公開 RPC 的每秒上限
+ * （sepolia.base.org 每秒 25 筆，超過回 429），被擋掉的那一筆就讓整位交易者變成「—」。見 rpcBatch.ts。
  */
 export async function readActiveFollowers(
   traders: string[],
   reader: FollowerReader,
 ): Promise<Map<string, string[] | null>> {
-  const lists = await Promise.all(
-    traders.map(async (trader): Promise<string[] | null> => {
-      try {
-        const length = Number(await reader.followerCount(trader))
-        return await Promise.all(Array.from({ length }, (_, i) => reader.followerAt(trader, i)))
-      } catch {
-        return null
-      }
-    }),
-  )
+  const counts = await mapLimit(traders, RPC_CONCURRENCY, async (trader) => {
+    try {
+      return Number(await withRetry(() => reader.followerCount(trader)))
+    } catch {
+      return null
+    }
+  })
+  // 每位交易者的第 i 位跟單者攤平成一格，所有交易者共用同一個併發上限。
+  const slots = traders.flatMap((trader, t) => Array.from({ length: counts[t] ?? 0 }, (_, i) => ({ t, trader, i })))
+  const addresses = await mapLimit(slots, RPC_CONCURRENCY, async ({ trader, i }) => {
+    try {
+      return await withRetry(() => reader.followerAt(trader, i))
+    } catch {
+      return null
+    }
+  })
+  const lists: Array<string[] | null> = counts.map((count) => (count === null ? null : []))
+  slots.forEach(({ t }, k) => {
+    const list = lists[t]
+    if (list === null) return
+    const address = addresses[k]
+    if (address === null) lists[t] = null
+    else list.push(address)
+  })
 
   const followers = [...new Map(lists.flatMap((list) => list ?? []).map((f) => [lower(f), f])).values()]
   const recordsOf = new Map<string, CopyRecordView[]>()
   const failed = new Set<string>()
-  await Promise.all(
-    followers.map(async (follower) => {
-      try {
-        recordsOf.set(lower(follower), await reader.copyRecords(follower))
-      } catch {
-        failed.add(lower(follower))
-      }
-    }),
-  )
+  await mapLimit(followers, RPC_CONCURRENCY, async (follower) => {
+    try {
+      recordsOf.set(lower(follower), await withRetry(() => reader.copyRecords(follower)))
+    } catch {
+      failed.add(lower(follower))
+    }
+  })
 
   return new Map(
     traders.map((trader, i) => {

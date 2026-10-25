@@ -3,6 +3,8 @@ import { BrowserProvider, type Eip1193Provider, type Signer } from 'ethers'
 
 import { t } from 'src/locales'
 import { MOCK_WALLET_ENABLED } from 'src/lib/pepefi/featureFlags'
+// 讀鏈經過錢包、錢包轉給每秒 25 筆的公開節點：全站的讀取在這裡共用一個額度，見 rpcThrottle.ts。
+import { throttleReads } from 'src/lib/pepefi/rpcThrottle'
 
 // Augment Window so TypeScript knows about window.ethereum
 declare global {
@@ -99,7 +101,7 @@ export function useWallet(): WalletAPI {
     isConnectingRef.current = true
     setState(s => ({ ...s, isConnecting: true, error: null }))
     try {
-      const provider = new BrowserProvider(window.ethereum)
+      const provider = new BrowserProvider(throttleReads(window.ethereum))
       await provider.send('eth_requestAccounts', [])
       const signer  = await provider.getSigner()
       const address = await signer.getAddress()
@@ -167,7 +169,7 @@ export function useWallet(): WalletAPI {
       const eth = window.ethereum
       if (eth && localStorage.getItem('pepefi_wallet_session') === 'true') {
         try {
-          const provider = new BrowserProvider(eth)
+          const provider = new BrowserProvider(throttleReads(eth))
           const accounts = (await provider.send('eth_accounts', [])) as string[]
           if (accounts.length > 0) {
             const signer  = await provider.getSigner()
@@ -204,7 +206,7 @@ export function useWallet(): WalletAPI {
       if (accounts.length === 0) { disconnect(); return }
       // Re-fetch provider + signer so the new account's signing key is used
       try {
-        const provider = new BrowserProvider(eth)
+        const provider = new BrowserProvider(throttleReads(eth))
         const signer   = await provider.getSigner()
         const address  = await signer.getAddress()
         const { chainId } = await provider.getNetwork()

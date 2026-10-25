@@ -46,6 +46,7 @@ import {
   type LeaderboardSortKey,
 } from 'src/lib/pepefi/leaderboardMetrics';
 import { followerReaderOf, readActiveFollowers } from 'src/lib/pepefi/activeFollowers';
+import { mapLimit, withRetry, RPC_CONCURRENCY } from 'src/lib/pepefi/rpcBatch';
 import {
   fetchHeroIndex,
   heroByAddress,
@@ -283,18 +284,22 @@ export default function TraderLeaderboard() {
       const followersOf = await readActiveFollowers(addresses as string[], followerReaderOf(contracts.copyTracker));
       if (ac.signal.aborted) return;
 
-      const cards = await Promise.all(
-        (addresses as string[]).map(async (addr): Promise<TraderCard> => {
+      // 每位交易者四筆 eth_call，幾十位一次全送出會撞上公開 RPC 的每秒上限（429），
+      // 被擋掉的那筆會被下面的 catch 讀成「沒名字／沒策略」。限制併發並重試，見 rpcBatch.ts。
+      const cards = await mapLimit(
+        addresses as string[],
+        RPC_CONCURRENCY,
+        async (addr): Promise<TraderCard> => {
           let tRaw: [boolean, string, bigint] = [false, '', 0n];
           try {
-            tRaw = (await contracts.registry.traders(addr)) as unknown as [boolean, string, bigint];
+            tRaw = (await withRetry(() => contracts.registry.traders(addr))) as unknown as [boolean, string, bigint];
           } catch { /* unregistered or unavailable */ }
           const active = followersOf.get(addr.toLowerCase()) ?? null;
           const fc = active === null ? null : BigInt(active.length);
 
           let allocs: RawAlloc[] = [];
           try {
-            const stratRaw = (await contracts.registry.getLatestStrategy(addr)) as unknown as [unknown[], bigint];
+            const stratRaw = (await withRetry(() => contracts.registry.getLatestStrategy(addr))) as unknown as [unknown[], bigint];
             allocs = parseAllocs(stratRaw[0] as unknown[]);
           } catch { /* no strategy yet */ }
 
@@ -303,8 +308,8 @@ export default function TraderLeaderboard() {
           let totalSlashed: bigint | null = null;
           try {
             const [score, si] = await Promise.all([
-              contracts.traderStake.reputationScore(addr),
-              contracts.traderStake.getStake(addr),
+              withRetry(() => contracts.traderStake.reputationScore(addr)),
+              withRetry(() => contracts.traderStake.getStake(addr)),
             ]);
             reputation   = score as bigint;
             const s      = si as unknown as { amount: bigint; totalSlashed: bigint };
@@ -324,7 +329,7 @@ export default function TraderLeaderboard() {
             },
             aggregates,
           );
-        })
+        },
       );
 
       if (ac.signal.aborted) return;
