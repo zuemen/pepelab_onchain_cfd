@@ -14751,10 +14751,18 @@ import { dirname, resolve } from "node:path";
 function dotenvLoadOptions(path4) {
   return { path: path4, quiet: true, override: false, debug: false, fast: false, encoding: "utf8" };
 }
+function dotenvSkipped(env = process.env) {
+  const v = env.AGENT_SKIP_DOTENV?.trim().toLowerCase();
+  return v === "1" || v === "true";
+}
+function loadEnvFile(path4) {
+  if (dotenvSkipped()) return;
+  (0, import_dotenv.config)(dotenvLoadOptions(path4));
+}
 function loadEnv() {
   const here = dirname(fileURLToPath(import.meta.url));
   const agentRoot = resolve(here, "../../");
-  (0, import_dotenv.config)(dotenvLoadOptions(resolve(agentRoot, ".env")));
+  loadEnvFile(resolve(agentRoot, ".env"));
 }
 function resolvePayTo(feeRouter2) {
   const fromEnv = process.env.PAY_TO?.trim();
