@@ -232,6 +232,13 @@ describe('ConsentNoticeView', () => {
   it('shows the exact fees the follower signs, even one wei apart', () => {
     const out = html(createElement(ConsentNoticeView, { notice: { kind: 'raised', fee: FEE + 1n, old: FEE } }));
     expect(out).toContain(interpolate(D.consentChanged, { fee: '0.000100000000000001', old: '0.0001' }));
+    expect(out).toContain('MuiAlert-colorWarning');
+  });
+
+  it('treats a lowered fee as information, not a warning', () => {
+    const out = html(createElement(ConsentNoticeView, { notice: { kind: 'lowered', fee: FEE / 2n, old: FEE } }));
+    expect(out).toContain('MuiAlert-colorInfo');
+    expect(out).not.toContain('MuiAlert-colorWarning');
   });
 
   it('picks the sentence for each case', () => {

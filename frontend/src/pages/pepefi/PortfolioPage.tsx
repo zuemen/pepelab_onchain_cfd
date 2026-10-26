@@ -79,6 +79,8 @@ import {
   parseSyncState,
   parseSyncConfig,
   syncsAffordable,
+  tankConsentBlocked,
+  autoSyncConfigUnchanged,
   DEFAULT_TIP_WEI,
   DEFAULT_COOLDOWN,
   selfSyncShortfall,
@@ -693,12 +695,15 @@ export default function PortfolioPage() {
       const tip = s.tipWei > autoSync.maxTipWei ? autoSync.maxTipWei : s.tipWei;
       const lev = clampLeverage(s.maxLeverage);
       const cur = rec.syncConfig;
-      const unchanged = cur !== null
-        && cur.autoSync === enabled
-        && cur.maxLeverage === lev
-        && cur.minSyncInterval === s.minSyncInterval
-        && cur.tipWei === tip
-        && (!enabled || rec.execFeeCap === execFee.wei);
+      // 與設定彈窗的「你目前同意」同一個判斷（autoSyncConfigUnchanged）。讀不到執行費時不拿費率比較：
+      // 那時彈窗只讓「設定沒變」的儲存通過（例如只改指定執行者），不會用後備值簽出同意的上限。
+      const unchanged = autoSyncConfigUnchanged({
+        current: cur,
+        enabled,
+        settings: { maxLeverage: lev, minSyncInterval: s.minSyncInterval, tipWei: tip },
+        consentedFee: rec.execFeeCap,
+        executionFee: execFee.loaded ? execFee.wei : null,
+      });
       if (!unchanged) {
         // 開啟／修改時，畫面上顯示的每檔執行費就是同意的上限：交易所在送出前調高費率會整筆
         // revert ExecutionFeeAboveCap，不會把調高後的費率記成同意值。關閉不看費率（帶 0）。
@@ -914,10 +919,10 @@ export default function PortfolioPage() {
   const tankAffordable = syncGas !== null && enabledTips.length > 0 && syncLegs > 0
     ? syncsAffordable(syncGas, syncCostWei(execFee.wei, syncLegs, topTip, false))
     : null;
-  // 開著自動同步的每一筆，交易所的執行費都高於它同意的費率：油箱再多，別人也一次都不能代為同步。
-  const syncOnRecs = copyRecs.filter(r => r.syncConfig?.autoSync);
-  const tankConsentBlocked = execFee.loaded && syncOnRecs.length > 0
-    && syncOnRecs.every(r => r.execFeeCap !== null && execFee.wei > r.execFeeCap);
+  const tankBlocked = tankConsentBlocked(
+    copyRecs.map(r => ({ autoSync: r.syncConfig?.autoSync ?? false, execFeeCap: r.execFeeCap })),
+    execFee.loaded ? execFee.wei : null,
+  );
   const suggestedDeposit = defaultPrefundWei(execFee.wei, Math.max(1, syncLegs), enabledTips.length > 0 ? topTip : DEFAULT_TIP_WEI);
   // 油箱有餘額就一定看得到、提得出來——就算已經沒有任何跟單、或跟單旗標關閉（退出不藏）。
   const hasTankBalance = syncGas !== null && syncGas > 0n;
@@ -940,7 +945,7 @@ export default function PortfolioPage() {
     <SyncGasTank
       balance={syncGas}
       affordable={tankAffordable}
-      consentBlocked={tankConsentBlocked}
+      consentBlocked={tankBlocked}
       busy={!!busy['syncGas']}
       onDeposit={() => setGasDialog('deposit')}
       onWithdraw={() => setGasDialog('withdraw')}

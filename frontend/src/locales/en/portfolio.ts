@@ -336,7 +336,7 @@ export const portfolio: Catalog['portfolio'] = {
       consentChanged: 'The exchange’s execution fee is now {fee} ETH per asset; you had agreed to {old} ETH. Saving accepts the new fee.',
       consentCurrent: 'You currently agree to at most {fee} ETH per asset in execution fees for each executor sync (the exchange’s current fee).',
       consentLowered: 'The exchange lowered its execution fee to {fee} ETH per asset (you had agreed to {old} ETH). Syncs work without agreeing again; if you save, your cap drops to {fee} ETH as well, and you will need to agree again if the fee goes back up.',
-      consentUnknownFee: 'Could not read the exchange’s current execution fee, so the fee you would agree to is unknown. Please try again later. Switching auto-sync off is not affected.',
+      consentUnknownFee: 'Could not read the exchange’s current execution fee, so the fee you would agree to is unknown. Please try again later. Until then the settings cannot change; switching auto-sync off or only changing the executor still works.',
       gasTitle: 'Auto-sync gas tank',
       amount: 'Amount (ETH)',
       max: 'Max',

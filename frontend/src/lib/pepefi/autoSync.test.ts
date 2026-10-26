@@ -3,6 +3,8 @@ import { describe, it, expect } from 'vitest'
 import {
   syncStatus,
   consentNotice,
+  tankConsentBlocked,
+  autoSyncConfigUnchanged,
   hoursLabel,
   syncCostWei,
   versionLabel,
@@ -316,6 +318,64 @@ describe('consent notice in the settings dialog', () => {
     expect(consentNotice({ ...base, settings: { ...s, tipWei: 20n } })).toEqual({ kind: 'sign', fee: FEE })
     expect(consentNotice({ ...base, settings: { ...s, minSyncInterval: 7200 } })).toEqual({ kind: 'sign', fee: FEE })
     expect(consentNotice({ ...base, consentedFee: null })).toEqual({ kind: 'sign', fee: FEE })
+  })
+})
+
+describe('saving sends setAutoSync only when something changed (shared by the dialog and the page)', () => {
+  const cur = { autoSync: true, maxLeverage: 3, minSyncInterval: 3600, tipWei: 10n }
+  const s = { maxLeverage: 3, minSyncInterval: 3600, tipWei: 10n }
+  const base = { current: cur, enabled: true, settings: s, consentedFee: FEE, executionFee: FEE }
+
+  it('is unchanged when switch, settings and agreed fee all match', () => {
+    expect(autoSyncConfigUnchanged(base)).toBe(true)
+  })
+
+  it('sends when the switch, any setting or the fee to agree to differs', () => {
+    expect(autoSyncConfigUnchanged({ ...base, enabled: false })).toBe(false)
+    expect(autoSyncConfigUnchanged({ ...base, settings: { ...s, maxLeverage: 2 } })).toBe(false)
+    expect(autoSyncConfigUnchanged({ ...base, settings: { ...s, minSyncInterval: 7200 } })).toBe(false)
+    expect(autoSyncConfigUnchanged({ ...base, settings: { ...s, tipWei: 11n } })).toBe(false)
+    expect(autoSyncConfigUnchanged({ ...base, executionFee: FEE * 2n })).toBe(false)
+    expect(autoSyncConfigUnchanged({ ...base, current: null })).toBe(false)
+  })
+
+  it('ignores the fee when switching off, and when the fee cannot be read', () => {
+    const off = { ...cur, autoSync: false }
+    expect(autoSyncConfigUnchanged({ ...base, current: off, enabled: false, executionFee: FEE * 2n })).toBe(true)
+    expect(autoSyncConfigUnchanged({ ...base, executionFee: null, consentedFee: 0n })).toBe(true)
+  })
+
+  it('agrees with the dialog: “you currently agree” exactly when saving sends nothing', () => {
+    const dialog = (o: Partial<typeof base> = {}) => {
+      const i = { ...base, ...o }
+      return consentNotice({
+        enabled: i.enabled, initialEnabled: cur.autoSync, settings: i.settings, initialSettings: s,
+        executionFee: i.executionFee, consentedFee: i.consentedFee,
+      })?.kind
+    }
+    expect(dialog()).toBe('current')
+    expect(autoSyncConfigUnchanged(base)).toBe(true)
+    expect(dialog({ settings: { ...s, tipWei: 11n } })).toBe('sign')
+    expect(autoSyncConfigUnchanged({ ...base, settings: { ...s, tipWei: 11n } })).toBe(false)
+  })
+})
+
+describe('gas tank estimate when the fee is above consent', () => {
+  const on = (cap: bigint | null) => ({ autoSync: true, execFeeCap: cap })
+  const off = { autoSync: false, execFeeCap: 0n }
+
+  it('is blocked only when every switched-on entry agreed to less than the current fee', () => {
+    expect(tankConsentBlocked([on(FEE - 1n), on(FEE / 2n)], FEE)).toBe(true)
+    expect(tankConsentBlocked([on(FEE - 1n), on(FEE)], FEE)).toBe(false)
+    // 關著的那筆不算
+    expect(tankConsentBlocked([on(FEE - 1n), off], FEE)).toBe(true)
+  })
+
+  it('does not guess when the fee or a cap cannot be read, or nothing is switched on', () => {
+    expect(tankConsentBlocked([on(FEE - 1n)], null)).toBe(false)
+    expect(tankConsentBlocked([on(null)], FEE)).toBe(false)
+    expect(tankConsentBlocked([off], FEE)).toBe(false)
+    expect(tankConsentBlocked([], FEE)).toBe(false)
   })
 })
 

@@ -378,12 +378,47 @@ export function consentNotice(i: ConsentNoticeInput): ConsentNotice | null {
       ? { kind: 'raised', fee, old: i.consentedFee }
       : { kind: 'lowered', fee, old: i.consentedFee }
   }
-  const same = i.initialEnabled
-    && i.consentedFee === fee
-    && i.settings.maxLeverage === i.initialSettings.maxLeverage
-    && i.settings.minSyncInterval === i.initialSettings.minSyncInterval
-    && i.settings.tipWei === i.initialSettings.tipWei
+  const same = autoSyncConfigUnchanged({
+    current: { autoSync: i.initialEnabled, ...i.initialSettings },
+    enabled: i.enabled,
+    settings: i.settings,
+    consentedFee: i.consentedFee,
+    executionFee: fee,
+  })
   return same ? { kind: 'current', fee } : { kind: 'sign', fee }
+}
+
+/**
+ * 儲存設定時要不要送 setAutoSync：開關、設定（頁面夾過值之後）與同意的費率都沒變就不送（只可能另送
+ * setSyncExecutor）。設定彈窗的「你目前同意」和頁面的 doSaveAutoSync 共用這一個判斷，兩邊不會說的和做的不一樣。
+ * `executionFee` 讀不到（null）時不拿費率比較：那時不會因為費率而送交易，設定有變的話彈窗本來就不讓儲存。
+ */
+export function autoSyncConfigUnchanged(i: {
+  current: SyncConfig | null
+  enabled: boolean
+  settings: AutoSyncSettings
+  consentedFee: bigint | null
+  executionFee: bigint | null
+}): boolean {
+  const c = i.current
+  return c !== null
+    && c.autoSync === i.enabled
+    && c.maxLeverage === i.settings.maxLeverage
+    && c.minSyncInterval === i.settings.minSyncInterval
+    && c.tipWei === i.settings.tipWei
+    && (!i.enabled || i.executionFee === null || i.consentedFee === i.executionFee)
+}
+
+/**
+ * 油箱旁的次數估算還成不成立：開著自動同步的每一筆，交易所的執行費都高於它同意的費率時，油箱再多，
+ * 別人也一次都不能代為同步（合約 ExecutionFeeAboveCap）。只有部分被擋時仍給估算（每一列另有自己的狀態）。
+ */
+export function tankConsentBlocked(
+  records: readonly { autoSync: boolean; execFeeCap: bigint | null }[],
+  executionFee: bigint | null,
+): boolean {
+  const on = records.filter(r => r.autoSync)
+  return executionFee !== null && on.length > 0 && on.every(r => r.execFeeCap !== null && executionFee > r.execFeeCap)
 }
 
 /** 交易所現行的 executionFee 是否高於跟隨者同意的每腿費率（讀不到任一個就當作沒有）。 */

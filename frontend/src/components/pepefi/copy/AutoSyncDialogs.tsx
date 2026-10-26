@@ -27,6 +27,7 @@ import {
   versionLabel,
   parseEthInput,
   consentNotice,
+  autoSyncConfigUnchanged,
   settingsProblem,
   executorProblem,
   type ConsentNotice,
@@ -55,7 +56,7 @@ interface SettingsProps {
   maxTipWei: bigint;
   executionFee: bigint;
   /** `executionFee` 是鏈上讀到的值（false = 後備值，不能當成「交易所現行費率」說出口，開著時也不能儲存）。 */
-  executionFeeLoaded?: boolean;
+  executionFeeLoaded: boolean;
   /** 跟隨者目前同意的每檔執行費（CopyTracker.syncExecFeeCap）；沒開過或讀不到為 null。 */
   consentedFee?: bigint | null;
   legs: number;
@@ -78,7 +79,7 @@ export function AutoSyncSettingsDialog({
   initialSettings,
   maxTipWei,
   executionFee,
-  executionFeeLoaded = true,
+  executionFeeLoaded,
   consentedFee = null,
   legs,
   tankBalance,
@@ -107,6 +108,14 @@ export function AutoSyncSettingsDialog({
     initialSettings,
     executionFee: executionFeeLoaded ? executionFee : null,
     consentedFee,
+  });
+  // 讀不到現行費率時，只擋「會送 setAutoSync」的儲存：設定沒變（例如只改指定執行者）照常可以存。
+  const blockedByUnknownFee = consent?.kind === 'unknownFee' && !autoSyncConfigUnchanged({
+    current: { autoSync: initialEnabled, ...initialSettings },
+    enabled,
+    settings,
+    consentedFee,
+    executionFee: null,
   });
 
   return (
@@ -144,7 +153,7 @@ export function AutoSyncSettingsDialog({
         <Button
           variant="contained"
           onClick={() => onSave(enabled, settings, executor ? executorInput.trim() : undefined)}
-          disabled={busy || (enabled && problem !== null) || exProblem !== null || consent?.kind === 'unknownFee'}
+          disabled={busy || (enabled && problem !== null) || exProblem !== null || blockedByUnknownFee}
         >
           {busy ? '…' : P.dialog.save}
         </Button>
