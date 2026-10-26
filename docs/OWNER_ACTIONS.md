@@ -113,6 +113,7 @@ done
 gh api repos/zuemen/pepelab_onchain_cfd/actions/secrets --jq '[.secrets[].name]'   # 不應再有兩個 *_PRIVATE_KEY
 grep -ln 'secrets.KEEPER_PRIVATE_KEY\|secrets.FEE_SETTLEMENT_PRIVATE_KEY' .github/workflows/*
 # 只應列出 admin-base-sepolia、base-sepolia-keeper、price-keeper、x402-settlement-worker 四支
+# （copy-sync-executor.yml 用的是 environment copy-sync 的 COPY_SYNC_PRIVATE_KEY，不在這個 grep 裡）
 # 分支保護：rulesets 與傳統 branch protection 兩種設定方式都查，兩者擇一有設定即可
 gh api repos/zuemen/pepelab_onchain_cfd/rulesets --jq '[.[] | {name, enforcement}]'
 gh api repos/zuemen/pepelab_onchain_cfd/branches/master/protection \

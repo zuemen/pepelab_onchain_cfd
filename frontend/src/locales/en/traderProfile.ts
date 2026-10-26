@@ -25,6 +25,7 @@ export const traderProfile: Catalog['traderProfile'] = {
     staked: 'Staked',
     followers: 'Followers',
     copiers: 'copiers',
+    legacyCopiers: 'copiers (incl. {count} on the previous contract)',
     earnings: 'Earnings',
     strategies: 'Strategies',
     versions: 'versions',

@@ -372,14 +372,14 @@ test("PR #217 審查兩輪的 50 個繞過嘗試（第一輪 40＋第二輪 N �
 });
 
 test("第一層：PINNED_WORKFLOWS 等於現行持鑰 workflow 的整檔雜湊；--print-pins 印出同樣的值", () => {
-  assert.deepEqual(Object.keys(PINNED_WORKFLOWS).sort(), ["admin-base-sepolia.yml", "base-sepolia-keeper.yml", "price-keeper.yml", "x402-settlement-worker.yml"]);
+  assert.deepEqual(Object.keys(PINNED_WORKFLOWS).sort(), ["admin-base-sepolia.yml", "base-sepolia-keeper.yml", "copy-sync-executor.yml", "price-keeper.yml", "x402-settlement-worker.yml"]);
   for (const [name, hash] of Object.entries(PINNED_WORKFLOWS)) {
     assert.equal(fileDigest(REAL.find((f) => f.name === name).text), hash, name);
   }
   const r = cli("--print-pins");
   assert.equal(r.status, 0, r.stderr);
   for (const [name, hash] of Object.entries(PINNED_WORKFLOWS)) assert.ok(r.stdout.includes(`${JSON.stringify(name)}: ${JSON.stringify(hash)}`), r.stdout);
-  assert.equal(r.stdout.trim().split("\n").length, 4, "只有這四支是持鑰 workflow");
+  assert.equal(r.stdout.trim().split("\n").length, 5, "只有這五支是持鑰 workflow");
   // 結構規則單獨跑也要通過（第二層不依賴第一層）。
   assert.deepEqual(checkWorkflows(REAL, YAML, { pins: null }).problems, []);
 });

@@ -125,6 +125,9 @@ export const marketplace = {
     volLabel: '7 日量',
     pnlLabel: '7 日 PnL',
     followersLabel: '跟隨者',
+    /** 換過 CopyTracker 之後，舊 tracker 上還在跟的人（contracts/legacyCopyTrackers.ts）。 */
+    legacyFollowers: '含舊版 {count}',
+    legacyFollowersTip: '其中 {count} 位的跟單在舊版合約上：部位仍在跟隨者自己名下，但不會自動同步，取消時也不再計入罰沒評分。',
     stakeLabel: '質押',
 
     slashed: '⚠ 已罰沒 {amount} USDC',

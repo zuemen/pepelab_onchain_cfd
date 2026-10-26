@@ -1,7 +1,14 @@
 import { it, expect, describe } from 'vitest'
 
 import { RPC_CONCURRENCY } from './rpcBatch'
-import { activeFollowers, readActiveFollowers, type CopyRecordView, type FollowerReader } from './activeFollowers'
+import {
+  activeFollowers,
+  combineFollowers,
+  readActiveFollowers,
+  readFollowersAcross,
+  type CopyRecordView,
+  type FollowerReader,
+} from './activeFollowers'
 
 const T = '0x00000000000000000000000000000000000000AA'
 const X = '0x00000000000000000000000000000000000000BB'
@@ -113,5 +120,38 @@ describe('readActiveFollowers', () => {
       copyRecords: async () => [],
     }
     expect((await readActiveFollowers([T], reader)).get(T.toLowerCase())).toBeNull()
+  })
+})
+
+describe('followers across the current and a replaced CopyTracker', () => {
+  it('adds people still following on the old tracker, once each, and says how many', () => {
+    expect(combineFollowers([A], [[A, B], [C]])).toEqual({ all: [A, B, C], legacyOnly: 2 })
+    // 大小寫不同仍是同一個人
+    expect(combineFollowers([A], [[A.toLowerCase()]])).toEqual({ all: [A], legacyOnly: 0 })
+  })
+
+  it('never turns an unreadable current tracker into a number', () => {
+    expect(combineFollowers(null, [[A]])).toBeNull()
+  })
+
+  it('falls back to the current count when an old tracker cannot be read', () => {
+    expect(combineFollowers([A], [null])).toEqual({ all: [A], legacyOnly: 0 })
+  })
+
+  it('reads every tracker and merges per trader; a failing old tracker only drops itself', async () => {
+    const reader = (lists: Record<string, string[]>, active: string[]): FollowerReader => ({
+      followerCount: async (trader) => BigInt(lists[trader]?.length ?? 0),
+      followerAt: async (trader, i) => lists[trader][i],
+      copyRecords: async (follower) => (active.includes(follower) ? [{ trader: T, active: true }] : []),
+    })
+    const current = reader({ [T]: [A] }, [A])
+    const old = reader({ [T]: [A, B, C] }, [B, C])
+    const broken: FollowerReader = {
+      followerCount: async () => { throw new Error('rpc down') },
+      followerAt: async () => A,
+      copyRecords: async () => [],
+    }
+    const out = await readFollowersAcross([T], current, [old, broken])
+    expect(out.get(T.toLowerCase())).toEqual({ all: [A, B, C], legacyOnly: 2 })
   })
 })
