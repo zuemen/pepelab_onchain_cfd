@@ -9,7 +9,7 @@
 |------|------|------|
 | `shared/` | 共用層 | ethers v6 provider/signer、最小 ABI、鏈上聚合（`aggregate.ts`）與寫操作（`write.ts`）。合約位址從 `frontend/src/contracts/addresses.ts` 讀取（**不寫死**）。 |
 | `signal-api/` | x402 付費 API | Hono + `x402-hono`。`GET /signals/:trader`(0.01 USDC)、`GET /oracle/:asset`(0.005 USDC)。 |
-| `mcp-server/` | MCP tools | read：`get_trader_performance` / `get_funding_rate` / `get_position` / `get_session`；write：`open_position` / `close_position`（經 session 限額）。 |
+| `mcp-server/` | MCP tools | 10 個工具。read（8）：`get_trader_performance` / `get_funding_rate` / `get_position` / `get_session` / `get_agent_verification` / `copy_sync_status` / `prepare_copy_sync_tx` / `prepare_copy_follow_tx`（跟單與同步：查狀態、產生未簽名交易，含由 agent 發起跟單）；write（2）：`open_position` / `close_position`（經 session 限額）。 |
 | `demo-agent/` | 腳本化 agent | 自管 EOA 付 x402 → 讀訊號 → **依決策經 session 真下單**（缺 session 時退化成印「本來會下的單」）。 |
 
 ## 架構重點（Phase 4：全程 Base Sepolia 同鏈）
@@ -305,10 +305,39 @@ npm run mcp-server            # stdio transport
 **read tools**：`get_trader_performance` / `get_funding_rate` / `get_position` /
 `get_session`（唯讀，免金鑰）。
 
+**跟單自動同步（ADR-024，`mcp-server/src/copyTools.ts`，唯讀、免金鑰）**：
+- `copy_sync_status`：跟隨者每筆跟單跟到第幾版／交易者最新第幾版、自動同步設定、指定的執行者、油箱餘額與還能代為同步幾次、
+  冷卻到期時間、交易所執行費是否仍在跟隨者同意的範圍內，以及下一步建議。
+- `prepare_copy_sync_tx`：產生**未簽名**交易（`to`／`data`／`value`）交給跟隨者自己的錢包簽——立即同步（`resyncAtVersion`，
+  附新版各腿與實際槓桿預覽、釘住版本與執行費）、開關自動同步（`enable` 必須帶槓桿上限，預設冷卻 24 小時）、指定執行者、
+  存提油箱。這個工具不簽名、不送出；agent 能做的是查與準備，簽不簽由跟隨者決定。
+- `prepare_copy_follow_tx`：**由 agent 發起跟單**。使用者對自己的 agent 說「幫我跟單 0xTrader、開自動同步、槓桿上限 2×」，
+  agent 用它產生依序要簽的未簽名交易：USDC `approve`（授權不足時；剛好金額，不是無上限授權）＋跟單——一律釘住交易者鏈上最新版
+  （`followTraderAtVersion`；`autoSync=true` 時用 `followTraderAtVersionWithAutoSync` 一筆完成跟單＋開啟自動同步＋預存油箱，
+  並以目前執行費作為簽名同意的上限）。回傳各腿預覽（資產、方向、權重、實際槓桿、保證金）、跟單費與手續費緩衝、KYC 檢查與
+  eth_call 模擬結果（授權足夠時）；開啟自動同步一定要跟隨者自己給槓桿上限，金額拆到各腿低於最低保證金時直接說至少要投入多少。
+  一樣不簽名、不送出、不需要私鑰——自託管模型不變，跟單也能完整由 agent 發起。
+- tracker 預設讀 `addresses.ts`；`COPY_TRACKER_ADDRESS` 可覆寫（例如本機 Anvil）。還沒部署自動同步版的鏈會回報「仍是快照式」。
+
 **write tools**（Phase 2）：`open_position` / `close_position`，全部經
 `AgentSessionManager.openPositionForSession` / `closePositionForSession`，受 session
 限額約束。需 `AGENT_PRIVATE_KEY`（session key）+ `SESSION_MANAGER_ADDRESS`；缺任一時
 tool 回明確錯誤、不 crash。輸入含 `sessionId`，agent 永不持有使用者主錢包私鑰。
+
+## 跟單自動同步執行者（copy-sync）
+
+`copy-sync/`（ADR-024）：交易者發布新版策略後，替「在鏈上開啟自動同步」的跟隨者送出 `CopyTracker.resyncFor`，把部位調成
+交易者鏈上最新版。**無需許可、無需信任**：`resyncFor` 沒有內容參數，呼叫者只能決定時機；執行者用一把只放少量 gas 的獨立
+熱錢包，永遠不碰跟隨者的私鑰。public 模式服務所有人（賺小費）、personal 模式只服務自己的地址——跟隨者可以在鏈上把
+這把熱錢包設為唯一的執行者（`setSyncExecutor`），其他人一律被合約拒絕；沒開自動同步的跟單只在交易者發新版時通知本人。
+
+```bash
+npm run copy-sync -- --once --dry-run      # 只模擬，不需要金鑰
+npm run test:copy-sync                     # 離線測試
+npm run e2e:copy-sync                      # 需要 Foundry：本機 Anvil 端對端
+```
+
+金鑰模型、兩種模式、cron／GitHub Actions 範例見 [`copy-sync/README.md`](copy-sync/README.md)。
 
 ## 型別檢查
 

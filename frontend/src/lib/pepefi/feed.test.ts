@@ -139,6 +139,40 @@ describe('buildFeed — follows', () => {
   })
 })
 
+describe('buildFeed — auto-sync (ADR-024)', () => {
+  const stringify = (items: FeedItem[]) => JSON.stringify(items, (_, v) => (typeof v === 'bigint' ? String(v) : v))
+
+  it('merges syncs of the same trader to the same version, without follower addresses', () => {
+    const events: FeedEvent[] = [
+      { ...at(1), kind: 'resync', trader: ALICE, follower: F1, fromVersion: 0, toVersion: 2 },
+      { ...at(2), kind: 'resync', trader: ALICE, follower: F2, fromVersion: 1, toVersion: 2 },
+      { ...at(3), kind: 'resync', trader: ALICE, follower: F1, fromVersion: 2, toVersion: 3 },
+    ]
+    const items = only(buildFeed(events, ctx()), 'resync')
+    expect(items).toHaveLength(2)
+    expect(items.find((i) => i.toVersion === 2)).toMatchObject({ count: 2, actor: ALICE.toLowerCase(), actorName: 'Whale Alpha' })
+    expect(stringify(items)).not.toMatch(/f1|f2/)
+  })
+
+  it('groups switching auto-sync on and off apart, per trader and UTC day', () => {
+    const events: FeedEvent[] = [
+      { ...at(1), kind: 'autoSync', trader: ALICE, follower: F1, enabled: true },
+      { ...at(2), kind: 'autoSync', trader: ALICE, follower: F2, enabled: true },
+      { ...at(3), kind: 'autoSync', trader: ALICE, follower: F1, enabled: false },
+      { ...at(4, DAY0 + 86_400), kind: 'autoSync', trader: ALICE, follower: F2, enabled: true },
+    ]
+    const items = only(buildFeed(events, ctx()), 'autoSync')
+    expect(items.map((i) => `${i.day}:${i.enabled}:${i.count}`).sort()).toEqual([
+      '2025-10-09:false:1', '2025-10-09:true:2', '2025-10-10:true:1',
+    ])
+    expect(stringify(items)).not.toMatch(/f1|f2/)
+  })
+
+  it('drops an auto-sync switch whose trader could not be read', () => {
+    expect(buildFeed([{ ...at(1), kind: 'autoSync', trader: '', follower: F1, enabled: true }], ctx())).toEqual([])
+  })
+})
+
 describe('buildFeed — names and order', () => {
   it('names a registered trader and leaves an unregistered address without a name', () => {
     const items = buildFeed([open(1, '1', 9_000n, ALICE), open(2, '2', 9_000n, BOB)], ctx())

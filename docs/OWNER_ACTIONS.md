@@ -24,8 +24,10 @@
 | 5 | 完整 cutover：#130、GuardedOracle、AssetVaultV2 升級 V2_5、InsuranceVault＋平台 FeeRouter＋CopyTracker（腳本已備；**前提：#130 完成＋timelock 或明確選擇不移交**）、PepeIncentives、PepeAMM、SessionCredentialAnchor（平台首次部署） | 本機 forge（先 dispatch keeper；先跑 cutover 演練） | 不含阻塞項 6–8 小時；阻塞項解除後另 2–3 小時，加 timelock 48 小時等待與 2 天緩衝 | `Verify130`、`post-deploy-smoke.mjs` |
 | 6 | 每台 agent 主機 `npm run vc-status:init` | 各 agent 主機 | 每台 5 分 | `agent/.state/vc-status/index.json` 存在 |
 | 7 | 重跑發布狀態與 smoke test，確認「原始碼較新」變成「鏈上＝原始碼」 | 本機 | 45–60 分（含 `forge build`） | `check-deployment-status.mjs --offline`、`post-deploy-smoke.mjs` |
+| 8 | 部署自動同步版 CopyTracker（ADR-024）：先盤點舊 tracker 的跟單，部署後依序改接 FeeRouter、TraderStake、exchange，啟動執行者 | 本機 forge／cast＋repo PR | 2–3 小時（不含舊跟單的公告與等待） | `cast call … copyTracker()`、`authorizedAgents(…)`、第 7 步重跑 |
 
 **合計：動手約 15–20 小時，分散在至少 3–4 天**（第 5 步第 4 項等 #130 與治理 timelock；timelock 48 小時等待與 cutover 後 2 天緩衝不計入動手時間）。
+第 8 步（2026-10-26 新增）與第 1–7 步互不依賴，#344 cutover（[`CUTOVER_LOG_2026-10-20.md`](CUTOVER_LOG_2026-10-20.md)）之後隨時可做；做完要再跑一次第 7 步。
 第 1 步必須最先做；第 2 步的 Worker 在第 1 步完成前不可以持有任何 Actions: write 憑證。
 
 每一步完成後都可以跑一次部署後 smoke test（唯讀、不需要金鑰），看 FAIL 是否如預期減少：
@@ -676,3 +678,157 @@ Sepolia（legacy 展示鏈）全部刻意不部署：第 3 步凍結後只保留
   `contracts/foundry.toml` 的設定（`via_ir`、`optimizer_runs 200`、釘選的 `solc_version`）。
 - 「無法比對」：先確認 `forge build` 產物存在、前端設定的位址正確、RPC 可用。
 - CI `--offline` 失敗並說「位址已變更」：改了位址卻沒重跑本腳本，照上面重跑後一起提交。
+
+---
+
+## 第 8 步：部署自動同步版 CopyTracker（ADR-024）
+
+**為什麼：** 跟單自動同步（[`ADR-024-copy-auto-sync.md`](ADR-024-copy-auto-sync.md)）改的是 `CopyTracker`，它不可升級，只能重新部署並改接線。
+Base Sepolia 現行的 `0x15A9…347C`（#344 cutover，部署區塊 48354990）是快照版；這一步做完之前，公開站沒有自動同步
+（[`KNOWN_LIMITATIONS.md`](KNOWN_LIMITATIONS.md) #44）。`PerpetualExchange` 不需要重部署：新 tracker 只用它既有的函式
+（`openPositionFor`、`closePositionFor`、`freeMargin`、`executionFee`、`maxLeverageForAsset`、`closeReasonOf`）。
+
+**要改接的不是兩處，是三處**（2026-10-26 唯讀讀回，三者目前都指向 `0x15A9…347C`，owner 都是部署者 `0x27C2…A585`）：
+
+| 合約 | 呼叫 | 漏做的後果 |
+|---|---|---|
+| FeeRouter（MockUSDC，`0x89Aa…5d29`） | `setCopyTracker(NEW)` | 新 tracker 收跟單費時 `distributeCopyFee` revert `Unauthorized`：**每一筆新跟單都失敗** |
+| TraderStake（`0x01aE…28Fe`） | `setCopyTracker(NEW)` | 新 tracker 的罰沒被拒（`SlashFailed`），取消跟單照常完成但交易者不會被罰 |
+| PerpetualExchange（`0xbF30…C979`） | `setCopyTracker(NEW)` | 新 tracker 沒有代為開平倉的授權，什麼都做不了；同一筆呼叫會撤銷舊 tracker 的授權 |
+
+部署腳本 `RedeployCopyTrackerAutoSync.s.sol` **只部署、不送任何 owner 呼叫**，最後印出這幾筆要送的呼叫（含 calldata），
+理由與 `RedeployInsuranceStack` 相同：接線是 owner 的決定，日後移交 timelock 時要能整批排程。
+
+**前置條件：**
+- master 已含自動同步的合約、腳本與前端；本機 `forge test --match-path 'test/CopyTracker*.t.sol'` 與部署腳本的測試全綠，
+  `node scripts/check-contract-size.mjs` 通過（CopyTracker 仍在 EIP-170 之內）。
+- 公開值同第 5 步：`RPC=https://sepolia.base.org`、`ACCOUNT=<keystore 名稱>`、`DEPLOYER=0x27C21324D101e867E0634bf2ebe3F9Dcf3ACA585`；
+  `cast chain-id --rpc-url $RPC` 必須是 84532，`cast wallet address --account $ACCOUNT` 必須是 `$DEPLOYER`。
+- exchange、TraderStake、FeeRouter 的 owner 仍是部署者（尚未移交 timelock）。已移交時，下面第 4 項的三筆改成一個 timelock batch，
+  順序不變。
+- 挑沒有展示的時段。
+
+**私鑰處理：** 一律 keystore（`--account $ACCOUNT`），不 `export PRIVATE_KEY`。執行者（第 6 項）用**另一把新的熱錢包**，
+不是部署者、不是 keeper，也不是任何跟隨者的金鑰。
+
+**操作（依序）：**
+
+1. **盤點舊 tracker 上仍在跟隨的紀錄**（唯讀）。換 tracker 之後舊 tracker 失去授權，舊跟單的「取消跟單」會 revert，
+   所以能先處理的先處理。`eth_getLogs` 的區段上限：`sepolia.base.org` 200 個區塊、publicnode 1 萬個區塊（`CUTOVER_LOG_2026-10-20.md`）。
+   ```bash
+   OLD_CT=0x15A9Cbf803a3EEee2794B74Ad78252d27Ccd347C
+   LOGS_RPC=https://base-sepolia-rpc.publicnode.com
+   FROM=48354990                                   # 舊 tracker 的部署區塊（RedeployInsuranceStack 的 broadcast 紀錄）
+   TO=$(cast block-number --rpc-url $LOGS_RPC)
+   for ((b=FROM; b<=TO; b+=10000)); do
+     e=$((b+9999)); [ $e -gt $TO ] && e=$TO
+     cast logs --address $OLD_CT "TraderFollowed(address indexed,address indexed,uint256,uint256)" \
+       --from-block $b --to-block $e --rpc-url $LOGS_RPC --json
+   done | jq -r '.[].topics[1]' | sort -u | sed 's/^0x000000000000000000000000/0x/' > old-followers.txt
+   wc -l old-followers.txt
+   while read f; do
+     echo "== $f"
+     cast call $OLD_CT "getCopyRecords(address)((address,uint256,uint256,uint256[],uint256,bool,uint256)[])" $f --rpc-url $RPC
+   done < old-followers.txt
+   ```
+   每筆紀錄的第 6 個欄位是 `active`。處理方式：
+   - **回放帳號（模擬跟隨者）**：金鑰在擁有者手上（`heroes/keys/84532.json`）。換 tracker 之前以該帳號呼叫舊 tracker 的
+     `unfollowAndCloseAll(recordIdx)` 正常取消（照常計分）；或保留不動，接受它們之後只能 `deactivateWithoutScoring`。
+     回放資料集（`frontend/public/data/heroes/84532/`）已匯出，不受影響。
+   - **真實使用者**：事先公告換 tracker 的時間，請他們在那之前取消跟單。來不及的，換 tracker 之後部位仍在他們自己名下，
+     Portfolio 的「部位」頁籤看得到、平得掉（`exchange.closePosition` 只要求是部位本人）；舊 tracker 上的紀錄可用
+     `deactivateWithoutScoring(recordIdx)` 收尾（BaseScan 的 Write Contract 或 `cast send … --account <自己的 keystore>`）。
+     舊 tracker 上的紀錄不會出現在新版 Portfolio 的跟單列表（前端只讀 `addresses.ts` 的那一顆）。
+   - 舊 tracker 的罰沒準備金：`cast call $OLD_CT "slashReserve()(uint256)" --rpc-url $RPC`；不是 0 時 owner 可用
+     `withdrawSlashReserve(to, amount)` 取出，換 tracker 之後也做得到。
+2. **fork 預演（不需要金鑰）**：在 Base Sepolia 實況的 anvil fork 上以假冒的部署者跑完第 3–4 項，讀回核對。
+   ```bash
+   anvil --fork-url $RPC --port 8546 &
+   FORK=http://127.0.0.1:8546
+   cast rpc anvil_impersonateAccount $DEPLOYER --rpc-url $FORK
+   # 接著把下面第 3 項的 forge script 換成 --rpc-url $FORK --unlocked --sender $DEPLOYER，
+   # 第 4 項的 cast send 換成 --rpc-url $FORK --unlocked --from $DEPLOYER，再跑第 5 項的讀回
+   ```
+3. **部署新 tracker**：環境變數以 `contracts/script/RedeployCopyTrackerAutoSync.s.sol` 檔頭為準（**不是** `RedeployCopyTracker.s.sol`
+   的 `*_ADDR` 那一組）。唯一必填的是 `EXCHANGE`；`USDC`、`REGISTRY`、`TRADER_STAKE`、`FEE_ROUTER` 預設取自交易所目前的 CopyTracker
+   （`exchange.copyTracker()` 的 immutable），**不要另外設**——腳本會把覆寫值與鏈上交叉檢查，設錯只會讓它拒絕執行。`NEW_OWNER` 預設
+   `exchange.owner()`。中斷後續跑用 `RESUME_COPY_TRACKER=<已部署的位址>`，只讀回用 `VERIFY_ONLY=true`（加 `EXPECT_WIRED=true` 要求三處都已改接）。
+   ```bash
+   cd contracts
+   export EXCHANGE=0xbF3074C98e17d88B4127899C98C81AE94c9fC979   # addresses.ts 的 Base Sepolia PerpetualExchange
+   forge script script/RedeployCopyTrackerAutoSync.s.sol:RedeployCopyTrackerAutoSync \
+     --rpc-url $RPC --account $ACCOUNT --sender $DEPLOYER --broadcast --slow -vv
+   NEW_CT=<腳本印出的新 CopyTracker>
+   ```
+   這一步本身不改變任何使用者的狀態：新 tracker 沒有授權、沒有人在用。腳本最後印出的 owner 呼叫 `[0] FeeRouter`、`[1] TraderStake`、
+   `[2] PerpetualExchange` 就是下一項的順序（`ownerCalls()`；`RedeployCopyTrackerAutoSync.t.sol` 釘住這個順序，並驗證只送前兩筆時舊 tracker
+   仍可關倉、新 tracker 還不能開倉）。
+4. **改接線（三筆，依這個順序、盡量連續送出；與腳本印出的 `[0]`→`[2]` 相同）**：
+   ```bash
+   cast send 0x89Aa6799b2CdAa43FF7985ff706456Ca6F0e5d29 "setCopyTracker(address)" $NEW_CT --rpc-url $RPC --account $ACCOUNT   # FeeRouter
+   cast send 0x01aEB530bcFc69f036309ffe55acc7eA6C5a28Fe "setCopyTracker(address)" $NEW_CT --rpc-url $RPC --account $ACCOUNT   # TraderStake
+   cast send 0xbF3074C98e17d88B4127899C98C81AE94c9fC979 "setCopyTracker(address)" $NEW_CT --rpc-url $RPC --account $ACCOUNT   # exchange（最後）
+   ```
+   順序的理由：exchange 那一筆才讓新 tracker 生效、同時撤銷舊 tracker。放在最後，中間任何一筆失敗時新 tracker 都還不能用，
+   只會讓舊 tracker 的**新**跟單在收跟單費時失敗（fail closed），已開的部位與既有跟單的取消不受影響。
+5. **讀回（唯讀）**：
+   ```bash
+   X=0xbF3074C98e17d88B4127899C98C81AE94c9fC979
+   cast call $X "copyTracker()(address)" --rpc-url $RPC                                    # == NEW_CT
+   cast call $X "authorizedAgents(address)(bool)" $NEW_CT --rpc-url $RPC                   # true
+   cast call $X "authorizedAgents(address)(bool)" 0x15A9Cbf803a3EEee2794B74Ad78252d27Ccd347C --rpc-url $RPC   # false
+   cast call 0x01aEB530bcFc69f036309ffe55acc7eA6C5a28Fe "copyTracker()(address)" --rpc-url $RPC    # == NEW_CT
+   cast call 0x89Aa6799b2CdAa43FF7985ff706456Ca6F0e5d29 "copyTracker()(address)" --rpc-url $RPC    # == NEW_CT
+   for f in "exchange()(address)" "registry()(address)" "feeRouter()(address)" "traderStake()(address)" "usdc()(address)" \
+            "owner()(address)" "totalSyncGas()(uint256)" "MAX_TIP_WEI()(uint256)" "MIN_SYNC_INTERVAL()(uint32)"; do
+     echo "$f $(cast call $NEW_CT "$f" --rpc-url $RPC)"
+   done   # 前五個等於 addresses.ts 的值、owner == DEPLOYER、totalSyncGas == 0、MIN_SYNC_INTERVAL == 3600
+   # MIN_SYNC_INTERVAL 讀不到（revert）＝部署到的是審查修正前的版本（沒有冷卻下限與執行費同意上限）：不要改接，重新部署。
+   # 審查修正（本人同步釘版本與執行費上限、油箱提領到指定地址、套用槓桿上限的預覽、跟隨者簽名帶入的執行費上限、
+   # 指定執行者——跟隨者只讓自己的 agent 同步）：
+   # 這些 selector 都必須在 runtime bytecode 裡
+   CODE=$(cast code $NEW_CT --rpc-url $RPC)
+   for s in "resyncAtVersion(uint256,uint256,uint256)" "withdrawSyncGasTo(address,uint256)" "previewCopyAllocationWithCap(address,uint256,uint8)" \
+            "setAutoSync(uint256,bool,uint8,uint32,uint96,uint256)" \
+            "followTraderAtVersionWithAutoSync(address,uint256,uint256,uint8,uint32,uint96,uint256)" \
+            "setSyncExecutor(uint256,address)" "syncExecutor(address,uint256)"; do
+     echo "$CODE" | grep -qi "$(cast sig "$s" | cut -c3-)" && echo "✓ $s" || echo "✗ $s：部署到的是舊版，不要改接，重新部署"
+   done
+   ```
+6. **repo 同步（一個 PR）**：
+   - `frontend/src/contracts/addresses.ts` 的 `BASE_SEPOLIA.CopyTracker`；`frontend/src/contracts/abi/CopyTracker.json` 換成
+     `contracts/out/CopyTracker.sol/CopyTracker.json` 的 `abi`；`tenantDeployment.test.ts` 的快照（`yarn vitest -u` 後審過 diff）。
+   - signal-api 的 bundle 內聯了 `addresses.ts`：`cd agent && npm run bundle:vercel && npm run bundle:check`。
+   - 監控：`node scripts/check-monitoring.mjs --refresh-deployed` → `--write`，審過 `ops/monitoring/deployed.json`／`monitors.json`。
+     `monitors.json` 的 `ignoredEvents` 裡自動同步那一組（`AutoSyncSet`／`Resynced`／`SyncGasDeposited`／`SyncGasWithdrawn`）目前標
+     `notDeployed: true`；重抓部署版 bytecode 後檢查器會擋下（「已部署的 bytecode 裡有」），拿掉 `notDeployed`、把理由改成現況
+     （跟隨者自己的操作與無需許可的同步，不是管理操作）再 `--write`。
+   - README §2 的 CopyTracker 列、`docs/KNOWN_LIMITATIONS.md` #44 改為已部署。
+   - 合併後照第 7 步重跑發布狀態：CopyTracker 應為「鏈上＝原始碼」。
+7. **啟動執行者（public 模式）**：照 `agent/copy-sync/README.md`。建一把新的 keystore（例如
+   `cast wallet new ~/.foundry/keystores pepelab-copy-sync`），只轉入少量 ETH（例如 0.01）；先 `--dry-run --once` 看它找到哪些待同步紀錄，
+   再正式跑。這把金鑰外洩的最壞情況只是有人觸發合約本來就允許的同步、用掉這點 gas，不必走金鑰輪替的完整流程，換一把即可。
+8. **（擁有者決定）PepeIncentives**：它的 `copyTracker` 是 immutable、仍指向舊 tracker，新跟單的跟單獎勵領不到（KNOWN_LIMITATIONS #44）。
+   要恢復就照第 5 步第 5 項重新部署 PepeIncentives（`COPY_TRACKER=$NEW_CT`），再照 #355 重套 GameFi 設定與轉入獎勵池；
+   新實例從空狀態開始。
+
+**驗證：**
+- 第 5 項的讀回全部相符；`node scripts/post-deploy-smoke.mjs --skip-http` 沒有新增 FAIL。
+- 新錢包走一次：KYC 不需要的資產（例如 sBTC）以小額跟單並勾選自動同步、預存油箱；讀回
+  `cast call $NEW_CT "syncConfig(address,uint256)(bool,uint8,uint32,uint96)" <錢包> 0 --rpc-url $RPC` 的第一個值為 true、
+  冷卻（第三個值）≥ 3600、`syncExecFeeCap(<錢包>,0)` 等於交易所當下的 `executionFee()`（前端帶入的簽名上限就是它）、
+  `syncGasBalance(<錢包>)` 等於預存額。交易者發布新版後，執行者的日誌出現 `Resynced`，Portfolio 顯示「已同步到」最新版。
+- 舊 tracker 不再能開倉：`authorizedAgents(0x15A9…347C)` 為 false。
+
+**失敗時：**
+- **第 3 項失敗**：沒有任何接線改變，修正後重跑。部署成功但不打算接線：新 tracker 沒有授權，放著無害。
+- **第 4 項只送了一部分**：照順序補完剩下的（exchange 那一筆在最後，所以中途停下時新 tracker 還不能開平倉、舊 tracker 仍有授權）。決定放棄時把已改的那幾顆用同樣的指令改回 `0x15A9…347C`。
+  若 exchange 那一筆已經送出，改回舊 tracker（`exchange.setCopyTracker(0x15A9…)`）會重新授權舊 tracker、撤銷新 tracker；
+  新 tracker 上若已有跟單，那些跟隨者用 `deactivateWithoutScoring` 收尾、在交易所自行平倉，油箱照常可以 `withdrawSyncGas`
+  （不能收 ETH 的合約錢包用 `withdrawSyncGasTo` 領到別的地址；提領不經過交易所，不受授權影響）。
+- **第 5 項讀回不符**：先不要往下做第 6 項；對照腳本印出的值與 `addresses.ts`，必要時照上一點回滾。
+- **新跟單一律失敗**：多半是 FeeRouter 那一筆漏了（`Unauthorized`）；`cast call 0x89Aa…5d29 "copyTracker()(address)"` 確認。
+- **之後調整交易所的 `executionFee`**：調高之後，所有已開啟自動同步的跟單都會暫停「別人代為同步」（`ExecutionFeeAboveCap`），
+  直到各跟隨者看過新費率、重新儲存自動同步設定（前端把新費率當成簽名上限帶入）（ADR-024、KNOWN_LIMITATIONS #39）；
+  執行者日誌會出現 `consent` 分類。正在送出的跟單、設定與「立即同步」若帶的是舊費率，也會整筆退回 `ExecutionFeeAboveCap`，
+  使用者重新整理後再送即可。這是刻意的：owner 不能在跟隨者沒有簽名同意時多扣油箱，搶先調費也不行。調高前先公告；調低不受影響。

@@ -55,11 +55,13 @@ export const custody: Catalog['custody'] = {
     differenceHeading: 'How copy trading here differs from eToro',
     difference: {
       snapshot:
-        "Copying takes a snapshot of the trader's current strategy version and opens positions once. If the trader changes strategy later, your positions do not change (Portfolio marks this as \"Strategy updated\").",
+        "By default, copying takes a snapshot of the trader's current strategy version and opens positions once. If the trader publishes a new version later, your positions do not change on their own (Portfolio marks this as \"Strategy updated\").",
+      autoSync:
+        "You can also switch on auto-sync on-chain (ADR-024; this network's copy contract must be upgraded first, and the copy page tells you whether it is available). Once it is on, anyone can — and can only — bring your positions in line with the trader's latest on-chain version. They cannot choose the asset, direction or leverage; the operator never signs for you, and you can switch it off at any time.",
       stopLoss:
         'There is no automatic stop-loss. You can set a stop-loss reminder in Portfolio, but it never closes anything — when it triggers, you stop copying yourself.',
       reason:
-        'Continuous copying and automatic stop-losses would both need contract changes, or the operator placing orders for you. Both conflict with self-custody, so neither is offered.',
+        'Automatic stop-losses are still not offered: someone would have to close your position when the price gets there, and when to close is a judgement call, not a rule the contract can verify — it would mean the operator or some program placing orders for you, which conflicts with self-custody. Auto-sync is different: what your positions become is fixed by the trader\'s latest on-chain version, and whoever presses sync has no choice to make.',
     },
   },
 };

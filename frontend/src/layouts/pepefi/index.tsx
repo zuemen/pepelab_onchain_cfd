@@ -12,6 +12,7 @@ import { useWalletContext } from 'src/contexts/wallet-context';
 import { CHAIN_NAMES, isPrimaryChain, PRIMARY_CHAIN_ID } from 'src/contracts/addresses';
 
 import { LoadingScreen } from 'src/components/loading-screen';
+import { CopySyncNotice } from 'src/components/pepefi/copy/CopySyncNotice';
 import { SwitchChainButton } from 'src/components/pepefi/SwitchChainButton';
 
 import { isPublicPath } from './publicPaths';
@@ -75,6 +76,9 @@ export function PepefiLayout() {
       </Box>
 
       <ChainNotice chainId={wallet.chainId} />
+      {/* 交易者發布了新版、你有紀錄還停在舊版（ADR-024）：沒有自己跑 agent 的人只能從這裡知道。
+          連著錢包時，公開頁（排行榜、動態牆…）也顯示；只有 landing 不顯示（連著錢包會被導到投資組合）。 */}
+      <CopySyncNotice wallet={wallet} pathname={pathname} hidden={pathname === '/'} />
 
       <Box component="main" id="main-content" tabIndex={-1} sx={{ outline: 'none' }}>
         <Outlet context={wallet} />

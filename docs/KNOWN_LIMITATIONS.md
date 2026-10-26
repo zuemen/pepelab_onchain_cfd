@@ -60,6 +60,13 @@ was not, the reason is given rather than glossed over.
 | 36 | The delegation VC binds only agents that run this repo's code; the chain does not check it | **By design, partly mitigated** (2026-10-07) — opens now also require the on-chain anchor when configured; a stolen agent key is stopped only by `revokeSession` |
 | 37 | After the keeper refuses a gap, closes and liquidations run at the pre-gap price, then everything freezes | **Open** (2026-10-07) — no automatic recovery path; the vault is not covered by the keeper's protection at all |
 | 38 | `PythOracleAdapter` reads `getPriceUnsafe`, and nothing in the repo ever calls `updatePriceFeeds` | **Open** (2026-10-07) — Pyth is a pull oracle; un-pulled feeds go stale, so the Pyth leg of the aggregator is effectively down |
+| 39 | 跟單自動同步：每次同步從油箱扣的執行費跟著交易所的 `executionFee`，owner 可以調高 | **Fixed in source**（2026-10-26，ADR-024）— 每一條扣油箱（或預存 ETH）的路徑都以跟隨者交易參數裡簽名帶入的每腿上限（`maxExecFeePerLeg`／`syncExecFeeCap`）為準，現行費率較高就整筆 revert `ExecutionFeeAboveCap`；owner 搶先調費只會讓交易失敗。剩下：owner 能讓交易失敗、能在範圍內調高往後的成本（治理面） |
+| 40 | 自動同步的即時性取決於有沒有人執行 `resyncFor` | **By design**（2026-10-26）— 無需許可，平台 keeper、跟隨者自己的 agent、第三方都能執行；沒人執行時部位停在舊版，本人可手動同步；網頁全站提醒落後的紀錄，`--notify-only` 不需金鑰就能推播 |
+| 41 | 交易者決定版本與發布時機：可在同一區塊搶先發版，也可以每個冷卻期改版一次，讓跟隨者反覆付交易費、在價格來回中反覆實現績效費 | **By design, bounded in frequency only**（2026-10-26）— 冷卻由合約強制且不得低於 1 小時（同一區塊反覆發版＋自己同步只成功一次），但不限制每一輪的金額；績效費沒有高水位線（交易所端，未改）；虧損跨版本累計計分 |
+| 42 | 同步是「全平再開」，不是差額調倉：只改一個權重，所有腿也都一出一進 | **Accepted**（2026-10-26）— 每輪約付 2 ×（份額 × 槓桿 × 費率）的交易費，獲利腿的績效費每次都實現；冷卻限制頻率 |
+| 43 | `followersByTrader` 會重複記錄同一位跟隨者，`getFollowerCount` 因此偏高 | **Open**（既有問題，2026-10-26 記錄）— 執行者 agent 去重；合約未改 |
+| 44 | 自動同步版 CopyTracker 尚未部署；舊 tracker 的跟單不能遷移，`PepeIncentives` 綁著舊 tracker | **Open**（2026-10-26）— 擁有者執行 OWNER_ACTIONS 第 8 步之前公開站沒有此功能 |
+| 45 | 交易者發布含極小權重（例如 1 bps）的版本，可以讓跟隨者的自動同步一直失敗、停在舊版 | **Open**（2026-10-26）— 資金沒有風險：那條腿低於交易所最小保證金，整筆 revert `MarginTooLow`；`pendingSync` 回報不可同步、執行者分類為容量問題；跟隨者可隨時取消跟單 |
 
 ---
 
@@ -1511,6 +1518,128 @@ Nothing in this repo does that (the adapter's header comment mentions an
 off-chain keeper that does not exist), so on a chain where nobody else pulls the
 feed the Pyth leg reads stale and the aggregator's cross-check never runs.
 ADR-013 is the plan to make the keeper relay signed updates.
+
+## 跟單自動同步（added 2026-10-26）
+
+設計與權限模型見 [`ADR-024-copy-auto-sync.md`](ADR-024-copy-auto-sync.md)。以下各項在**原始碼**成立；Base Sepolia 上的
+CopyTracker 仍是快照版，部署前只有本機鏈能展示（見 #44）。
+
+## 39. 同步成本跟著 owner 可調的 `executionFee`（已以跟隨者簽名帶入的上限封住）
+
+`resyncFor` 從 `syncGasBalance[follower]` 扣 `exchange.executionFee() × 腿數`（加上跟隨者自己設定的小費），執行費付進交易所，
+由 owner 以 `withdrawExecutionFees` 提領。`setExecutionFee` 的上限是 `MAX_EXECUTION_FEE` = 1 ETH／腿（現行 0.0001 ETH，
+2026-10-26 唯讀讀回）；Base Sepolia 交易所的 owner 是 EOA，不是 timelock，調費沒有延遲。最初的原始碼按現行費率扣，審查實測
+owner 調高費率後以第三方身分同步一次，0.3 ETH 的油箱只剩 1 wei。
+
+**第一輪修正（原始碼，2026-10-26）**：跟隨者開啟（或修改）自動同步時，合約把「交易執行當下」的 `executionFee` 記進
+`syncExecFeeCap[follower][recordIdx]`，第三方同步時現行費率高於它就 revert；本人手動同步不設上限，理由是「本人送出時看得到費率」。
+第二輪審查實測這兩點都能被搶先交易利用（交易所 owner 是 EOA、沒有延遲；repo 也有部署者金鑰外洩的前例 LEAKED_DEPLOYER）：
+
+- owner 在同一個區塊搶先 `setExecutionFee(1 ether)`，跟隨者的「立即同步」（`resyncAtVersion`）照樣成功，3.01 ETH 的油箱被扣 3 ETH，
+  owner 再 `withdrawExecutionFees` 領走——損失以**整個油箱**為限（最高 1 ETH × 腿數），不是這筆交易的 `msg.value`；
+- 跟隨者只是想改小費而呼叫 `setAutoSync`，owner 搶先調費，同意值被記成 1 ETH／腿，之後任何第三方同步都按它扣油箱；
+- `followTraderAtVersionWithAutoSync` 的預存油箱 ETH 整筆被當成開倉執行費收走（油箱剩 1 wei），同意值也被記成調高後的費率。
+
+**現在（原始碼，2026-10-26 第二輪）**：同意值改由跟隨者在交易參數裡**簽名帶入**——`setAutoSync(…, maxExecFeePerLeg)`、
+`followTraderAtVersionWithAutoSync(…, maxExecFeePerLeg)`、`resyncAtVersion(recordIdx, expectedVersion, maxExecFeePerLeg)`，
+前端帶入畫面上顯示的 `executionFee`。交易所現行費率高於簽名值就整筆 revert `ExecutionFeeAboveCap(fee, cap)`：油箱、預存的 ETH、
+設定與同意值都不變；成功時記下現行費率（≤ 簽名值）。`resyncFor` 從油箱扣款時以 `syncExecFeeCap` 為上限——第三方一律如此；
+本人經 `resyncFor` 同步時，附帶的 `msg.value` 付得清全部成本才不受此限（付款上限是本人簽名的 `msg.value`，油箱既有餘額淨額不減）。
+關閉自動同步不看費率。費率調回同意的水準以下就恢復（按較低的現行費率扣）；跟隨者要接受新費率，看過之後帶入新上限再呼叫一次
+`setAutoSync`。Portfolio 會顯示「交易所調高了執行費，超過你同意的費率」，執行者 agent 把它分類為 `consent` 並通知本人。
+回歸測試：`test_ownerFrontRunsManualSync_cannotDrainTank`、`test_ownerFrontRunsSetAutoSync_cannotRaiseConsent`、
+`test_ownerFrontRunsFollowWithAutoSync_cannotTakeTank`，以及不變量 `invariant_neverPaysAboveConsentedFee`。
+
+仍然存在的部分：
+
+- owner 搶先調費仍能讓跟隨者的交易**失敗**（跟單、改設定、立即同步），也能在 `MAX_EXECUTION_FEE` 範圍內提高往後每一筆交易的成本；
+  跟隨者看過新費率、再次簽名同意之前，油箱不會按新費率被扣。這是交易所參數治理的問題，緩解是把交易所 owner 交給有延遲的 timelock。
+- 每次同步的腿數由交易者的新版決定；每條腿都要通過交易所的最小保證金與資產檢查，所以腿數受上架資產數量限制。
+
+## 40. 即時性取決於有沒有人執行
+
+合約不會自己動：交易者發布新版之後，要有人送出 `resyncFor` 才會同步。平台可以跑公開的執行者（`agent/copy-sync`，賺小費），
+跟隨者也可以跑自己的（personal 模式），任何第三方都能執行；但沒有人執行時，部位會一直停在舊版。跟隨者若用 `setSyncExecutor`
+指定只有自己的 agent 能執行，那個 agent 停了就沒有人能代為同步（這是跟隨者自己選的取捨）。Portfolio 顯示
+「已同步到 vN／最新 vM」，本人可以隨時按「立即同步」（先看過新版內容，不付小費；Simple Mode 不提供，要切到專家模式）。
+personal 模式的執行者在交易者發布新版時會通知本人（`new-version`，含沒開自動同步的跟單）。webhook 設在執行者那支程式上：
+平台或第三方的 public 執行者，通知送到營運方自己，不會送到跟隨者——沒有自己跑 agent 的跟隨者，靠網頁任何內頁頂端的提醒
+（落後的紀錄與要本人處理的原因：沒開自動同步、油箱不足、執行費被調高）知道；想收推播可以跑不需要任何金鑰的
+`copy-sync --notify-only --followers <自己>`（寫狀態檔，每一版、每個被擋原因只通知一次）。網頁提醒只在打開網站時看得到，
+新版含 RWA 而還沒 KYC、休市這類要模擬才知道的原因，網頁只顯示「落後」，原因要到投資組合或只通知模式的通知裡看。
+執行者以 `eth_getLogs` 掃事件，公開節點每段最多 200 個區塊
+（`sepolia.base.org` 的上限），落後很多時追上需要時間；休市、KYC、冷卻擋下的同步要等下一輪重掃。
+
+## 41. 交易者決定版本與時機
+
+跟隨者同意的是「調成交易者鏈上最新版」。交易者可以看到等待中的 `resyncFor`，在同一個區塊搶先發布另一版，同步就會到那一版
+（與 `followTrader` 的 M10 同一類問題；`followTraderAtVersionWithAutoSync` 只釘住**開始跟單**時的版本）。這只適用於第三方同步——
+開啟自動同步就是同意最新版。**本人手動同步不受影響**：Portfolio 的「立即同步」走 `resyncAtVersion(recordIdx, expectedVersion, maxExecFeePerLeg)`，
+交易者在跟隨者按下之前（或同一個區塊）發的新版會讓它 revert `StrategyVersionMismatch`，而不是直接採用跟隨者沒看過的版本
+（審查實測舊入口 `resyncFor(本人)` 會直接換成搶先發布的全空 5 倍版本；`test_resyncAtVersion_rejectsVersionPublishedAfterReview`）。
+`resyncFor` 仍保留本人呼叫的路徑（不釘版本），給明確要「最新版不管是什麼」的整合使用。交易者也可以頻繁改版：
+每次同步都實現交易費，獲利的腿付 10% 績效費、虧損的腿不抵銷（績效費以單一部位計，沒有高水位線），等於交易者能決定績效費何時入帳。
+
+界限與它們**擋不住**的部分：
+
+- **頻率**：冷卻（`minSyncInterval`）由合約強制，而且開啟自動同步時不得低於 `MIN_SYNC_INTERVAL` = 1 小時。最初的原始碼允許 0，
+  審查實測交易者在同一個區塊重複「發版 → 自己呼叫 `resyncFor`」25 次全部成功：價格完全沒動，跟隨者 1,000 USDC 的部位被交易費
+  磨掉約 7%（5 倍槓桿會更快），小費全進交易者口袋，計分不受影響。現在同一個冷卻期只會成功一次（`test_resync_traderCannotGrindInOneBlock`）。
+- **每一輪的金額不受冷卻限制**：每輪約付 2 ×（份額 × 槓桿 × 費率）的交易費（5 倍、0.10% 約 1%；1 倍、1.00% 約 2%）。交易者若每個
+  冷卻期都發一版，冷卻 1 小時一天最多 24 輪。
+- **績效費沒有高水位線**（交易所以單一部位計，CopyTracker 不改 PerpetualExchange）：交易者挑價格高點發版、讓獲利腿實現（收 10%
+  績效費），低點再發版、讓虧損腿實現（不退費）。審查實測（交易費與借款費設 0、冷卻 1 小時）三檔資產在 +10% 與原價之間來回 5 次，
+  價格回到原點時跟隨者從約 1,000 降到 904.97 USDC，交易者收 72.09 USDC 績效費（真實 FeeRouter 給交易者其中 70%）。只要震盪週期比
+  冷卻長，冷卻就擋不住；跨輪計分只看價格損益，不會觸發罰沒。
+- 比對新版內容與舊版是否相同（雜湊）沒有採用：換個順序、差 1 bps 或在兩版之間交替就繞過（ADR-024 Considered options）。
+
+槓桿上限由跟隨者設定；同步前檢查交易者資格（`isEligibleTrader`）；每次同步平掉的腿累計計分，改版洗不掉虧損。
+跟隨者的防線：較長的冷卻（前端預設 24 小時，選項裡最保守的一個）、較低的槓桿上限；在動態牆或 Portfolio 看到交易者異常頻繁發版就
+關閉自動同步。開啟前，跟單頁與設定彈窗會揭露每次同步的交易費、績效費與時機風險。
+
+**時機交給誰**，跟隨者有三種選擇，合約層的保證不同：
+
+- 開啟自動同步、不指定執行者：任何第三方（含平台的 public 執行者）都能在冷卻期滿後挑區塊送出。
+- 開啟自動同步，並用 `setSyncExecutor(recordIdx, executor)` 指定**自己的 agent**（另一把只放 gas 的熱錢包）：除了本人，只有那個地址能
+  呼叫 `resyncFor`，其他人一律 revert `NotSyncExecutor`（合約強制，`test_syncExecutor_onlyDesignatedOrFollower`）。第三方挑時機的空間
+  收回到跟隨者自己手上；冷卻、小費、執行費上限照舊適用於這個 agent。agent 不能是跟隨者的主錢包：執行者程式拒絕用跟隨者的私鑰啟動，
+  合約對 agent 一視同仁，所以 agent 仍需要自動同步開著。
+- 不開自動同步：沒有任何別人能同步。personal 模式的執行者仍會追蹤這筆跟單，交易者每發一版就通知本人一次（`new-version`），
+  本人到 Portfolio 看過新版內容後手動同步（`resyncAtVersion` 釘住看過的那一版）。
+
+三種都擋不住的是**交易者**決定何時發版、發什麼版——上面列的頻率與績效費問題只受冷卻約束。根本修法（績效費高水位線）要改交易所，列為後續。
+
+## 42. 全平再開，不是差額調倉
+
+同步平掉所有仍開著的腿，再依新版重新開倉。新版只改了一個權重，其他腿也一樣一出一進：交易費（0.10%–1.00%，依碳分級；每輪約
+2 ×（份額 × 槓桿 × 費率））付兩次、
+借款費與資金費結算、獲利腿的績效費實現。差額調倉要處理同資產換方向、部分平倉與保證金重算，CopyTracker 的大小與複雜度都會大增，
+暫不做（ADR-024 Considered options）。
+
+## 43. `followersByTrader` 重複記錄
+
+`_follow` 每次都把跟隨者 push 進 `followersByTrader[trader]`，同一位跟隨者跟了同一位交易者兩次（或取消後再跟）就出現兩次，
+`getFollowerCount` 會偏高。執行者 agent 讀這份清單時先去重，再逐一讀 `getCopyRecords` 找出交易者相符、仍在跟隨、開啟自動同步、
+版本落後的紀錄。合約沒有修（改成集合需要新的狀態與遷移，且不影響資金安全）；畫面上的跟隨人數若要精確，應以事件或去重後的清單計算。
+
+## 44. 部署前公開站沒有此功能；舊跟單不能遷移
+
+- Base Sepolia 上的 CopyTracker（`0x15A9…347C`）是快照版。要由擁有者部署新 tracker 並改接 exchange、TraderStake、FeeRouter
+  （[`OWNER_ACTIONS.md`](OWNER_ACTIONS.md) 第 8 步）。
+- 交易所的 `positionAgent` 綁定開倉的那顆 tracker，新 tracker 平不掉舊 tracker 開的腿：舊跟單不能轉成自動同步。
+  換 tracker 之後舊 tracker 失去授權，舊跟單的取消會 revert `PositionStillOpen`，出路是 `deactivateWithoutScoring` 後在交易所自行平倉。
+- `PepeIncentives.copyTracker` 是 immutable：換 tracker 之後，新跟單的「跟單獎勵」（`claimCopyReward`）讀的是舊 tracker，
+  會 revert `NotFollowing`，直到 PepeIncentives 重新部署。
+
+## 45. 極小權重讓同步卡住
+
+StrategyRegistry 只要求每條腿的權重介於 1 到 5,000 bps、至少三條腿。交易者發布例如 5,000／4,999／1 bps 的版本時，1 bps 那條腿的份額
+是釋出保證金的萬分之一，除非保證金超過十萬 USDC，否則一定低於交易所的 `MIN_MARGIN`（10 USDC），`resyncFor` 整筆 revert `MarginTooLow`。
+交易者只要讓這一版保持為最新版，開了自動同步的跟隨者就一直停在舊版。另一個觸發方式是部位虧損縮水，某條腿的份額低於最小保證金。
+
+資金沒有風險（同步是原子的，部位與油箱都不動）。`pendingSync` 以目前的 `deployedAmount` 估算各腿份額，低於 `MIN_MARGIN` 時回報不可同步
+（近似值：實際釋出的金額要平倉後才知道）；執行者 agent 以 `eth_call` 模擬，把 `MarginTooLow` 分類為容量問題並通知。跟隨者的出路是
+等交易者發布正常的版本，或取消跟單（`unfollowAndCloseAll`，照常計分）。合約刻意不跳過太小的腿：那樣的組合不是交易者發布過的任何一版。
 
 ## Frontend
 

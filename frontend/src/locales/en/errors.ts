@@ -110,6 +110,30 @@ export const errors: Catalog['errors'] = {
     EsgScoreTooLow:
       "This asset's ESG score is below the threshold — it doesn't qualify for the reward.",
     SelfCopyNotAllowed: "You can't copy your own trades.",
+    StrategyVersionMismatch:
+      'The trader published a new strategy version before your transaction landed; so you never end up on a version you have not reviewed, it was not executed. Reload the page, review the new version and submit again.',
+    TraderNotEligible:
+      "This trader's stake is below the minimum or being withdrawn, so they cannot take on new funds for now (existing positions are unaffected).",
+    PositionStillOpen:
+      'One of the positions cannot be closed right now (stale price, market closed or halted…); the whole transaction was reverted and your positions are unchanged — try again later.',
+    RecordAlreadyInactive: 'This record has already ended — reload the page.',
+    AlreadySynced: "Already on the trader's latest version — nothing to sync.",
+    InsufficientSyncGas:
+      "The auto-sync gas tank doesn't hold enough ETH for this sync's execution fees (and tip) — deposit into the tank first.",
+    InsufficientExecutionFee:
+      'The ETH attached does not cover the execution fees for opening these positions (the exchange may have just changed its fee), so nothing was executed — reload the page and submit again.',
+    InvalidRecipient: 'Invalid recipient address (for example 0x0) — check the address and try again.',
+    SyncCooldown:
+      'Still within the cooldown set in your auto-sync settings — others must wait for it to end before syncing for you; syncing yourself is not limited.',
+    AutoSyncDisabled: 'Auto-sync is off for this record, so only its owner can sync it.',
+    InvalidSyncConfig: 'Auto-sync settings out of range: the leverage cap must be 1–5×, the cooldown at least 1 hour, and the tip cannot exceed the contract cap.',
+    ExecutionFeeAboveCap:
+      'The exchange execution fee is above the rate you agreed to (the one shown when you submitted, or the one you accepted when you switched auto-sync on), so the whole transaction was reverted and your gas tank was not touched. Reload the page to see the new fee and try again, or save your auto-sync settings again to accept it.',
+    NothingToRedeploy:
+      'Closing the old positions released no margin (they may all have been liquidated), so there is nothing to redeploy.',
+    SyncDisturbedOtherPositions:
+      'Closing these positions also touched your other positions (for example via auto-deleveraging); to keep your other funds untouched, the sync was reverted — try again later.',
+    EthTransferFailed: 'Sending ETH back to your wallet failed; the gas tank balance is unchanged. Make sure the receiving address can accept ETH.',
     PositionIdsNotSorted:
       'The position ID array must be strictly increasing (still failing after auto-sorting means there are duplicate IDs) — refresh the page and try again.',
     RewardExceedsBudget:

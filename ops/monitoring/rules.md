@@ -1163,6 +1163,7 @@ PepeIncentives（#219 點數版，#344 cutover 部署）的每日簽到基本點
 | GuardedOracle | `PriceUpdated` | keeper 的例行寫價；被拒絕的寫價由 guarded-oracle-price-rejected 監控 |
 | TraderStake | `ReputationUpdated`、`Slashed`、`Staked`、`UnstakeCancelled`、`UnstakeRequested`、`Unstaked` | 交易員自己的質押操作，與 CopyTracker 依協議規則執行的 slash／聲譽更新；能執行 slash 的地址由 traderstake-copytracker-set 與 core-wiring 監控 |
 | CopyTracker | `PositionCloseSkipped`、`RecordDeactivatedWithoutScoring`、`SlashFailed`、`SlashScoringWaived`、`TraderFollowed`、`TraderSlashed`、`TraderUnfollowed` | 使用者自己的跟單／取消跟單，與依協議規則執行的平倉記錄、slash 與評分結果；能執行 slash 的 CopyTracker 由 traderstake-copytracker-set 與 core-wiring 監控，罰沒準備金提出由 copytracker-slash-reserve 監控 |
+| CopyTracker | `AutoSyncSet`、`Resynced`、`SyncExecutorSet`、`SyncGasDeposited`、`SyncGasWithdrawn` | **部署版不發此事件**：部署版是快照版 CopyTracker，沒有自動同步（ADR-024）。這五個事件是跟隨者自己的操作（開關自動同步、指定或解除唯一的執行者、存提自己的油箱）與任何人依合約規則執行的同步，不是管理操作：油箱只有跟隨者本人能提領、指定執行者只有跟隨者本人能設定、同步只能調成交易者鏈上最新版、扣款不超過跟隨者簽名同意的執行費上限，都由合約強制；同步被擋的原因由執行者 agent（agent/copy-sync）通知跟隨者。換成自動同步版後這一組會被檢查器擋下，要重新分類（OWNER_ACTIONS 第 8 步） |
 | KYCRegistry | `KYCBatchVerified`、`KYCVerified` | owner 的例行 KYC 核准；owner 變更由 owner-transferred 監控 |
 | KYCRegistry | `KYCRevoked`、`KYCSubmitted` | **部署版不發此事件**：部署版是舊的 KYCRegistry，沒有送件與撤銷流程 |
 | AssetVault | `Minted`、`Redeemed`、`VaultFunded` | 使用者自己的操作或例行結算，不是管理操作；資金面由大額提領、保險金與儲備率規則涵蓋 |

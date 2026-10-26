@@ -58,6 +58,45 @@
   },
   {
     "type": "function",
+    "name": "MAX_SYNC_LEVERAGE",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint8",
+        "internalType": "uint8"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "MAX_TIP_WEI",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "MIN_SYNC_INTERVAL",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint32",
+        "internalType": "uint32"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "SLASH_RATIO_BPS",
     "inputs": [],
     "outputs": [
@@ -146,6 +185,13 @@
   },
   {
     "type": "function",
+    "name": "depositSyncGas",
+    "inputs": [],
+    "outputs": [],
+    "stateMutability": "payable"
+  },
+  {
+    "type": "function",
     "name": "exchange",
     "inputs": [],
     "outputs": [
@@ -204,6 +250,49 @@
       },
       {
         "name": "expectedVersion",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "payable"
+  },
+  {
+    "type": "function",
+    "name": "followTraderAtVersionWithAutoSync",
+    "inputs": [
+      {
+        "name": "trader",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "totalMargin",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "expectedVersion",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "maxLeverage",
+        "type": "uint8",
+        "internalType": "uint8"
+      },
+      {
+        "name": "minSyncInterval",
+        "type": "uint32",
+        "internalType": "uint32"
+      },
+      {
+        "name": "tipWei",
+        "type": "uint96",
+        "internalType": "uint96"
+      },
+      {
+        "name": "maxExecFeePerLeg",
         "type": "uint256",
         "internalType": "uint256"
       }
@@ -312,6 +401,57 @@
   },
   {
     "type": "function",
+    "name": "getSyncState",
+    "inputs": [
+      {
+        "name": "follower",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "recordIdx",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "tuple",
+        "internalType": "struct CopyTracker.SyncState",
+        "components": [
+          {
+            "name": "lastSyncedAt",
+            "type": "uint64",
+            "internalType": "uint64"
+          },
+          {
+            "name": "syncCount",
+            "type": "uint32",
+            "internalType": "uint32"
+          },
+          {
+            "name": "followerClosed",
+            "type": "bool",
+            "internalType": "bool"
+          },
+          {
+            "name": "scoredBasis",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "scoredRealized",
+            "type": "int256",
+            "internalType": "int256"
+          }
+        ]
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "owner",
     "inputs": [],
     "outputs": [
@@ -319,6 +459,40 @@
         "name": "",
         "type": "address",
         "internalType": "address"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "pendingSync",
+    "inputs": [
+      {
+        "name": "follower",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "recordIdx",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "syncable",
+        "type": "bool",
+        "internalType": "bool"
+      },
+      {
+        "name": "latestVersion",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "cost",
+        "type": "uint256",
+        "internalType": "uint256"
       }
     ],
     "stateMutability": "view"
@@ -336,6 +510,50 @@
         "name": "totalMargin",
         "type": "uint256",
         "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "copyFee",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "totalTradingFee",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "marginForPositions",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "portions",
+        "type": "uint256[]",
+        "internalType": "uint256[]"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "previewCopyAllocationWithCap",
+    "inputs": [
+      {
+        "name": "trader",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "totalMargin",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "maxLeverage",
+        "type": "uint8",
+        "internalType": "uint8"
       }
     ],
     "outputs": [
@@ -384,7 +602,247 @@
   },
   {
     "type": "function",
+    "name": "resyncAtVersion",
+    "inputs": [
+      {
+        "name": "recordIdx",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "expectedVersion",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "maxExecFeePerLeg",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "payable"
+  },
+  {
+    "type": "function",
+    "name": "resyncFor",
+    "inputs": [
+      {
+        "name": "follower",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "recordIdx",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "payable"
+  },
+  {
+    "type": "function",
+    "name": "setAutoSync",
+    "inputs": [
+      {
+        "name": "recordIdx",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "enabled",
+        "type": "bool",
+        "internalType": "bool"
+      },
+      {
+        "name": "maxLeverage",
+        "type": "uint8",
+        "internalType": "uint8"
+      },
+      {
+        "name": "minSyncInterval",
+        "type": "uint32",
+        "internalType": "uint32"
+      },
+      {
+        "name": "tipWei",
+        "type": "uint96",
+        "internalType": "uint96"
+      },
+      {
+        "name": "maxExecFeePerLeg",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "setSyncExecutor",
+    "inputs": [
+      {
+        "name": "recordIdx",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "executor",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
     "name": "slashReserve",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "syncConfig",
+    "inputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "autoSync",
+        "type": "bool",
+        "internalType": "bool"
+      },
+      {
+        "name": "maxLeverage",
+        "type": "uint8",
+        "internalType": "uint8"
+      },
+      {
+        "name": "minSyncInterval",
+        "type": "uint32",
+        "internalType": "uint32"
+      },
+      {
+        "name": "tipWei",
+        "type": "uint96",
+        "internalType": "uint96"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "syncExecFeeCap",
+    "inputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "syncExecutor",
+    "inputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "syncGasBalance",
+    "inputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "syncReadyAt",
+    "inputs": [
+      {
+        "name": "follower",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "recordIdx",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "totalSyncGas",
     "inputs": [],
     "outputs": [
       {
@@ -466,6 +924,80 @@
     "stateMutability": "nonpayable"
   },
   {
+    "type": "function",
+    "name": "withdrawSyncGas",
+    "inputs": [
+      {
+        "name": "amount",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "withdrawSyncGasTo",
+    "inputs": [
+      {
+        "name": "to",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "amount",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "event",
+    "name": "AutoSyncSet",
+    "inputs": [
+      {
+        "name": "follower",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "recordIdx",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      },
+      {
+        "name": "enabled",
+        "type": "bool",
+        "indexed": false,
+        "internalType": "bool"
+      },
+      {
+        "name": "maxLeverage",
+        "type": "uint8",
+        "indexed": false,
+        "internalType": "uint8"
+      },
+      {
+        "name": "minSyncInterval",
+        "type": "uint32",
+        "indexed": false,
+        "internalType": "uint32"
+      },
+      {
+        "name": "tipWei",
+        "type": "uint96",
+        "indexed": false,
+        "internalType": "uint96"
+      }
+    ],
+    "anonymous": false
+  },
+  {
     "type": "event",
     "name": "OwnershipTransferred",
     "inputs": [
@@ -517,6 +1049,61 @@
         "name": "recordIdx",
         "type": "uint256",
         "indexed": true,
+        "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "Resynced",
+    "inputs": [
+      {
+        "name": "follower",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "recordIdx",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      },
+      {
+        "name": "trader",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "fromVersion",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      },
+      {
+        "name": "toVersion",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      },
+      {
+        "name": "executor",
+        "type": "address",
+        "indexed": false,
+        "internalType": "address"
+      },
+      {
+        "name": "redeployedMargin",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      },
+      {
+        "name": "legs",
+        "type": "uint256",
+        "indexed": false,
         "internalType": "uint256"
       }
     ],
@@ -580,6 +1167,69 @@
         "name": "recordIdx",
         "type": "uint256",
         "indexed": true,
+        "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "SyncExecutorSet",
+    "inputs": [
+      {
+        "name": "follower",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "recordIdx",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      },
+      {
+        "name": "executor",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "SyncGasDeposited",
+    "inputs": [
+      {
+        "name": "follower",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "amount",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "SyncGasWithdrawn",
+    "inputs": [
+      {
+        "name": "follower",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "amount",
+        "type": "uint256",
+        "indexed": false,
         "internalType": "uint256"
       }
     ],
@@ -668,6 +1318,85 @@
   },
   {
     "type": "error",
+    "name": "AlreadySynced",
+    "inputs": [
+      {
+        "name": "recordVersion",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "latestVersion",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "AutoSyncDisabled",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "EthTransferFailed",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "ExecutionFeeAboveCap",
+    "inputs": [
+      {
+        "name": "fee",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "cap",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "InsufficientExecutionFee",
+    "inputs": [
+      {
+        "name": "required",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "sent",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "InsufficientSyncGas",
+    "inputs": [
+      {
+        "name": "required",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "available",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "InvalidRecipient",
+    "inputs": []
+  },
+  {
+    "type": "error",
     "name": "InvalidRecordIndex",
     "inputs": []
   },
@@ -678,7 +1407,28 @@
   },
   {
     "type": "error",
+    "name": "InvalidSyncConfig",
+    "inputs": []
+  },
+  {
+    "type": "error",
     "name": "NoStrategyPublished",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "NotSyncExecutor",
+    "inputs": [
+      {
+        "name": "executor",
+        "type": "address",
+        "internalType": "address"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "NothingToRedeploy",
     "inputs": []
   },
   {
@@ -777,6 +1527,22 @@
         "internalType": "uint256"
       }
     ]
+  },
+  {
+    "type": "error",
+    "name": "SyncCooldown",
+    "inputs": [
+      {
+        "name": "readyAt",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "SyncDisturbedOtherPositions",
+    "inputs": []
   },
   {
     "type": "error",

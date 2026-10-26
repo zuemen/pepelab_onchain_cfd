@@ -20,21 +20,21 @@ import { useHeroDataset } from 'src/hooks/useSimulatedTraders';
 import { heroDisclosure } from 'src/lib/pepefi/heroDisclosure';
 import { FEATURE_COPY_TRADING } from 'src/lib/pepefi/featureFlags';
 import { describeScanWindow } from 'src/lib/pepefi/chainLogs';
-import { FEED_TYPES, filterFeed, type FeedType } from 'src/lib/pepefi/feed';
+import { FEED_TYPES, COPY_FEED_TYPES, filterFeed, type FeedType } from 'src/lib/pepefi/feed';
 
 import FeedList from 'src/components/pepefi/feed/FeedList';
 
 // ----------------------------------------------------------------------
 // 動態牆（issue #335）：由鏈上事件組成、依時間排序的平台動態。只在 Expert 模式：內容是交易桌的事件。
 //
-// 跟單旗標關閉時不列跟隨與取消（跟單功能本身不存在），也不給跟單入口。
+// 跟單旗標關閉時不列跟隨、取消與自動同步（跟單功能本身不存在），也不給跟單入口。
 
 const L = t.feed;
 const PAGE = 50;
 
 /** 這個 build 會出現的類型。 */
 const VISIBLE_TYPES: readonly FeedType[] = FEED_TYPES.filter(
-  (type) => FEATURE_COPY_TRADING || (type !== 'follow' && type !== 'unfollow')
+  (type) => FEATURE_COPY_TRADING || !COPY_FEED_TYPES.includes(type)
 );
 
 export default function FeedPage() {

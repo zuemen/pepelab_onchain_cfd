@@ -145,8 +145,10 @@ owner 可設定的參數（費率、逐資產槓桿上限與維持保證金、AD
   見 [`AGENT_IDENTITY_VC_SSI.md`](AGENT_IDENTITY_VC_SSI.md) 與 [`KNOWN_LIMITATIONS.md`](KNOWN_LIMITATIONS.md)。
 - AgentSessionManager 本身必須被 exchange 的 owner 授權（`setAgentAuthorized`）。撤銷這個授權會讓所有 session
   既無法開倉、也無法由 agent 平倉；終端客戶仍可用自己的錢包直接 `closePosition`。
-- MCP server 提供 7 個工具：5 個唯讀（`get_trader_performance`、`get_funding_rate`、`get_position`、
-  `get_session`、`get_agent_verification`）與 2 個會送交易的（`open_position`、`close_position`，需要 session 與 VC）。
+- MCP server 提供 10 個工具：8 個唯讀（`get_trader_performance`、`get_funding_rate`、`get_position`、
+  `get_session`、`get_agent_verification`，以及跟單的 `copy_sync_status`、`prepare_copy_sync_tx`、`prepare_copy_follow_tx`——
+  後兩者只產生未簽名交易，交給跟隨者自己的錢包簽，後者讓 agent 發起跟單（approve＋釘版本跟單，可一併開自動同步），見 ADR-024）
+  與 2 個會送交易的（`open_position`、`close_position`，需要 session 與 VC）。
 
 **需客戶確認**：終端客戶授權 AI agent 代為交易，是否構成客戶所在法域的全權委託或代客操作，
 以及需要的揭露與同意程序。**需律師確認**。

@@ -3744,6 +3744,18 @@
       ]
     },
     {
+      "abi": "CopyTracker",
+      "notDeployed": true,
+      "reason": "部署版是快照版 CopyTracker，沒有自動同步（ADR-024）。這五個事件是跟隨者自己的操作（開關自動同步、指定或解除唯一的執行者、存提自己的油箱）與任何人依合約規則執行的同步，不是管理操作：油箱只有跟隨者本人能提領、指定執行者只有跟隨者本人能設定、同步只能調成交易者鏈上最新版、扣款不超過跟隨者簽名同意的執行費上限，都由合約強制；同步被擋的原因由執行者 agent（agent/copy-sync）通知跟隨者。換成自動同步版後這一組會被檢查器擋下，要重新分類（OWNER_ACTIONS 第 8 步）",
+      "events": [
+        "AutoSyncSet(address,uint256,bool,uint8,uint32,uint96)",
+        "Resynced(address,uint256,address,uint256,uint256,address,uint256,uint256)",
+        "SyncExecutorSet(address,uint256,address)",
+        "SyncGasDeposited(address,uint256)",
+        "SyncGasWithdrawn(address,uint256)"
+      ]
+    },
+    {
       "abi": "KYCRegistry",
       "reason": "owner 的例行 KYC 核准；owner 變更由 owner-transferred 監控",
       "events": [

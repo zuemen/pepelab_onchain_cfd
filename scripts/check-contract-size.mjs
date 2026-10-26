@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 // 主合約成長門檻：PerpetualExchange 的 runtime bytecode 不得超過釘選的預算。
+// 預算檔可以釘選多顆合約，逐一檢查（2026-10-26 起也釘選自動同步版 CopyTracker，ADR-024）。
 //
 // 為什麼存在：EIP-170 的上限是 24,576 B，主合約已經貼著上限（組合保證金模式就是因為
 // 塞不下才從原始碼移除，見 docs/KNOWN_LIMITATIONS.md）。只看 EIP-170 的話，每個 PR 都

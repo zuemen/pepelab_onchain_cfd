@@ -5,12 +5,13 @@
 //   1. 載入 .env 不在 stdout／stderr 印任何東西（keeper／CI／Vercel log）。
 //   2. 已存在的環境變數不被 .env 覆寫——即使環境或 .env 裡有 DOTENV_OVERRIDE=true。
 //   3. 解析結果與 dotenv 16 的預設 parser 相同（不被 DOTENV_FAST 換掉）。
+//   4. AGENT_SKIP_DOTENV=1 時完全不讀 .env（宣稱不讀 .env 的本機 e2e 腳本靠它）。
 import assert from "node:assert";
 import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { config } from "dotenv";
-import { dotenvLoadOptions, loadEnv } from "@pepelab/shared";
+import { dotenvLoadOptions, dotenvSkipped, loadEnv, loadEnvFile } from "@pepelab/shared";
 
 /** 執行 fn 期間攔下所有 stdout／stderr 輸出（console.log／error 也走這裡）。 */
 function captureOutput(fn: () => void): string[] {
@@ -40,6 +41,8 @@ const KEYS = [
   "DOTENV_CONFIG_QUIET",
   "DOTENV_CONFIG_DEBUG",
   "DOTENV_CONFIG_OVERRIDE",
+  "AGENT_SKIP_DOTENV",
+  "PEPE_ENVTEST_SKIPPED",
 ] as const;
 const saved = Object.fromEntries(KEYS.map((k) => [k, process.env[k]]));
 function restoreEnv() {
@@ -118,6 +121,25 @@ try {
   assert.deepEqual(logs3, [], `缺檔不可輸出，實際：${JSON.stringify(logs3)}`);
   assert.equal((missingErr as NodeJS.ErrnoException | undefined)?.code, "ENOENT", "缺檔只回傳 error，不丟例外");
   console.log("✓ .env 不存在：不輸出、不丟例外");
+
+  // ── AGENT_SKIP_DOTENV：呼叫端明確關掉 .env 時一個變數都不讀 ─────────────────
+  restoreEnv();
+  for (const k of KEYS) delete process.env[k];
+  const envFile3 = join(dir, "skip.env");
+  writeFileSync(envFile3, "PEPE_ENVTEST_SKIPPED=from-file\n");
+  for (const v of ["1", "true", " TRUE "]) {
+    process.env.AGENT_SKIP_DOTENV = v;
+    assert.equal(dotenvSkipped(), true, `AGENT_SKIP_DOTENV=${JSON.stringify(v)} 應關掉 .env`);
+    loadEnvFile(envFile3);
+    assert.equal(process.env.PEPE_ENVTEST_SKIPPED, undefined, `AGENT_SKIP_DOTENV=${JSON.stringify(v)} 時不可讀 .env`);
+  }
+  for (const v of ["0", "false", ""]) {
+    assert.equal(dotenvSkipped({ AGENT_SKIP_DOTENV: v }), false, `AGENT_SKIP_DOTENV=${JSON.stringify(v)} 不算關閉`);
+  }
+  delete process.env.AGENT_SKIP_DOTENV;
+  loadEnvFile(envFile3);
+  assert.equal(process.env.PEPE_ENVTEST_SKIPPED, "from-file", "沒設 AGENT_SKIP_DOTENV 時照常讀 .env");
+  console.log("✓ AGENT_SKIP_DOTENV=1：完全不讀 .env；沒設時照常讀");
 
   // ── 實際的 loadEnv()（讀 agent/.env，不論它存不存在）也不輸出 ────────────────
   const logs4 = captureOutput(() => {

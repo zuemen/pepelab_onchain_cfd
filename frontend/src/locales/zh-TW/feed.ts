@@ -35,6 +35,8 @@ export const feed = {
     unfollow: '取消跟單',
     slash: '罰沒',
     retirement: '碳權退役',
+    resync: '自動同步',
+    autoSync: '同步設定',
   },
 
   sentence: {
@@ -60,6 +62,12 @@ export const feed = {
     long: '做多',
     short: '做空',
     separator: '；',
+    /** ADR-024：同一位交易者、同一版的同步合成一則；不列出跟隨者與執行者的位址。 */
+    resync: '{count} 筆跟單的部位已同步到第 {version} 版',
+    autoSyncOn: '{when}有 {count} 筆跟單開啟自動同步',
+    autoSyncOff: '{when}有 {count} 筆跟單關閉自動同步',
+    today: '今天',
+    onDay: '{day} ',
   },
 
   item: {

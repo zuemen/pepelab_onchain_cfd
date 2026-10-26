@@ -15,7 +15,7 @@ import { useChainFeed } from 'src/hooks/useChainFeed';
 import { useContracts } from 'src/hooks/useContracts';
 import { useSimulatedTraders } from 'src/hooks/useSimulatedTraders';
 import { FEATURE_COPY_TRADING } from 'src/lib/pepefi/featureFlags';
-import { FEED_TYPES, filterFeed } from 'src/lib/pepefi/feed';
+import { FEED_TYPES, COPY_FEED_TYPES, filterFeed } from 'src/lib/pepefi/feed';
 
 import FeedList from './FeedList';
 
@@ -24,7 +24,7 @@ import FeedList from './FeedList';
 
 const L = t.feed;
 const SHOWN = 8;
-const TYPES = FEED_TYPES.filter((type) => FEATURE_COPY_TRADING || (type !== 'follow' && type !== 'unfollow'));
+const TYPES = FEED_TYPES.filter((type) => FEATURE_COPY_TRADING || !COPY_FEED_TYPES.includes(type));
 
 export default function TraderFeedSection({ wallet, trader }: { wallet: WalletAPI; trader: string }) {
   const contracts = useContracts(wallet.provider, wallet.signer, wallet.chainId);

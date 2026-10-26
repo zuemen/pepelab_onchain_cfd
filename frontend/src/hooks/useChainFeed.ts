@@ -17,8 +17,8 @@ import { useRegisteredTraders } from './useRegisteredTraders'
 // 鏈上動態牆的資料（issue #335）。
 //
 // 交易所的開倉、平倉、清算沿用巨鯨追蹤共用的那一份掃描（useExchangeActivity），不再掃一次。
-// 另外只多一趟分段掃描：策略登錄的 StrategyPublished，加上跟單合約的跟隨、取消、罰沒——
-// 兩個合約、四種事件併成一次 getLogs（address 與 topics[0] 都傳陣列就是 OR）。
+// 另外只多一趟分段掃描：策略登錄的 StrategyPublished，加上跟單合約的跟隨、取消、罰沒、自動同步——
+// 兩個合約、多種事件併成一次 getLogs（address 與 topics[0] 都傳陣列就是 OR）。
 // 這條鏈接上了碳權退役（#333，從 FeeRouter 找得到退役合約）時，CarbonRetired 也併進同一次掃描。
 // 掃描範圍沿用 scanFromBlock：本機鏈從頭掃，公開鏈只掃有限的視窗。任何一段讀不到，結果就標成不完整。
 //
@@ -27,7 +27,10 @@ import { useRegisteredTraders } from './useRegisteredTraders'
 
 const EXACT_BLOCKS = 800
 
-const SOCIAL_EVENTS = ['StrategyPublished', 'TraderFollowed', 'TraderUnfollowed', 'TraderSlashed', 'CarbonRetired'] as const
+// Resynced／AutoSyncSet 是自動同步版 CopyTracker（ADR-024）才有的事件；舊合約上不會有這兩種 log，多掃也不花額外的請求。
+const SOCIAL_EVENTS = [
+  'StrategyPublished', 'TraderFollowed', 'TraderUnfollowed', 'TraderSlashed', 'CarbonRetired', 'Resynced', 'AutoSyncSet',
+] as const
 
 interface Contracts {
   exchange: Contract
@@ -45,6 +48,10 @@ export interface ChainFeed {
   scanRange: { from: number; to: number } | null
   refetch: () => void
 }
+
+/** 事件參數：先照名稱讀，名稱對不上（ABI 換成 forge 產物後改名）再照位置讀。 */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const arg = (args: any, name: string, position: number): unknown => args?.[name] ?? args?.[position]
 
 // ethers v6 的 Log 用 `index`，v5 用 `logIndex`。
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -147,7 +154,40 @@ export function useChainFeed(
           const amount = a.amount as bigint
           const scaled = decimals <= 18 ? amount * 10n ** BigInt(18 - decimals) : amount / 10n ** BigInt(decimals - 18)
           rows.push({ ...base, kind: 'retire', amount: scaled, tonnes: a.tonnesCO2e as bigint })
+        } else if (parsed.name === 'Resynced') {
+          rows.push({
+            ...base,
+            kind: 'resync',
+            follower: String(arg(a, 'follower', 0)),
+            trader: String(arg(a, 'trader', 2)),
+            fromVersion: Number(arg(a, 'fromVersion', 3)),
+            toVersion: Number(arg(a, 'toVersion', 4)),
+          })
+        } else if (parsed.name === 'AutoSyncSet') {
+          // 事件沒有帶 trader 的合約版本：先留空，下面再從 copyRecords 補
+          const trader = a.trader
+          rows.push({
+            ...base,
+            kind: 'autoSync',
+            follower: String(arg(a, 'follower', 0)),
+            trader: typeof trader === 'string' ? trader : '',
+            enabled: Boolean(a.enabled ?? false),
+            recordIdx: BigInt(String(arg(a, 'recordIdx', 1) ?? 0)),
+          } as Untimed)
         }
+      }
+      // AutoSyncSet 沒帶 trader 時，用 copyRecords(follower, idx) 讀回是哪位交易者；讀不到的那則就不列
+      const unknownTrader = rows.filter(
+        (r): r is Extract<Untimed, { kind: 'autoSync' }> & { recordIdx: bigint } => r.kind === 'autoSync' && !r.trader,
+      )
+      if (unknownTrader.length > 0) {
+        await mapLimit(unknownTrader, RPC_CONCURRENCY, async (r) => {
+          try {
+            const rec = (await withRetry(() => contracts.copyTracker.copyRecords(r.follower, r.recordIdx))) as unknown as { trader?: string; 0?: string }
+            r.trader = String(rec.trader ?? rec[0] ?? '')
+          } catch { /* 留空：buildFeed 不列 */ }
+        })
+        if (isStale()) return
       }
       setSocial(rows)
       setSocialFailed(failed)

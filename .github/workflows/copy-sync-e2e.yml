@@ -1,0 +1,106 @@
+name: Copy auto-sync e2e (local Anvil)
+
+# 跟單自動同步（ADR-024）的兩支本機端到端腳本：真的合約、真的 Anvil、真的 copy-sync CLI。
+#
+# 為什麼存在：npm test 裡的 copy-sync 測試跑的是記憶體假鏈（agent/copy-sync/src/fakeChain.ts），假鏈的 revert 規則
+# 是手寫的。合約的錯誤選擇子、參數順序或 Resynced 事件欄位改了而假鏈沒跟著改，npm test 照樣全過——只有真鏈上的
+# 端到端抓得到，而它們以前只在有人手動執行時才跑。
+#   - scripts/demo-autosync.sh：完整故事＋逐步斷言（public／personal／只通知模式、RWA 原子性、指定執行者、
+#     agent 經 MCP 工具發起跟單、金鑰護欄）。
+#   - agent/copy-sync/anvil-e2e.sh：執行者 CLI 的冪等、冷卻、dry-run、KYC、personal 模式。
+#
+# 安全邊界：permissions 只有 contents: read；不綁 environment、不引用任何 secret。兩支腳本只連自己起的本機 Anvil
+# （127.0.0.1、chainId 31337，不是就中止），只用 Anvil 公開的測試金鑰，不讀 .env（AGENT_SKIP_DOTENV=1）、keystore 或
+# 私鑰檔，不對任何公開鏈送交易。依賴以 --ignore-scripts 安裝（不讓依賴樹執行安裝腳本）。
+#
+# 逾時：兩支腳本的部署都加 --slow，並由 scripts/lib/forge-broadcast-guard.sh 看門（廣播停滯 90 秒或超過 20 分鐘就印出
+# txpool 狀態後失敗），卡住時不會空轉到下面的 job 逾時。
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'contracts/src/**'
+      - 'contracts/script/DeployLocalDemo.s.sol'
+      - 'contracts/foundry.toml'
+      - 'agent/copy-sync/**'
+      - 'agent/mcp-server/src/copyTools.ts'
+      - 'agent/shared/**'
+      - 'agent/keeper/nonceSigner.ts'
+      - 'agent/keeper/keySource.ts'
+      - 'agent/heroes/keystore.ts'
+      - 'agent/heroes/addresses.ts'
+      - 'agent/package.json'
+      - 'agent/package-lock.json'
+      - 'frontend/src/contracts/addresses.ts'
+      - 'frontend/src/lib/pepefi/chainLogs.ts'
+      - 'scripts/demo-autosync.sh'
+      - 'scripts/lib/forge-broadcast-guard*'
+      - '.github/workflows/copy-sync-e2e.yml'
+  pull_request:
+    paths:
+      - 'contracts/src/**'
+      - 'contracts/script/DeployLocalDemo.s.sol'
+      - 'contracts/foundry.toml'
+      - 'agent/copy-sync/**'
+      - 'agent/mcp-server/src/copyTools.ts'
+      - 'agent/shared/**'
+      - 'agent/keeper/nonceSigner.ts'
+      - 'agent/keeper/keySource.ts'
+      - 'agent/heroes/keystore.ts'
+      - 'agent/heroes/addresses.ts'
+      - 'agent/package.json'
+      - 'agent/package-lock.json'
+      - 'frontend/src/contracts/addresses.ts'
+      - 'frontend/src/lib/pepefi/chainLogs.ts'
+      - 'scripts/demo-autosync.sh'
+      - 'scripts/lib/forge-broadcast-guard*'
+      - '.github/workflows/copy-sync-e2e.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# 純本機、無鏈上副作用：同一個分支／PR 的新 push 取消舊 run 是安全的。
+concurrency:
+  group: copy-sync-e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  e2e:
+    name: demo-autosync.sh + e2e:copy-sync
+    runs-on: ubuntu-latest
+    # 兩支腳本各自編譯一次 DeployLocalDemo（via_ir，各數分鐘）。
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          submodules: recursive
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: agent/package-lock.json
+
+      # 與 contracts-ci.yml 同一個版本。
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@908c540300062bd5a7e473851cdb4282204cee09 # v1.9.1
+        with:
+          version: v1.8.0
+
+      - name: Install agent dependencies (no install scripts)
+        working-directory: agent
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
+      # 看門狗本身：nonce 斷層卡住、超過總時長都要在上限內中止（下面兩支腳本的部署都靠它）。
+      - name: forge broadcast guard self-test
+        run: bash scripts/lib/forge-broadcast-guard.test.sh
+
+      # 任何一步斷言不符就以非零結束，並把那一輪的執行者日誌印出來。
+      - name: scripts/demo-autosync.sh
+        run: bash scripts/demo-autosync.sh
+
+      - name: agent e2e:copy-sync
+        working-directory: agent
+        run: npm run e2e:copy-sync

@@ -28,6 +28,21 @@ import { useMode } from 'src/contexts/mode-context'
 import StrategySides from 'src/components/pepefi/feed/StrategySides'
 import { useCarbonRouting } from 'src/hooks/useCarbonRouting'
 import { copyRetirementEstimate } from 'src/lib/pepefi/carbonRetirement'
+import { useAutoSyncSupport } from 'src/hooks/useAutoSyncSupport'
+import AutoSyncFields from 'src/components/pepefi/copy/AutoSyncFields'
+import { AutoSyncDisclosure } from 'src/components/pepefi/copy/AutoSyncDialogs'
+import {
+  DEFAULT_TIP_WEI,
+  DEFAULT_COOLDOWN,
+  autoSyncEntry,
+  parseEthInput,
+  settingsProblem,
+  executorProblem,
+  defaultPrefundWei,
+  defaultMaxLeverage,
+  followWithAutoSyncValue,
+  type AutoSyncSettings,
+} from 'src/lib/pepefi/autoSync'
 
 import Box from '@mui/material/Box';
 import Container from '@mui/material/Container';
@@ -48,6 +63,8 @@ import TableCell from '@mui/material/TableCell';
 import Chip from '@mui/material/Chip';
 import Breadcrumbs from '@mui/material/Breadcrumbs';
 import Avatar from '@mui/material/Avatar';
+import Checkbox from '@mui/material/Checkbox';
+import FormControlLabel from '@mui/material/FormControlLabel';
 
 interface TraderStakeData {
   stake:        bigint
@@ -116,6 +133,16 @@ export default function CopyPage() {
   // 這條鏈沒有績效資料時維持 false。
   const [isSimulated,      setIsSimulated]      = useState(false)
   const [heroCompressed,   setHeroCompressed]   = useState(false)
+  // 交易者最新版的 versionId：送出時釘住（followTraderAtVersion*），交易者在中間改版就整筆失敗。
+  const [stratVersion,     setStratVersion]     = useState<bigint | null>(null)
+  // ADR-024 自動同步：預設不勾——這是跟隨者在鏈上的明確同意，不替他預設。
+  const [autoSyncOn,       setAutoSyncOn]       = useState(false)
+  const [syncSettings,     setSyncSettings]     = useState<AutoSyncSettings>({
+    maxLeverage: 1, minSyncInterval: DEFAULT_COOLDOWN, tipWei: DEFAULT_TIP_WEI,
+  })
+  const [prefund,          setPrefund]          = useState('')
+  // 選填：只讓這個地址（跟隨者自己的 agent 熱錢包）代為同步；空字串＝任何人。跟單後另送 setSyncExecutor。
+  const [executorInput,    setExecutorInput]    = useState('')
 
   const { isVerified: isKYCVerified, isPending: kycPending, refetch: refetchKYC } = useKYC(
     contracts?.kycRegistry ?? null,
@@ -124,6 +151,7 @@ export default function CopyPage() {
   const { data: esg } = useESG(contracts?.esgRegistry ?? null)
   const livePrices = useLivePrices()
   const execFee = useExecutionFee(contracts?.exchange ?? null)
+  const autoSync = useAutoSyncSupport(contracts?.copyTracker ?? null, wallet.provider)
   // #333：跟單費 → 平台份額 → 退役預算的比例與模擬價格，全部讀自鏈上；這條鏈沒接碳權退役時為 null。
   const { routing: carbon } = useCarbonRouting(wallet.provider, wallet.chainId)
 
@@ -154,7 +182,9 @@ export default function CopyPage() {
       if (stratRaw === null) {
         setStratAllocs([])
         setHasStrategy(false)
+        setStratVersion(null)
       } else {
+        setStratVersion(BigInt(stratRaw[1] as bigint))
         try {
           const allocs = stratRaw[0] as unknown as Array<{
             asset: string; weight: bigint; isLong: boolean; leverage: bigint
@@ -192,6 +222,20 @@ export default function CopyPage() {
   }, [contracts, traderAddress])
 
   useEffect(() => { setApproved(false) }, [totalMargin])
+
+  // 槓桿上限的預設：這一版策略最高的槓桿（交易者之後調高不會帶著跟隨者一起調高）。
+  useEffect(() => {
+    setSyncSettings(prev => ({ ...prev, maxLeverage: defaultMaxLeverage(stratAllocs.map(a => a.leverage)) }))
+  }, [stratAllocs])
+
+  const toggleAutoSync = (on: boolean) => {
+    setAutoSyncOn(on)
+    // 第一次勾選時填入預設預存：夠讓別人代為同步五次
+    if (on && prefund === '') {
+      const wei = defaultPrefundWei(execFee.wei, Math.max(1, stratAllocs.length), syncSettings.tipWei)
+      setPrefund(formatEth(wei))
+    }
+  }
 
   useEffect(() => {
     if (!contracts) return
@@ -243,11 +287,25 @@ export default function CopyPage() {
   const tokenAmt = (v: bigint) => `${(Number(v) / 10 ** (carbon?.decimals ?? 18)).toFixed(4)} ${STABLE_LABEL}`
   // 碳權固定 18 位（1e18 = 1 公噸），f18 正好適用
   const tonnesTxt = (v: bigint) => f18(v, 4)
-  const previewRows = stratAllocs.map(a => ({
-    ...a,
-    margin:   netBig * a.weight / 10_000n,
-    notional: netBig * a.weight / 10_000n * a.leverage,
-  }))
+  // 自動同步的入口只在 Expert Mode（與投資組合一致：設定含槓桿上限，同步會依新版開新部位）。
+  // Simple Mode 只說明怎麼開；在 Expert 勾了再切回 Simple，也不會帶著看不到的勾選送出。
+  const syncEntry = autoSyncEntry(autoSync.supported, mode)
+  const autoSyncActive = syncEntry === 'available' && autoSyncOn
+  // 勾了自動同步時，跟隨者自設的槓桿上限也套用在這次開倉（合約 followTraderAtVersionWithAutoSync）；
+  // 沒有這個合併入口時是先 followTraderAtVersion 再開自動同步，這次開倉不受上限影響
+  const levCap = autoSyncActive && autoSync.combined ? BigInt(syncSettings.maxLeverage) : null
+  const previewRows = stratAllocs.map(a => {
+    const leverage = levCap !== null && a.leverage > levCap ? levCap : a.leverage
+    return {
+      ...a,
+      leverage,
+      margin:   netBig * a.weight / 10_000n,
+      notional: netBig * a.weight / 10_000n * leverage,
+    }
+  })
+
+  // 勾了自動同步：預覽要套用同一個槓桿上限（緩衝、實際投入保證金、各檔份額才會與上鏈結果一致）
+  const previewCap = levCap !== null && autoSync.previewWithCap ? levCap : null
 
   useEffect(() => {
     if (!contracts || !traderAddress || !totalBig || totalBig === 0n) {
@@ -257,7 +315,9 @@ export default function CopyPage() {
     let cancelled = false
     void (async () => {
       try {
-        const r = await contracts.copyTracker.previewCopyAllocation(traderAddress, totalBig)
+        const r = previewCap !== null
+          ? await contracts.copyTracker.previewCopyAllocationWithCap(traderAddress, totalBig, previewCap)
+          : await contracts.copyTracker.previewCopyAllocation(traderAddress, totalBig)
         if (!cancelled) {
           setPreview({
             copyFee:            r[0] as bigint,
@@ -271,7 +331,7 @@ export default function CopyPage() {
       }
     })()
     return () => { cancelled = true }
-  }, [contracts, traderAddress, totalBig])
+  }, [contracts, traderAddress, totalBig, previewCap])
 
   // 照比例拆完有一檔低於最低保證金，followTrader 會整筆 revert——送出前就擋下，並講出最低要多少。
   const tooSmall = preview !== null && belowMinimum(preview.portions, minMargin)
@@ -292,6 +352,13 @@ export default function CopyPage() {
     } finally { setLoad('approve', false) }
   }
 
+  const prefundWei = autoSyncActive ? parseEthInput(prefund === '' ? '0' : prefund) : 0n
+  const syncProblem = autoSyncActive
+    ? settingsProblem(syncSettings, autoSync.maxTipWei) ?? (prefundWei === null ? 'prefund' : null)
+    : null
+  const executorActive = autoSyncActive && autoSync.executorLock
+  const exProblem = executorActive ? executorProblem(executorInput, wallet.address ?? null) : null
+
   const doFollow = async () => {
     if (!contracts || !traderAddress) return
     const amt = tryParse(totalMargin)
@@ -299,19 +366,100 @@ export default function CopyPage() {
     // F-2：任何一檔過期就別送。送出去只會 revert，但 N 筆 execution fee 的 gas
     // 已經花掉了——這是最貴的一種白撞牆。
     if (staleNotice) { notify(staleNotice, false); return }
+    if (syncProblem) { notify(t.copy.autoSync.invalid[syncProblem], false); return }
+    if (exProblem) { notify(t.copy.autoSync.executorInvalid[exProblem], false); return }
     setLoad('follow', true)
     try {
       const execFeePerPosition = await contracts.exchange.executionFee() as bigint
       const totalExecFee = execFeePerPosition * BigInt(stratAllocs.length)
-      const tx = asTx(await contracts.copyTracker.followTrader(traderAddress, amt, {
-        value: totalExecFee
-      }))
-      await tx.wait()
-      notify(t.copy.tx.following, true, tx.hash)
+      if (autoSyncActive && stratVersion !== null) {
+        await followWithAutoSync(amt, execFeePerPosition, stratVersion, prefundWei ?? 0n)
+      } else {
+        // M10：沒勾自動同步也釘住畫面上這一版。交易者在送出前搶先發布另一版（例如換資產、5 倍槓桿），
+        // 合約整筆 revert StrategyVersionMismatch，不會直接跟到沒看過的版本。只有舊版 tracker 沒有這個
+        // 入口（或還讀不到版本）時才退回不釘版本的 followTrader。
+        const tx = asTx(await (stratVersion !== null && autoSync.pinnedFollow
+          ? contracts.copyTracker.followTraderAtVersion(traderAddress, amt, stratVersion, { value: totalExecFee })
+          : contracts.copyTracker.followTrader(traderAddress, amt, { value: totalExecFee })))
+        await tx.wait()
+        notify(t.copy.tx.following, true, tx.hash)
+      }
       navigate('/portfolio')
     } catch (e) {
       notify(prettyError(e), false)
     } finally { setLoad('follow', false) }
+  }
+
+  // ADR-024：跟單＋開啟自動同步＋存入油箱。合約有一筆完成的函式就一筆送；沒有就分三步：
+  // 先跟單（跟單成功就是成功），之後兩步失敗只提示，使用者可以到投資組合再開。
+  // 兩條路都用 AtVersion 釘住版本：交易者在送出前改版，跟單整筆失敗，不會跟到沒看過的那一版。
+  // 執行費同樣釘住：畫面上顯示的每檔執行費（execFee.wei）就是跟隨者簽名同意的上限
+  // （maxExecFeePerLeg）。交易所 owner 在送出前調高費率，合約整筆 revert ExecutionFeeAboveCap，
+  // 不會把要存進油箱的 ETH 當成開倉執行費收走，也不會把調高後的費率記成之後代為同步的同意值。
+  const followWithAutoSync = async (amt: bigint, fee: bigint, version: bigint, deposit: bigint) => {
+    if (!contracts || !traderAddress || !wallet.address) return
+    const { maxLeverage, minSyncInterval, tipWei } = syncSettings
+    const maxExecFeePerLeg = execFee.wei
+    if (autoSync.combined) {
+      const tx = asTx(await contracts.copyTracker.followTraderAtVersionWithAutoSync(
+        traderAddress, amt, version, maxLeverage, minSyncInterval, tipWei, maxExecFeePerLeg,
+        { value: followWithAutoSyncValue(fee, stratAllocs.length, deposit) },
+      ))
+      await tx.wait()
+      notify(t.copy.tx.followingAuto, true, tx.hash)
+      await setExecutorAfterFollow()
+      return
+    }
+    const followTx = asTx(await contracts.copyTracker.followTraderAtVersion(traderAddress, amt, version, {
+      value: fee * BigInt(stratAllocs.length),
+    }))
+    await followTx.wait()
+    notify(t.copy.tx.autoSyncStep, true, followTx.hash)
+    try {
+      const recs = (await contracts.copyTracker.getCopyRecords(wallet.address)) as unknown as { trader: string; active: boolean }[]
+      const idx = recs.length - 1
+      if (idx < 0 || recs[idx].trader.toLowerCase() !== traderAddress.toLowerCase() || !recs[idx].active) {
+        throw new Error('copy record not found')
+      }
+      await asTx(await contracts.copyTracker.setAutoSync(
+        BigInt(idx), true, maxLeverage, minSyncInterval, tipWei, maxExecFeePerLeg,
+      )).wait()
+      if (deposit > 0n) {
+        await asTx(await contracts.copyTracker.depositSyncGas({ value: deposit })).wait()
+      }
+      notify(t.copy.tx.followingAuto, true)
+    } catch (e) {
+      console.warn('[CopyPage] auto-sync setup after follow failed', e)
+      notify(t.copy.tx.autoSyncFailed, false)
+      return
+    }
+    await setExecutorAfterFollow()
+  }
+
+  /** 剛完成的這筆跟單在 getCopyRecords 裡的索引（最後一筆、交易者相符、仍在跟隨）。 */
+  const newestRecordIdx = async (): Promise<number> => {
+    if (!contracts || !traderAddress || !wallet.address) throw new Error('not connected')
+    const recs = (await contracts.copyTracker.getCopyRecords(wallet.address)) as unknown as { trader: string; active: boolean }[]
+    const idx = recs.length - 1
+    if (idx < 0 || recs[idx].trader.toLowerCase() !== traderAddress.toLowerCase() || !recs[idx].active) {
+      throw new Error('copy record not found')
+    }
+    return idx
+  }
+
+  // 選填的指定執行者：跟單（＋自動同步）之後另送一筆 setSyncExecutor。兩筆之間沒有人能搶先代為同步——
+  // 冷卻從跟單當下起算、至少 1 小時（合約 MIN_SYNC_INTERVAL）。失敗只提示：跟單與自動同步都已經成立，
+  // 可以到投資組合的「設定」再指定。
+  const setExecutorAfterFollow = async () => {
+    if (!contracts || !executorActive || executorInput.trim() === '' || exProblem) return
+    try {
+      notify(t.copy.tx.executorStep, true)
+      const idx = await newestRecordIdx()
+      await asTx(await contracts.copyTracker.setSyncExecutor(BigInt(idx), executorInput.trim())).wait()
+    } catch (e) {
+      console.warn('[CopyPage] setSyncExecutor after follow failed', e)
+      notify(t.copy.tx.executorFailed, false)
+    }
   }
 
   if (!traderAddress) {
@@ -687,6 +835,54 @@ export default function CopyPage() {
         </Card>
       )}
 
+      {/* ADR-024：自動同步（選用）。合約不支援、或在 Simple Mode 時只說明一句，不給勾選框。 */}
+      {hasStrategy && autoSync.loaded && (
+        <Card sx={{ p: 3, display: 'flex', flexDirection: 'column', gap: 2 }}>
+          <Typography variant="subtitle1" sx={{ fontWeight: 'bold' }}>
+            {t.copy.autoSync.title}
+          </Typography>
+          {syncEntry !== 'available' ? (
+            <Typography variant="body2" color="text.secondary">{t.copy.autoSync[syncEntry]}</Typography>
+          ) : (
+            <>
+              <FormControlLabel
+                control={<Checkbox checked={autoSyncOn} onChange={e => toggleAutoSync(e.target.checked)} />}
+                label={<Typography variant="body2" sx={{ fontWeight: 'bold' }}>{t.copy.autoSync.toggle}</Typography>}
+              />
+              <AutoSyncDisclosure />
+              {autoSyncOn && (
+                <>
+                  <AutoSyncFields
+                    value={syncSettings}
+                    onChange={setSyncSettings}
+                    maxTipWei={autoSync.maxTipWei}
+                    executionFee={execFee.wei}
+                    legs={stratAllocs.length}
+                    showLeverage
+                    prefund={{ value: prefund, onChange: setPrefund }}
+                    executor={autoSync.executorLock
+                      ? { value: executorInput, onChange: setExecutorInput, problem: exProblem, extraTxNote: true }
+                      : undefined}
+                  />
+                  {syncProblem && (
+                    <Alert severity="warning">{t.copy.autoSync.invalid[syncProblem]}</Alert>
+                  )}
+                  <Typography variant="caption" color="text.secondary">
+                    {autoSync.combined
+                      ? interpolate(t.copy.autoSync.oneTx, {
+                          total:   formatEth(followWithAutoSyncValue(execFee.wei, stratAllocs.length, prefundWei ?? 0n)),
+                          open:    formatEth(execFee.wei * BigInt(stratAllocs.length)),
+                          prefund: formatEth(prefundWei ?? 0n),
+                        })
+                      : t.copy.autoSync.twoTx}
+                  </Typography>
+                </>
+              )}
+            </>
+          )}
+        </Card>
+      )}
+
       {/* Two-stage action */}
       <Card sx={{ p: 3, display: 'flex', flexDirection: 'column', gap: 2.5 }}>
         <Typography variant="subtitle1" sx={{ fontWeight: 'bold' }}>
@@ -694,7 +890,11 @@ export default function CopyPage() {
         </Typography>
 
         <Alert severity="info" variant="outlined">
-          {t.copy.confirm.snapshotNote}
+          {autoSyncActive
+            ? interpolate(t.copy.autoSync.snapshotNoteAuto, { lev: syncSettings.maxLeverage })
+            : autoSync.supported
+              ? (syncEntry === 'available' ? t.copy.confirm.snapshotNoteSyncable : t.copy.confirm.snapshotNoteSyncableSimple)
+              : t.copy.confirm.snapshotNote}
         </Alert>
 
         {tooSmall && (
@@ -793,7 +993,10 @@ export default function CopyPage() {
             disabled={
               !hasStrategy || !approved || busy['follow'] || stratAllocs.length === 0 ||
               (preview !== null && preview.marginForPositions === 0n) ||
-              kycBlocked || staleBlocked || tooSmall
+              kycBlocked || staleBlocked || tooSmall || syncProblem !== null || exProblem !== null ||
+              (autoSyncActive && stratVersion === null) ||
+              // 讀完 tracker 有哪些入口才送：否則會在還不知道有沒有 followTraderAtVersion 時退回不釘版本的入口
+              !autoSync.loaded
             }
             title={staleNotice ?? undefined}
             sx={{ flexGrow: 1 }}
