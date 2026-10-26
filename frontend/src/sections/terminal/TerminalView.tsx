@@ -95,7 +95,7 @@ export function TerminalView() {
   // 可能是不同標的，所以給它一個「按標的查」的函式而不是單一布林值。下單面板
   // 也吃同一個函式，於是「為什麼不能下單」全站只有一份文案。
   const staleNoticeFor = useCallback(
-    (asset: string) => stalenessNotice(live[asset as AssetId]?.freshness, ASSET_META[asset]?.symbol),
+    (asset: string) => stalenessNotice(live[asset as AssetId]?.freshness, ASSET_META[asset]?.ticker),
     [live],
   )
 
@@ -226,7 +226,7 @@ export function TerminalView() {
       >
         {layout.bookAsColumn && (
           <Box sx={{ height: 520, display: 'flex' }}>
-            <BookPanel symbol={meta?.symbol} activity={activity} />
+            <BookPanel symbol={meta?.ticker} activity={activity} />
           </Box>
         )}
 
@@ -243,7 +243,7 @@ export function TerminalView() {
               這個位置很寬，所以改成訂單簿與成交併排，否則右邊會空一大片。 */}
           {!layout.bookAsColumn && (
             <Box sx={{ height: 380, display: 'flex' }}>
-              <BookPanel symbol={meta?.symbol} activity={activity} />
+              <BookPanel symbol={meta?.ticker} activity={activity} />
             </Box>
           )}
         </Box>

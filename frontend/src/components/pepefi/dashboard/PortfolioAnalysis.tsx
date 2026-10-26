@@ -10,6 +10,7 @@ import Typography from '@mui/material/Typography';
 import LinearProgress from '@mui/material/LinearProgress';
 
 import { t } from 'src/locales';
+import { tickerOf } from 'src/lib/pepefi/assetMeta';
 import { MONO } from 'src/components/pepefi/brandKit';
 import ESGBadge from 'src/components/pepefi/ESGBadge';
 import { esgContributionOf } from 'src/lib/pepefi/esgContribution';
@@ -174,7 +175,7 @@ export default function PortfolioAnalysis({ rows, esg }: Props) {
                 {contributions.map((c) => (
                   <Fragment key={c.asset}>
                     <Typography sx={{ fontFamily: MONO, fontWeight: 700, fontSize: '0.8125rem' }}>
-                      {c.symbol}
+                      {tickerOf(c.symbol)}
                     </Typography>
                     <ESGBadge composite={c.composite} rating={c.rating} size="sm" />
                     <LinearProgress

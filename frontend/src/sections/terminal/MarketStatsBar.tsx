@@ -72,7 +72,7 @@ export function MarketStatsBar({
       <Box>
         <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 1.5 }}>
           <Box sx={{ fontFamily: '"Clash Display", sans-serif', fontWeight: 600, fontSize: 22 }}>
-            {meta?.symbol}
+            {meta?.ticker}
             <span style={{ color: C.mut, fontSize: 13 }}>{t.terminal.stats.perpSuffix}</span>
           </Box>
         </Box>

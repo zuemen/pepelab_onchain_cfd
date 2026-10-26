@@ -98,7 +98,7 @@ export const marketplace: Catalog['marketplace'] = {
     verifiedOnChain: 'Verified On-Chain',
     noName: '—',
     noStrategy: 'No strategy',
-    /** 策略籌碼：↑sBTC 50% 3× */
+    /** 策略籌碼：↑BTC 50% 3× */
     allocChip: '{side}{asset} {weight}% {leverage}×',
 
     volLabel: 'Vol 7d',

@@ -13,21 +13,22 @@ export const tokens = {
    * 的狀態）住在 `esg.attested`,這裡只留面板自己需要的那幾句,不重複一份。
    */
   /**
-   * 合成資產的顯示名稱（終端機代號下方的副標、ESG 頁）。代號本身（sETH）是鏈上識別碼，
-   * 不譯；`assetMeta.ts` 的 `name` 是英文原名，catalog 沒有的標的才退回它。
+   * 資產的顯示名稱（終端機代號下方的副標、ESG 頁）。畫面上的代號是標的的真實代號
+   * （`assetMeta.ts` 的 `ticker`），不譯；`name` 是英文原名，catalog 沒有的標的才退回它。
+   * 名稱不加「合成」——合成這件事由 SyntheticDisclosure 的揭露負責說，不重複在每個名字上。
    */
   assetName: {
-    sBTC: '合成比特幣',
-    sETH: '合成以太幣',
-    sAAPL: '合成 Apple 股票',
-    sTSLA: '合成 Tesla 股票',
-    sGOLD: '合成黃金（XAU/USD）',
-    sBOND: '合成綠色債券 ETF（BGRN）',
-    sNVDA: '合成 NVIDIA 股票',
-    sMSFT: '合成 Microsoft 股票',
-    sGOOGL: '合成 Alphabet 股票',
-    sICLN: '合成 iShares 全球潔淨能源 ETF',
-    sESGU: '合成 iShares MSCI 美國 ESG ETF',
+    sBTC: '比特幣',
+    sETH: '以太幣',
+    sAAPL: 'Apple 股票',
+    sTSLA: 'Tesla 股票',
+    sGOLD: '黃金',
+    sBOND: 'iShares 美元綠色債券 ETF',
+    sNVDA: 'NVIDIA 股票',
+    sMSFT: 'Microsoft 股票',
+    sGOOGL: 'Alphabet 股票',
+    sICLN: 'iShares 全球潔淨能源 ETF',
+    sESGU: 'iShares ESG Aware MSCI 美國 ETF',
   },
 
   attested: {
@@ -174,7 +175,6 @@ export const tokens = {
       coingecko: 'CoinGecko',
       yahoo: 'Yahoo Finance chart',
     },
-    freshnessLabel: '價格新鮮度',
     disclaimer: '本代幣以合成價格追蹤上述標的，不代表對該標的的所有權、股東權利或任何請求權。',
 
     carbonTitle: '碳強度',

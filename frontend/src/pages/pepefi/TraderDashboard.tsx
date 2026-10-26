@@ -466,7 +466,7 @@ export default function TraderDashboard() {
                           >
                             {ASSETS.map(a => (
                               <MenuItem key={a.id} value={a.id}>
-                                {a.regulated ? '🔒 ' : ''}{a.symbol}
+                                {a.regulated ? '🔒 ' : ''}{a.ticker}
                               </MenuItem>
                             ))}
                           </Select>

@@ -36,6 +36,7 @@ import { withStable } from 'src/lib/pepefi/tokenLabel';
 import { safeRead } from 'src/lib/pepefi/safeRead';
 import { explorerTx } from 'src/lib/pepefi/notify';
 import { prettyError } from 'src/lib/pepefi/errorMessages';
+import { tickerOf } from 'src/lib/pepefi/assetMeta';
 import { parseAllocs } from 'src/lib/pepefi/leaderboardMetrics';
 import {
   planAdoption,
@@ -234,7 +235,7 @@ function AllocationCard({ item, onAdopt }: { item: PublishedAllocation; onAdopt:
             <Stack direction="row" alignItems="center" spacing={1}>
               <AssetIcon symbol={leg.symbol} size={20} />
               <Typography variant="body2" sx={{ flex: 1, fontWeight: 600 }}>
-                {leg.symbol}
+                {tickerOf(leg.symbol)}
               </Typography>
               <Typography variant="body2" sx={{ fontFamily: MONO }}>
                 {fWeight(leg.weightBps)}
@@ -385,7 +386,7 @@ function AdoptDialog({ item, onClose }: { item: PublishedAllocation; onClose: ()
                   <TableCell>
                     <Stack direction="row" alignItems="center" spacing={1}>
                       <AssetIcon symbol={r.symbol} size={18} />
-                      <span>{r.symbol}</span>
+                      <span>{tickerOf(r.symbol)}</span>
                     </Stack>
                   </TableCell>
                   <TableCell align="right" sx={{ fontFamily: MONO }}>
@@ -441,7 +442,7 @@ function AdoptDialog({ item, onClose }: { item: PublishedAllocation; onClose: ()
 /** 結果逐檔講清楚——部分成功時使用者一定要知道自己手上現在有什麼、少了什麼。 */
 function OutcomeAlert({ result }: { result: AdoptionResult }) {
   const names = (status: LegStatus) =>
-    result.legs.filter((l) => l.status === status).map((l) => l.symbol).join(t.adopt.listSeparator);
+    result.legs.filter((l) => l.status === status).map((l) => tickerOf(l.symbol)).join(t.adopt.listSeparator);
   const firstError = result.error ?? result.legs.find((l) => l.error !== undefined)?.error;
   const reason = firstError !== undefined ? prettyError(firstError, 'adopt') : null;
 

@@ -166,7 +166,7 @@ export const common = {
     prototype:
       '本站為部署於 Base Sepolia 測試網的研究原型，所有代幣、資金與交易皆為模擬，不涉及真實資產或金錢。',
     synthetic:
-      '本站所有合成代幣——股票（如 sAAPL、sTSLA、sNVDA）、債券（sBOND）、黃金（sGOLD）、加密資產（sBTC、sETH）與 ETF（sICLN、sESGU）——皆為 AssetVault 發行的合成曝險，且非足額抵押：僅以預言機價格追蹤標的，平台並未持有任何標的資產，也沒有一比一的準備；持有人不具股東、債權人或基金受益人權利（包括表決權、股利或利息請求權），亦無對任何發行人或實物的求償權，贖回取決於 AssetVault 的流動性。',
+      '本站所有合成代幣——股票（如 AAPL、TSLA、NVDA）、債券（BGRN）、黃金（XAU）、加密資產（BTC、ETH）與 ETF（ICLN、ESGU）——皆為 AssetVault 發行的合成曝險，且非足額抵押：僅以預言機價格追蹤標的，平台並未持有任何標的資產，也沒有一比一的準備；持有人不具股東、債權人或基金受益人權利（包括表決權、股利或利息請求權），亦無對任何發行人或實物的求償權，贖回取決於 AssetVault 的流動性。',
     noAdvice: '本站內容僅供技術展示與研究，不構成投資建議、要約或招攬。',
     /** 白標租戶有設定營運機構時才顯示（src/tenant）。 */
     operatedBy: '本站由{operator}營運。',

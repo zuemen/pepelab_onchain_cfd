@@ -6,7 +6,7 @@
 
 import type { AssetSymbol } from 'src/contracts/addresses'
 
-import { ASSET_LABEL } from './assetMeta'
+import { ASSET_META } from './assetMeta'
 import type { RawAlloc } from './leaderboardMetrics'
 
 const WHOLE_BPS = 10_000
@@ -40,7 +40,7 @@ export function toSpotAllocation(
 
   const legs: SpotLeg[] = []
   for (const a of allocs) {
-    const symbol = ASSET_LABEL[a.asset] as AssetSymbol | undefined
+    const symbol = ASSET_META[a.asset]?.symbol as AssetSymbol | undefined
     if (!symbol || !tokens[symbol]) return { ok: false, reason: 'notTokenized' }
     legs.push({ assetId: a.asset, symbol, weightBps: Number(a.weight) })
   }

@@ -180,7 +180,7 @@ export function OrderTicket({
       notify(
         interpolate(t.terminal.ticket.opened, {
           side: isLong ? t.terminal.ticket.sideLong : t.terminal.ticket.sideShort,
-          asset: meta?.symbol ?? '',
+          asset: meta?.ticker ?? '',
         }),
         true,
       )
@@ -337,7 +337,7 @@ export function OrderTicket({
         <Box
           sx={{ ...monoCss, fontSize: 11.5, color: C.lime, ...panel, borderColor: C.line2, p: 1 }}
         >
-          {kycTicketNotice(meta?.symbol ?? '', { unknown: !!kycUnknown, pending: !!kycPending, vcAction: kycVcAction })}
+          {kycTicketNotice(meta?.ticker ?? '', { unknown: !!kycUnknown, pending: !!kycPending, vcAction: kycVcAction })}
           {kycCredentialsHref && !kycPending && (
             <Box
               component={RouterLink}
@@ -424,7 +424,7 @@ export function OrderTicket({
             ? t.terminal.ticket.insufficientMargin
             : interpolate(t.terminal.ticket.ctaOpen, {
                 side: isLong ? t.terminal.ticket.sideLong : t.terminal.ticket.sideShort,
-                asset: meta?.symbol ?? '',
+                asset: meta?.ticker ?? '',
               })}
       </Button>
 
@@ -439,7 +439,7 @@ export function OrderTicket({
           {t.status.market.confirm.title}
         </DialogTitle>
         <DialogContent sx={{ fontSize: 13.5, lineHeight: 1.6 }}>
-          <Box>{interpolate(closedWarning ?? '', { asset: meta?.symbol ?? '' })}</Box>
+          <Box>{interpolate(closedWarning ?? '', { asset: meta?.ticker ?? '' })}</Box>
           <Box sx={{ mt: 1, color: C.mut, fontSize: 12 }}>{t.status.market.confirm.note}</Box>
         </DialogContent>
         <DialogActions sx={{ px: 3, pb: 2 }}>

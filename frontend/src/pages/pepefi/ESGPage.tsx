@@ -15,6 +15,7 @@ import { t, interpolate } from 'src/locales';
 import { ASSET_META } from 'src/lib/pepefi/assetMeta';
 import { assetDisplayName } from 'src/lib/pepefi/assetName';
 import ESGBadge from 'src/components/pepefi/ESGBadge';
+import AssetIcon from 'src/components/pepefi/AssetIcon';
 import CarbonRetirementCard from 'src/components/pepefi/CarbonRetirementCard';
 import Skeleton from 'src/components/pepefi/Skeleton';
 
@@ -329,8 +330,8 @@ export default function ESGPage() {
                       <TableRow key={id}>
                         <TableCell sx={{ whiteSpace: 'nowrap' }}>
                           <Stack direction="row" spacing={1} alignItems="center">
-                            <Typography variant="body2" sx={{ fontSize: '1.1rem', lineHeight: 1 }}>{meta?.icon ?? '?'}</Typography>
-                            <Typography variant="body2" sx={{ fontWeight: 'bold' }}>{meta?.symbol ?? '—'}</Typography>
+                            <AssetIcon symbol={meta?.ticker ?? '?'} size={20} />
+                            <Typography variant="body2" sx={{ fontWeight: 'bold' }}>{meta?.ticker ?? '—'}</Typography>
                           </Stack>
                         </TableCell>
                         <TableCell>
@@ -396,11 +397,11 @@ export default function ESGPage() {
                     <Typography variant="caption" sx={{ color: 'text.secondary', fontFamily: MONO, width: 24, textAlign: 'right' }}>
                       {interpolate(t.esg.ranking.rank, { n: rank + 1 })}
                     </Typography>
-                    <Typography variant="h5" sx={{ fontSize: '1.25rem', lineHeight: 1 }}>{meta?.icon ?? '?'}</Typography>
+                    <AssetIcon symbol={meta?.ticker ?? '?'} size={24} />
                     <Box sx={{ flexGrow: 1, minWidth: 0 }}>
                       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                         <Typography variant="subtitle2" sx={{ fontWeight: 'bold', fontFamily: MONO }}>
-                          {meta?.symbol ?? '?'}
+                          {meta?.ticker ?? '?'}
                         </Typography>
                         {meta && (
                           <Chip
@@ -503,10 +504,10 @@ export default function ESGPage() {
           <Card sx={{ p: 3, display: 'flex', flexDirection: 'column', gap: 2.5 }}>
             {/* Selected asset header */}
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-              <Typography variant="h4" sx={{ fontSize: '1.75rem', lineHeight: 1 }}>{selMeta?.icon ?? '?'}</Typography>
+              <AssetIcon symbol={selMeta?.ticker ?? '?'} size={36} />
               <Box sx={{ flexGrow: 1, minWidth: 0 }}>
                 <Typography variant="subtitle1" sx={{ fontWeight: 'bold', fontFamily: MONO }}>
-                  {selMeta?.symbol ?? '?'}
+                  {selMeta?.ticker ?? '?'}
                 </Typography>
                 <Typography variant="caption" color="text.secondary" sx={{ display: 'block', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>
                   {assetDisplayName(selMeta)}
@@ -534,7 +535,7 @@ export default function ESGPage() {
                     <PolarAngleAxis dataKey="subject" tick={{ fill: '#919eab', fontSize: 10, fontWeight: 500 }} />
                     <PolarRadiusAxis angle={30} domain={[0, 100]} tick={{ fill: '#637381', fontSize: 8 }} tickCount={4} />
                     <Radar
-                      name={selMeta?.symbol ?? ''}
+                      name={selMeta?.ticker ?? ''}
                       dataKey="value"
                       stroke={selColor}
                       fill={selColor}

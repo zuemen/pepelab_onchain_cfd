@@ -193,7 +193,7 @@ export default function AgentMonitorPage() {
             nowSec: Math.floor(Date.now() / 1000),
             readIsStale: async () => (await contracts.oracle.isStale(a.id)) as boolean,
           })
-          return { id: a.id, symbol: a.symbol, price8: price, stale, rate: funding[a.id]?.rate ?? 0n }
+          return { id: a.id, symbol: a.ticker, price8: price, stale, rate: funding[a.id]?.rate ?? 0n }
         }),
       )
       setOracle(rows)

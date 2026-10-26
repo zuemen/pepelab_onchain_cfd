@@ -15,7 +15,7 @@ import { t, interpolate } from 'src/locales'
 import { assetPolicy } from 'src/tenant'
 import { applyAssetWhitelist } from 'src/tenant/assetPolicy'
 import { useMode } from 'src/contexts/mode-context'
-import { ASSET_META } from 'src/lib/pepefi/assetMeta'
+import { ASSET_META, tickerOf } from 'src/lib/pepefi/assetMeta'
 import {
   buildAssetRows, sortAssetRows, assetRowColumnsForMode, assetRowColumnLabelForMode,
   type AssetRow, type AssetRowChainData, type AssetRowColumnKey, type AssetSortKey,
@@ -343,7 +343,7 @@ export default function TokenizedAssetsPage() {
       await approveTx.wait()
       const tx = asTx(await activeVault.mint(ASSET_IDS[sym], usdcAmt))
       await tx.wait()
-      notify(interpolate(t.tokens.tx.bought, { symbol: sym }), true, tx.hash)
+      notify(interpolate(t.tokens.tx.bought, { symbol: tickerOf(sym) }), true, tx.hash)
       closePanel()
       await refresh()
     } catch (e) {
@@ -361,7 +361,7 @@ export default function TokenizedAssetsPage() {
     try {
       const tx = asTx(await activeVault.redeem(ASSET_IDS[sym], tokenAmt))
       await tx.wait()
-      notify(interpolate(t.tokens.tx.sold, { symbol: sym }), true, tx.hash)
+      notify(interpolate(t.tokens.tx.sold, { symbol: tickerOf(sym) }), true, tx.hash)
       closePanel()
       await refresh()
     } catch (e) {
@@ -370,7 +370,9 @@ export default function TokenizedAssetsPage() {
   }
 
   // EIP-747: make the token visible in MetaMask. This is the point of the page —
-  // the token should be visibly sitting in the wallet.
+  // the token should be visibly sitting in the wallet. `symbol` stays the on-chain
+  // symbol (sETH), not the displayed ticker — the wallet checks it against the
+  // contract, and it is what the wallet and the block explorer will show.
   const addToWallet = async (sym: AssetSymbol) => {
     const eth = window.ethereum
     if (!eth) { notify(t.tokens.tx.noWallet, false); return }
@@ -531,13 +533,13 @@ export default function TokenizedAssetsPage() {
           <Stack direction="row" spacing={1.25} alignItems="center">
             <AssetIcon symbol={assetRow.symbol} size={28} />
             {/* #147：maxWidth 是下面那行 noWrap 的前提——沒有寬度上限,
-                「Synthetic iShares MSCI USA ESG ETF」這種長名稱會把整欄撐開。 */}
+                「iShares ESG Aware MSCI USA ETF」這種長名稱會把整欄撐開。 */}
             <Box sx={{ minWidth: 0, maxWidth: 220 }}>
               <Typography variant="subtitle2" sx={{ fontWeight: 'bold', lineHeight: 1.2 }}>
-                {assetRow.symbol}
+                {assetRow.ticker}
               </Typography>
               {/* 名稱在寬度上限內**換行**,不截斷——資產全名是使用者要讀的資訊,
-                  砍成「Synthetic iShares Clean E…」等於把它藏起來,而這一欄的重點
+                  砍成「iShares Global Clean E…」等於把它藏起來,而這一欄的重點
                   就是講清楚這檔是什麼。
                   原本這裡是 noWrap,但 variant="caption" 預設渲染成 <span>
                   （display:inline）,而 overflow:hidden 與 text-overflow:ellipsis
@@ -552,7 +554,7 @@ export default function TokenizedAssetsPage() {
         )
       case 'provenance':
         // #134：跟詳情層標題共用同一個摘要元件，不是長得像的兩份。
-        return <AssetProvenanceSummary tier={assetRow.tier} freshness={assetRow.freshness} nowrap />
+        return <AssetProvenanceSummary tier={assetRow.tier} nowrap />
       case 'tradingFee':
         return `${(assetRow.tradingFeeBps / 100).toFixed(2)}%`
       case 'price':
@@ -564,7 +566,7 @@ export default function TokenizedAssetsPage() {
           <Skeleton height={20} sx={{ width: 88 }} />
         ) : (
           <>
-            {f18(assetRow.balance)} {assetRow.symbol}
+            {f18(assetRow.balance)} {assetRow.ticker}
             <Typography component="span" variant="caption" color="text.secondary" sx={{ ml: 0.5 }}>
               ≈ {fUsd(fromUnits(assetRow.usdValue, 18))}
             </Typography>

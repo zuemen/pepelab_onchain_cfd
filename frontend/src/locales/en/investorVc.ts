@@ -18,7 +18,7 @@ export const investorVc: Catalog['investorVc'] = {
   checkingShort: 'Checking KYC method…',
   unknownRetry: 'Could not determine the KYC method — retry',
   intro:
-    'Opening RWA markets (e.g. sAAPL) requires a valid qualified-investor status. Upload the verifiable credential (VC) your issuing institution gave you, verify it, then register it on-chain. The chain only stores your address, the credential type, its expiry and a hash of the credential — no personal data.',
+    'Opening RWA markets (e.g. AAPL) requires a valid qualified-investor status. Upload the verifiable credential (VC) your issuing institution gave you, verify it, then register it on-chain. The chain only stores your address, the credential type, its expiry and a hash of the credential — no personal data.',
   mineVerified: 'Your wallet is eligible for RWA markets (requires: {type}); credential expires {date}',
   mineNotVerified: 'Your wallet has no valid RWA market eligibility (requires: {type}; not registered, expired or revoked).',
   upload: 'Upload VC file',

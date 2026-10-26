@@ -63,7 +63,7 @@ describe('synthetic-asset disclosure copy', () => {
     const tickers = Object.values(ASSET_IDS)
       .map((id) => ASSET_META[id])
       .filter((m) => m?.category === category)
-      .map((m) => m.symbol);
+      .map((m) => m.ticker);
     expect(tickers.some((s) => zhAll.includes(s)), `${category}: ${tickers.join(',')}`).toBe(true);
     expect(tickers.some((s) => enAll.includes(s)), `${category}: ${tickers.join(',')}`).toBe(true);
   });

@@ -85,7 +85,7 @@ export const traderDashboard: Catalog['traderDashboard'] = {
     title: 'Strategy History',
     refresh: '↺ Refresh',
     empty: 'No strategies published yet.',
-    /** 摘要行：sBTC L 3×  ·  sETH S 2× */
+    /** 摘要行：BTC L 3×  ·  ETH S 2× */
     summaryEntry: '{asset} {side} {leverage}×',
     long: 'L',
     short: 'S',

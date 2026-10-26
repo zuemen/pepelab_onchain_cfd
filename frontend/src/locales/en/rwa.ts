@@ -56,7 +56,7 @@ export const rwa: Catalog['rwa'] = {
     rwaUnflagged: 'Not flagged',
     rwaNote: {
       goldMismatch:
-        'Gold is a real-world asset, but this deployment does not flag sGOLD as rwaAsset on-chain, so opening a position does not check KYC. Shown here exactly as it is on-chain.',
+        'Gold is a real-world asset, but this deployment does not flag XAU as rwaAsset on-chain, so opening a position does not check KYC. Shown here exactly as it is on-chain.',
       unflaggedRwa: 'This market references a real-world asset but is not flagged as rwaAsset on-chain.',
       cryptoNotRwa: 'Crypto assets are not real-world assets (RWA) and are not flagged on-chain.',
       cryptoFlagged: 'Crypto assets are not real-world assets, but this one is flagged as rwaAsset on-chain.',
