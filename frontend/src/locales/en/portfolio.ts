@@ -234,8 +234,8 @@ export const portfolio: Catalog['portfolio'] = {
 
   /** See `../zh-TW/portfolio.ts`. */
   syncNotice: {
-    behind: 'A trader published a new strategy version: {count} of your entries are still on an older one. ',
-    needsYou: '{count} of them need you ({reasons}) and will not update on their own.',
+    behind: 'A trader published a new strategy version. Entries still on an older one: {count}. ',
+    needsYou: 'Needing you ({reasons}), so they will not update on their own: {count}.',
     waitingOnly: 'Auto-sync is on: they update once the cooldown ends and an executor sends the sync.',
     reasonSeparator: '; ',
     reasons: {
@@ -259,6 +259,9 @@ export const portfolio: Catalog['portfolio'] = {
     followerClosed: "You closed one of these positions yourself, so later results no longer count towards the trader's slash scoring.",
     status: {
       upToDate: 'On the latest version',
+      upToDateSimpleOff: 'On the latest version. To switch auto-sync on, use Expert Mode',
+      consentStale: 'On the latest version, but the exchange raised its execution fee above the rate you agreed to, so no one else can sync for you when the trader publishes next. Review the new fee under Settings and save again to restore it',
+      consentStaleSimple: 'On the latest version, but the exchange raised its execution fee above the rate you agreed to, so no one else can sync for you when the trader publishes next. Switch to Expert Mode to review the new fee and accept it',
       manual: 'New version: press “Sync now”, or switch auto-sync on',
       manualSimple: 'New version: switch to Expert Mode to review it before syncing',
       feeAboveCap: 'The exchange raised its execution fee above the rate you agreed to when you switched auto-sync on, so no one else can sync for you yet. Save your settings again to accept the new fee, or press “Sync now”',
@@ -273,6 +276,7 @@ export const portfolio: Catalog['portfolio'] = {
     outdatedHintSimple: 'The trader published a new strategy version. Switch to Expert Mode to review it before syncing.',
     executorChip: 'Executor {addr}',
     executorTip: 'Only this address (and you) can sync for you; everyone else is rejected by the contract. Change or clear it under Settings.',
+    executorTipSimple: 'Only this address (and you) can sync for you; everyone else is rejected by the contract. To change or clear it, switch to Expert Mode and open Settings.',
     executorSaved: 'Executor updated ✓',
     executorFailed: 'Auto-sync settings were saved, but setting the executor did not go through. Please try again.',
     confirm: {
@@ -317,6 +321,7 @@ export const portfolio: Catalog['portfolio'] = {
       title: 'Auto-sync gas tank',
       balance: '{eth} ETH',
       estimate: 'About {count} executor syncs',
+      consentBlocked: 'Executor syncs paused until you accept the new execution fee',
       deposit: 'Deposit',
       withdraw: 'Withdraw',
       deposited: 'Deposited {eth} ETH ✓',
@@ -325,7 +330,10 @@ export const portfolio: Catalog['portfolio'] = {
     },
     dialog: {
       settingsTitle: 'Auto-sync settings',
-      enabled: 'Auto-sync on',
+      enabled: 'Turn auto-sync on',
+      /** Shown while the switch is on: what saving signs. See `../zh-TW/portfolio.ts`. */
+      consentLine: 'Saving signs {fee} ETH per position as the most an executor sync may take from your tank for execution fees (the exchange’s current fee).',
+      consentChanged: 'The exchange’s execution fee is now {fee} ETH per position; you had agreed to {old} ETH. Saving accepts the new fee.',
       gasTitle: 'Auto-sync gas tank',
       amount: 'Amount (ETH)',
       max: 'Max',

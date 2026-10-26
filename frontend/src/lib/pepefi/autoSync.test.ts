@@ -261,6 +261,16 @@ describe('sync status', () => {
     expect(syncStatus({ ...base, config: { ...on, autoSync: false }, execFeeCap: 0n })).toEqual({ kind: 'manual' })
   })
 
+  it('warns ahead of the next version when the fee was raised while already up to date', () => {
+    const latest = { ...base, recordVersion: 1n }
+    expect(syncStatus({ ...latest, execFeeCap: FEE - 1n })).toEqual({ kind: 'consentStale' })
+    expect(syncStatus({ ...latest, execFeeCap: FEE })).toEqual({ kind: 'upToDate' })
+    // 讀不到上限、或自動同步關著（沒有人會代為同步）時，照舊是「已是最新版」
+    expect(syncStatus({ ...latest, execFeeCap: null })).toEqual({ kind: 'upToDate' })
+    expect(syncStatus({ ...latest, config: { ...on, autoSync: false }, execFeeCap: 0n })).toEqual({ kind: 'upToDate' })
+    expect(syncStatus({ ...latest, config: null, execFeeCap: 0n })).toEqual({ kind: 'upToDate' })
+  })
+
   it('needs gas when the tank cannot pay an executor', () => {
     expect(syncStatus({ ...base, gasBalance: 3n * FEE })).toEqual({ kind: 'needsGas', shortfall: 10n })
   })

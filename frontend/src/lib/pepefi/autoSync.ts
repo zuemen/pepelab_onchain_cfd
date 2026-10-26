@@ -298,6 +298,8 @@ export function resyncPreview(i: {
  * 一筆 active 跟單現在的同步狀態。
  *
  * - upToDate：已經是交易者最新版。
+ * - consentStale：已經是最新版、開著自動同步，但交易所的 executionFee 已高於你同意的費率——現在沒有東西要同步，
+ *   交易者下次發版時別人卻不能代為同步。提早告訴你，免得等到落後才發現（油箱估算也不能照算）。
  * - manual：有新版、沒開自動同步——要自己按「立即同步」。
  * - feeAboveCap：交易所的 executionFee 被調高，超過你開啟自動同步時同意的費率（syncExecFeeCap）——
  *   別人不能代為同步，直到你看過新費率、重新儲存自動同步設定（以畫面上的費率為新上限）；自己按
@@ -311,6 +313,7 @@ export function resyncPreview(i: {
  */
 export type SyncStatus =
   | { kind: 'upToDate' }
+  | { kind: 'consentStale' }
   | { kind: 'manual' }
   | { kind: 'feeAboveCap' }
   | { kind: 'cooldown'; readyAt: number }
@@ -338,15 +341,20 @@ export interface SyncStatusInput {
   executor?: string | null
 }
 
+/** 交易所現行的 executionFee 是否高於跟隨者同意的每腿費率（讀不到任一個就當作沒有）。 */
+function feeAboveConsent(i: SyncStatusInput): boolean {
+  return i.executionFee !== null && i.execFeeCap !== undefined && i.execFeeCap !== null && i.executionFee > i.execFeeCap
+}
+
 export function syncStatus(i: SyncStatusInput): SyncStatus {
   if (i.latestVersion === null) return { kind: 'unknown' }
-  if (i.recordVersion >= i.latestVersion) return { kind: 'upToDate' }
+  if (i.recordVersion >= i.latestVersion) {
+    return i.config?.autoSync && feeAboveConsent(i) ? { kind: 'consentStale' } : { kind: 'upToDate' }
+  }
   if (!i.config) return { kind: 'unknown' }
   if (!i.config.autoSync) return { kind: 'manual' }
   // 合約先查冷卻、再查執行費上限；畫面先顯示需要本人處理的那一項（冷卻會自己過去）。
-  if (i.executionFee !== null && i.execFeeCap !== undefined && i.execFeeCap !== null && i.executionFee > i.execFeeCap) {
-    return { kind: 'feeAboveCap' }
-  }
+  if (feeAboveConsent(i)) return { kind: 'feeAboveCap' }
   const since = i.state && i.state.lastSyncedAt > 0 ? i.state.lastSyncedAt : (i.copiedAt ?? 0)
   const readyAt = since + i.config.minSyncInterval
   if (since > 0 && i.nowSec < readyAt) return { kind: 'cooldown', readyAt }

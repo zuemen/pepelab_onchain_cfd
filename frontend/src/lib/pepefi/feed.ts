@@ -247,7 +247,9 @@ export function buildFeed(events: readonly FeedEvent[], ctx: FeedContext): FeedI
     if (last.kind === 'resync') {
       items.push({ ...common, type: 'resync', toVersion: last.toVersion, count: group.length })
     } else {
-      items.push({ ...common, type: 'autoSync', day: utcDay(last.timestamp), enabled: last.enabled, count: group.length })
+      // 算人數，不算事件：同一位跟隨者當天開→關→開、改設定或重新同意費率，都會再發一次 AutoSyncSet。
+      const followers = new Set(group.map(e => e.follower.toLowerCase())).size
+      items.push({ ...common, type: 'autoSync', day: utcDay(last.timestamp), enabled: last.enabled, count: followers })
     }
   }
 

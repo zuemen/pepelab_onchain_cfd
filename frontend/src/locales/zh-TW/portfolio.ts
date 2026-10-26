@@ -304,6 +304,14 @@ export const portfolio = {
     followerClosed: '你自己平過其中一檔：之後的結果不再計入交易者的罰沒評分。',
     status: {
       upToDate: '已是最新版',
+      /** Simple 模式、自動同步關著：開啟的入口只在專家模式（與跟單頁的說法一致）。 */
+      upToDateSimpleOff: '已是最新版。要開啟自動同步，請切換到專家模式',
+      /**
+       * 已是最新版、開著自動同步，但交易所的執行費已高於你同意的費率：現在沒有東西要同步，交易者下次發版時
+       * 別人卻不能代為同步（合約 ExecutionFeeAboveCap）。提早說，不要等到落後才發現。
+       */
+      consentStale: '已是最新版。但交易所調高了執行費，超過你同意的費率：交易者下次發版時，別人不能代為同步。按「設定」看過新費率後重新儲存即可恢復',
+      consentStaleSimple: '已是最新版。但交易所調高了執行費，超過你同意的費率：交易者下次發版時，別人不能代為同步。切換到專家模式看過新費率後重新同意即可恢復',
       manual: '有新版：按「立即同步」更新，或開啟自動同步',
       /**
        * Simple 模式不提供「立即同步」與自動同步設定：同步會依新版開新部位（含槓桿），是交易桌的入口，
@@ -324,6 +332,8 @@ export const portfolio = {
     /** 指定執行者（合約 setSyncExecutor）。 */
     executorChip: '限定執行者 {addr}',
     executorTip: '只有這個地址（與你本人）能代為同步，其他人會被合約拒絕。要改或解除，到「設定」。',
+    /** 同上，Simple 模式沒有「設定」鈕。 */
+    executorTipSimple: '只有這個地址（與你本人）能代為同步，其他人會被合約拒絕。要改或解除，請切換到專家模式，按「設定」。',
     executorSaved: '已更新指定執行者 ✓',
     executorFailed: '自動同步設定已儲存，但指定執行者沒有送成功，請再試一次。',
     /** 「立即同步」的確認視窗：送出前先看新版的內容與費用（resyncAtVersion 釘住這裡顯示的那一版）。 */
@@ -369,6 +379,8 @@ export const portfolio = {
       title: '自動同步油箱',
       balance: '{eth} ETH',
       estimate: '約可代為同步 {count} 次',
+      /** 交易所的執行費高於跟隨者同意的費率：油箱再多，別人也不能代為同步（合約 ExecutionFeeAboveCap）。 */
+      consentBlocked: '重新同意新的執行費之前，別人不能代為同步',
       deposit: '存入',
       withdraw: '提領',
       deposited: '已存入 {eth} ETH ✓',
@@ -378,6 +390,12 @@ export const portfolio = {
     dialog: {
       settingsTitle: '自動同步設定',
       enabled: '開啟自動同步',
+      /**
+       * 開關打開時，儲存＝以交易所現行的每檔執行費簽名同意（setAutoSync 的 maxExecFeePerLeg）。
+       * 費率和之前同意的不同時，兩個數字都列出來：不能讓人在看不到數字的情況下簽下調高後的上限。
+       */
+      consentLine: '儲存後，你簽名同意：別人代為同步時，每檔最多從油箱扣 {fee} ETH 執行費（交易所現行費率）。',
+      consentChanged: '交易所的執行費現在是每檔 {fee} ETH，你之前同意的是 {old} ETH。儲存就是同意新的費率。',
       gasTitle: '自動同步油箱',
       amount: '金額（ETH）',
       max: '全部',

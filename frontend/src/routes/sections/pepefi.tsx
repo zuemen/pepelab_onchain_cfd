@@ -4,9 +4,9 @@ import type { WalletAPI } from 'src/hooks/useWallet';
 import { lazy, Suspense } from 'react';
 import { Outlet, Navigate, useOutletContext } from 'react-router';
 
-import { PepefiLayout } from 'src/layouts/pepefi';
 import { FEATURES } from 'src/lib/pepefi/featureFlags';
 import { DashboardLayout } from 'src/layouts/dashboard';
+import { AppNotices, PepefiLayout } from 'src/layouts/pepefi';
 
 import { LoadingScreen } from 'src/components/loading-screen';
 import { FeatureGate } from 'src/components/pepefi/FeatureGate';
@@ -62,9 +62,12 @@ function SuspenseOutlet() {
 
 // 內頁專用外框：Minimal UI 的 sidebar/navbar。Landing 不走這層，
 // 所以未連錢包時（停留在 landing）完全看不到側邊欄。
+// 頂端提醒放在內容區第一列（AppNotices）：在側欄右邊，桌面版的固定側欄才不會蓋住開頭。
 function DashboardShell() {
+  const wallet = useOutletContext<WalletAPI>();
   return (
     <DashboardLayout>
+      <AppNotices wallet={wallet} />
       <SuspenseOutlet />
     </DashboardLayout>
   );

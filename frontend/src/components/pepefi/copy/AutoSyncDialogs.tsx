@@ -52,6 +52,8 @@ interface SettingsProps {
   initialSettings: AutoSyncSettings;
   maxTipWei: bigint;
   executionFee: bigint;
+  /** 跟隨者目前同意的每檔執行費（CopyTracker.syncExecFeeCap）；沒開過或讀不到為 null。 */
+  consentedFee?: bigint | null;
   legs: number;
   tankBalance: bigint | null;
   showLeverage: boolean;
@@ -72,6 +74,7 @@ export function AutoSyncSettingsDialog({
   initialSettings,
   maxTipWei,
   executionFee,
+  consentedFee = null,
   legs,
   tankBalance,
   showLeverage,
@@ -118,6 +121,19 @@ export function AutoSyncSettingsDialog({
             executor={executor ? { value: executorInput, onChange: setExecutorInput, problem: exProblem } : undefined}
             disabled={busy}
           />
+          {/* 儲存＝以現行費率簽名同意（setAutoSync 的 maxExecFeePerLeg）：開著時一定說出數字；
+              與之前同意的不同時，新舊兩個都列（交易所調高費率之後，這裡就是重新同意的地方）。 */}
+          {enabled && (
+            consentedFee !== null && initialEnabled && consentedFee !== executionFee ? (
+              <Alert severity="warning">
+                {interpolate(P.dialog.consentChanged, { fee: formatEth(executionFee), old: formatEth(consentedFee) })}
+              </Alert>
+            ) : (
+              <Typography variant="caption" color="text.secondary">
+                {interpolate(P.dialog.consentLine, { fee: formatEth(executionFee) })}
+              </Typography>
+            )
+          )}
           {enabled && problem && <Alert severity="warning">{t.copy.autoSync.invalid[problem]}</Alert>}
         </Stack>
       </DialogContent>
@@ -241,13 +257,15 @@ interface TankProps {
   balance: bigint | null;
   /** 以目前設定估算的「還能代為同步幾次」；不適用時 null。 */
   affordable: bigint | null;
+  /** 開著自動同步的跟單，交易所的執行費都高於同意的費率：別人一次都不能代為同步，次數估算不成立。 */
+  consentBlocked?: boolean;
   busy: boolean;
   onDeposit: () => void;
   onWithdraw: () => void;
 }
 
 /** 油箱餘額與存提按鈕。提領永遠可以按（只要有餘額）：退出不藏。 */
-export function SyncGasTank({ balance, affordable, busy, onDeposit, onWithdraw }: TankProps) {
+export function SyncGasTank({ balance, affordable, consentBlocked = false, busy, onDeposit, onWithdraw }: TankProps) {
   return (
     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, flexWrap: 'wrap' }}>
       <Box>
@@ -256,7 +274,11 @@ export function SyncGasTank({ balance, affordable, busy, onDeposit, onWithdraw }
         </Typography>
         <Typography variant="subtitle2" sx={{ fontFamily: MONO, fontWeight: 'bold' }}>
           {balance === null ? '—' : interpolate(P.tank.balance, { eth: formatEth(balance) })}
-          {affordable !== null && (
+          {consentBlocked ? (
+            <Typography component="span" variant="caption" color="warning.main" sx={{ ml: 1, fontFamily: 'inherit' }}>
+              {P.tank.consentBlocked}
+            </Typography>
+          ) : affordable !== null && (
             <Typography component="span" variant="caption" color="text.secondary" sx={{ ml: 1, fontFamily: 'inherit' }}>
               {interpolate(P.tank.estimate, { count: affordable.toString() })}
             </Typography>

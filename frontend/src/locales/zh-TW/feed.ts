@@ -64,8 +64,8 @@ export const feed = {
     separator: '；',
     /** ADR-024：同一位交易者、同一版的同步合成一則；不列出跟隨者與執行者的位址。 */
     resync: '{count} 筆跟單的部位已同步到第 {version} 版',
-    autoSyncOn: '{when}有 {count} 筆跟單開啟自動同步',
-    autoSyncOff: '{when}有 {count} 筆跟單關閉自動同步',
+    autoSyncOn: '{when}有 {count} 位跟隨者開啟自動同步',
+    autoSyncOff: '{when}有 {count} 位跟隨者關閉自動同步',
     today: '今天',
     onDay: '{day} ',
   },

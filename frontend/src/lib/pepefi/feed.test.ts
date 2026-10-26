@@ -168,6 +168,17 @@ describe('buildFeed — auto-sync (ADR-024)', () => {
     expect(stringify(items)).not.toMatch(/f1|f2/)
   })
 
+  it('counts followers, not AutoSyncSet events (on → off → on, or re-saving settings, is still one person)', () => {
+    const events: FeedEvent[] = [
+      { ...at(1), kind: 'autoSync', trader: ALICE, follower: F1, enabled: true },
+      { ...at(2), kind: 'autoSync', trader: ALICE, follower: F1, enabled: false },
+      { ...at(3), kind: 'autoSync', trader: ALICE, follower: F1, enabled: true },
+      { ...at(4), kind: 'autoSync', trader: ALICE, follower: F1, enabled: true },
+    ]
+    const items = only(buildFeed(events, ctx()), 'autoSync')
+    expect(items.map((i) => `${i.enabled}:${i.count}`).sort()).toEqual(['false:1', 'true:1'])
+  })
+
   it('drops an auto-sync switch whose trader could not be read', () => {
     expect(buildFeed([{ ...at(1), kind: 'autoSync', trader: '', follower: F1, enabled: true }], ctx())).toEqual([])
   })

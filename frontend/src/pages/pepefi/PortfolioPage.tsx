@@ -16,7 +16,7 @@ import { useLivePrices } from 'src/hooks/useLivePrices';
 import { usePepefiWallet } from 'src/layouts/pepefi';
 import { getAddresses } from 'src/contracts/deployment';
 import { ASSET_IDS, CHAIN_NAMES } from 'src/contracts/addresses';
-import { t, interpolate } from 'src/locales';
+import { t, locale, interpolate } from 'src/locales';
 import { ASSET_LABEL } from 'src/lib/pepefi/assetMeta';
 import { prettyError } from 'src/lib/pepefi/errorMessages';
 import {
@@ -195,7 +195,7 @@ const fUsd  = (v: bigint) =>
     maximumFractionDigits: 2,
   });
 const fDate = (ts: bigint) =>
-  new Date(Number(ts) * 1000).toLocaleString('zh-TW', {
+  new Date(Number(ts) * 1000).toLocaleString(locale, {
     dateStyle: 'short',
     timeStyle: 'short',
   });
@@ -910,11 +910,15 @@ export default function PortfolioPage() {
   const tankAffordable = syncGas !== null && enabledTips.length > 0 && syncLegs > 0
     ? syncsAffordable(syncGas, syncCostWei(execFee.wei, syncLegs, topTip, false))
     : null;
+  // 開著自動同步的每一筆，交易所的執行費都高於它同意的費率：油箱再多，別人也一次都不能代為同步。
+  const syncOnRecs = copyRecs.filter(r => r.syncConfig?.autoSync);
+  const tankConsentBlocked = execFee.loaded && syncOnRecs.length > 0
+    && syncOnRecs.every(r => r.execFeeCap !== null && execFee.wei > r.execFeeCap);
   const suggestedDeposit = defaultPrefundWei(execFee.wei, Math.max(1, syncLegs), enabledTips.length > 0 ? topTip : DEFAULT_TIP_WEI);
   // 油箱有餘額就一定看得到、提得出來——就算已經沒有任何跟單、或跟單旗標關閉（退出不藏）。
   const hasTankBalance = syncGas !== null && syncGas > 0n;
   const nowSec = Math.floor(Date.now() / 1000);
-  const syncStatusText = (st: SyncStatus): string => {
+  const syncStatusText = (st: SyncStatus, syncOn: boolean): string => {
     const S = t.portfolio.autoSync.status;
     switch (st.kind) {
       case 'cooldown':    return interpolate(S.cooldown, { time: fDate(BigInt(st.readyAt)) });
@@ -923,6 +927,8 @@ export default function PortfolioPage() {
       // 跟單頁在 Simple 模式也一樣只說明、不給勾選框（autoSyncEntry）
       case 'manual':      return mode === 'simple' ? S.manualSimple : S.manual;
       case 'feeAboveCap': return mode === 'simple' ? S.feeAboveCapSimple : S.feeAboveCap;
+      case 'consentStale': return mode === 'simple' ? S.consentStaleSimple : S.consentStale;
+      case 'upToDate':    return mode === 'simple' && !syncOn ? S.upToDateSimpleOff : S.upToDate;
       default:            return S[st.kind];
     }
   };
@@ -930,6 +936,7 @@ export default function PortfolioPage() {
     <SyncGasTank
       balance={syncGas}
       affordable={tankAffordable}
+      consentBlocked={tankConsentBlocked}
       busy={!!busy['syncGas']}
       onDeposit={() => setGasDialog('deposit')}
       onWithdraw={() => setGasDialog('withdraw')}
@@ -953,6 +960,7 @@ export default function PortfolioPage() {
         initialSettings={syncSettingsFor?.settings ?? { maxLeverage: 1, minSyncInterval: DEFAULT_COOLDOWN, tipWei: DEFAULT_TIP_WEI }}
         maxTipWei={autoSync.maxTipWei}
         executionFee={execFee.wei}
+        consentedFee={syncSettingsFor?.rec.execFeeCap ?? null}
         legs={syncSettingsFor?.rec.latestLegs ?? syncSettingsFor?.rec.positionIds.length ?? 0}
         tankBalance={syncGas}
         showLeverage={mode === 'expert'}
@@ -1377,7 +1385,7 @@ export default function PortfolioPage() {
                               />
                             )}
                             {rec.executor && (
-                              <MuiTooltip title={t.portfolio.autoSync.executorTip}>
+                              <MuiTooltip title={mode === 'simple' ? t.portfolio.autoSync.executorTipSimple : t.portfolio.autoSync.executorTip}>
                                 <Chip
                                   size="small"
                                   variant="outlined"
@@ -1397,9 +1405,9 @@ export default function PortfolioPage() {
                           {sync && (
                             <Typography
                               variant="caption"
-                              sx={{ display: 'block', mt: 0.5, color: sync.kind === 'needsGas' || sync.kind === 'feeAboveCap' ? 'warning.main' : 'text.secondary' }}
+                              sx={{ display: 'block', mt: 0.5, color: sync.kind === 'needsGas' || sync.kind === 'feeAboveCap' || sync.kind === 'consentStale' ? 'warning.main' : 'text.secondary' }}
                             >
-                              {syncStatusText(sync)}
+                              {syncStatusText(sync, syncOn)}
                             </Typography>
                           )}
                         </TableCell>
