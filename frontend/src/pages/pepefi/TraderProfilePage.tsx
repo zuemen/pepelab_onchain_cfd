@@ -1,4 +1,5 @@
 import { MONO } from 'src/components/pepefi/brandKit'
+import { Contract } from 'ethers'
 import { useState, useEffect, useCallback } from 'react'
 import { useParams, Link as RouterLink } from 'react-router'
 import { useContracts } from 'src/hooks/useContracts'
@@ -24,7 +25,8 @@ import HeroRiskStats from 'src/components/pepefi/hero/HeroRiskStats'
 import HeroPerformance from 'src/components/pepefi/hero/HeroPerformance'
 import { fetchHeroDetail, type HeroDetail } from 'src/lib/pepefi/heroData'
 import { heroDisclosure } from 'src/lib/pepefi/heroDisclosure'
-import { followerReaderOf, readActiveFollowers } from 'src/lib/pepefi/activeFollowers'
+import { followerReaderOf, readFollowersAcross } from 'src/lib/pepefi/activeFollowers'
+import { legacyCopyTrackersFor, LEGACY_COPY_TRACKER_ABI } from 'src/contracts/legacyCopyTrackers'
 import { mapLimit, withRetry, RPC_CONCURRENCY } from 'src/lib/pepefi/rpcBatch'
 import TxProof from 'src/components/pepefi/hero/TxProof'
 import ListDialog, { ExpandListButton } from 'src/components/pepefi/ListDialog'
@@ -107,6 +109,7 @@ function TraderProfileView() {
   const [name,          setName]          = useState('')
   const [registered,    setRegistered]    = useState(false)
   const [followers,     setFollowers]     = useState<bigint | null>(null)
+  const [legacyFollowers, setLegacyFollowers] = useState(0)
   const [followerList,  setFollowerList]  = useState<string[]>([])
   const [allocs,        setAllocs]        = useState<RawAlloc[]>([])
   const [hasStrategy,   setHasStrategy]   = useState(false)
@@ -165,11 +168,15 @@ function TraderProfileView() {
       }
       // 目前的跟隨者，不是 getFollowerCount 的「被跟單過幾次」（見 activeFollowers.ts）。
       // 清單只列還在跟的人、每人一次，前 10 位；讀不到時人數顯示「—」，不是 0。
-      const active = (await readActiveFollowers([traderAddr], followerReaderOf(contracts.copyTracker)))
+      // 換過 tracker 時，舊 tracker 上還在跟的人也算進去並分開標示（contracts/legacyCopyTrackers.ts）。
+      const legacyReaders = legacyCopyTrackersFor(wallet.chainId, String(contracts.copyTracker.target))
+        .map((address) => followerReaderOf(new Contract(address, LEGACY_COPY_TRACKER_ABI, contracts.copyTracker.runner)))
+      const active = (await readFollowersAcross([traderAddr], followerReaderOf(contracts.copyTracker), legacyReaders))
         .get(traderAddr.toLowerCase()) ?? null
       if (alive()) {
-        setFollowers(active === null ? null : BigInt(active.length))
-        setFollowerList(active?.slice(0, 10) ?? [])
+        setFollowers(active === null ? null : BigInt(active.all.length))
+        setLegacyFollowers(active?.legacyOnly ?? 0)
+        setFollowerList(active?.all.slice(0, 10) ?? [])
       }
 
       // strategy + history
@@ -529,7 +536,7 @@ function TraderProfileView() {
             </Grid>
             {FEATURE_COPY_TRADING && (
             <Grid size={STAT_SIZE}>
-              <StatCard title={t.traderProfile.stats.followers} value={followers === null ? '—' : String(followers)} sub={t.traderProfile.stats.copiers} />
+              <StatCard title={t.traderProfile.stats.followers} value={followers === null ? '—' : String(followers)} sub={legacyFollowers > 0 ? interpolate(t.traderProfile.stats.legacyCopiers, { count: legacyFollowers }) : t.traderProfile.stats.copiers} />
             </Grid>
             )}
             <Grid size={STAT_SIZE}>

@@ -234,7 +234,7 @@
         {
           "ref": "CopyTracker",
           "abi": "CopyTracker",
-          "address": "0x15A9Cbf803a3EEee2794B74Ad78252d27Ccd347C"
+          "address": "0x31297044a7b3A0F57e7CDa7fE619E996da1c64A9"
         },
         {
           "ref": "AssetVault",
@@ -259,7 +259,7 @@
         {
           "ref": "PepeAMM",
           "abi": "PepeAMM",
-          "address": "0x93be44a81a2796d378f65ebcc8d5f8b40166ad63"
+          "address": "0xb40603df54d0af75f1915106F352672372570d97"
         },
         {
           "ref": "PepeClaim",
@@ -274,7 +274,7 @@
         {
           "ref": "PepeIncentives",
           "abi": "PepeIncentives",
-          "address": "0xc257Dd9b9eb392893a89d307664713E8660672F0"
+          "address": "0x588dda0b1f5c46242fbbb694771dfc30179e21c3"
         },
         {
           "ref": "EsgRewardDistributor",
@@ -910,7 +910,7 @@
             "ref": "CopyTracker"
           },
           "selector": "0x49f3260b",
-          "expected": "0x15A9Cbf803a3EEee2794B74Ad78252d27Ccd347C"
+          "expected": "0x31297044a7b3A0F57e7CDa7fE619E996da1c64A9"
         },
         {
           "on": "feeRouter",
@@ -1049,7 +1049,7 @@
             "ref": "CopyTracker"
           },
           "selector": "0x49f3260b",
-          "expected": "0x15A9Cbf803a3EEee2794B74Ad78252d27Ccd347C"
+          "expected": "0x31297044a7b3A0F57e7CDa7fE619E996da1c64A9"
         },
         {
           "on": "vault",
@@ -1115,7 +1115,7 @@
           "ref": "PepeIncentives",
           "abi": "PepeIncentives",
           "as": "incentives",
-          "address": "0xc257Dd9b9eb392893a89d307664713E8660672F0"
+          "address": "0x588dda0b1f5c46242fbbb694771dfc30179e21c3"
         }
       ],
       "calls": [
@@ -1437,7 +1437,7 @@
         {
           "ref": "PepeIncentives",
           "abi": "PepeIncentives",
-          "address": "0xc257Dd9b9eb392893a89d307664713E8660672F0"
+          "address": "0x588dda0b1f5c46242fbbb694771dfc30179e21c3"
         }
       ],
       "events": [
@@ -2842,7 +2842,7 @@
           "ref": "PepeIncentives",
           "abi": "PepeIncentives",
           "as": "holder",
-          "address": "0xc257Dd9b9eb392893a89d307664713E8660672F0"
+          "address": "0x588dda0b1f5c46242fbbb694771dfc30179e21c3"
         }
       ],
       "calls": [
@@ -3592,7 +3592,7 @@
         {
           "ref": "CopyTracker",
           "abi": "CopyTracker",
-          "address": "0x15A9Cbf803a3EEee2794B74Ad78252d27Ccd347C"
+          "address": "0x31297044a7b3A0F57e7CDa7fE619E996da1c64A9"
         }
       ],
       "events": [
@@ -3630,7 +3630,7 @@
         {
           "ref": "PepeIncentives",
           "abi": "PepeIncentives",
-          "address": "0xc257Dd9b9eb392893a89d307664713E8660672F0"
+          "address": "0x588dda0b1f5c46242fbbb694771dfc30179e21c3"
         }
       ],
       "events": [
@@ -3651,6 +3651,86 @@
             {
               "name": "streakCap",
               "type": "uint8",
+              "indexed": false
+            }
+          ]
+        }
+      ],
+      "runbook": [
+        "3. 暫停與凍結：現行部署能做什麼"
+      ],
+      "runbookUrl": "https://github.com/zuemen/pepelab_onchain_cfd/blob/master/docs/INCIDENT_RESPONSE.md#3-暫停與凍結現行部署能做什麼"
+    },
+    {
+      "id": "pepeamm-admin",
+      "title": "兌換池（PepeAMM）oracle 護欄變更與移除流動性",
+      "category": "風險參數",
+      "kind": "event",
+      "status": "active",
+      "severity": "SEV-3",
+      "description": "PepeAMM 的 maxOracleAge／maxOracleDeviationBps 被改，或 owner 移除流動性。放寬 maxOracleAge 會讓兌換用更舊的 oracle 價（2026-10-26 部署後設為 21600 秒，與交易所的 maxPriceAge 一致）；放寬偏離上限會讓池價離 oracle 更遠。正常營運也可能調整，所以是 SEV-3 稽核通知。",
+      "contracts": [
+        {
+          "ref": "PepeAMM",
+          "abi": "PepeAMM",
+          "address": "0xb40603df54d0af75f1915106F352672372570d97"
+        }
+      ],
+      "events": [
+        {
+          "sig": "MaxOracleAgeSet(uint256,uint256)",
+          "topic0": "0x72865fcea6273a1b5d02601db538da168f273a51df47e81a54e7c061a5413704",
+          "inputs": [
+            {
+              "name": "oldValue",
+              "type": "uint256",
+              "indexed": false
+            },
+            {
+              "name": "newValue",
+              "type": "uint256",
+              "indexed": false
+            }
+          ]
+        },
+        {
+          "sig": "MaxOracleDeviationBpsSet(uint256,uint256)",
+          "topic0": "0xc22c4f6d56dfc65181ba8be5eca0e3cbe8a152b7adc46251d95e8ef867fddd95",
+          "inputs": [
+            {
+              "name": "oldValue",
+              "type": "uint256",
+              "indexed": false
+            },
+            {
+              "name": "newValue",
+              "type": "uint256",
+              "indexed": false
+            }
+          ]
+        },
+        {
+          "sig": "LiquidityRemoved(address,uint256,uint256,uint256)",
+          "topic0": "0x1dc8bb69df2b8e91fbdcbfcf93d951b3f0000f085a95fe3f7946d6161439245d",
+          "inputs": [
+            {
+              "name": "provider",
+              "type": "address",
+              "indexed": true
+            },
+            {
+              "name": "ethAmount",
+              "type": "uint256",
+              "indexed": false
+            },
+            {
+              "name": "usdcAmount",
+              "type": "uint256",
+              "indexed": false
+            },
+            {
+              "name": "shares",
+              "type": "uint256",
               "indexed": false
             }
           ]
@@ -3745,8 +3825,7 @@
     },
     {
       "abi": "CopyTracker",
-      "notDeployed": true,
-      "reason": "部署版是快照版 CopyTracker，沒有自動同步（ADR-024）。這五個事件是跟隨者自己的操作（開關自動同步、指定或解除唯一的執行者、存提自己的油箱）與任何人依合約規則執行的同步，不是管理操作：油箱只有跟隨者本人能提領、指定執行者只有跟隨者本人能設定、同步只能調成交易者鏈上最新版、扣款不超過跟隨者簽名同意的執行費上限，都由合約強制；同步被擋的原因由執行者 agent（agent/copy-sync）通知跟隨者。換成自動同步版後這一組會被檢查器擋下，要重新分類（OWNER_ACTIONS 第 8 步）",
+      "reason": "自動同步版 CopyTracker（ADR-024）2026-10-26 部署（docs/CUTOVER_LOG_2026-10-26.md）。這五個事件是跟隨者自己的操作（開關自動同步、指定或解除唯一的執行者、存提自己的油箱）與任何人依合約規則執行的同步，不是管理操作：油箱只有跟隨者本人能提領、指定執行者只有跟隨者本人能設定、同步只能調成交易者鏈上最新版、扣款不超過跟隨者簽名同意的執行費上限，都由合約強制；同步被擋的原因由執行者 agent（agent/copy-sync）通知跟隨者。",
       "events": [
         "AutoSyncSet(address,uint256,bool,uint8,uint32,uint96)",
         "Resynced(address,uint256,address,uint256,uint256,address,uint256,uint256)",
@@ -3856,13 +3935,9 @@
     },
     {
       "abi": "PepeAMM",
-      "notDeployed": true,
-      "reason": "部署版的 PepeAMM 是舊版：沒有 LP 份額與 oracle 護欄參數，不會發這些事件",
+      "reason": "注入流動性（資金流入）。2026-10-26 換成新版 PepeAMM（讀交易所的 MockOracle）；移除流動性與 oracle 護欄參數變更由規則 pepeamm-admin 監控。",
       "events": [
-        "LiquidityAdded(address,uint256,uint256,uint256)",
-        "LiquidityRemoved(address,uint256,uint256,uint256)",
-        "MaxOracleAgeSet(uint256,uint256)",
-        "MaxOracleDeviationBpsSet(uint256,uint256)"
+        "LiquidityAdded(address,uint256,uint256,uint256)"
       ]
     },
     {
@@ -4003,6 +4078,18 @@
       },
       "withdrawSlashReserve(address,uint256)": {
         "rule": "copytracker-slash-reserve"
+      },
+      "setAutoSync(uint256,bool,uint8,uint32,uint96,uint256)": {
+        "reason": "跟隨者對自己那一筆跟單的操作，不是管理函式：只有紀錄的跟隨者本人（msg.sender）能呼叫，只動自己的設定或油箱（ADR-024）"
+      },
+      "setSyncExecutor(uint256,address)": {
+        "reason": "跟隨者對自己那一筆跟單的操作，不是管理函式：只有紀錄的跟隨者本人（msg.sender）能呼叫，只動自己的設定或油箱（ADR-024）"
+      },
+      "withdrawSyncGas(uint256)": {
+        "reason": "跟隨者對自己那一筆跟單的操作，不是管理函式：只有紀錄的跟隨者本人（msg.sender）能呼叫，只動自己的設定或油箱（ADR-024）"
+      },
+      "withdrawSyncGasTo(address,uint256)": {
+        "reason": "跟隨者對自己那一筆跟單的操作，不是管理函式：只有紀錄的跟隨者本人（msg.sender）能呼叫，只動自己的設定或油箱（ADR-024）"
       }
     },
     "ESGRegistryV2": {
@@ -4164,6 +4251,15 @@
       },
       "addLiquidity(uint256)": {
         "reason": "注入流動性（資金流入），不是取出或設定變更"
+      },
+      "setMaxOracleAge(uint256)": {
+        "rule": "pepeamm-admin"
+      },
+      "setMaxOracleDeviationBps(uint256)": {
+        "rule": "pepeamm-admin"
+      },
+      "removeLiquidity(uint256,uint256,uint256)": {
+        "rule": "pepeamm-admin"
       }
     },
     "PepeClaim": {

@@ -587,14 +587,15 @@ test("M4：事件涵蓋——忽略清單過期、重複、理由、notDeployed 
   cfg.ignoredEvents.push({ abi: "MockOracle", reason: "", events: ["AssetAdded(bytes32,uint256)", "NoSuchEvent(uint256)"] });
   cfg.ignoredEvents.push({ abi: "StrategyRegistry", reason: "x", events: ["TraderRegistered(address,string)"] });
   cfg.ignoredEvents.find((g) => g.abi === "MockOracle" && g.events[0].startsWith("PriceUpdated")).notDeployed = true;
-  delete cfg.ignoredEvents.find((g) => g.abi === "PepeAMM" && g.notDeployed).notDeployed;
+  // 2026-10-26 起 PepeAMM 與 CopyTracker 都換成新版（那兩組不再是 notDeployed），改拿 KYCRegistry 那一組驗證。
+  delete cfg.ignoredEvents.find((g) => g.abi === "KYCRegistry" && g.notDeployed).notDeployed;
   const p = eventCoverage(cfg, ctx).join("\n");
   assert.match(p, /ignoredEvents\[\d+\]（MockOracle） 沒有寫 reason/);
   assert.match(p, /AssetAdded\(bytes32,uint256\)（MockOracle）同時在規則與 ignoredEvents 裡/);
   assert.match(p, /NoSuchEvent\(uint256\) 不在 MockOracle\.json 的 ABI 也不在原始碼裡/);
   assert.match(p, /（StrategyRegistry） 沒有任何 active 規則在監控這個合約/);
   assert.match(p, /ignoredEvents 說 PriceUpdated\(bytes32,uint256,uint256,uint256\) 不在 MockOracle 的部署版，但已部署的 bytecode 裡有/);
-  assert.match(p, /MaxOracleAgeSet\(uint256,uint256\)（PepeAMM）不在任何部署版 bytecode 裡 —— 那一組要標 notDeployed/);
+  assert.match(p, /KYCRevoked\(address,uint256\)（KYCRegistry）不在任何部署版 bytecode 裡 —— 那一組要標 notDeployed/);
 });
 
 test("M4：wrangler.toml——任何位置的秘密鍵名、所有 vars 表、inline table、dotted key、值的驗證", () => {

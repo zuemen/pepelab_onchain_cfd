@@ -23,6 +23,8 @@ export const traderProfile = {
     staked: '質押金額',
     followers: '跟隨者',
     copiers: '跟單者',
+    /** 換過 CopyTracker 之後，舊 tracker 上還在跟的人（contracts/legacyCopyTrackers.ts）。 */
+    legacyCopiers: '跟單者（含舊版合約 {count} 位）',
     earnings: '收益',
     strategies: '策略數',
     versions: '版本',

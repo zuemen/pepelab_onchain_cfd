@@ -150,6 +150,7 @@ export const REQUIRED_RULES = {
   "guarded-oracle-halt-window": ["SEV-2", "pending-deploy", "7a7a5276534fe0a7f217266ab0b16f84a9894b4f62ccf99c41a894d3b29917d4"],
   "guarded-oracle-halt-takeover": ["SEV-1", "pending-deploy", "e0e0c332c4162fa39ac63b1e98a63c2fd25c4b6cc9a878beabc089151c78b6f2"],
   "pepe-incentives-daily-params": ["SEV-3", "active", "4ea2876efaa5cf0db8c843b00d76697bed0b7ba0a646b10f597afba921c94daa"],
+  "pepeamm-admin": ["SEV-3", "active", "49b5eedb10a36517fd0aaa64a4f6d95e26c2bdfdfe3c771b48757f3497bf627b"],
 };
 
 /**

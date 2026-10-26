@@ -295,6 +295,24 @@
       "role": "MockOracle",
       "chainId": 84532,
       "source": "#344 cutover（2026-10-20）換下：交易所改讀專用的 0x9Cf4…deEA，keeper 不再寫它（docs/CUTOVER_LOG_2026-10-20.md）"
+    },
+    {
+      "address": "0x15A9Cbf803a3EEee2794B74Ad78252d27Ccd347C",
+      "role": "CopyTracker",
+      "chainId": 84532,
+      "source": "2026-10-26 換成自動同步版（ADR-024，docs/CUTOVER_LOG_2026-10-26.md）；上面的跟單照算進跟隨人數（legacyCopyTrackers.ts）"
+    },
+    {
+      "address": "0x93be44a81a2796d378f65ebcc8d5f8b40166ad63",
+      "role": "PepeAMM",
+      "chainId": 84532,
+      "source": "2026-10-26 換下：oracle 是 immutable 的退役 0xeD90…，ETH 已收回（docs/CUTOVER_LOG_2026-10-26.md）"
+    },
+    {
+      "address": "0xc257Dd9b9eb392893a89d307664713E8660672F0",
+      "role": "PepeIncentives",
+      "chainId": 84532,
+      "source": "2026-10-26 換下：copyTracker 是 immutable 的舊 tracker；已 pause、PEPE 已收回（docs/CUTOVER_LOG_2026-10-26.md）"
     }
   ]
 }
