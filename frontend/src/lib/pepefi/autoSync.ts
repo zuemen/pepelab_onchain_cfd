@@ -298,6 +298,8 @@ export function resyncPreview(i: {
  * 一筆 active 跟單現在的同步狀態。
  *
  * - upToDate：已經是交易者最新版。
+ * - consentStale：已經是最新版、開著自動同步，但交易所的 executionFee 已高於你同意的費率——現在沒有東西要同步，
+ *   交易者下次發版時別人卻不能代為同步。提早告訴你，免得等到落後才發現（油箱估算也不能照算）。
  * - manual：有新版、沒開自動同步——要自己按「立即同步」。
  * - feeAboveCap：交易所的 executionFee 被調高，超過你開啟自動同步時同意的費率（syncExecFeeCap）——
  *   別人不能代為同步，直到你看過新費率、重新儲存自動同步設定（以畫面上的費率為新上限）；自己按
@@ -311,6 +313,7 @@ export function resyncPreview(i: {
  */
 export type SyncStatus =
   | { kind: 'upToDate' }
+  | { kind: 'consentStale' }
   | { kind: 'manual' }
   | { kind: 'feeAboveCap' }
   | { kind: 'cooldown'; readyAt: number }
@@ -338,15 +341,100 @@ export interface SyncStatusInput {
   executor?: string | null
 }
 
+/**
+ * 設定彈窗裡「你同意的執行費」那一句（ADR-024）。開關打開時，儲存＝以交易所現行費率簽名同意
+ * （setAutoSync 的 maxExecFeePerLeg）；這句話要說出確切的數字，而且要符合儲存時真的會送什麼。
+ * - null：開關關著（關閉不看費率，帶 0）。
+ * - unknownFee：讀不到現行費率——不能說「現行費率是多少」，開著時也不該讓人儲存。
+ * - raised／lowered：已經開著、之前同意的和現行費率不同。調高時儲存＝同意新費率；調低時不必重新同意也能同步，
+ *   但儲存會把上限一起降下去。
+ * - current：已經開著、設定與費率都沒變——儲存不會送 setAutoSync（頁面的 doSaveAutoSync），只說目前同意的。
+ * - sign：其餘（初次開啟、從關到開、改了設定）——儲存會以這個費率簽名。
+ */
+export type ConsentNotice =
+  | { kind: 'unknownFee' }
+  | { kind: 'raised'; fee: bigint; old: bigint }
+  | { kind: 'lowered'; fee: bigint; old: bigint }
+  | { kind: 'current'; fee: bigint }
+  | { kind: 'sign'; fee: bigint }
+
+export interface ConsentNoticeInput {
+  enabled: boolean
+  initialEnabled: boolean
+  settings: AutoSyncSettings
+  initialSettings: AutoSyncSettings
+  /** 交易所現行的 executionFee；讀不到為 null。 */
+  executionFee: bigint | null
+  /** 之前同意的每腿費率（syncExecFeeCap）；沒開過或讀不到為 null。 */
+  consentedFee: bigint | null
+}
+
+export function consentNotice(i: ConsentNoticeInput): ConsentNotice | null {
+  if (!i.enabled) return null
+  if (i.executionFee === null) return { kind: 'unknownFee' }
+  const fee = i.executionFee
+  if (i.initialEnabled && i.consentedFee !== null && i.consentedFee !== fee) {
+    return fee > i.consentedFee
+      ? { kind: 'raised', fee, old: i.consentedFee }
+      : { kind: 'lowered', fee, old: i.consentedFee }
+  }
+  const same = autoSyncConfigUnchanged({
+    current: { autoSync: i.initialEnabled, ...i.initialSettings },
+    enabled: i.enabled,
+    settings: i.settings,
+    consentedFee: i.consentedFee,
+    executionFee: fee,
+  })
+  return same ? { kind: 'current', fee } : { kind: 'sign', fee }
+}
+
+/**
+ * 儲存設定時要不要送 setAutoSync：開關、設定（頁面夾過值之後）與同意的費率都沒變就不送（只可能另送
+ * setSyncExecutor）。設定彈窗的「你目前同意」和頁面的 doSaveAutoSync 共用這一個判斷，兩邊不會說的和做的不一樣。
+ * `executionFee` 讀不到（null）時不拿費率比較：那時不會因為費率而送交易，設定有變的話彈窗本來就不讓儲存。
+ */
+export function autoSyncConfigUnchanged(i: {
+  current: SyncConfig | null
+  enabled: boolean
+  settings: AutoSyncSettings
+  consentedFee: bigint | null
+  executionFee: bigint | null
+}): boolean {
+  const c = i.current
+  return c !== null
+    && c.autoSync === i.enabled
+    && c.maxLeverage === i.settings.maxLeverage
+    && c.minSyncInterval === i.settings.minSyncInterval
+    && c.tipWei === i.settings.tipWei
+    && (!i.enabled || i.executionFee === null || i.consentedFee === i.executionFee)
+}
+
+/**
+ * 油箱旁的次數估算還成不成立：開著自動同步的每一筆，交易所的執行費都高於它同意的費率時，油箱再多，
+ * 別人也一次都不能代為同步（合約 ExecutionFeeAboveCap）。只有部分被擋時仍給估算（每一列另有自己的狀態）。
+ */
+export function tankConsentBlocked(
+  records: readonly { autoSync: boolean; execFeeCap: bigint | null }[],
+  executionFee: bigint | null,
+): boolean {
+  const on = records.filter(r => r.autoSync)
+  return executionFee !== null && on.length > 0 && on.every(r => r.execFeeCap !== null && executionFee > r.execFeeCap)
+}
+
+/** 交易所現行的 executionFee 是否高於跟隨者同意的每腿費率（讀不到任一個就當作沒有）。 */
+function feeAboveConsent(i: SyncStatusInput): boolean {
+  return i.executionFee !== null && i.execFeeCap !== undefined && i.execFeeCap !== null && i.executionFee > i.execFeeCap
+}
+
 export function syncStatus(i: SyncStatusInput): SyncStatus {
   if (i.latestVersion === null) return { kind: 'unknown' }
-  if (i.recordVersion >= i.latestVersion) return { kind: 'upToDate' }
+  if (i.recordVersion >= i.latestVersion) {
+    return i.config?.autoSync && feeAboveConsent(i) ? { kind: 'consentStale' } : { kind: 'upToDate' }
+  }
   if (!i.config) return { kind: 'unknown' }
   if (!i.config.autoSync) return { kind: 'manual' }
   // 合約先查冷卻、再查執行費上限；畫面先顯示需要本人處理的那一項（冷卻會自己過去）。
-  if (i.executionFee !== null && i.execFeeCap !== undefined && i.execFeeCap !== null && i.executionFee > i.execFeeCap) {
-    return { kind: 'feeAboveCap' }
-  }
+  if (feeAboveConsent(i)) return { kind: 'feeAboveCap' }
   const since = i.state && i.state.lastSyncedAt > 0 ? i.state.lastSyncedAt : (i.copiedAt ?? 0)
   const readyAt = since + i.config.minSyncInterval
   if (since > 0 && i.nowSec < readyAt) return { kind: 'cooldown', readyAt }

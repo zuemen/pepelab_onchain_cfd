@@ -1,6 +1,6 @@
 {
  "$comment": "由 node scripts/check-deployment-status.mjs 產生（唯讀 RPC），不要手改；docs/RELEASE_STATUS.md 是這份 JSON 的渲染結果。",
- "generatedAt": "2026-10-25",
+ "generatedAt": "2026-10-26",
  "compiler": "0.8.36",
  "denylistSize": 1,
  "chains": {
@@ -8,7 +8,7 @@
    "name": "Base Sepolia",
    "role": "正式測試網（交易、agent session、x402 都在這條鏈）",
    "rpc": "https://sepolia.base.org",
-   "block": 50242781,
+   "block": 50361533,
    "components": [
     {
      "id": "PerpetualExchange",
@@ -248,7 +248,7 @@
        "docs/VERIFICATION_REPORT.md",
        "docs/COST_MODEL.md"
       ],
-      "note": "2026-06-15 部署驗證與 2026-06-15～07-15 四筆 routeExternalRevenue 實際結算 tx；x402 v2 從未實付（docs/ADR-010-x402-v2-migration.md）"
+      "note": "2026-06-15 部署驗證與 2026-06-15～07-15 四筆 routeExternalRevenue 實際結算 tx（舊的那顆 x402 FeeRouter）；x402 v2 從未實付（docs/ADR-010-x402-v2-migration.md）。現行這顆（#301，2026-10-11）到 2026-10-26 唯讀讀回分潤累計仍為 0，沒有任何結算"
      },
      "matched": "FeeRouter.sol:FeeRouter"
     },
@@ -276,7 +276,7 @@
       "status": "未驗收",
       "date": null,
       "evidence": [],
-      "note": "只有部署腳本建立的 session #0，沒有 agent 實際下單的 tx 紀錄（docs/VERIFICATION_REPORT.md D 項待貼）"
+      "note": "現行 manager（#344 cutover）上還沒有任何 session（2026-10-26 唯讀讀回 nextSessionId = 0），沒有 agent 實際下單的 tx 紀錄（docs/VERIFICATION_REPORT.md D 項待貼）"
      },
      "matched": "AgentSessionManager.sol:AgentSessionManager"
     },
@@ -318,9 +318,9 @@
      "id": "CopyTracker",
      "label": "跟單",
      "merged": {
-      "pr": 198,
-      "commit": "264f1d4",
-      "date": "2026-09-30"
+      "pr": 369,
+      "commit": "622eb3b",
+      "date": "2026-10-26"
      },
      "sourceDigest": "e34fc3e5f601933e",
      "addresses": [
@@ -1260,7 +1260,7 @@
    "name": "Sepolia",
    "role": "legacy 展示鏈（不是產品路徑；合約未做金鑰輪替）",
    "rpc": "https://ethereum-sepolia-rpc.publicnode.com",
-   "block": 11994079,
+   "block": 11996034,
    "components": [
     {
      "id": "PerpetualExchange",
@@ -1502,9 +1502,9 @@
      "id": "CopyTracker",
      "label": "跟單",
      "merged": {
-      "pr": 198,
-      "commit": "264f1d4",
-      "date": "2026-09-30"
+      "pr": 369,
+      "commit": "622eb3b",
+      "date": "2026-10-26"
      },
      "sourceDigest": "e34fc3e5f601933e",
      "addresses": [
@@ -2244,11 +2244,11 @@
    "id": "signal-api",
    "label": "x402 付費 API（Vercel）",
    "merged": {
-    "pr": 299,
-    "commit": "72826e0",
-    "date": "2026-10-11"
+    "pr": 369,
+    "commit": "622eb3b",
+    "date": "2026-10-26"
    },
-   "sourceDigest": "4bd98553d4fd0361",
+   "sourceDigest": "8c2051d78f115940",
    "deployed": "已部署：Vercel 分支網域（agent/sdk/src/signalApi.ts 的 SIGNAL_API_TESTNET_URL）；健康與付費端點狀態由 scripts/post-deploy-smoke.mjs 檢查",
    "acceptance": {
     "status": "部分驗收",
@@ -2257,7 +2257,7 @@
      "docs/VERIFICATION_REPORT.md",
      "docs/COST_MODEL.md"
     ],
-    "note": "x402 v1 付費呼叫有實際 tx；v2 從未實付；現行 payTo 被判為不安全，付費端點 fail-closed 回 503"
+    "note": "x402 v1 付費呼叫有實際 tx（2026-06～07）；v2 從未實付。2026-10-26 實測：payTo 是安全的結算 EOA（payToSafety safe），/signals 與 /oracle 回 402 付款要求（0.01／0.005 USDC），之後沒有實際付款"
    }
   },
   {
@@ -2298,9 +2298,9 @@
    "id": "monitoring",
    "label": "鏈上監控 Worker（Cloudflare）",
    "merged": {
-    "pr": 360,
-    "commit": "05ef130",
-    "date": "2026-10-21"
+    "pr": 369,
+    "commit": "622eb3b",
+    "date": "2026-10-26"
    },
    "sourceDigest": "d01b0ed40f892b7b",
    "deployed": "未部署（ops/monitoring/README.md；2026-10-01 只做過唯讀試跑）",

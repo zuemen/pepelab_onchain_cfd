@@ -25,9 +25,12 @@
 | 6 | 每台 agent 主機 `npm run vc-status:init` | 各 agent 主機 | 每台 5 分 | `agent/.state/vc-status/index.json` 存在 |
 | 7 | 重跑發布狀態與 smoke test，確認「原始碼較新」變成「鏈上＝原始碼」 | 本機 | 45–60 分（含 `forge build`） | `check-deployment-status.mjs --offline`、`post-deploy-smoke.mjs` |
 | 8 | 部署自動同步版 CopyTracker（ADR-024）：先盤點舊 tracker 的跟單，部署後依序改接 FeeRouter、TraderStake、exchange，啟動執行者 | 本機 forge／cast＋repo PR | 2–3 小時（不含舊跟單的公告與等待） | `cast call … copyTracker()`、`authorizedAgents(…)`、第 7 步重跑 |
+| 9 | 重寫 sICLN、sESGU 的碳分級為 High（`docs/data/carbon-tier-etf-waci.md` 的決定 B；#344 cutover 漏做） | 本機 forge | 15 分 | `medianCarbonTier`、`maxLeverageForAsset` |
+| 10 | 兌換頁的 PepeAMM 仍讀退役的 MockOracle `0xeD90…`（報價停在 2026-10-21）：決定重新部署 PepeAMM 或讓 keeper 繼續寫舊 oracle | 本機 forge＋repo PR，或 keeper 設定 | 30–60 分 | `cast call <PepeAMM> "oracle()(address)"` |
 
 **合計：動手約 15–20 小時，分散在至少 3–4 天**（第 5 步第 4 項等 #130 與治理 timelock；timelock 48 小時等待與 cutover 後 2 天緩衝不計入動手時間）。
 第 8 步（2026-10-26 新增）與第 1–7 步互不依賴，#344 cutover（[`CUTOVER_LOG_2026-10-20.md`](CUTOVER_LOG_2026-10-20.md)）之後隨時可做；做完要再跑一次第 7 步。
+第 9、10 步（2026-10-26 新增，來自當天的公開站唯讀稽核）彼此、也與第 8 步互不依賴。
 第 1 步必須最先做；第 2 步的 Worker 在第 1 步完成前不可以持有任何 Actions: write 憑證。
 
 每一步完成後都可以跑一次部署後 smoke test（唯讀、不需要金鑰），看 FAIL 是否如預期減少：
@@ -734,7 +737,11 @@ Base Sepolia 現行的 `0x15A9…347C`（#344 cutover，部署區塊 48354990）
    每筆紀錄的第 6 個欄位是 `active`。處理方式：
    - **回放帳號（模擬跟隨者）**：金鑰在擁有者手上（`heroes/keys/84532.json`）。換 tracker 之前以該帳號呼叫舊 tracker 的
      `unfollowAndCloseAll(recordIdx)` 正常取消（照常計分）；或保留不動，接受它們之後只能 `deactivateWithoutScoring`。
-     回放資料集（`frontend/public/data/heroes/84532/`）已匯出，不受影響。
+     回放資料集（`frontend/public/data/heroes/84532/`）已匯出，不受影響；**但畫面上的跟隨人數會歸零**：排行榜與交易者頁
+     以 `readActiveFollowers(contracts.copyTracker)` 讀 `addresses.ts` 的那一顆 tracker（`TraderLeaderboard.tsx`、
+     `TraderProfilePage.tsx`），動態牆與歷史頁的跟單事件也只掃那一顆。2026-10-26 唯讀讀回：24 位回放交易者在舊 tracker 上
+     `getFollowerCount` 合計 79（含重複，KNOWN_LIMITATIONS #43）。換 tracker 之前先決定：在新 tracker 上重新回放跟單
+     （`agent/heroes` 公開鏈回放，可換新帳號重跑），或接受展示時跟隨人數為 0。
    - **真實使用者**：事先公告換 tracker 的時間，請他們在那之前取消跟單。來不及的，換 tracker 之後部位仍在他們自己名下，
      Portfolio 的「部位」頁籤看得到、平得掉（`exchange.closePosition` 只要求是部位本人）；舊 tracker 上的紀錄可用
      `deactivateWithoutScoring(recordIdx)` 收尾（BaseScan 的 Write Contract 或 `cast send … --account <自己的 keystore>`）。
@@ -749,6 +756,12 @@ Base Sepolia 現行的 `0x15A9…347C`（#344 cutover，部署區塊 48354990）
    # 接著把下面第 3 項的 forge script 換成 --rpc-url $FORK --unlocked --sender $DEPLOYER，
    # 第 4 項的 cast send 換成 --rpc-url $FORK --unlocked --from $DEPLOYER，再跑第 5 項的讀回
    ```
+   2026-10-26 已在 fork（區塊 50355944 前後）跑過一次，第 3–5 項全過：新 tracker 20,026 B、三處讀回一致、
+   `VERIFY_ONLY=true EXPECT_WIRED=true` 通過。同一個 fork 上接著跑了一次真的同步（新交易者發版 → 時間前進 1 小時 →
+   `copy-sync --mode public` 送出 `resyncFor`，油箱剛好扣「執行費 × 3＋小費」）。要在 fork 上重做同步的注意事項：
+   - fork 的 chainId 仍是 84532，執行者程式會拒絕 Anvil 的測試金鑰：用 `cast wallet new` 產生一把，加 `--allow-plaintext-key`。
+   - 時間前進後價格可能逼近 `maxPriceAge`（6 小時）：MockOracle 的 owner 是 keeper `0x540a…ef17`（不是部署者），
+     以它 `anvil_impersonateAccount` 後 `updatePrice` 原價重寫一次。
 3. **部署新 tracker**：環境變數以 `contracts/script/RedeployCopyTrackerAutoSync.s.sol` 檔頭為準（**不是** `RedeployCopyTracker.s.sol`
    的 `*_ADDR` 那一組）。唯一必填的是 `EXCHANGE`；`USDC`、`REGISTRY`、`TRADER_STAKE`、`FEE_ROUTER` 預設取自交易所目前的 CopyTracker
    （`exchange.copyTracker()` 的 immutable），**不要另外設**——腳本會把覆寫值與鏈上交叉檢查，設錯只會讓它拒絕執行。`NEW_OWNER` 預設
@@ -832,3 +845,50 @@ Base Sepolia 現行的 `0x15A9…347C`（#344 cutover，部署區塊 48354990）
   直到各跟隨者看過新費率、重新儲存自動同步設定（前端把新費率當成簽名上限帶入）（ADR-024、KNOWN_LIMITATIONS #39）；
   執行者日誌會出現 `consent` 分類。正在送出的跟單、設定與「立即同步」若帶的是舊費率，也會整筆退回 `ExecutionFeeAboveCap`，
   使用者重新整理後再送即可。這是刻意的：owner 不能在跟隨者沒有簽名同意時多扣油箱，搶先調費也不行。調高前先公告；調低不受影響。
+
+---
+
+## 第 9 步：重寫 sICLN、sESGU 的碳分級（#344 cutover 漏做）
+
+**為什麼：** 2026-10-18 的決定（[`data/carbon-tier-etf-waci.md`](data/carbon-tier-etf-waci.md) 選項 B）把 sICLN、sESGU 改成 High，
+原始碼（`CarbonAttestations.sol`）、前端（`assetMeta.ts`）與回放資料都已跟著改，那份文件寫「鏈上重寫屬於 #344 cutover」，
+但 [`CUTOVER_LOG_2026-10-20.md`](CUTOVER_LOG_2026-10-20.md) 沒有這一步。2026-10-26 唯讀讀回（`exchange.esgRegistry()` =
+`0xBF5B…5dFf`）：sICLN 仍是 Low（5 倍、手續費 10 bps），sESGU 仍是 Mid（2 倍、40 bps）；兩檔都只有部署者 `0x27C2…A585`
+一位見證者，所以它重寫一次中位數就會改變。在這之前，兩檔 ETF 以比畫面說明低的碳價與高的槓桿交易。
+
+**操作：** `AttestTenantCarbon.s.sol` 只寫見證、不部署也不授權；`ATTEST_ASSETS` 限定這兩檔。先不帶金鑰模擬，再廣播。
+```bash
+cd contracts
+export ESG_REGISTRY=0xBF5B9cD78566791d79c687A732b4ed5bc3E95dFf ATTEST_CHAIN_ID=84532 ATTEST_ASSETS=sICLN,sESGU
+forge script script/AttestTenantCarbon.s.sol:AttestTenantCarbon --rpc-url $RPC --sender $DEPLOYER                      # 模擬
+forge script script/AttestTenantCarbon.s.sol:AttestTenantCarbon --rpc-url $RPC --account $ACCOUNT --sender $DEPLOYER --broadcast --slow
+```
+
+**驗證（唯讀）：**
+```bash
+EX=0xbF3074C98e17d88B4127899C98C81AE94c9fC979
+for a in sICLN sESGU; do id=$(cast keccak $a)
+  cast call $ESG_REGISTRY "medianCarbonTier(bytes32)(uint8,uint256,uint256,bool)" $id --rpc-url $RPC | head -1   # 3 = High
+  cast call $EX "maxLeverageForAsset(bytes32)(uint256)" $id --rpc-url $RPC                                        # 1
+  cast call $EX "tradingFeeBpsForAsset(bytes32)(uint256)" $id --rpc-url $RPC                                      # 100
+done
+```
+2026-10-26 在 Base Sepolia fork 上以假冒的部署者跑過：兩檔都變成 High、1 倍、100 bps。已開的部位不受影響
+（開倉當下的碳分級記在部位上）；之後新開的部位才用新的等級。
+
+---
+
+## 第 10 步：兌換頁的 PepeAMM 仍讀退役的 MockOracle
+
+**為什麼：** #344 cutover 把交易所換到專用的新 MockOracle `0x9Cf4…deEA`，keeper 從 2026-10-21 起不再寫舊的 `0xeD90…0Aa3`。
+但 Base Sepolia 上的 PepeAMM `0x93be…ad63`（`addresses.ts` 的 `PepeAMM`）`oracle()` 是 immutable、仍指向 `0xeD90…`，
+而且是比原始碼舊的版本（`check-deployment-status.mjs` 列為「原始碼較新」）。2026-10-26 的唯讀稽核：`/exchange` 顯示的
+ETH 報價來自 `0xeD90…`，最後一次寫價是 2026-10-21T01:07Z。
+
+**二選一（擁有者決定）：**
+- **重新部署 PepeAMM（建議）**：照第 5 步第 6 項，`MOCK_ORACLE=0x9Cf4E05B08F6cC53be2e04752F2c32A79132deEA`（交易所實際讀的那顆），
+  種子依 oracle 現價計算；部署後更新 `addresses.ts` 的 `PepeAMM` 並開 PR。舊池子的流動性由 owner 以 `removeLiquidity` 取回。
+- **讓 keeper 也寫舊 oracle**：只要 sETH 一檔。成本是多一顆要長期維護、又已被標為退役的 oracle，與 #344 的整理方向相反。
+
+**驗證：** `cast call <PepeAMM> "oracle()(address)" --rpc-url $RPC` 等於交易所的 `oracle()`；`/exchange` 的報價與 `/oracle` 頁的
+sETH 價格一致。

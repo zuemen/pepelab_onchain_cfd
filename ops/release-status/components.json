@@ -495,7 +495,7 @@
         "docs/VERIFICATION_REPORT.md",
         "docs/COST_MODEL.md"
       ],
-      "note": "2026-06-15 部署驗證與 2026-06-15～07-15 四筆 routeExternalRevenue 實際結算 tx；x402 v2 從未實付（docs/ADR-010-x402-v2-migration.md）"
+      "note": "2026-06-15 部署驗證與 2026-06-15～07-15 四筆 routeExternalRevenue 實際結算 tx（舊的那顆 x402 FeeRouter）；x402 v2 從未實付（docs/ADR-010-x402-v2-migration.md）。現行這顆（#301，2026-10-11）到 2026-10-26 唯讀讀回分潤累計仍為 0，沒有任何結算"
     },
     "signal-api": {
       "status": "部分驗收",
@@ -504,7 +504,7 @@
         "docs/VERIFICATION_REPORT.md",
         "docs/COST_MODEL.md"
       ],
-      "note": "x402 v1 付費呼叫有實際 tx；v2 從未實付；現行 payTo 被判為不安全，付費端點 fail-closed 回 503"
+      "note": "x402 v1 付費呼叫有實際 tx（2026-06～07）；v2 從未實付。2026-10-26 實測：payTo 是安全的結算 EOA（payToSafety safe），/signals 與 /oracle 回 402 付款要求（0.01／0.005 USDC），之後沒有實際付款"
     },
     "PerpetualExchange": {
       "status": "未驗收",
@@ -512,7 +512,7 @@
     },
     "AgentSessionManager": {
       "status": "未驗收",
-      "note": "只有部署腳本建立的 session #0，沒有 agent 實際下單的 tx 紀錄（docs/VERIFICATION_REPORT.md D 項待貼）"
+      "note": "現行 manager（#344 cutover）上還沒有任何 session（2026-10-26 唯讀讀回 nextSessionId = 0），沒有 agent 實際下單的 tx 紀錄（docs/VERIFICATION_REPORT.md D 項待貼）"
     },
     "AssetVaultV2": {
       "status": "未驗收",

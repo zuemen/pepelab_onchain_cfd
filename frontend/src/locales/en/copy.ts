@@ -150,7 +150,7 @@ export const copy: Catalog['copy'] = {
     tipNone: 'None (only you or your own agent)',
     prefund: 'Gas tank deposit (ETH)',
     prefundHelp:
-      'The tank pays each sync’s execution fee ({fee} ETH per asset in the new version) and the tip. It is held in the contract under your own address and can be withdrawn at any time.',
+      'The tank pays each sync’s execution fee ({fee} ETH per asset in the new version) and the tip. It is held in the contract under your own address and can be withdrawn at any time. The {fee} ETH per asset is also the execution-fee cap you sign: if the exchange raises its fee later, no one else can sync for you until you review the new fee in Portfolio and accept it.',
     estimate: 'About {count} syncs ({legs} assets, {cost} ETH each)',
     oneTx: 'One transaction copies, switches auto-sync on and fills the tank: {total} ETH attached ({open} ETH execution fees + {prefund} ETH tank).',
     twoTx: 'This contract version needs separate transactions: copy first, then switch auto-sync on, then fill the tank.',

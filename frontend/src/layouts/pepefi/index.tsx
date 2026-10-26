@@ -75,15 +75,31 @@ export function PepefiLayout() {
         {t.common.layout.skipToContent}
       </Box>
 
-      <ChainNotice chainId={wallet.chainId} />
-      {/* 交易者發布了新版、你有紀錄還停在舊版（ADR-024）：沒有自己跑 agent 的人只能從這裡知道。
-          連著錢包時，公開頁（排行榜、動態牆…）也顯示；只有 landing 不顯示（連著錢包會被導到投資組合）。 */}
-      <CopySyncNotice wallet={wallet} pathname={pathname} hidden={pathname === '/'} />
+      {/* 內頁的兩條提醒在 DashboardLayout 裡面（AppNotices）：放在這一層時，桌面版固定在左邊的側欄
+          會蓋住提醒的開頭。這裡只剩 landing（沒有側欄）。 */}
+      {pathname === '/' && <ChainNotice chainId={wallet.chainId} />}
 
       <Box component="main" id="main-content" tabIndex={-1} sx={{ outline: 'none' }}>
         <Outlet context={wallet} />
       </Box>
     </Box>
+  );
+}
+
+/**
+ * 內頁頂端的提醒，由內頁外框（routes/sections/pepefi.tsx 的 DashboardShell）放在 DashboardLayout 的
+ * 內容區第一列：在側欄右邊、標題列下面，桌面版的固定側欄不會蓋住開頭。
+ * - ChainNotice：連到非正式鏈。
+ * - CopySyncNotice：交易者發布了新版、你有紀錄還停在舊版（ADR-024）：沒有自己跑 agent 的人只能從這裡知道。
+ *   連著錢包時，公開頁（排行榜、動態牆…）也顯示；landing 不在這層（連著錢包會被導到投資組合）。
+ */
+export function AppNotices({ wallet }: { wallet: WalletAPI }) {
+  const pathname = usePathname();
+  return (
+    <>
+      <ChainNotice chainId={wallet.chainId} />
+      <CopySyncNotice wallet={wallet} pathname={pathname} hidden={false} />
+    </>
   );
 }
 

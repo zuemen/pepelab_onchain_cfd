@@ -16,7 +16,7 @@ import { useLivePrices } from 'src/hooks/useLivePrices';
 import { usePepefiWallet } from 'src/layouts/pepefi';
 import { getAddresses } from 'src/contracts/deployment';
 import { ASSET_IDS, CHAIN_NAMES } from 'src/contracts/addresses';
-import { t, interpolate } from 'src/locales';
+import { t, locale, interpolate } from 'src/locales';
 import { ASSET_LABEL } from 'src/lib/pepefi/assetMeta';
 import { prettyError } from 'src/lib/pepefi/errorMessages';
 import {
@@ -79,6 +79,8 @@ import {
   parseSyncState,
   parseSyncConfig,
   syncsAffordable,
+  tankConsentBlocked,
+  autoSyncConfigUnchanged,
   DEFAULT_TIP_WEI,
   DEFAULT_COOLDOWN,
   selfSyncShortfall,
@@ -195,7 +197,7 @@ const fUsd  = (v: bigint) =>
     maximumFractionDigits: 2,
   });
 const fDate = (ts: bigint) =>
-  new Date(Number(ts) * 1000).toLocaleString('zh-TW', {
+  new Date(Number(ts) * 1000).toLocaleString(locale, {
     dateStyle: 'short',
     timeStyle: 'short',
   });
@@ -372,7 +374,10 @@ export default function PortfolioPage() {
   };
 
   // ── Fetch ─────────────────────────────────────────────────────────────────
+  const refreshExecFee = execFee.refresh;
   const fetchAll = useCallback(async () => {
+    // 執行費跟著重讀（owner 隨時可能調整）：同意的費率提示與油箱估算都靠它（ADR-024）
+    refreshExecFee();
     if (!contracts || !wallet.address) {
       setIsLoaded(true);
       return;
@@ -501,7 +506,7 @@ export default function PortfolioPage() {
     const failures = [copyRecsResult, positionsResult, freeMarginResult].filter(r => !r.ok);
     if (failures.length > 0) notify(prettyError(failures[0].error), false);
     setIsLoaded(true);
-  }, [contracts, wallet.address, notify, autoSync.supported, autoSync.executorLock]);
+  }, [contracts, wallet.address, notify, autoSync.supported, autoSync.executorLock, refreshExecFee]);
 
   useEffect(() => {
     void fetchAll();
@@ -660,6 +665,7 @@ export default function PortfolioPage() {
 
   /** 打開設定彈窗：沒開過的跟單用最保守的預設（槓桿上限 = 這筆跟單目前部位的最高槓桿）。 */
   const openSyncSettings = (rec: CopyRec) => {
+    refreshExecFee();
     const cfg = rec.syncConfig;
     const held = positions.filter(p => rec.positionIds.includes(p.id)).map(p => p.leverage);
     const configured = cfg !== null && cfg.maxLeverage > 0;
@@ -689,12 +695,15 @@ export default function PortfolioPage() {
       const tip = s.tipWei > autoSync.maxTipWei ? autoSync.maxTipWei : s.tipWei;
       const lev = clampLeverage(s.maxLeverage);
       const cur = rec.syncConfig;
-      const unchanged = cur !== null
-        && cur.autoSync === enabled
-        && cur.maxLeverage === lev
-        && cur.minSyncInterval === s.minSyncInterval
-        && cur.tipWei === tip
-        && (!enabled || rec.execFeeCap === execFee.wei);
+      // 與設定彈窗的「你目前同意」同一個判斷（autoSyncConfigUnchanged）。讀不到執行費時不拿費率比較：
+      // 那時彈窗只讓「設定沒變」的儲存通過（例如只改指定執行者），不會用後備值簽出同意的上限。
+      const unchanged = autoSyncConfigUnchanged({
+        current: cur,
+        enabled,
+        settings: { maxLeverage: lev, minSyncInterval: s.minSyncInterval, tipWei: tip },
+        consentedFee: rec.execFeeCap,
+        executionFee: execFee.loaded ? execFee.wei : null,
+      });
       if (!unchanged) {
         // 開啟／修改時，畫面上顯示的每檔執行費就是同意的上限：交易所在送出前調高費率會整筆
         // revert ExecutionFeeAboveCap，不會把調高後的費率記成同意值。關閉不看費率（帶 0）。
@@ -910,11 +919,15 @@ export default function PortfolioPage() {
   const tankAffordable = syncGas !== null && enabledTips.length > 0 && syncLegs > 0
     ? syncsAffordable(syncGas, syncCostWei(execFee.wei, syncLegs, topTip, false))
     : null;
+  const tankBlocked = tankConsentBlocked(
+    copyRecs.map(r => ({ autoSync: r.syncConfig?.autoSync ?? false, execFeeCap: r.execFeeCap })),
+    execFee.loaded ? execFee.wei : null,
+  );
   const suggestedDeposit = defaultPrefundWei(execFee.wei, Math.max(1, syncLegs), enabledTips.length > 0 ? topTip : DEFAULT_TIP_WEI);
   // 油箱有餘額就一定看得到、提得出來——就算已經沒有任何跟單、或跟單旗標關閉（退出不藏）。
   const hasTankBalance = syncGas !== null && syncGas > 0n;
   const nowSec = Math.floor(Date.now() / 1000);
-  const syncStatusText = (st: SyncStatus): string => {
+  const syncStatusText = (st: SyncStatus, syncOn: boolean): string => {
     const S = t.portfolio.autoSync.status;
     switch (st.kind) {
       case 'cooldown':    return interpolate(S.cooldown, { time: fDate(BigInt(st.readyAt)) });
@@ -923,6 +936,8 @@ export default function PortfolioPage() {
       // 跟單頁在 Simple 模式也一樣只說明、不給勾選框（autoSyncEntry）
       case 'manual':      return mode === 'simple' ? S.manualSimple : S.manual;
       case 'feeAboveCap': return mode === 'simple' ? S.feeAboveCapSimple : S.feeAboveCap;
+      case 'consentStale': return mode === 'simple' ? S.consentStaleSimple : S.consentStale;
+      case 'upToDate':    return mode === 'simple' && !syncOn ? S.upToDateSimpleOff : S.upToDate;
       default:            return S[st.kind];
     }
   };
@@ -930,6 +945,7 @@ export default function PortfolioPage() {
     <SyncGasTank
       balance={syncGas}
       affordable={tankAffordable}
+      consentBlocked={tankBlocked}
       busy={!!busy['syncGas']}
       onDeposit={() => setGasDialog('deposit')}
       onWithdraw={() => setGasDialog('withdraw')}
@@ -953,6 +969,8 @@ export default function PortfolioPage() {
         initialSettings={syncSettingsFor?.settings ?? { maxLeverage: 1, minSyncInterval: DEFAULT_COOLDOWN, tipWei: DEFAULT_TIP_WEI }}
         maxTipWei={autoSync.maxTipWei}
         executionFee={execFee.wei}
+        executionFeeLoaded={execFee.loaded}
+        consentedFee={syncSettingsFor?.rec.execFeeCap ?? null}
         legs={syncSettingsFor?.rec.latestLegs ?? syncSettingsFor?.rec.positionIds.length ?? 0}
         tankBalance={syncGas}
         showLeverage={mode === 'expert'}
@@ -1377,7 +1395,7 @@ export default function PortfolioPage() {
                               />
                             )}
                             {rec.executor && (
-                              <MuiTooltip title={t.portfolio.autoSync.executorTip}>
+                              <MuiTooltip title={mode === 'simple' ? t.portfolio.autoSync.executorTipSimple : t.portfolio.autoSync.executorTip}>
                                 <Chip
                                   size="small"
                                   variant="outlined"
@@ -1397,9 +1415,9 @@ export default function PortfolioPage() {
                           {sync && (
                             <Typography
                               variant="caption"
-                              sx={{ display: 'block', mt: 0.5, color: sync.kind === 'needsGas' || sync.kind === 'feeAboveCap' ? 'warning.main' : 'text.secondary' }}
+                              sx={{ display: 'block', mt: 0.5, color: sync.kind === 'needsGas' || sync.kind === 'feeAboveCap' || sync.kind === 'consentStale' ? 'warning.main' : 'text.secondary' }}
                             >
-                              {syncStatusText(sync)}
+                              {syncStatusText(sync, syncOn)}
                             </Typography>
                           )}
                         </TableCell>

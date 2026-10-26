@@ -11,7 +11,7 @@ import { MemoryRouter } from 'react-router';
 
 import AutoSyncFields from './AutoSyncFields';
 import { CopySyncNoticeView } from './CopySyncNotice';
-import { SyncGasTank, AutoSyncDisclosure, ResyncConfirmContent } from './AutoSyncDialogs';
+import { SyncGasTank, ConsentNoticeView, AutoSyncDisclosure, ResyncConfirmContent } from './AutoSyncDialogs';
 
 // ----------------------------------------------------------------------
 // 自動同步（ADR-024）元件的伺服器端渲染煙霧測試：不需要瀏覽器，確認渲染不會丟例外，
@@ -70,6 +70,12 @@ describe('SyncGasTank', () => {
 
     const empty = html(createElement(SyncGasTank, { balance: 0n, affordable: null, busy: false, onDeposit: noop, onWithdraw: noop }));
     expect(empty.match(/disabled=""/g) ?? []).toHaveLength(1);
+  });
+
+  it('says executors are paused instead of a sync count when the fee is above every consent', () => {
+    const out = html(createElement(SyncGasTank, { balance: 10n ** 15n, affordable: 2n, consentBlocked: true, busy: false, onDeposit: noop, onWithdraw: noop }));
+    expect(out).toContain(t.portfolio.autoSync.tank.consentBlocked);
+    expect(out).not.toContain(interpolate(t.portfolio.autoSync.tank.estimate, { count: '2' }));
   });
 
   it('says it cannot read the balance instead of showing zero', () => {
@@ -218,5 +224,31 @@ describe('Simple Mode auto-sync wording', () => {
       expect(s, s).not.toMatch(/槓桿|leverage/i);
       for (const b of buttons) expect(s, s).not.toContain(b);
     }
+  });
+});
+
+describe('ConsentNoticeView', () => {
+  const D = t.portfolio.autoSync.dialog;
+  it('shows the exact fees the follower signs, even one wei apart', () => {
+    const out = html(createElement(ConsentNoticeView, { notice: { kind: 'raised', fee: FEE + 1n, old: FEE } }));
+    expect(out).toContain(interpolate(D.consentChanged, { fee: '0.000100000000000001', old: '0.0001' }));
+    expect(out).toContain('MuiAlert-colorWarning');
+  });
+
+  it('treats a lowered fee as information, not a warning', () => {
+    const out = html(createElement(ConsentNoticeView, { notice: { kind: 'lowered', fee: FEE / 2n, old: FEE } }));
+    expect(out).toContain('MuiAlert-colorInfo');
+    expect(out).not.toContain('MuiAlert-colorWarning');
+  });
+
+  it('picks the sentence for each case', () => {
+    expect(html(createElement(ConsentNoticeView, { notice: null }))).toBe('');
+    expect(html(createElement(ConsentNoticeView, { notice: { kind: 'unknownFee' } }))).toContain(D.consentUnknownFee);
+    expect(html(createElement(ConsentNoticeView, { notice: { kind: 'lowered', fee: FEE / 2n, old: FEE } })))
+      .toContain(interpolate(D.consentLowered, { fee: '0.00005', old: '0.0001' }));
+    expect(html(createElement(ConsentNoticeView, { notice: { kind: 'current', fee: FEE } })))
+      .toContain(interpolate(D.consentCurrent, { fee: '0.0001' }));
+    expect(html(createElement(ConsentNoticeView, { notice: { kind: 'sign', fee: FEE } })))
+      .toContain(interpolate(D.consentLine, { fee: '0.0001' }));
   });
 });

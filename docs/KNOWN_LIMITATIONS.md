@@ -1630,6 +1630,9 @@ personal 模式的執行者在交易者發布新版時會通知本人（`new-ver
   換 tracker 之後舊 tracker 失去授權，舊跟單的取消會 revert `PositionStillOpen`，出路是 `deactivateWithoutScoring` 後在交易所自行平倉。
 - `PepeIncentives.copyTracker` 是 immutable：換 tracker 之後，新跟單的「跟單獎勵」（`claimCopyReward`）讀的是舊 tracker，
   會 revert `NotFollowing`，直到 PepeIncentives 重新部署。
+- 畫面上的跟隨人數與跟單事件只讀 `addresses.ts` 的那一顆 tracker（排行榜、交易者頁、動態牆、歷史頁）：換 tracker 之後，
+  舊 tracker 上的跟單（2026-10-26 讀回：24 位回放交易者合計 79 筆紀錄）不會再算進去，跟隨人數會歸零，直到在新 tracker 上
+  重新回放或有新的跟單（[`OWNER_ACTIONS.md`](OWNER_ACTIONS.md) 第 8 步第 1 項）。
 
 ## 45. 極小權重讓同步卡住
 

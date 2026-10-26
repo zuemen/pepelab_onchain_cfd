@@ -1,6 +1,6 @@
 import type { Contract } from 'ethers'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 
 import { safeRead } from 'src/lib/pepefi/safeRead'
 
@@ -25,9 +25,16 @@ export function useExecutionFee(exchange: Contract | null): {
   loaded: boolean
   /** `0.001` —— 直接給文案用。 */
   eth: string
+  /**
+   * 重讀一次。owner 隨時可能 `setExecutionFee`，只在掛載時讀一次的話，停在頁面上的人看到的是舊費率——
+   * 自動同步的「同意的費率」提示（ADR-024）就會說錯。重讀失敗時保留上一次讀到的值。
+   */
+  refresh: () => void
 } {
   const [wei, setWei] = useState<bigint>(FALLBACK_WEI)
   const [loaded, setLoaded] = useState(false)
+  const [nonce, setNonce] = useState(0)
+  const refresh = useCallback(() => setNonce(n => n + 1), [])
 
   useEffect(() => {
     if (!exchange) return
@@ -39,9 +46,20 @@ export function useExecutionFee(exchange: Contract | null): {
       setLoaded(true)
     })()
     return () => { cancelled = true }
-  }, [exchange])
+  }, [exchange, nonce])
 
-  return { wei, loaded, eth: formatEth(wei) }
+  return { wei, loaded, eth: formatEth(wei), refresh }
+}
+
+/**
+ * wei → 不捨入的 ETH 字串（最多 18 位小數，去掉尾隨 0）。給「你簽名同意的金額」這類必須一字不差的地方：
+ * `formatEth` 只留 6 位，兩個只差 1 wei 的費率會顯示成同一個數字。
+ */
+export function formatEthExact(wei: bigint): string {
+  const neg = wei < 0n
+  const a = neg ? -wei : wei
+  const frac = (a % 10n ** 18n).toString().padStart(18, '0').replace(/0+$/, '')
+  return `${neg ? '-' : ''}${a / 10n ** 18n}${frac ? `.${frac}` : ''}`
 }
 
 /** wei → 去掉尾隨 0 的 ETH 字串。`1000000000000000n` → `"0.001"`。 */
