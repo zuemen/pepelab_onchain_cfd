@@ -341,6 +341,51 @@ export interface SyncStatusInput {
   executor?: string | null
 }
 
+/**
+ * 設定彈窗裡「你同意的執行費」那一句（ADR-024）。開關打開時，儲存＝以交易所現行費率簽名同意
+ * （setAutoSync 的 maxExecFeePerLeg）；這句話要說出確切的數字，而且要符合儲存時真的會送什麼。
+ * - null：開關關著（關閉不看費率，帶 0）。
+ * - unknownFee：讀不到現行費率——不能說「現行費率是多少」，開著時也不該讓人儲存。
+ * - raised／lowered：已經開著、之前同意的和現行費率不同。調高時儲存＝同意新費率；調低時不必重新同意也能同步，
+ *   但儲存會把上限一起降下去。
+ * - current：已經開著、設定與費率都沒變——儲存不會送 setAutoSync（頁面的 doSaveAutoSync），只說目前同意的。
+ * - sign：其餘（初次開啟、從關到開、改了設定）——儲存會以這個費率簽名。
+ */
+export type ConsentNotice =
+  | { kind: 'unknownFee' }
+  | { kind: 'raised'; fee: bigint; old: bigint }
+  | { kind: 'lowered'; fee: bigint; old: bigint }
+  | { kind: 'current'; fee: bigint }
+  | { kind: 'sign'; fee: bigint }
+
+export interface ConsentNoticeInput {
+  enabled: boolean
+  initialEnabled: boolean
+  settings: AutoSyncSettings
+  initialSettings: AutoSyncSettings
+  /** 交易所現行的 executionFee；讀不到為 null。 */
+  executionFee: bigint | null
+  /** 之前同意的每腿費率（syncExecFeeCap）；沒開過或讀不到為 null。 */
+  consentedFee: bigint | null
+}
+
+export function consentNotice(i: ConsentNoticeInput): ConsentNotice | null {
+  if (!i.enabled) return null
+  if (i.executionFee === null) return { kind: 'unknownFee' }
+  const fee = i.executionFee
+  if (i.initialEnabled && i.consentedFee !== null && i.consentedFee !== fee) {
+    return fee > i.consentedFee
+      ? { kind: 'raised', fee, old: i.consentedFee }
+      : { kind: 'lowered', fee, old: i.consentedFee }
+  }
+  const same = i.initialEnabled
+    && i.consentedFee === fee
+    && i.settings.maxLeverage === i.initialSettings.maxLeverage
+    && i.settings.minSyncInterval === i.initialSettings.minSyncInterval
+    && i.settings.tipWei === i.initialSettings.tipWei
+  return same ? { kind: 'current', fee } : { kind: 'sign', fee }
+}
+
 /** 交易所現行的 executionFee 是否高於跟隨者同意的每腿費率（讀不到任一個就當作沒有）。 */
 function feeAboveConsent(i: SyncStatusInput): boolean {
   return i.executionFee !== null && i.execFeeCap !== undefined && i.execFeeCap !== null && i.executionFee > i.execFeeCap

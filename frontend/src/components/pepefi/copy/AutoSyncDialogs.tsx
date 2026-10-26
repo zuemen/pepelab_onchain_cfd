@@ -20,14 +20,16 @@ import DialogContent from '@mui/material/DialogContent';
 import FormControlLabel from '@mui/material/FormControlLabel';
 
 import { t, interpolate } from 'src/locales';
-import { formatEth } from 'src/hooks/useExecutionFee';
 import { ASSET_LABEL } from 'src/lib/pepefi/assetMeta';
 import { STABLE_LABEL } from 'src/lib/pepefi/tokenLabel';
+import { formatEth, formatEthExact } from 'src/hooks/useExecutionFee';
 import {
   versionLabel,
   parseEthInput,
+  consentNotice,
   settingsProblem,
   executorProblem,
+  type ConsentNotice,
   type ResyncPreview,
   type AutoSyncSettings,
 } from 'src/lib/pepefi/autoSync';
@@ -52,6 +54,8 @@ interface SettingsProps {
   initialSettings: AutoSyncSettings;
   maxTipWei: bigint;
   executionFee: bigint;
+  /** `executionFee` 是鏈上讀到的值（false = 後備值，不能當成「交易所現行費率」說出口，開著時也不能儲存）。 */
+  executionFeeLoaded?: boolean;
   /** 跟隨者目前同意的每檔執行費（CopyTracker.syncExecFeeCap）；沒開過或讀不到為 null。 */
   consentedFee?: bigint | null;
   legs: number;
@@ -74,6 +78,7 @@ export function AutoSyncSettingsDialog({
   initialSettings,
   maxTipWei,
   executionFee,
+  executionFeeLoaded = true,
   consentedFee = null,
   legs,
   tankBalance,
@@ -95,6 +100,14 @@ export function AutoSyncSettingsDialog({
 
   const problem = settingsProblem(settings, maxTipWei);
   const exProblem = executor ? executorProblem(executorInput, executor.follower) : null;
+  const consent = consentNotice({
+    enabled,
+    initialEnabled,
+    settings,
+    initialSettings,
+    executionFee: executionFeeLoaded ? executionFee : null,
+    consentedFee,
+  });
 
   return (
     <Dialog open={open} onClose={busy ? undefined : onClose} fullWidth maxWidth="sm">
@@ -121,19 +134,8 @@ export function AutoSyncSettingsDialog({
             executor={executor ? { value: executorInput, onChange: setExecutorInput, problem: exProblem } : undefined}
             disabled={busy}
           />
-          {/* 儲存＝以現行費率簽名同意（setAutoSync 的 maxExecFeePerLeg）：開著時一定說出數字；
-              與之前同意的不同時，新舊兩個都列（交易所調高費率之後，這裡就是重新同意的地方）。 */}
-          {enabled && (
-            consentedFee !== null && initialEnabled && consentedFee !== executionFee ? (
-              <Alert severity="warning">
-                {interpolate(P.dialog.consentChanged, { fee: formatEth(executionFee), old: formatEth(consentedFee) })}
-              </Alert>
-            ) : (
-              <Typography variant="caption" color="text.secondary">
-                {interpolate(P.dialog.consentLine, { fee: formatEth(executionFee) })}
-              </Typography>
-            )
-          )}
+          {/* 儲存＝以現行費率簽名同意（setAutoSync 的 maxExecFeePerLeg）：開著時一定說出確切的數字（見 consentNotice）。 */}
+          <ConsentNoticeView notice={consent} />
           {enabled && problem && <Alert severity="warning">{t.copy.autoSync.invalid[problem]}</Alert>}
         </Stack>
       </DialogContent>
@@ -142,7 +144,7 @@ export function AutoSyncSettingsDialog({
         <Button
           variant="contained"
           onClick={() => onSave(enabled, settings, executor ? executorInput.trim() : undefined)}
-          disabled={busy || (enabled && problem !== null) || exProblem !== null}
+          disabled={busy || (enabled && problem !== null) || exProblem !== null || consent?.kind === 'unknownFee'}
         >
           {busy ? '…' : P.dialog.save}
         </Button>
@@ -167,6 +169,37 @@ export function AutoSyncDisclosure() {
       </Typography>
     </Alert>
   );
+}
+
+/**
+ * 「你同意的執行費」那一句（consentNotice）。金額用不捨入的格式：這是簽名同意的數字，
+ * 兩個只差 1 wei 的費率不能顯示成同一個。
+ */
+export function ConsentNoticeView({ notice }: { notice: ConsentNotice | null }) {
+  if (notice === null) return null;
+  const D = P.dialog;
+  switch (notice.kind) {
+    case 'unknownFee':
+      return <Alert severity="warning">{D.consentUnknownFee}</Alert>;
+    case 'raised':
+      return (
+        <Alert severity="warning">
+          {interpolate(D.consentChanged, { fee: formatEthExact(notice.fee), old: formatEthExact(notice.old) })}
+        </Alert>
+      );
+    case 'lowered':
+      return (
+        <Alert severity="info">
+          {interpolate(D.consentLowered, { fee: formatEthExact(notice.fee), old: formatEthExact(notice.old) })}
+        </Alert>
+      );
+    default:
+      return (
+        <Typography variant="caption" color="text.secondary">
+          {interpolate(notice.kind === 'current' ? D.consentCurrent : D.consentLine, { fee: formatEthExact(notice.fee) })}
+        </Typography>
+      );
+  }
 }
 
 // ── 油箱存提 ─────────────────────────────────────────────────────────────────

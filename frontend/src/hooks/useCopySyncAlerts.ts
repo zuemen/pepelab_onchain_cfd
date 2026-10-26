@@ -64,6 +64,13 @@ export function useCopySyncAlerts(wallet: WalletAPI, pathname: string): CopySync
     if (Date.now() - lastRead.current >= ON_NAVIGATE_MIN_MS) setTick(n => n + 1)
   }, [pathname])
 
+  // 執行費也跟著重讀：提醒在內頁之間不會重新掛載，只讀一次的話，owner 調高費率之後
+  // 「別人不能代為同步」（feeAboveCap）會一直顯示成「等待執行者」。費率沒變時不會多觸發一輪。
+  const refreshFee = execFee.refresh
+  useEffect(() => {
+    if (tick > 0) refreshFee()
+  }, [tick, refreshFee])
+
   const address = wallet.address
   const execFeeWei = execFee.loaded ? execFee.wei : null
 

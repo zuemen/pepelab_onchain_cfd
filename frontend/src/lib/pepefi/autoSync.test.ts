@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 
 import {
   syncStatus,
+  consentNotice,
   hoursLabel,
   syncCostWei,
   versionLabel,
@@ -269,6 +270,8 @@ describe('sync status', () => {
     expect(syncStatus({ ...latest, execFeeCap: null })).toEqual({ kind: 'upToDate' })
     expect(syncStatus({ ...latest, config: { ...on, autoSync: false }, execFeeCap: 0n })).toEqual({ kind: 'upToDate' })
     expect(syncStatus({ ...latest, config: null, execFeeCap: 0n })).toEqual({ kind: 'upToDate' })
+    // 讀不到現行費率時不猜
+    expect(syncStatus({ ...latest, executionFee: null, execFeeCap: 0n })).toEqual({ kind: 'upToDate' })
   })
 
   it('needs gas when the tank cannot pay an executor', () => {
@@ -280,6 +283,39 @@ describe('sync status', () => {
     expect(syncStatus({ ...base, config: null })).toEqual({ kind: 'unknown' })
     // 油箱讀不到時不說「不夠」：只剩冷卻與開關能判斷
     expect(syncStatus({ ...base, gasBalance: null })).toEqual({ kind: 'waiting' })
+  })
+})
+
+describe('consent notice in the settings dialog', () => {
+  const s = { maxLeverage: 3, minSyncInterval: 3600, tipWei: 10n }
+  const base = { enabled: true, initialEnabled: true, settings: s, initialSettings: s, executionFee: FEE, consentedFee: FEE }
+
+  it('says nothing while the switch is off (switching off signs no fee)', () => {
+    expect(consentNotice({ ...base, enabled: false })).toBeNull()
+    expect(consentNotice({ ...base, enabled: false, executionFee: null })).toBeNull()
+  })
+
+  it('never presents a fallback as the exchange fee', () => {
+    expect(consentNotice({ ...base, executionFee: null })).toEqual({ kind: 'unknownFee' })
+  })
+
+  it('lists both fees when the exchange raised or lowered it since the follower agreed', () => {
+    expect(consentNotice({ ...base, executionFee: FEE * 2n })).toEqual({ kind: 'raised', fee: FEE * 2n, old: FEE })
+    expect(consentNotice({ ...base, executionFee: FEE + 1n })).toEqual({ kind: 'raised', fee: FEE + 1n, old: FEE })
+    expect(consentNotice({ ...base, executionFee: FEE / 2n })).toEqual({ kind: 'lowered', fee: FEE / 2n, old: FEE })
+  })
+
+  it('says what is already agreed when saving would send nothing', () => {
+    expect(consentNotice(base)).toEqual({ kind: 'current', fee: FEE })
+  })
+
+  it('says what saving signs: first switch-on, off → on, or changed settings', () => {
+    expect(consentNotice({ ...base, initialEnabled: false, consentedFee: null })).toEqual({ kind: 'sign', fee: FEE })
+    // 從關到開：之前的同意值（關閉時記成 0）不算「之前同意的」
+    expect(consentNotice({ ...base, initialEnabled: false, consentedFee: 0n })).toEqual({ kind: 'sign', fee: FEE })
+    expect(consentNotice({ ...base, settings: { ...s, tipWei: 20n } })).toEqual({ kind: 'sign', fee: FEE })
+    expect(consentNotice({ ...base, settings: { ...s, minSyncInterval: 7200 } })).toEqual({ kind: 'sign', fee: FEE })
+    expect(consentNotice({ ...base, consentedFee: null })).toEqual({ kind: 'sign', fee: FEE })
   })
 })
 

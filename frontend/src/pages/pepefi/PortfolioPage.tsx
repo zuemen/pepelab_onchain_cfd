@@ -372,7 +372,10 @@ export default function PortfolioPage() {
   };
 
   // ── Fetch ─────────────────────────────────────────────────────────────────
+  const refreshExecFee = execFee.refresh;
   const fetchAll = useCallback(async () => {
+    // 執行費跟著重讀（owner 隨時可能調整）：同意的費率提示與油箱估算都靠它（ADR-024）
+    refreshExecFee();
     if (!contracts || !wallet.address) {
       setIsLoaded(true);
       return;
@@ -501,7 +504,7 @@ export default function PortfolioPage() {
     const failures = [copyRecsResult, positionsResult, freeMarginResult].filter(r => !r.ok);
     if (failures.length > 0) notify(prettyError(failures[0].error), false);
     setIsLoaded(true);
-  }, [contracts, wallet.address, notify, autoSync.supported, autoSync.executorLock]);
+  }, [contracts, wallet.address, notify, autoSync.supported, autoSync.executorLock, refreshExecFee]);
 
   useEffect(() => {
     void fetchAll();
@@ -660,6 +663,7 @@ export default function PortfolioPage() {
 
   /** 打開設定彈窗：沒開過的跟單用最保守的預設（槓桿上限 = 這筆跟單目前部位的最高槓桿）。 */
   const openSyncSettings = (rec: CopyRec) => {
+    refreshExecFee();
     const cfg = rec.syncConfig;
     const held = positions.filter(p => rec.positionIds.includes(p.id)).map(p => p.leverage);
     const configured = cfg !== null && cfg.maxLeverage > 0;
@@ -960,6 +964,7 @@ export default function PortfolioPage() {
         initialSettings={syncSettingsFor?.settings ?? { maxLeverage: 1, minSyncInterval: DEFAULT_COOLDOWN, tipWei: DEFAULT_TIP_WEI }}
         maxTipWei={autoSync.maxTipWei}
         executionFee={execFee.wei}
+        executionFeeLoaded={execFee.loaded}
         consentedFee={syncSettingsFor?.rec.execFeeCap ?? null}
         legs={syncSettingsFor?.rec.latestLegs ?? syncSettingsFor?.rec.positionIds.length ?? 0}
         tankBalance={syncGas}
