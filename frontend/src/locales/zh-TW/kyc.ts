@@ -83,11 +83,11 @@ export const kyc = {
   status: {
     cardTitle: 'KYC 驗證狀態',
     verifiedTitle: '已通過驗證',
-    verifiedBody: '你可以交易受管制的 RWA 標的（如 sAAPL、sTSLA）。',
+    verifiedBody: '你可以交易受管制的 RWA 標的（如 AAPL、TSLA）。',
     pendingTitle: '審核中',
     pendingBody: '申請已送出，正在等待審核員核准，無需重新送出。',
     unverifiedTitle: '尚未驗證',
-    unverifiedBody: '交易受管制的 RWA 標的（如 sAAPL、sTSLA）前，需要先通過 KYC 驗證。',
+    unverifiedBody: '交易受管制的 RWA 標的（如 AAPL、TSLA）前，需要先通過 KYC 驗證。',
     unverifiedAction: '送出 KYC 申請',
     notRequiredTitle: '此鏈無需驗證',
     notRequiredBody: '目前連線的鏈上沒有部署 KYC 閘門，交易任何標的都不需要驗證。',

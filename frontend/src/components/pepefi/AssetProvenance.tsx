@@ -5,7 +5,7 @@
 // 上次與下次見證日。逐檔事實在 lib/pepefi/assetMeta.ts，顯示字串在
 // catalog 的 tokens.provenance / tokens.who。
 //
-// #134：拆成摘要（AssetProvenanceSummary，表格列用的兩顆 chip）與內容本體
+// #134：拆成摘要（AssetProvenanceSummary，表格列用的分級 chip）與內容本體
 // （AssetProvenanceBody，詳情層用）——進到詳情層代表使用者已經開口要細節
 // 了，不需要再點一次 Accordion，所以外殼整個拿掉。
 
@@ -28,23 +28,15 @@ import {
   nextAttestationDue,
   type Tier,
 } from 'src/lib/pepefi/carbon'
-import { type Freshness } from 'src/lib/pepefi/priceFreshness'
 import { tierForAsset } from 'src/lib/pepefi/assetRows'
 
-// 導出給 assetRows 表格的身世摘要 chip 用——分級與新鮮度的顏色只該有一份
-// 定義，這裡跟身世卡的完整內容共用同一份，不在表格那邊重寫一次。
+// 導出給 assetRows 表格的身世摘要 chip 用——分級的顏色只該有一份定義，
+// 這裡跟身世卡的完整內容共用同一份，不在表格那邊重寫一次。
 export const TIER_COLOR: Record<Tier, 'default' | 'success' | 'warning' | 'error'> = {
   unrated: 'warning',
   low: 'success',
   mid: 'warning',
   high: 'error',
-}
-
-export const FRESHNESS_COLOR: Record<Freshness['level'], 'success' | 'warning' | 'error' | 'default'> = {
-  live: 'success',
-  aging: 'warning',
-  stale: 'error',
-  unknown: 'default',
 }
 
 function Field({ label, children }: { label: string; children: ReactNode }) {
@@ -62,30 +54,23 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
 
 export interface AssetProvenanceSummaryProps {
   tier: Tier
-  /** 沒有值就不顯示——表示這一列還沒讀到價格新鮮度。 */
-  freshness?: Freshness | null
   /**
-   * #147：兩顆 chip 不換行。表格列要開（折行會讓每一列多一截高度,而欄寬不夠時
+   * #147：chip 不換行。表格列要開（折行會讓每一列多一截高度,而欄寬不夠時
    * 表格本來就會橫向捲,折字沒有換到任何好處）;詳情面板維持預設的會折——那裡
    * 只有 420px 寬,不折會被裁掉。
    */
   nowrap?: boolean
 }
 
-/** 表格列與詳情層標題共用的兩顆摘要 chip：分級、價格新鮮度。 */
-export function AssetProvenanceSummary({ tier, freshness, nowrap = false }: AssetProvenanceSummaryProps) {
+/**
+ * 表格列與詳情層標題共用的摘要 chip：碳分級。價格新鮮度不在這裡顯示——過期時
+ * 買進鈕本身會停用，Expert 另有「預言機更新時間」欄。
+ */
+export function AssetProvenanceSummary({ tier, nowrap = false }: AssetProvenanceSummaryProps) {
   const tp = t.tokens.provenance
   return (
     <Stack direction="row" spacing={0.75} alignItems="center" flexWrap={nowrap ? 'nowrap' : 'wrap'} useFlexGap>
       <Chip size="small" color={TIER_COLOR[tier]} variant="outlined" label={tp.carbonTier[tier]} />
-      {freshness && (
-        <Chip
-          size="small"
-          color={FRESHNESS_COLOR[freshness.level]}
-          variant="outlined"
-          label={`${tp.freshnessLabel}: ${freshness.label}`}
-        />
-      )}
     </Stack>
   )
 }

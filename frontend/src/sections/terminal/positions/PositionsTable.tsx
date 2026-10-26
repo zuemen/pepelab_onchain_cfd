@@ -101,7 +101,7 @@ export function PositionsTable({
             </Box>
           ) : (
             positions.map((p) => {
-              const sym = ASSET_META[p.asset]?.symbol ?? p.asset.slice(0, 8)
+              const sym = ASSET_META[p.asset]?.ticker ?? p.asset.slice(0, 8)
               const pnl = p.livePnl === null ? null : fromUnits(p.livePnl, 18)
               const why = pnlStatusText(p.status)
               const k = String(p.id)

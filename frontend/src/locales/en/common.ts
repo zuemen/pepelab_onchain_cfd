@@ -147,7 +147,7 @@ export const common: Catalog['common'] = {
     prototype:
       'This site is a research prototype deployed on the Base Sepolia testnet. All tokens, funds and trades are simulated; no real assets or money are involved.',
     synthetic:
-      'Every synthetic token on this site — equities (e.g. sAAPL, sTSLA, sNVDA), bonds (sBOND), gold (sGOLD), crypto (sBTC, sETH) and ETFs (sICLN, sESGU) — is an under-collateralized synthetic exposure issued by the AssetVault. Each tracks its underlying through an oracle price only; the platform holds none of the underlying assets and keeps no one-to-one reserve. Holders have no shareholder, creditor or fund-holder rights (including voting, dividend or coupon rights) and no claim against any issuer or physical asset; redemption depends on the liquidity of the AssetVault.',
+      'Every synthetic token on this site — equities (e.g. AAPL, TSLA, NVDA), bonds (BGRN), gold (XAU), crypto (BTC, ETH) and ETFs (ICLN, ESGU) — is an under-collateralized synthetic exposure issued by the AssetVault. Each tracks its underlying through an oracle price only; the platform holds none of the underlying assets and keeps no one-to-one reserve. Holders have no shareholder, creditor or fund-holder rights (including voting, dividend or coupon rights) and no claim against any issuer or physical asset; redemption depends on the liquidity of the AssetVault.',
     noAdvice: 'Nothing on this site constitutes investment advice, an offer, or a solicitation.',
     operatedBy: 'This site is operated by {operator}.',
     expand: 'Expand',

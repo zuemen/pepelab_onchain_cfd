@@ -84,7 +84,7 @@ export const traderDashboard = {
     title: '策略歷史',
     refresh: '↺ 重新整理',
     empty: '尚未發布任何策略。',
-    /** 摘要行：sBTC L 3×  ·  sETH S 2× */
+    /** 摘要行：BTC L 3×  ·  ETH S 2× */
     summaryEntry: '{asset} {side} {leverage}×',
     long: '多',
     short: '空',

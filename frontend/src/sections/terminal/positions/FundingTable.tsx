@@ -79,7 +79,7 @@ export function FundingTable({
                 fontSize: 12.5,
               }}
             >
-              <Box sx={{ fontWeight: 700 }}>{ASSET_META[id]?.symbol ?? f.label}</Box>
+              <Box sx={{ fontWeight: 700 }}>{ASSET_META[id]?.ticker ?? f.label}</Box>
               {/* 正值 = 多方付錢給空方，對持多單的人是成本，所以標紅。 */}
               <Box sx={{ color: rate > 0 ? C.red : rate < 0 ? C.green : C.mut }}>
                 {rate >= 0 ? '+' : ''}

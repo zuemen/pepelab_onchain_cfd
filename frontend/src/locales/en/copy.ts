@@ -20,7 +20,7 @@ export const copy: Catalog['copy'] = {
   strategy: {
     title: 'Latest Strategy',
     empty: 'No strategy published yet.',
-    /** 分配標籤：↑ sBTC 50% · 3× */
+    /** 分配標籤：↑ BTC 50% · 3× */
     chip: '{side} {asset} {weight}% · {leverage}×',
   },
 

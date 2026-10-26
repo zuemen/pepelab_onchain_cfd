@@ -243,7 +243,7 @@ export const sessions: Catalog['sessions'] = {
     step2Mid3: "'s ",
     step2After: ').',
     step3:
-      'Once that\'s done, just tell the agent: "Open a 3x long on sBTC with 200 margin" — no need to give an account or address.',
+      'Once that\'s done, just tell the agent: "Open a 3x long on BTC with 200 margin" — no need to give an account or address.',
 
     addrKeyBold1: 'Address',
     addrKeyMid1: ' (',

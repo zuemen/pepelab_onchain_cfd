@@ -33,14 +33,14 @@ export const traderProfile: Catalog['traderProfile'] = {
   strategy: {
     title: 'Latest Strategy',
     empty: 'No strategy published yet.',
-    /** 分配標籤：↑ sBTC 50% · 3× */
+    /** 分配標籤：↑ BTC 50% · 3× */
     chip: '{side} {asset} {weight}% · {leverage}×',
   },
 
   history: {
     titleOne: 'Strategy History ({count} version)',
     titleMany: 'Strategy History ({count} versions)',
-    /** 摘要行：sBTC L 3× · sETH S 2× */
+    /** 摘要行：BTC L 3× · ETH S 2× */
     summaryEntry: '{asset} {side} {leverage}×',
     long: 'L',
     short: 'S',
@@ -150,7 +150,7 @@ export const traderProfile: Catalog['traderProfile'] = {
     winRate: 'Win rate',
     winRateSub: '{count} closed',
     esgCorrelation: 'Correlation with sustainable assets',
-    esgCorrelationSub: 'Daily returns vs sESGU',
+    esgCorrelationSub: 'Daily returns vs ESGU',
     avgHold: 'Average hold',
     avgHoldValue: '{days} days',
     equityTitle: 'Equity',
@@ -189,7 +189,7 @@ export const traderProfile: Catalog['traderProfile'] = {
     riskScoreScale: '1 lowest, 10 highest',
     riskScoreNote: 'The risk score looks at every daily return over the past year. Sort them from worst to best: the loss on the day at the 5% mark is the one-day 95% value at risk (VaR) — roughly one day in twenty loses more than that.',
     riskScoreBands: 'Each threshold the VaR exceeds adds one level; the thresholds are shown under each box above. They are this platform\'s own, after eToro\'s practice of grading 1–10 on VaR, but not eToro\'s formula. Traders with fewer than 30 days of data are not scored.',
-    riskScoreReference: 'For comparison, the platform\'s assets over the past year (2025-10 to 2026-10), without leverage: the green bond ETF (sBOND) is about level 2, the ESG US large-cap ETF (sESGU) about 4, AAPL/GOOGL/MSFT, gold and the clean-energy ETF (sICLN) about 6, BTC and NVDA about 7, TSLA and ETH about 8. Levels 9 and 10 usually take leverage.',
+    riskScoreReference: 'For comparison, the platform\'s assets over the past year (2025-10 to 2026-10), without leverage: the green bond ETF (BGRN) is about level 2, the ESG US large-cap ETF (ESGU) about 4, AAPL/GOOGL/MSFT, gold and the clean-energy ETF (sICLN) about 6, BTC and NVDA about 7, TSLA and ETH about 8. Levels 9 and 10 usually take leverage.',
     worstDay: 'Worst day',
     worstWeek: 'Worst week',
     drawdown1y: 'Max drawdown, past year',

@@ -7,7 +7,7 @@ import { ASSET_LABEL } from 'src/lib/pepefi/assetMeta';
 import AssetIcon from 'src/components/pepefi/AssetIcon';
 import type { RawAlloc } from 'src/lib/pepefi/leaderboardMetrics';
 
-/** 單一配置籌碼的標籤文字:↑sBTC 50% 3×。表格 chip 與領獎台卡片共用同一個格式。 */
+/** 單一配置籌碼的標籤文字:↑BTC 50% 3×。表格 chip 與領獎台卡片共用同一個格式。 */
 export const allocLabel = (a: RawAlloc): string =>
   interpolate(t.marketplace.card.allocChip, {
     side: a.isLong ? '↑' : '↓',

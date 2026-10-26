@@ -562,7 +562,7 @@ export default function SessionsPage() {
                   return (
                     <Chip
                       key={a.id}
-                      label={a.symbol}
+                      label={a.ticker}
                       size="small"
                       clickable
                       color={on ? 'primary' : 'default'}

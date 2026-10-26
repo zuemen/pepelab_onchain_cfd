@@ -72,7 +72,7 @@ export const landing: Catalog['landing'] = {
     heading: 'How to Get Started',
     one: 'Install MetaMask and switch to the Base Sepolia testnet',
     two: 'Go to Exchange and click "Get 1000 USDC" for test funds',
-    three: 'Go to Assets, buy sGOLD and sBOND, then check Portfolio for the allocation and PnL across all four classes',
+    three: 'Go to Assets, buy XAU and BGRN, then check Portfolio for the allocation and PnL across all four classes',
     four: "Switch to Expert Mode, check traders' on-chain records and ESG scores on Marketplace, and copy one — or register as a trader on the Trader page",
   },
 

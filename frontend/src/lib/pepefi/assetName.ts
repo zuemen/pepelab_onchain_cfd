@@ -3,9 +3,9 @@ import type { AssetMeta } from './assetMeta';
 import { t } from 'src/locales';
 
 /**
- * 合成資產的顯示名稱。代號（sETH）是鏈上識別碼，照原樣顯示；名稱走 catalog 的
- * `tokens.assetName`，所以 zh-TW 建置顯示「合成以太幣」而不是 `assetMeta.ts` 裡的英文
- * 原名「Synthetic Ethereum」。catalog 沒有的標的才退回 meta.name。
+ * 資產的顯示名稱。名稱走 catalog 的 `tokens.assetName`，所以 zh-TW 建置顯示「以太幣」
+ * 而不是 `assetMeta.ts` 裡的英文原名「Ethereum」。catalog 沒有的標的才退回 meta.name。
+ * 代號另外走 `tickerOf` / `meta.ticker`。
  */
 export function assetDisplayName(meta: Pick<AssetMeta, 'symbol' | 'name'> | undefined): string {
   if (!meta) return '';

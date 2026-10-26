@@ -62,7 +62,7 @@ export function FillsTable({
         </Box>
 
         {fills.slice(0, 25).map((f) => {
-          const sym = f.asset ? (ASSET_META[f.asset]?.symbol ?? f.asset.slice(0, 8)) : '—'
+          const sym = f.asset ? (ASSET_META[f.asset]?.ticker ?? f.asset.slice(0, 8)) : '—'
           const pnl = f.pnl !== undefined ? fromUnits(f.pnl, 18) : null
           const kindColor =
             f.kind === 'opened' ? C.ink : f.kind === 'liquidated' ? C.red : C.lime

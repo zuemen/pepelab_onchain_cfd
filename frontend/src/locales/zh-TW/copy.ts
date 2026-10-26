@@ -18,7 +18,7 @@ export const copy = {
   strategy: {
     title: '最新策略',
     empty: '尚未發布策略。',
-    /** 分配標籤：↑ sBTC 50% · 3× */
+    /** 分配標籤：↑ BTC 50% · 3× */
     chip: '{side} {asset} {weight}% · {leverage}×',
   },
 

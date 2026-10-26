@@ -100,7 +100,7 @@ export default function AdminOraclePage() {
   const fundingData  = useFundingData(contracts?.exchange ?? null)
 
   const [assets,         setAssets]         = useState<AssetRow[]>(
-    ASSETS.map(a => ({ id: a.id, label: a.symbol, price8: 0n, updatedAt: 0n, input: '' })),
+    ASSETS.map(a => ({ id: a.id, label: a.ticker, price8: 0n, updatedAt: 0n, input: '' })),
   )
   const [oracleOwner,    setOracleOwner]    = useState<string | null>(null)
   const [ownerCheckError, setOwnerCheckError] = useState<string | null>(null)
@@ -221,7 +221,7 @@ export default function AdminOraclePage() {
           const res = (await contracts.oracle.getPrice(a.id)) as unknown as [bigint, bigint]
           return {
             id:        a.id,
-            label:     a.symbol,
+            label:     a.ticker,
             price8:    res[0],
             updatedAt: res[1],
             input:     (Number(res[0]) / 1e8).toFixed(2),
@@ -388,7 +388,7 @@ export default function AdminOraclePage() {
                     const rateNum = Number(info.rate)
                     return (
                       <TableRow key={a.id} hover>
-                        <TableCell sx={{ fontFamily: MONO, fontWeight: 'bold', color: 'text.primary' }}>{a.symbol}</TableCell>
+                        <TableCell sx={{ fontFamily: MONO, fontWeight: 'bold', color: 'text.primary' }}>{a.ticker}</TableCell>
                         <TableCell sx={{ fontFamily: MONO, fontWeight: 'bold', color: rateNum > 0 ? 'error.main' : rateNum < 0 ? 'success.main' : 'text.secondary' }}>
                           {rateNum > 0 ? '+' : ''}{rateNum}{' '}
                           {rateNum > 0
@@ -470,7 +470,7 @@ export default function AdminOraclePage() {
                     v === undefined ? '…' : v > 0 ? '$' + v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '—'
                   return (
                     <TableRow key={a.id}>
-                      <TableCell sx={{ fontFamily: MONO }}>{a.symbol}</TableCell>
+                      <TableCell sx={{ fontFamily: MONO }}>{a.ticker}</TableCell>
                       <TableCell align="right" sx={{ fontFamily: MONO }}>{cell(cmp?.mock)}</TableCell>
                       <TableCell align="right" sx={{ fontFamily: MONO, color: cmp?.chainlink ? 'text.primary' : 'text.disabled' }}>
                         {cell(cmp?.chainlink)}

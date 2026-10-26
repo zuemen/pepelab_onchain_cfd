@@ -74,7 +74,7 @@ export const landing = {
     heading: '如何開始',
     one: '安裝 MetaMask，切換到 Base Sepolia testnet',
     two: '前往 Exchange，點擊「Get 1000 USDC」取得測試資金',
-    three: '到「資產」頁買進 sGOLD、sBOND，回 Portfolio 看四類資產的配置與損益',
+    three: '到「資產」頁買進 XAU、BGRN，回 Portfolio 看四類資產的配置與損益',
     four: '切到專家模式，到 Marketplace 看交易者的鏈上紀錄與 ESG 評分，挑一位跟單；或在 Trader 頁登記成為交易者',
   },
 

@@ -6,17 +6,17 @@ import type { Catalog } from '../zh-TW';
 export const tokens: Catalog['tokens'] = {
   /** 見 `../zh-TW/tokens.ts`。 */
   assetName: {
-    sBTC: 'Synthetic Bitcoin',
-    sETH: 'Synthetic Ethereum',
-    sAAPL: 'Synthetic Apple Inc.',
-    sTSLA: 'Synthetic Tesla Inc.',
-    sGOLD: 'Synthetic Gold (XAU/USD)',
-    sBOND: 'Synthetic Green Bond ETF (BGRN)',
-    sNVDA: 'Synthetic NVIDIA Corp.',
-    sMSFT: 'Synthetic Microsoft Corp.',
-    sGOOGL: 'Synthetic Alphabet Inc.',
-    sICLN: 'Synthetic iShares Clean Energy ETF',
-    sESGU: 'Synthetic iShares MSCI USA ESG ETF',
+    sBTC: 'Bitcoin',
+    sETH: 'Ethereum',
+    sAAPL: 'Apple Inc.',
+    sTSLA: 'Tesla Inc.',
+    sGOLD: 'Gold',
+    sBOND: 'iShares USD Green Bond ETF',
+    sNVDA: 'NVIDIA Corp.',
+    sMSFT: 'Microsoft Corp.',
+    sGOOGL: 'Alphabet Inc.',
+    sICLN: 'iShares Global Clean Energy ETF',
+    sESGU: 'iShares ESG Aware MSCI USA ETF',
   },
 
   attested: {
@@ -143,7 +143,6 @@ export const tokens: Catalog['tokens'] = {
       coingecko: 'CoinGecko',
       yahoo: 'Yahoo Finance chart',
     },
-    freshnessLabel: 'Price freshness',
     disclaimer:
       'This token tracks the underlying by synthetic price only. It confers no ownership, shareholder rights, or claim of any kind.',
 

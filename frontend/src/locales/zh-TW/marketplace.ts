@@ -119,7 +119,7 @@ export const marketplace = {
     verifiedOnChain: '鏈上已驗證',
     noName: '—',
     noStrategy: '尚無策略',
-    /** 策略籌碼：↑sBTC 50% 3× */
+    /** 策略籌碼：↑BTC 50% 3× */
     allocChip: '{side}{asset} {weight}% {leverage}×',
 
     volLabel: '7 日量',
