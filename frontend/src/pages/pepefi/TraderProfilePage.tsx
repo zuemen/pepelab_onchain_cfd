@@ -10,7 +10,9 @@ import { ASSET_LABEL } from 'src/lib/pepefi/assetMeta'
 import StatCard from 'src/components/pepefi/StatCard'
 import { traderAvatarSrc } from 'src/utils/pepefi-assets'
 import TraderRankBadge from 'src/components/pepefi/TraderRankBadge'
-import TraderActivity from 'src/components/pepefi/TraderActivity'
+import { TraderActivityLive } from 'src/components/pepefi/TraderActivity'
+import DeferredSection from 'src/components/pepefi/DeferredSection'
+import SlashHistorySection from 'src/components/pepefi/SlashHistorySection'
 import { useMode } from 'src/contexts/mode-context'
 import { FEATURE_COPY_TRADING } from 'src/lib/pepefi/featureFlags'
 
@@ -18,14 +20,14 @@ import { FEATURE_COPY_TRADING } from 'src/lib/pepefi/featureFlags'
 const STAT_SIZE = FEATURE_COPY_TRADING ? { xs: 6, md: 3 } : { xs: 12, sm: 4 }
 // 策略歷史在卡片上只列最新的這麼多版；全部版本開在彈窗裡（ListDialog）。
 const FIRST_VERSIONS = 5
-import { useAddressActivity } from 'src/hooks/useAddressActivity'
 import HeroTrades from 'src/components/pepefi/hero/HeroTrades'
 import HeroRiskStats from 'src/components/pepefi/hero/HeroRiskStats'
 import HeroPerformance from 'src/components/pepefi/hero/HeroPerformance'
 import { fetchHeroDetail, type HeroDetail } from 'src/lib/pepefi/heroData'
 import { heroDisclosure } from 'src/lib/pepefi/heroDisclosure'
 import { followerReaderOf, readActiveFollowers } from 'src/lib/pepefi/activeFollowers'
-import { mapLimit, withRetry, RPC_CONCURRENCY } from 'src/lib/pepefi/rpcBatch'
+import { readMany, valueOr } from 'src/lib/pepefi/multicall'
+import { readStrategyVersions } from 'src/lib/pepefi/traderReads'
 import TxProof from 'src/components/pepefi/hero/TxProof'
 import ListDialog, { ExpandListButton } from 'src/components/pepefi/ListDialog'
 import StrategySides from 'src/components/pepefi/feed/StrategySides'
@@ -53,8 +55,6 @@ import Alert from '@mui/material/Alert';
 import Avatar from '@mui/material/Avatar';
 
 import { t, locale, interpolate } from 'src/locales';
-import { explorerTx, explorerName } from 'src/lib/pepefi/notify';
-import { UI_RETRIES, scanFromBlock, isChunkScanAborted, describeScanWindow, scanContractEventsStrict } from 'src/lib/pepefi/chainLogs';
 
 interface StakeInfo {
   amount:             bigint
@@ -72,13 +72,6 @@ interface HistVer {
   createdAt: bigint
   allocs:    RawAlloc[]
   expanded:  boolean
-}
-
-interface SlashEvent {
-  trader:    string
-  amount:    bigint
-  recipient: string
-  txHash:    string
 }
 
 const f18 = (v: bigint, d = 2) => (Number(v) / 1e18).toFixed(d)
@@ -102,7 +95,6 @@ function TraderProfileView() {
   const contracts = useContracts(wallet.provider, wallet.signer, wallet.chainId)
   const pricingTiers = usePricingCarbonTiers(contracts?.exchange ?? null)
   const { data: esg } = useESG(contracts?.esgRegistry ?? null)
-  const addressActivity = useAddressActivity(contracts, wallet.provider, wallet.chainId, traderAddr)
 
   const [name,          setName]          = useState('')
   const [registered,    setRegistered]    = useState(false)
@@ -117,13 +109,6 @@ function TraderProfileView() {
   const [eligible,      setEligible]      = useState<boolean | null>(null)
   const [earnings,      setEarnings]      = useState<bigint | null>(null)
   const [stratCount,    setStratCount]    = useState<number | null>(null)
-  const [slashHistory,  setSlashHistory]  = useState<SlashEvent[]>([])
-  /**
-   * 罰沒事件讀取狀態。'failed' 時**絕不能**顯示成「沒有罰沒」——讀不到和沒有是兩件事。
-   * 'pending' = 還沒讀完；'ok' 時 slashBlocks = 實際掃描的塊數。
-   */
-  const [slashRead,     setSlashRead]     = useState<'pending' | 'ok' | 'failed'>('pending')
-  const [slashBlocks,   setSlashBlocks]   = useState(0)
   const [loading,       setLoading]       = useState(true)
   const [error,         setError]         = useState<string | null>(null)
   // 模擬交易者的績效資料（issue #309）。讀的是靜態檔，不該被讀鏈的 loading 拖住；
@@ -154,124 +139,63 @@ function TraderProfileView() {
     const alive = () => !cancelled
     setLoading(true)
     setError(null)
+    const provider = wallet.provider
+    const chainId = wallet.chainId
     const go = async () => {
-      let traderRaw: [boolean, string, bigint] | null = null
-      try {
-        traderRaw = (await contracts.registry.traders(traderAddr)) as unknown as [boolean, string, bigint]
-      } catch { traderRaw = null }
-      if (traderRaw) {
-        if (alive()) setName(traderRaw[1])
-        if (alive()) setRegistered(traderRaw[0])
+      // 名稱、策略版數、質押、聲譽、資格、收益一批，跟隨者另一條（它自己也是幾批），兩條同時讀。
+      // 每一批都併成 Multicall3（見 multicall.ts）。讀不到（或合約沒部署）的欄位維持空白，不是 0。
+      const [first, active] = await Promise.all([
+        readMany(provider, chainId, [
+          { contract: contracts.registry,    method: 'traders',          args: [traderAddr] },
+          { contract: contracts.registry,    method: 'getStrategyCount', args: [traderAddr] },
+          { contract: contracts.traderStake, method: 'getStake',         args: [traderAddr] },
+          { contract: contracts.traderStake, method: 'reputationScore',  args: [traderAddr] },
+          { contract: contracts.traderStake, method: 'isEligible',       args: [traderAddr] },
+          { contract: contracts.feeRouter,   method: 'traderEarnings',   args: [traderAddr] },
+        ]),
+        // 目前的跟隨者，不是 getFollowerCount 的「被跟單過幾次」（見 activeFollowers.ts）。
+        // 清單只列還在跟的人、每人一次，前 10 位；讀不到時人數顯示「—」，不是 0。
+        readActiveFollowers([traderAddr], followerReaderOf(contracts.copyTracker, provider, chainId)),
+      ])
+      if (!alive()) return
+      const [traderRaw, countRaw, stakeRaw, scoreRaw, eligibleRaw, earningsRaw] = first
+      if (traderRaw.status === 'ok') {
+        const [isRegistered, displayName] = traderRaw.value as [boolean, string, bigint]
+        setName(displayName)
+        setRegistered(isRegistered)
       }
-      // 目前的跟隨者，不是 getFollowerCount 的「被跟單過幾次」（見 activeFollowers.ts）。
-      // 清單只列還在跟的人、每人一次，前 10 位；讀不到時人數顯示「—」，不是 0。
-      const active = (await readActiveFollowers([traderAddr], followerReaderOf(contracts.copyTracker)))
-        .get(traderAddr.toLowerCase()) ?? null
-      if (alive()) {
-        setFollowers(active === null ? null : BigInt(active.length))
-        setFollowerList(active?.slice(0, 10) ?? [])
-      }
+      const mine = active.get(traderAddr.toLowerCase()) ?? null
+      setFollowers(mine === null ? null : BigInt(mine.length))
+      setFollowerList(mine?.slice(0, 10) ?? [])
+      if (stakeRaw.status === 'ok') setStakeInfo(stakeRaw.value as StakeInfo)
+      if (scoreRaw.status === 'ok') setRepScore(scoreRaw.value as bigint)
+      if (eligibleRaw.status === 'ok') setEligible(eligibleRaw.value as boolean)
+      if (earningsRaw.status === 'ok') setEarnings(earningsRaw.value as bigint)
 
-      // strategy + history
-      // 每一版一筆 eth_call：模擬交易者有幾十版，全部同時送出會撞上公開 RPC 的每秒上限（429），
-      // 任何一版讀不到這整段就落到 catch，跟單按鈕變成「尚無可跟單的策略」。限制併發並重試。
-      let count = 0
-      try {
-        count = Number((await withRetry(() => contracts.registry.getStrategyCount(traderAddr))) as bigint)
-      } catch { count = 0 }
-      if (alive()) setStratCount(count)
+      // 策略歷史：每一版一筆，模擬交易者有幾十版，同樣併成一批。
+      // 任何一版讀不到就整份不給，跟單按鈕變成「尚無可跟單的策略」——不拿缺版的歷史當成完整的。
+      const count = Number(valueOr<bigint>(countRaw, 0n))
+      setStratCount(count)
       if (count > 0) {
-        try {
-          const vers = await mapLimit(
-            Array.from({ length: count }, (_, i) => i),
-            RPC_CONCURRENCY,
-            async (i): Promise<HistVer> => {
-              const res = (await withRetry(() => contracts.registry.getStrategyVersion(traderAddr, BigInt(i)))) as unknown as [unknown[], bigint]
-              return {
-                versionId: i,
-                createdAt: res[1],
-                allocs:    (res[0] as unknown[]).map(a => {
-                  const x = a as { asset: string; weight: bigint; isLong: boolean; leverage: bigint }
-                  return { asset: x.asset, weight: x.weight, isLong: x.isLong, leverage: x.leverage }
-                }),
-                expanded: false,
-              }
-            },
-          )
-          const sorted = [...vers].reverse()
-          if (alive()) setStratHistory(sorted)
-          if (alive()) setAllocs(sorted[0]?.allocs ?? [])
-          if (alive()) setHasStrategy(sorted[0]?.allocs.length > 0)
-        } catch { if (alive()) setHasStrategy(false) }
+        const vers = await readStrategyVersions(contracts.registry, traderAddr, count, provider, chainId)
+        if (!alive()) return
+        if (vers === null) {
+          setHasStrategy(false)
+        } else {
+          const sorted: HistVer[] = vers.map((v) => ({ ...v, expanded: false })).reverse()
+          setStratHistory(sorted)
+          setAllocs(sorted[0]?.allocs ?? [])
+          setHasStrategy(sorted[0]?.allocs.length > 0)
+        }
       } else {
-        if (alive()) setHasStrategy(false)
+        setHasStrategy(false)
       }
 
-      // stake + reputation
-      try {
-        const [si, score, elig] = await Promise.all([
-          contracts.traderStake.getStake(traderAddr),
-          contracts.traderStake.reputationScore(traderAddr),
-          contracts.traderStake.isEligible(traderAddr),
-        ])
-        if (alive()) setStakeInfo(si as unknown as StakeInfo)
-        if (alive()) setRepScore(score as bigint)
-        if (alive()) setEligible(elig as boolean)
-      } catch { /* TraderStake not deployed */ }
-
-      // fee earnings
-      try {
-        const raw = (await contracts.feeRouter.traderEarnings(traderAddr)) as bigint
-        if (alive()) setEarnings(raw)
-      } catch { /* FeeRouter not deployed */ }
-
-      if (alive()) setLoading(false)
+      setLoading(false)
     }
     void go()
     return () => { cancelled = true }
-  }, [contracts, traderAddr])
-
-  // 罰沒紀錄獨立一個 effect：它是幾十段 getLogs，不該拖住整頁的 loading；
-  // 換頁或卸載時以 AbortController 中止，過期結果一律丟棄。
-  useEffect(() => {
-    if (!contracts || !traderAddr) return
-    const ac = new AbortController()
-    setSlashRead('pending')
-    setSlashHistory([])
-    void (async () => {
-      try {
-        const provider = contracts.traderStake.runner?.provider
-        if (!provider) throw new Error('no provider')
-        const latest = Number(await provider.getBlockNumber())
-        if (ac.signal.aborted) return
-        const from = scanFromBlock({ chainId: wallet.chainId, currentBlock: latest })
-        // 任何一段讀不到就整個標成讀取失敗：部分結果在這裡會被讀成「沒有罰沒」。
-        const events = await scanContractEventsStrict(
-          provider,
-          contracts.traderStake,
-          [contracts.traderStake.filters.Slashed(traderAddr, null)],
-          from,
-          latest,
-          { retries: UI_RETRIES, signal: ac.signal },
-        )
-        if (ac.signal.aborted) return
-        setSlashHistory(events.map((ev) => ({
-          trader:    ev.args.trader as string,
-          amount:    ev.args.amount as bigint,
-          recipient: ev.args.recipient as string,
-          txHash:    ev.transactionHash,
-        })).reverse())
-        setSlashBlocks(latest - from + 1)
-        setSlashRead('ok')
-      } catch (err) {
-        if (ac.signal.aborted || isChunkScanAborted(err)) return
-        console.warn('[traderProfile] slash history read failed', err)
-        setSlashHistory([])
-        setSlashRead('failed')
-      }
-    })()
-    return () => ac.abort()
-  }, [contracts, traderAddr, wallet.chainId])
+  }, [contracts, traderAddr, wallet.provider, wallet.chainId])
 
   // 策略歷史的一列（可以點開看資產明細與發布交易）：卡片上的最新幾版與彈窗裡的全部版本共用。
   const renderVersion = (ver: HistVer) => {
@@ -588,7 +512,12 @@ function TraderProfileView() {
           {mode === 'expert' && hasStrategy && (
             <StrategySides legs={allocs} exchange={contracts?.exchange ?? null} />
           )}
-          {mode === 'expert' && traderAddr && <TraderFeedSection wallet={wallet} trader={traderAddr} />}
+          {/* 動態、罰沒紀錄、目前部位與時間軸都要逐段掃描事件：收起來，點了才掃（DeferredSection） */}
+          {mode === 'expert' && traderAddr && (
+            <DeferredSection title={t.feed.profile.title}>
+              <TraderFeedSection wallet={wallet} trader={traderAddr} />
+            </DeferredSection>
+          )}
 
           {/* ─── D. Strategy History ───────────────────────────────── */}
           {stratHistory.length > 0 && (
@@ -636,76 +565,17 @@ function TraderProfileView() {
           )}
 
           {/* ─── E. Slash History ──────────────────────────────────── */}
-          {/* 讀取失敗：明說無法確認，絕不顯示成「沒有罰沒」。合約 storage 的
-              totalSlashed 是完整的累計值（不受掃描範圍限制），讀得到就一併列出。 */}
-          {slashRead === 'pending' && (
-            <Typography variant="caption" color="text.secondary">
-              {t.traderProfile.slashHistory.loading}
-            </Typography>
-          )}
-          {slashRead === 'failed' && (
-            <Alert severity="error">
-              <Typography variant="subtitle2" sx={{ fontWeight: 'bold' }}>
-                {t.traderProfile.slashHistory.readFailedTitle}
-              </Typography>
-              {t.traderProfile.slashHistory.readFailedBody}
-              {stakeInfo && (
-                <Box sx={{ mt: 0.5 }}>
-                  {interpolate(t.traderProfile.slashHistory.totalFromContract, { amount: f18(stakeInfo.totalSlashed) })}
-                </Box>
-              )}
-            </Alert>
-          )}
-          {slashRead === 'ok' && slashHistory.length === 0 && stakeInfo && stakeInfo.totalSlashed > 0n && (
-            <Alert severity="warning">
-              {interpolate(t.traderProfile.slashHistory.outsideWindow, {
-                span: describeScanWindow(wallet.chainId, slashBlocks),
-                amount: f18(stakeInfo.totalSlashed),
-              })}
-            </Alert>
-          )}
-          {slashHistory.length > 0 && (
-            <Card sx={{ p: 3, border: '1px solid', borderColor: 'error.main', bgcolor: 'rgba(255, 86, 48, 0.08)', display: 'flex', flexDirection: 'column', gap: 2 }}>
-              <Typography variant="subtitle1" color="error.main" sx={{ fontWeight: 'bold' }}>
-                {interpolate(
-                  slashHistory.length === 1
-                    ? t.traderProfile.slashHistory.titleOne
-                    : t.traderProfile.slashHistory.titleMany,
-                  { count: slashHistory.length },
-                )}
-              </Typography>
-              <TableContainer>
-                <Table size="small">
-                  <TableBody>
-                    {slashHistory.map((ev, i) => (
-                      <TableRow key={i}>
-                        <TableCell>
-                          <Typography variant="body2" color="error.main" sx={{ fontFamily: MONO, fontWeight: 'bold' }}>
-                            −{f18(ev.amount)} USDC
-                          </Typography>
-                          <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
-                            → {shortAddr(ev.recipient)}
-                          </Typography>
-                        </TableCell>
-                        <TableCell align="right">
-                          {explorerTx(ev.txHash, wallet.chainId) && (
-                            <Link
-                              href={explorerTx(ev.txHash, wallet.chainId)!}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              color="info.main"
-                              sx={{ fontSize: '0.875rem', textDecoration: 'underline' }}
-                            >
-                              {explorerName(wallet.chainId)} ↗
-                            </Link>
-                          )}
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </TableContainer>
-            </Card>
+          {/* 合約 storage 的累計罰沒是 0：從來沒被罰沒過，不必掃事件，整區不出現。
+              累計大於 0、或質押讀不到時才提供（點了才掃）。 */}
+          {!loading && contracts && traderAddr && stakeInfo?.totalSlashed !== 0n && (
+            <DeferredSection title={t.traderProfile.deferred.slashTitle}>
+              <SlashHistorySection
+                traderStake={contracts.traderStake}
+                trader={traderAddr}
+                chainId={wallet.chainId}
+                totalSlashed={stakeInfo?.totalSlashed ?? null}
+              />
+            </DeferredSection>
           )}
 
           {hero && <HeroTrades hero={hero} provider={wallet.provider} chainId={wallet.chainId} />}
@@ -714,7 +584,17 @@ function TraderProfileView() {
           {/* 從 WhaleTrackerPage 搬過來。那一頁查完地址就把交易紀錄長在自己
               身上，於是這裡有 follower / stake / reputation 卻看不到任何一筆
               交易，兩邊各只有半張臉。 */}
-          <TraderActivity activity={addressActivity} chainId={wallet.chainId} mode={mode} />
+          {contracts && traderAddr && (
+            <DeferredSection title={t.traderProfile.deferred.activityTitle}>
+              <TraderActivityLive
+                contracts={contracts}
+                provider={wallet.provider}
+                chainId={wallet.chainId}
+                address={traderAddr}
+                mode={mode}
+              />
+            </DeferredSection>
+          )}
 
           {/* Actions */}
           <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>

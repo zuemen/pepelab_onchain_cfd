@@ -1,7 +1,12 @@
+import type { InterfaceAbi } from 'ethers'
+
+import { Interface } from 'ethers'
 import { it, expect, describe } from 'vitest'
 
-import { RPC_CONCURRENCY } from './rpcBatch'
-import { activeFollowers, readActiveFollowers, type CopyRecordView, type FollowerReader } from './activeFollowers'
+import CopyTrackerABI from 'src/contracts/abi/CopyTracker.json'
+
+import { fakeContract, fakeMulticallNode, type Handler } from './__fixtures__/fakeMulticallNode'
+import { activeFollowers, followerReaderOf, readActiveFollowers, type CopyRecordView, type FollowerReader } from './activeFollowers'
 
 const T = '0x00000000000000000000000000000000000000AA'
 const X = '0x00000000000000000000000000000000000000BB'
@@ -33,30 +38,44 @@ describe('activeFollowers', () => {
 })
 
 describe('readActiveFollowers', () => {
-  const fakeReader = (lists: Record<string, string[]>, recordsOf: Record<string, CopyRecordView[] | 'fail'>) => {
-    const calls = { copyRecords: 0 }
+  /** 批次讀的假 reader：記下每一批問了什麼。recordsOf 的值是 'fail' 代表那位跟單者讀不到。 */
+  const fakeReader = (lists: Record<string, string[] | 'fail'>, recordsOf: Record<string, CopyRecordView[] | 'fail'> = {}) => {
+    const batches = { counts: [] as string[][], slots: [] as number[], records: [] as string[][] }
     const reader: FollowerReader = {
-      followerCount: async (trader) => BigInt(lists[trader]?.length ?? 0),
-      followerAt: async (trader, i) => lists[trader][i],
-      copyRecords: async (follower) => {
-        calls.copyRecords += 1
-        const value = recordsOf[follower]
-        if (value === 'fail') throw new Error('rpc down')
-        return value ?? []
+      followerCounts: async (traders) => {
+        batches.counts.push([...traders])
+        return traders.map((t) => (lists[t] === 'fail' ? null : BigInt((lists[t] as string[] | undefined)?.length ?? 0)))
+      },
+      followersAt: async (slots) => {
+        batches.slots.push(slots.length)
+        return slots.map(({ trader, index }) => (lists[trader] as string[])[index] ?? null)
+      },
+      copyRecords: async (followers) => {
+        batches.records.push([...followers])
+        return followers.map((f) => (recordsOf[f] === 'fail' ? null : ((recordsOf[f] as CopyRecordView[] | undefined) ?? [])))
       },
     }
-    return { reader, calls }
+    return { reader, batches }
   }
 
   it('reads each follower once even when they copied several traders', async () => {
-    const { reader, calls } = fakeReader(
+    const { reader, batches } = fakeReader(
       { [T]: [A, B], [X]: [A] },
       { [A]: [{ trader: T, active: true }, { trader: X, active: true }], [B]: [{ trader: T, active: false }] },
     )
     const result = await readActiveFollowers([T, X], reader)
     expect(result.get(T.toLowerCase())).toEqual([A])
     expect(result.get(X.toLowerCase())).toEqual([A])
-    expect(calls.copyRecords).toBe(2)
+    expect(batches.records).toEqual([[A, B]])
+  })
+
+  // 每一步一批：交易者再多，也只有三次讀取（readMany 再把每一批併成 Multicall3）
+  it('asks for every trader in one batch per step', async () => {
+    const { reader, batches } = fakeReader({ [T]: [A, B], [X]: [C] })
+    await readActiveFollowers([T, X], reader)
+    expect(batches.counts).toEqual([[T, X]])
+    expect(batches.slots).toEqual([3])
+    expect(batches.records).toHaveLength(1)
   })
 
   it('gives null, not an empty list, for a trader whose followers could not be read', async () => {
@@ -69,49 +88,48 @@ describe('readActiveFollowers', () => {
     expect(result.get(X.toLowerCase())).toEqual([C])
   })
 
-  // sepolia.base.org 每秒 25 筆，超過回 429；第一次被擋、第二次讀到，就不能說成讀不到。
-  it('retries a read that was rate-limited once instead of giving null', async () => {
-    let failedOnce = false
-    const reader: FollowerReader = {
-      followerCount: async () => 1n,
-      followerAt: async () => A,
-      copyRecords: async () => {
-        if (!failedOnce) {
-          failedOnce = true
-          throw new Error('25/second request limit reached')
-        }
-        return [{ trader: T, active: true }]
-      },
-    }
-    expect((await readActiveFollowers([T], reader)).get(T.toLowerCase())).toEqual([A])
-  })
-
-  it('keeps at most RPC_CONCURRENCY reads in flight', async () => {
-    let inFlight = 0
-    let peak = 0
-    const track = async <V>(value: V): Promise<V> => {
-      inFlight += 1
-      peak = Math.max(peak, inFlight)
-      await new Promise((r) => { setTimeout(r, 1) })
-      inFlight -= 1
-      return value
-    }
-    const traders = Array.from({ length: 20 }, (_, i) => `0x${(i + 1).toString(16).padStart(40, '0')}`)
-    const reader: FollowerReader = {
-      followerCount: (trader) => track(BigInt(traders.indexOf(trader) % 3)),
-      followerAt: (trader, i) => track(`0x${(100 + i).toString(16).padStart(40, '0')}`),
-      copyRecords: () => track([]),
-    }
-    await readActiveFollowers(traders, reader)
-    expect(peak).toBeLessThanOrEqual(RPC_CONCURRENCY)
-  })
-
   it('gives null when the follower list itself cannot be read', async () => {
-    const reader: FollowerReader = {
-      followerCount: async () => { throw new Error('rpc down') },
-      followerAt: async () => A,
-      copyRecords: async () => [],
-    }
+    const { reader } = fakeReader({ [T]: 'fail' })
     expect((await readActiveFollowers([T], reader)).get(T.toLowerCase())).toBeNull()
+  })
+
+  it('gives null when one entry of the follower list cannot be read', async () => {
+    const { reader } = fakeReader({ [T]: [A] })
+    reader.followersAt = async (slots) => slots.map(() => null)
+    expect((await readActiveFollowers([T], reader)).get(T.toLowerCase())).toBeNull()
+  })
+})
+
+describe('followerReaderOf', () => {
+  const COPY_TRACKER = '0x00000000000000000000000000000000000000c7'
+  const IFACE = new Interface(CopyTrackerABI as InterfaceAbi)
+  const lists: Record<string, string[]> = { [T.toLowerCase()]: [A, B], [X.toLowerCase()]: [A] }
+  const record = (trader: string, active: boolean) => [trader, 0n, 0n, [], 0n, active, 0n]
+  const recordsOf: Record<string, unknown[]> = {
+    [A.toLowerCase()]: [record(T, true), record(X, false)],
+    [B.toLowerCase()]: [record(T, false)],
+  }
+  const handle: Handler = (method, args) => {
+    const key = String(args[0]).toLowerCase()
+    if (method === 'getFollowerCount') return [BigInt(lists[key]?.length ?? 0)]
+    if (method === 'followersByTrader') return [lists[key][Number(args[1])]]
+    if (method === 'getCopyRecords') return [recordsOf[key] ?? []]
+    throw new Error(`unexpected ${method}`)
+  }
+
+  it('reads the active followers of many traders in three requests on Base Sepolia', async () => {
+    const copyTracker = fakeContract(COPY_TRACKER, IFACE, handle)
+    const node = fakeMulticallNode([copyTracker])
+    const result = await readActiveFollowers([T, X], followerReaderOf(copyTracker, node, 84532))
+    expect(result.get(T.toLowerCase())).toEqual([A])
+    expect(result.get(X.toLowerCase())).toEqual([])
+    expect(node.requests).toBe(3)
+    expect(copyTracker.direct).toBe(0)
+  })
+
+  it('gives null for a trader when the node keeps rejecting the reads', async () => {
+    const copyTracker = fakeContract(COPY_TRACKER, IFACE, handle)
+    const result = await readActiveFollowers([T], followerReaderOf(copyTracker, fakeMulticallNode([copyTracker], Infinity), 84532))
+    expect(result.get(T.toLowerCase())).toBeNull()
   })
 })

@@ -1,3 +1,4 @@
+import type { BrowserProvider } from 'ethers'
 import type { Theme } from '@mui/material/styles'
 import type { AddressEvent, AddressActivity, AddressEventKind } from 'src/hooks/useAddressActivity'
 
@@ -20,6 +21,7 @@ import TableContainer from '@mui/material/TableContainer'
 
 import { t, interpolate } from 'src/locales'
 import { explorerTx } from 'src/lib/pepefi/notify'
+import { useAddressActivity } from 'src/hooks/useAddressActivity'
 import { ASSET_LABEL } from 'src/lib/pepefi/assetMeta'
 import EmptyState from 'src/components/pepefi/EmptyState'
 import ListDialog, { ExpandListButton } from 'src/components/pepefi/ListDialog'
@@ -141,6 +143,20 @@ function EventDetail({ event }: { event: AddressEvent }) {
     default:
       return null
   }
+}
+
+/**
+ * 自己讀資料的版本：掛上去才開始掃描。個人頁用 DeferredSection 包著，使用者按「載入」才掛。
+ */
+export function TraderActivityLive({ contracts, provider, chainId, address, mode }: {
+  contracts: Parameters<typeof useAddressActivity>[0]
+  provider:  BrowserProvider | null
+  chainId:   number | null
+  address:   string
+  mode:      'simple' | 'expert'
+}) {
+  const activity = useAddressActivity(contracts, provider, chainId, address)
+  return <TraderActivity activity={activity} chainId={chainId} mode={mode} />
 }
 
 export default function TraderActivity({ activity, chainId, mode }: Props) {

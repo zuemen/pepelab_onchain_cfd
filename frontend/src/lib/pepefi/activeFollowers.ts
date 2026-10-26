@@ -1,4 +1,4 @@
-// 目前的跟隨者（issue #309）——純函式加一個讀鏈的函式，不含 ethers 或 React。
+// 目前的跟隨者（issue #309）——純函式加一個讀鏈的函式，不含 React。
 //
 // CopyTracker.getFollowerCount 是 followersByTrader 的長度：每次 followTrader 都 push 一次、
 // 取消不移除，同一個人跟兩次也算兩次。所以它是「被跟單過幾次」，不是「現在有幾個人在跟」
@@ -7,20 +7,21 @@
 //
 // 定義跟 eToro 的 copiers 相同：目前至少有一筆 active 跟單的人數，同一個人只算一次。
 
-import { mapLimit, withRetry, RPC_CONCURRENCY } from './rpcBatch'
+import { readMany, type ReadCall, type CallProvider, type ReadableContract } from './multicall'
 
 export interface CopyRecordView {
   trader: string
   active: boolean
 }
 
+/** 三個 view 各一次批次讀；結果與輸入一一對應，讀不到的那一格是 null。 */
 export interface FollowerReader {
   /** CopyTracker.getFollowerCount：followersByTrader 的長度。 */
-  followerCount(trader: string): Promise<bigint>
+  followerCounts(traders: readonly string[]): Promise<Array<bigint | null>>
   /** CopyTracker.followersByTrader(trader, index)。 */
-  followerAt(trader: string, index: number): Promise<string>
+  followersAt(slots: ReadonlyArray<{ trader: string; index: number }>): Promise<Array<string | null>>
   /** CopyTracker.getCopyRecords(follower)。 */
-  copyRecords(follower: string): Promise<CopyRecordView[]>
+  copyRecords(followers: readonly string[]): Promise<Array<CopyRecordView[] | null>>
 }
 
 const lower = (address: string) => address.toLowerCase()
@@ -47,29 +48,20 @@ export function activeFollowers(
  * 讀出每位交易者目前的跟隨者，key 是小寫地址。跟同一個人只讀一次跟單紀錄。
  * 某位交易者的清單、或其中任何一位跟單者的紀錄讀不到時，他的值是 null——讀不到不能說成 0 人。
  *
- * 每一筆都限制併發並重試：排行榜一次讀幾十位交易者，全部同時送出會撞上公開 RPC 的每秒上限
- * （sepolia.base.org 每秒 25 筆，超過回 429），被擋掉的那一筆就讓整位交易者變成「—」。見 rpcBatch.ts。
+ * 不論幾位交易者都是三步、每步一批：人數 → 每一格的跟單者 → 每位跟單者的紀錄。
+ * 排行榜一次讀幾十位交易者，一筆一筆送會撞上公開 RPC 的每秒上限（sepolia.base.org 每秒 25 筆），
+ * 所以每一批交給 readMany 併成 Multicall3（見 multicall.ts）。
  */
 export async function readActiveFollowers(
   traders: string[],
   reader: FollowerReader,
 ): Promise<Map<string, string[] | null>> {
-  const counts = await mapLimit(traders, RPC_CONCURRENCY, async (trader) => {
-    try {
-      return Number(await withRetry(() => reader.followerCount(trader)))
-    } catch {
-      return null
-    }
-  })
-  // 每位交易者的第 i 位跟單者攤平成一格，所有交易者共用同一個併發上限。
-  const slots = traders.flatMap((trader, t) => Array.from({ length: counts[t] ?? 0 }, (_, i) => ({ t, trader, i })))
-  const addresses = await mapLimit(slots, RPC_CONCURRENCY, async ({ trader, i }) => {
-    try {
-      return await withRetry(() => reader.followerAt(trader, i))
-    } catch {
-      return null
-    }
-  })
+  const counts = await reader.followerCounts(traders)
+  // 每位交易者的第 i 位跟單者攤平成一格，所有交易者一起讀。
+  const slots = traders.flatMap((trader, t) =>
+    Array.from({ length: Number(counts[t] ?? 0n) }, (_, index) => ({ t, trader, index })),
+  )
+  const addresses = await reader.followersAt(slots)
   const lists: Array<string[] | null> = counts.map((count) => (count === null ? null : []))
   slots.forEach(({ t }, k) => {
     const list = lists[t]
@@ -80,14 +72,13 @@ export async function readActiveFollowers(
   })
 
   const followers = [...new Map(lists.flatMap((list) => list ?? []).map((f) => [lower(f), f])).values()]
+  const records = await reader.copyRecords(followers)
   const recordsOf = new Map<string, CopyRecordView[]>()
   const failed = new Set<string>()
-  await mapLimit(followers, RPC_CONCURRENCY, async (follower) => {
-    try {
-      recordsOf.set(lower(follower), await withRetry(() => reader.copyRecords(follower)))
-    } catch {
-      failed.add(lower(follower))
-    }
+  followers.forEach((follower, i) => {
+    const value = records[i]
+    if (value === null) failed.add(lower(follower))
+    else recordsOf.set(lower(follower), value)
   })
 
   return new Map(
@@ -99,24 +90,39 @@ export async function readActiveFollowers(
   )
 }
 
-/** CopyTracker 合約上這三個 view 的形狀。 */
-interface CopyTrackerViews {
-  getFollowerCount(trader: string): Promise<unknown>
-  followersByTrader(trader: string, index: bigint): Promise<unknown>
-  getCopyRecords(follower: string): Promise<unknown>
+/** 一批讀取的結果；合約拒絕或節點沒回答都是 null（跟單者清單裡沒有「拒絕」這種答案）。 */
+async function readEach<T>(
+  provider: CallProvider | null,
+  chainId: number | null,
+  calls: ReadCall[],
+  convert: (value: unknown) => T,
+): Promise<Array<T | null>> {
+  const outcomes = await readMany(provider, chainId, calls)
+  return outcomes.map((o) => (o.status === 'ok' ? convert(o.value) : null))
 }
 
 /**
  * 把 useContracts 的 copyTracker 包成 FollowerReader，排行榜與個人頁共用。
- * 收 object 再轉型：ethers 的 Contract 用索引簽章提供方法，型別上看不出有這三個 view。
+ * provider 用來送 Multicall3（錢包的 BrowserProvider）；沒有 Multicall3 的鏈一筆一筆讀。
  */
-export const followerReaderOf = (contract: object): FollowerReader => {
-  const copyTracker = contract as CopyTrackerViews
-  return {
-    followerCount: async (trader) => BigInt(await copyTracker.getFollowerCount(trader) as bigint),
-    followerAt: async (trader, index) => String(await copyTracker.followersByTrader(trader, BigInt(index))),
-    copyRecords: async (follower) =>
-      (await copyTracker.getCopyRecords(follower) as Array<{ trader: string; active: boolean }>)
-        .map((r) => ({ trader: String(r.trader), active: Boolean(r.active) })),
-  }
-}
+export const followerReaderOf = (
+  copyTracker: ReadableContract,
+  provider: CallProvider | null,
+  chainId: number | null,
+): FollowerReader => ({
+  followerCounts: (traders) =>
+    readEach(provider, chainId, traders.map((t) => ({ contract: copyTracker, method: 'getFollowerCount', args: [t] })), (v) =>
+      BigInt(v as bigint),
+    ),
+  followersAt: (slots) =>
+    readEach(
+      provider,
+      chainId,
+      slots.map((s) => ({ contract: copyTracker, method: 'followersByTrader', args: [s.trader, BigInt(s.index)] })),
+      (v) => String(v),
+    ),
+  copyRecords: (followers) =>
+    readEach(provider, chainId, followers.map((f) => ({ contract: copyTracker, method: 'getCopyRecords', args: [f] })), (v) =>
+      (v as Array<{ trader: string; active: boolean }>).map((r) => ({ trader: String(r.trader), active: Boolean(r.active) })),
+    ),
+})
