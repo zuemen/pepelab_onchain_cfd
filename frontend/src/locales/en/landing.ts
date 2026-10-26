@@ -23,7 +23,7 @@ export const landing: Catalog['landing'] = {
       title: 'Social Trading: Every Move On-Chain',
       pain: "Copy-trading platforms publish traders' track records themselves, so losing trades can be deleted or hidden and followers have no way to check. Traders face no consequences for losing, and your money has to sit with the platform first — if the platform fails, it is gone.",
       solution:
-        'Every position and every strategy version a trader makes is recorded on-chain, so the leaderboard can be checked. Traders must stake before anyone can copy them, and when a follower stops copying with a loss past the threshold, part of the trader\'s stake is slashed. Copying takes the trader\'s current strategy version; if they publish a new one you see "Strategy updated" and decide for yourself. Positions opened by copy trading are in your own name, and stopping copying closes them all in one click.',
+        'Every position and every strategy version a trader makes is recorded on-chain, so the leaderboard can be checked. Traders must stake before anyone can copy them, and when a follower stops copying with a loss past the threshold, part of the trader\'s stake is slashed. By default, copying takes the trader\'s current strategy version, and a new version is marked "Strategy updated"; you can also switch on auto-sync on-chain (ADR-024, once the copy contract is upgraded), after which anyone can — and can only — bring your positions in line with the trader\'s latest on-chain version, with no say over asset, direction or leverage. An AI agent can also prepare the copy and sync transactions for you, and your own wallet decides whether to sign them. Positions opened by copy trading are in your own name, and stopping copying closes them all in one click.',
     },
 
     assets: {
@@ -58,7 +58,7 @@ export const landing: Catalog['landing'] = {
       title: 'Agent-Native: x402 and Agent Sessions',
       pain: 'Letting an AI trade for you means handing over a private key or an exchange API key, with no cap on what it can spend. Buying data for an AI means registering an account, adding a credit card and paying a monthly subscription.',
       solution:
-        'An agent session lets an AI trade for you within limits written on-chain: per-trade amount, total budget, leverage cap, allowed assets and an expiry. You can revoke it at any time, and the AI never touches your private key. AIs pay USDC per call for trading signals with x402 — no account needed — and the revenue is split on-chain too. Seven built-in MCP tools let an LLM agent look up trader performance, positions and sessions, and every order asks you to confirm it yourself before it is sent.',
+        'An agent session lets an AI trade for you within limits written on-chain: per-trade amount, total budget, leverage cap, allowed assets and an expiry. You can revoke it at any time, and the AI never touches your private key. AIs pay USDC per call for trading signals with x402 — no account needed — and the revenue is split on-chain too. Ten built-in MCP tools: eight are read-only, letting an LLM agent look up trader performance, positions and sessions and prepare unsigned transactions for your own wallet to sign; the other two trade within the session\'s limits, and every order asks you to confirm it yourself before it is sent.',
     },
 
     perpetuals: {

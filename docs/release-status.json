@@ -1,14 +1,14 @@
 {
  "$comment": "由 node scripts/check-deployment-status.mjs 產生（唯讀 RPC），不要手改；docs/RELEASE_STATUS.md 是這份 JSON 的渲染結果。",
- "generatedAt": "2026-10-21",
+ "generatedAt": "2026-10-25",
  "compiler": "0.8.36",
  "denylistSize": 1,
  "chains": {
   "84532": {
    "name": "Base Sepolia",
    "role": "正式測試網（交易、agent session、x402 都在這條鏈）",
-   "rpc": "（自訂 RPC）",
-   "block": 48394001,
+   "rpc": "https://sepolia.base.org",
+   "block": 50242781,
    "components": [
     {
      "id": "PerpetualExchange",
@@ -226,7 +226,7 @@
       }
      ],
      "status": "equal",
-     "detail": "完全一致",
+     "detail": "程式碼一致；只有 CBOR metadata（原始碼文字雜湊）不同",
      "leaked": [],
      "reads": [
       {
@@ -322,15 +322,15 @@
       "commit": "264f1d4",
       "date": "2026-09-30"
      },
-     "sourceDigest": "4df69b61f9a77e54",
+     "sourceDigest": "e34fc3e5f601933e",
      "addresses": [
       {
        "key": "CopyTracker",
        "address": "0x15A9Cbf803a3EEee2794B74Ad78252d27Ccd347C"
       }
      ],
-     "status": "equal",
-     "detail": "程式碼一致；只有 CBOR metadata（原始碼文字雜湊）不同",
+     "status": "behind",
+     "detail": "與原始碼現行版不一致：長度不同（鏈上 9764 B，原始碼 20026 B）",
      "leaked": [],
      "reads": [
       {
@@ -346,7 +346,7 @@
       "evidence": [],
       "note": null
      },
-     "matched": "CopyTracker.sol:CopyTracker"
+     "matched": null
     },
     {
      "id": "StrategyRegistry",
@@ -1260,7 +1260,7 @@
    "name": "Sepolia",
    "role": "legacy 展示鏈（不是產品路徑；合約未做金鑰輪替）",
    "rpc": "https://ethereum-sepolia-rpc.publicnode.com",
-   "block": 11959990,
+   "block": 11994079,
    "components": [
     {
      "id": "PerpetualExchange",
@@ -1506,7 +1506,7 @@
       "commit": "264f1d4",
       "date": "2026-09-30"
      },
-     "sourceDigest": "4df69b61f9a77e54",
+     "sourceDigest": "e34fc3e5f601933e",
      "addresses": [
       {
        "key": "CopyTracker",
@@ -1514,7 +1514,7 @@
       }
      ],
      "status": "behind",
-     "detail": "與原始碼現行版不一致：長度不同（鏈上 11713 B，原始碼 9764 B）",
+     "detail": "與原始碼現行版不一致：長度不同（鏈上 11713 B，原始碼 20026 B）",
      "leaked": [],
      "reads": [
       {
@@ -2264,11 +2264,11 @@
    "id": "keeper",
    "label": "寫價 keeper（GitHub Actions 排程）",
    "merged": {
-    "pr": 346,
-    "commit": "0a4b5cd",
-    "date": "2026-10-18"
+    "pr": 360,
+    "commit": "05ef130",
+    "date": "2026-10-21"
    },
-   "sourceDigest": "628c343187be1268",
+   "sourceDigest": "fa63a9bf96beb05d",
    "deployed": "已上線：master 上的 base-sepolia-keeper.yml 排程；最近寫價時間由 scripts/post-deploy-smoke.mjs 讀鏈上 oracle",
    "acceptance": {
     "status": "未驗收",
@@ -2298,11 +2298,11 @@
    "id": "monitoring",
    "label": "鏈上監控 Worker（Cloudflare）",
    "merged": {
-    "pr": 301,
-    "commit": "c7c0b7e",
-    "date": "2026-10-11"
+    "pr": 360,
+    "commit": "05ef130",
+    "date": "2026-10-21"
    },
-   "sourceDigest": "3621d469e2607dd3",
+   "sourceDigest": "d01b0ed40f892b7b",
    "deployed": "未部署（ops/monitoring/README.md；2026-10-01 只做過唯讀試跑）",
    "acceptance": {
     "status": "未驗收",

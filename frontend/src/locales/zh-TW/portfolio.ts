@@ -271,6 +271,127 @@ export const portfolio = {
   },
 
   /**
+   * ADR-024：全站提醒（CopySyncNotice，任何內頁的頂端；投資組合本身不顯示）。沒有自己跑 agent 的人
+   * 收不到 webhook，部位停在舊版時只能靠這裡知道。與下面的 autoSync 一樣刻意不寫「跟單」與槓桿。
+   */
+  syncNotice: {
+    behind: '交易者發布了新版策略：你有 {count} 筆還停在舊版。',
+    needsYou: '其中 {count} 筆要你處理（{reasons}），不會自己更新。',
+    waitingOnly: '自動同步開著，冷卻結束、有執行者送出後就會更新。',
+    reasonSeparator: '、',
+    reasons: {
+      feeAboveCap: '交易所調高了執行費，要重新同意',
+      needsGas: '自動同步油箱不足',
+      manual: '沒有開啟自動同步',
+      snapshot: '要更新到最新版',
+    },
+    cta: '到投資組合查看',
+    dismiss: '知道了',
+  },
+
+  /**
+   * ADR-024：跟單部位卡上的自動同步（同步狀態、立即同步、設定、油箱）。這組字只在合約支援
+   * 自動同步時出現；油箱有餘額時就算跟單旗標關閉也要看得到、提得出來（退出永遠不藏）。
+   * 刻意不寫「跟單」兩字：油箱與同步是帳戶層級的事。
+   */
+  autoSync: {
+    column: '同步',
+    versions: '第 {current} 版／最新第 {latest} 版',
+    versionsLatest: '第 {current} 版（最新）',
+    on: '自動同步：開',
+    off: '自動同步：關',
+    syncCount: '已同步 {count} 次',
+    followerClosed: '你自己平過其中一檔：之後的結果不再計入交易者的罰沒評分。',
+    status: {
+      upToDate: '已是最新版',
+      manual: '有新版：按「立即同步」更新，或開啟自動同步',
+      /**
+       * Simple 模式不提供「立即同步」與自動同步設定：同步會依新版開新部位（含槓桿），是交易桌的入口，
+       * 不是退出；要先在專家模式檢視新版內容。取消與關閉自動同步仍在。
+       */
+      manualSimple: '有新版：切換到專家模式檢視新版內容後再同步',
+      feeAboveCap: '交易所調高了執行費，超過你開啟自動同步時同意的費率：別人暫時不能代為同步。按「設定」重新儲存即同意新費率，或按「立即同步」自己同步',
+      /** 同上，Simple 模式：「設定」與「立即同步」只在專家模式，不能叫人去按看不到的按鈕。 */
+      feeAboveCapSimple: '交易所調高了執行費，超過你開啟自動同步時同意的費率：別人暫時不能代為同步。切換到專家模式可以看過新費率後重新同意，或自己同步',
+      cooldown: '冷卻中，{time} 之後可以同步',
+      needsGas: '油箱不夠付一次代為同步，還差 {eth} ETH',
+      waiting: '等待任何執行者送出同步',
+      waitingExecutor: '等待你指定的執行者送出同步',
+      unknown: '讀不到同步狀態',
+    },
+    outdatedHint: '交易者發布了新版策略。按「立即同步」先檢視新版內容，確認後就地換成最新版（不必取消再重來），或開啟自動同步。',
+    outdatedHintSimple: '交易者發布了新版策略。切換到專家模式可以檢視新版內容後同步。',
+    /** 指定執行者（合約 setSyncExecutor）。 */
+    executorChip: '限定執行者 {addr}',
+    executorTip: '只有這個地址（與你本人）能代為同步，其他人會被合約拒絕。要改或解除，到「設定」。',
+    executorSaved: '已更新指定執行者 ✓',
+    executorFailed: '自動同步設定已儲存，但指定執行者沒有送成功，請再試一次。',
+    /** 「立即同步」的確認視窗：送出前先看新版的內容與費用（resyncAtVersion 釘住這裡顯示的那一版）。 */
+    confirm: {
+      title: '同步到第 {version} 版',
+      loading: '讀取新版內容…',
+      loadFailed: '讀不到新版內容，請稍後再試。',
+      intro:
+        '送出前請先看清楚新版的內容。這筆交易釘住第 {version} 版：交易者在你送出前又發一版，交易會整筆退回，不會換成你沒看過的那一版。',
+      colAsset: '資產',
+      colSide: '方向',
+      colWeight: '比重',
+      colLeverage: '槓桿（新版 → 實際）',
+      long: '做多',
+      short: '做空',
+      capped: '已被上限夾住',
+      noCap:
+        '這一列沒有設定槓桿上限：會照新版的槓桿開倉（只受交易所的資產上限約束）。想設上限，先到「設定」儲存一次（可以不開啟自動同步）。',
+      leverageRaised: '這次會用到的最高槓桿（{to}×）高於目前部位的最高槓桿（{from}×）。',
+      closeAll:
+        '同步會先平掉這一列的全部部位，再用平倉釋出的保證金依新版開倉；任何一檔開不起來（未通過 KYC、休市、未平倉量上限）整筆取消、部位維持原狀。',
+      execFee: '執行費（從油箱扣）',
+      topUp: '油箱不夠，這筆交易會附上 {eth} ETH 存進油箱',
+      released: '預計釋出的保證金',
+      perfFee: '獲利部位的績效費（10%，給交易者）',
+      tradingFee: '依新版開倉的交易費',
+      approx: '約 {amount} {token}',
+      unknown: '—',
+      estimateNote: '金額依目前價格估算，實際以上鏈結果為準。平倉的交易費、借款費與資金費已算在目前價值裡。',
+      cancel: '取消',
+      cta: '確認同步',
+    },
+    syncNow: '立即同步',
+    syncing: '同步中…',
+    synced: '已同步到最新版 ✓',
+    topUpFirst: '油箱不夠付這次同步的執行費：這筆同步會一起附上 {eth} ETH 存進油箱。',
+    settings: '設定',
+    enable: '開啟自動同步',
+    disable: '關閉自動同步',
+    saved: '已更新自動同步設定 ✓',
+    disabledOk: '已關閉自動同步 ✓',
+    tank: {
+      title: '自動同步油箱',
+      balance: '{eth} ETH',
+      estimate: '約可代為同步 {count} 次',
+      deposit: '存入',
+      withdraw: '提領',
+      deposited: '已存入 {eth} ETH ✓',
+      withdrawn: '已提領 {eth} ETH ✓',
+      note: '油箱裡的 ETH 只用來付同步的執行費與小費，記在合約裡你自己的名下，只有你能提領。',
+    },
+    dialog: {
+      settingsTitle: '自動同步設定',
+      enabled: '開啟自動同步',
+      gasTitle: '自動同步油箱',
+      amount: '金額（ETH）',
+      max: '全部',
+      cancel: '取消',
+      save: '儲存',
+      depositCta: '存入油箱',
+      withdrawCta: '提領到錢包',
+      invalidAmount: '請輸入有效的 ETH 金額。',
+      overBalance: '超過油箱餘額。',
+      offNote: '自動同步關閉時，這裡的槓桿上限仍會套用在你自己按「立即同步」的時候；指定的執行者在重新開啟後仍然有效。冷卻與小費只在開啟時有作用。',
+    },
+  },
+
+  /**
    * 配置佔比與分類損益已搬到上面的 allocation（issue #66）。這裡只剩
    * ESG 分數，cat 仍留著——assetClass.ts 的 ASSET_CLASS_CONFIG 還在用它。
    */

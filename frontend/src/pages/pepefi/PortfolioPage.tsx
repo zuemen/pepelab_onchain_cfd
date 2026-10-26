@@ -65,6 +65,32 @@ import CarbonTierMixCard from 'src/components/pepefi/CarbonTierMixCard';
 import { holdingValue } from 'src/lib/pepefi/assetClass';
 import { usePricingCarbonTiers } from 'src/hooks/usePricingCarbonTiers';
 import EmptyState from 'src/components/pepefi/EmptyState';
+import { useExecutionFee, formatEth } from 'src/hooks/useExecutionFee';
+import { useAutoSyncSupport } from 'src/hooks/useAutoSyncSupport';
+import { AutoSyncSettingsDialog, ResyncConfirmDialog, SyncGasDialog, SyncGasTank } from 'src/components/pepefi/copy/AutoSyncDialogs';
+import {
+  syncStatus,
+  syncCostWei,
+  sameAddress,
+  versionLabel,
+  clampLeverage,
+  parseExecutor,
+  resyncPreview,
+  parseSyncState,
+  parseSyncConfig,
+  syncsAffordable,
+  DEFAULT_TIP_WEI,
+  DEFAULT_COOLDOWN,
+  selfSyncShortfall,
+  defaultPrefundWei,
+  defaultMaxLeverage,
+  AUTO_SYNC_MIN_INTERVAL,
+  type SyncState,
+  type SyncConfig,
+  type SyncStatus,
+  type ResyncPreview,
+  type AutoSyncSettings,
+} from 'src/lib/pepefi/autoSync';
 import Skeleton, { TableSkeleton } from 'src/components/pepefi/Skeleton';
 
 import Box from '@mui/material/Box';
@@ -124,7 +150,39 @@ interface CopyRec {
   versionId:     bigint;
   /** 交易者目前發布過幾版（getStrategyCount）；讀不到時為 null，就不標示「已更新」。 */
   strategyCount: bigint | null;
+  /** ADR-024：交易者最新版有幾檔（估同步成本用）；合約不支援自動同步或讀不到時為 null。 */
+  latestLegs:    number | null;
+  syncConfig:    SyncConfig | null;
+  syncState:     SyncState | null;
+  /** 跟隨者開啟自動同步時同意的每腿執行費（syncExecFeeCap）；讀不到為 null。 */
+  execFeeCap:    bigint | null;
+  /** 指定的執行者（syncExecutor）；null = 任何人，或合約沒有這項設定。 */
+  executor:      string | null;
 }
+
+/** 「立即同步」確認視窗：開啟時讀一次交易者最新版，按下確認就釘住那一版送出。 */
+interface ResyncTarget {
+  rec:      CopyRec;
+  loading:  boolean;
+  error:    string | null;
+  version:  bigint | null;
+  preview:  ResyncPreview | null;
+  /** 目前部位的最高槓桿。 */
+  heldMax:  number;
+}
+
+/** 設定彈窗開著時的內容：哪一筆、開關、設定。打開時算好一次，彈窗裡不再跟著重讀變動。 */
+interface SyncSettingsTarget {
+  rec:      CopyRec;
+  enabled:  boolean;
+  settings: AutoSyncSettings;
+}
+
+/** ethers v6 把認得的 custom error 名稱放在 revert.name；退而求其次看訊息字串。 */
+const revertIs = (e: unknown, name: string): boolean => {
+  const err = e as { revert?: { name?: string } | null; shortMessage?: string; message?: string };
+  return err?.revert?.name === name || `${err?.shortMessage ?? ''} ${err?.message ?? ''}`.includes(name);
+};
 
 /** 見 lib/pepefi/positionPnl.ts：終端機與這頁共用同一個讀取與損益定義。 */
 type PosRow = PortfolioPositionRow;
@@ -290,6 +348,14 @@ export default function PortfolioPage() {
   const [busy,  setBusy]  = useState<Record<string, boolean>>({});
   const { notify } = useToast();
 
+  // ADR-024 自動同步：合約支援才讀、才顯示。油箱是帳戶層級（每個跟隨者一個），不是每筆跟單一個。
+  const autoSync = useAutoSyncSupport(contracts?.copyTracker ?? null, wallet.provider);
+  const execFee = useExecutionFee(contracts?.exchange ?? null);
+  const [syncGas, setSyncGas] = useState<bigint | null>(null);
+  const [syncSettingsFor, setSyncSettingsFor] = useState<SyncSettingsTarget | null>(null);
+  const [gasDialog, setGasDialog] = useState<'deposit' | 'withdraw' | null>(null);
+  const [resyncTarget, setResyncTarget] = useState<ResyncTarget | null>(null);
+
   const setLoad = (k: string, v: boolean) => setBusy(p => ({ ...p, [k]: v }));
 
   // 每筆跟單的停損提醒比例。只存在這個瀏覽器（見 copyGuards），不是鏈上狀態。
@@ -337,6 +403,32 @@ export default function PortfolioPage() {
         })
       );
 
+      // 自動同步版合約：每位交易者最新版有幾檔（同步成本 = 每檔一份 executionFee）
+      const legsMap: Record<string, number | null> = {};
+      if (autoSync.supported) {
+        await Promise.all(
+          uniqueTraders.map(async ta => {
+            try {
+              const latest = (await contracts.registry.getLatestStrategy(ta)) as unknown as [unknown[], bigint];
+              legsMap[ta] = latest[0].length;
+            } catch { legsMap[ta] = null; }
+          })
+        );
+      }
+      const readSync = async (i: number): Promise<[SyncConfig | null, SyncState | null, bigint | null, string | null]> => {
+        if (!autoSync.supported) return [null, null, null, null];
+        const [cfg, st, cap, ex] = await Promise.all([
+          (contracts.copyTracker.syncConfig(addr, BigInt(i)) as Promise<unknown>).then(parseSyncConfig).catch(() => null),
+          (contracts.copyTracker.getSyncState(addr, BigInt(i)) as Promise<unknown>).then(parseSyncState).catch(() => null),
+          // 交易所 executionFee 高於這個值時，別人不能代為同步（要本人重新同意）
+          (contracts.copyTracker.syncExecFeeCap(addr, BigInt(i)) as Promise<bigint>).then(v => BigInt(v)).catch(() => null),
+          autoSync.executorLock
+            ? (contracts.copyTracker.syncExecutor(addr, BigInt(i)) as Promise<unknown>).then(parseExecutor).catch(() => null)
+            : Promise.resolve(null),
+        ]);
+        return [cfg, st, cap, ex];
+      };
+
       const getVal = async (id: bigint): Promise<bigint> => {
         try { return (await contracts.exchange.getPositionValue(id)) as bigint; }
         catch { return 0n; }
@@ -345,7 +437,10 @@ export default function PortfolioPage() {
       const enriched = await Promise.all(
         rawRecs.map(async (rec, i): Promise<CopyRec | null> => {
           if (!rec.active) return null;
-          const vals = await Promise.all(rec.positionIds.map(id => getVal(id)));
+          const [vals, [cfg, st, cap, ex]] = await Promise.all([
+            Promise.all(rec.positionIds.map(id => getVal(id))),
+            readSync(i),
+          ]);
           return {
             index:         i,
             trader:        rec.trader,
@@ -356,6 +451,11 @@ export default function PortfolioPage() {
             positionIds:   [...rec.positionIds],
             versionId:     rec.versionId,
             strategyCount: countMap[rec.trader] ?? null,
+            latestLegs:    legsMap[rec.trader] ?? null,
+            syncConfig:    cfg,
+            syncState:     st,
+            execFeeCap:    cap,
+            executor:      ex,
           };
         })
       );
@@ -363,6 +463,11 @@ export default function PortfolioPage() {
     })(), [] as CopyRec[], 'copy records');
     setCopyRecs(copyRecsResult.value);
     setCopyRecsOk(copyRecsResult.ok);
+
+    // 油箱餘額：讀不到就是 null（顯示「—」），不當成 0
+    setSyncGas(autoSync.supported
+      ? await (contracts.copyTracker.syncGasBalance(addr) as Promise<bigint>).catch(() => null)
+      : null);
 
     const positionsResult = await trackedRead((async (): Promise<PosRow[]> => {
       const posIds = (await contracts.exchange.getUserPositions(addr)) as bigint[];
@@ -396,7 +501,7 @@ export default function PortfolioPage() {
     const failures = [copyRecsResult, positionsResult, freeMarginResult].filter(r => !r.ok);
     if (failures.length > 0) notify(prettyError(failures[0].error), false);
     setIsLoaded(true);
-  }, [contracts, wallet.address, notify]);
+  }, [contracts, wallet.address, notify, autoSync.supported, autoSync.executorLock]);
 
   useEffect(() => {
     void fetchAll();
@@ -442,7 +547,8 @@ export default function PortfolioPage() {
     } finally { setLoad(key, false); }
   };
 
-  // 「更新到最新版」：合約不做持續跟隨，換版本就是取消舊的、重新跟一次。取消跟單後
+  // 「更新到最新版」：只用在合約不支援自動同步（ADR-024）時——舊版合約不做持續跟隨，換版本
+  // 就是取消舊的、重新跟一次（支援時改走本人 resyncAtVersion）。取消跟單後
   // 取回的錢回到交易所的可用保證金，不是錢包；跟單合約是從錢包扣款，所以要先提回錢包。
   const doRefreshCopy = async (rec: CopyRec) => {
     if (!contracts || !wallet.address) return;
@@ -465,6 +571,176 @@ export default function PortfolioPage() {
       notify(prettyError(e), false);
       await fetchAll();
     } finally { setLoad(key, false); }
+  };
+
+  // ── 自動同步（ADR-024） ────────────────────────────────────────────────────
+  // 「立即同步」分兩步：先開確認視窗（openResync）讀交易者最新版、顯示每一檔的資產、方向、比重、
+  // 實際槓桿（策略、資產上限、自己的上限三者取小）與費用；按下確認才送出 doResync，釘住的就是
+  // 視窗裡顯示的那一版——跟隨者真的看過他同意的內容，不只是版號。
+  const openResync = async (rec: CopyRec) => {
+    if (!contracts) return;
+    // 同步會先平掉這筆跟單底下的每一個部位：任何一檔價格過期整筆都會 revert（與取消跟單同一條規則）
+    const blocked = unfollowStaleNotice(rec.index);
+    if (blocked) { notify(blocked, false); return; }
+    const held = positions.filter(p => rec.positionIds.includes(p.id));
+    const heldMax = held.reduce((m, p) => Math.max(m, Number(p.leverage)), 0);
+    setResyncTarget({ rec, loading: true, error: null, version: null, preview: null, heldMax });
+    try {
+      const [rawAllocs, version] = (await contracts.registry.getLatestStrategy(rec.trader)) as unknown as [
+        { asset: string; weight: bigint; isLong: boolean; leverage: bigint }[],
+        bigint,
+      ];
+      const allocs = [...rawAllocs];
+      const num = (p: Promise<unknown>) => p.then(v => Number(v)).catch(() => null);
+      const legs = await Promise.all(allocs.map(async (a) => ({
+        asset:            String(a.asset),
+        weight:           BigInt(a.weight),
+        isLong:           Boolean(a.isLong),
+        strategyLeverage: Number(a.leverage),
+        assetMaxLeverage: await num(contracts.exchange.maxLeverageForAsset(a.asset) as Promise<unknown>),
+        tradingFeeBps:    await num(contracts.exchange.tradingFeeBpsForAsset(a.asset) as Promise<unknown>),
+      })));
+      const perfBps = await num(contracts.exchange.PERFORMANCE_FEE_BPS() as Promise<unknown>);
+      const preview = resyncPreview({
+        legs,
+        followerMax:       rec.syncConfig?.maxLeverage ?? 0,
+        executionFee:      execFee.wei,
+        tankBalance:       syncGas,
+        currentLegs:       held.map(p => ({ value: p.currentValue, pnl: p.unrealizedPnL, leverage: Number(p.leverage) })),
+        performanceFeeBps: perfBps ?? undefined,
+      });
+      setResyncTarget(cur => (cur?.rec.index === rec.index ? { ...cur, loading: false, version, preview } : cur));
+    } catch (e) {
+      console.error('[portfolio] read latest strategy for resync', e);
+      setResyncTarget(cur => (cur?.rec.index === rec.index ? { ...cur, loading: false, error: t.portfolio.autoSync.confirm.loadFailed } : cur));
+    }
+  };
+
+  // 「立即同步」送出：本人呼叫 resyncAtVersion，不付小費、不受冷卻限制，部位就地換成確認視窗裡的那一版
+  // （平舊腿、只用平倉釋出的保證金開新腿，任何一腿開不起來就整筆 revert、維持舊版）。釘住版本：
+  // 交易者在按下之前又發了一版，合約 revert StrategyVersionMismatch，不會直接採用沒看過的版本。
+  // 執行費一樣從油箱扣；resyncAtVersion 是 payable，附帶的 ETH 先存進油箱——所以油箱不夠時把差額
+  // 附在同一筆交易上，而且是先模擬過、確定只差油箱才附，不會為了一筆本來就會失敗的同步多存 ETH。
+  // 執行費也釘住：畫面上顯示的每檔執行費（execFee.wei）就是簽名帶入的上限（maxExecFeePerLeg）。
+  // 交易所 owner 在按下前調高費率，合約整筆 revert ExecutionFeeAboveCap、油箱不動。
+  const doResync = async (rec: CopyRec, expectedVersion: bigint, legs: number | null) => {
+    if (!contracts || !wallet.address) return;
+    const blocked = unfollowStaleNotice(rec.index);
+    if (blocked) { notify(blocked, false); return; }
+    const key = `resync_${rec.index}`;
+    setLoad(key, true);
+    const follower = wallet.address;
+    const idx = BigInt(rec.index);
+    const maxExecFeePerLeg = execFee.wei;
+    try {
+      let topUp = 0n;
+      try {
+        await contracts.copyTracker.resyncAtVersion.staticCall(idx, expectedVersion, maxExecFeePerLeg);
+      } catch (e) {
+        if (!revertIs(e, 'InsufficientSyncGas') || legs === null) throw e;
+        const fee = (await contracts.exchange.executionFee()) as bigint;
+        const balance = (await contracts.copyTracker.syncGasBalance(follower)) as bigint;
+        topUp = selfSyncShortfall(balance, fee, legs);
+        if (topUp === 0n) throw e;
+        // 附上差額再模擬一次：還是失敗就是別的原因（KYC、休市…），不送
+        await contracts.copyTracker.resyncAtVersion.staticCall(idx, expectedVersion, maxExecFeePerLeg, { value: topUp });
+        notify(interpolate(t.portfolio.autoSync.topUpFirst, { eth: formatEth(topUp) }), true);
+      }
+      const tx = asTx(await contracts.copyTracker.resyncAtVersion(idx, expectedVersion, maxExecFeePerLeg, { value: topUp }));
+      await tx.wait();
+      notify(t.portfolio.autoSync.synced, true, tx.hash);
+      setResyncTarget(null);
+    } catch (e) {
+      notify(prettyError(e), false);
+    } finally {
+      setLoad(key, false);
+      await fetchAll();
+    }
+  };
+
+  /** 打開設定彈窗：沒開過的跟單用最保守的預設（槓桿上限 = 這筆跟單目前部位的最高槓桿）。 */
+  const openSyncSettings = (rec: CopyRec) => {
+    const cfg = rec.syncConfig;
+    const held = positions.filter(p => rec.positionIds.includes(p.id)).map(p => p.leverage);
+    const configured = cfg !== null && cfg.maxLeverage > 0;
+    setSyncSettingsFor({
+      rec,
+      enabled: cfg?.autoSync ?? false,
+      settings: {
+        maxLeverage:     configured ? clampLeverage(cfg.maxLeverage) : defaultMaxLeverage(held),
+        // 關閉時存過的冷卻可能是 0（合約允許）；重新開啟時從最保守的預設開始
+        minSyncInterval: configured && cfg.minSyncInterval >= AUTO_SYNC_MIN_INTERVAL ? cfg.minSyncInterval : DEFAULT_COOLDOWN,
+        tipWei:          configured ? cfg.tipWei : DEFAULT_TIP_WEI,
+      },
+    });
+  };
+
+  /**
+   * 儲存自動同步設定。`executor`（'' = 任何人）有給、而且與鏈上不同時，接著送 setSyncExecutor；
+   * 設定本身沒變（含同意的執行費仍是現行費率）就不重送 setAutoSync。
+   */
+  const doSaveAutoSync = async (rec: CopyRec, enabled: boolean, s: AutoSyncSettings, executor?: string) => {
+    if (!contracts) return;
+    const key = `autosync_${rec.index}`;
+    setLoad(key, true);
+    let configSaved = false;
+    try {
+      // 關閉時合約照樣檢查參數範圍：沿用目前的值，夾進合法範圍
+      const tip = s.tipWei > autoSync.maxTipWei ? autoSync.maxTipWei : s.tipWei;
+      const lev = clampLeverage(s.maxLeverage);
+      const cur = rec.syncConfig;
+      const unchanged = cur !== null
+        && cur.autoSync === enabled
+        && cur.maxLeverage === lev
+        && cur.minSyncInterval === s.minSyncInterval
+        && cur.tipWei === tip
+        && (!enabled || rec.execFeeCap === execFee.wei);
+      if (!unchanged) {
+        // 開啟／修改時，畫面上顯示的每檔執行費就是同意的上限：交易所在送出前調高費率會整筆
+        // revert ExecutionFeeAboveCap，不會把調高後的費率記成同意值。關閉不看費率（帶 0）。
+        const maxExecFeePerLeg = enabled ? execFee.wei : 0n;
+        const tx = asTx(await contracts.copyTracker.setAutoSync(
+          BigInt(rec.index), enabled, lev, s.minSyncInterval, tip, maxExecFeePerLeg,
+        ));
+        await tx.wait();
+        notify(enabled ? t.portfolio.autoSync.saved : t.portfolio.autoSync.disabledOk, true, tx.hash);
+      }
+      configSaved = true;
+      const wanted = executor === undefined ? undefined : executor === '' ? null : executor;
+      if (wanted !== undefined && autoSync.executorLock && !(wanted === null ? rec.executor === null : sameAddress(wanted, rec.executor))) {
+        const tx = asTx(await contracts.copyTracker.setSyncExecutor(BigInt(rec.index), wanted ?? '0x0000000000000000000000000000000000000000'));
+        await tx.wait();
+        notify(t.portfolio.autoSync.executorSaved, true, tx.hash);
+      } else if (unchanged) {
+        notify(enabled ? t.portfolio.autoSync.saved : t.portfolio.autoSync.disabledOk, true);
+      }
+      setSyncSettingsFor(null);
+    } catch (e) {
+      notify(configSaved ? `${t.portfolio.autoSync.executorFailed} ${prettyError(e)}` : prettyError(e), false);
+    } finally {
+      setLoad(key, false);
+      await fetchAll();
+    }
+  };
+
+  const doSyncGas = async (mode: 'deposit' | 'withdraw', wei: bigint) => {
+    if (!contracts) return;
+    setLoad('syncGas', true);
+    try {
+      const tx = asTx(mode === 'deposit'
+        ? await contracts.copyTracker.depositSyncGas({ value: wei })
+        : await contracts.copyTracker.withdrawSyncGas(wei));
+      await tx.wait();
+      notify(interpolate(mode === 'deposit' ? t.portfolio.autoSync.tank.deposited : t.portfolio.autoSync.tank.withdrawn, {
+        eth: formatEth(wei),
+      }), true, tx.hash);
+      setGasDialog(null);
+    } catch (e) {
+      notify(prettyError(e), false);
+    } finally {
+      setLoad('syncGas', false);
+      await fetchAll();
+    }
   };
 
   // 自己的部位直接在這裡平倉。SHOW_PERPETUALS 關閉時終端機沒有入口，這是使用者
@@ -626,6 +902,87 @@ export default function PortfolioPage() {
     { name: t.portfolio.page.chart.now,       value: curVal  },
   ];
 
+  // ── 自動同步（ADR-024）：油箱估算與彈窗 ─────────────────────────────────────
+  // 估算用最保守的組合：所有跟單裡最多的檔數、開了自動同步的那幾筆裡最高的小費。
+  const syncLegs = copyRecs.reduce((m, r) => Math.max(m, r.latestLegs ?? r.positionIds.length), 0);
+  const enabledTips = copyRecs.flatMap(r => (r.syncConfig?.autoSync ? [r.syncConfig.tipWei] : []));
+  const topTip = enabledTips.reduce<bigint>((m, v) => (v > m ? v : m), 0n);
+  const tankAffordable = syncGas !== null && enabledTips.length > 0 && syncLegs > 0
+    ? syncsAffordable(syncGas, syncCostWei(execFee.wei, syncLegs, topTip, false))
+    : null;
+  const suggestedDeposit = defaultPrefundWei(execFee.wei, Math.max(1, syncLegs), enabledTips.length > 0 ? topTip : DEFAULT_TIP_WEI);
+  // 油箱有餘額就一定看得到、提得出來——就算已經沒有任何跟單、或跟單旗標關閉（退出不藏）。
+  const hasTankBalance = syncGas !== null && syncGas > 0n;
+  const nowSec = Math.floor(Date.now() / 1000);
+  const syncStatusText = (st: SyncStatus): string => {
+    const S = t.portfolio.autoSync.status;
+    switch (st.kind) {
+      case 'cooldown':    return interpolate(S.cooldown, { time: fDate(BigInt(st.readyAt)) });
+      case 'needsGas':    return interpolate(S.needsGas, { eth: formatEth(st.shortfall) });
+      // Simple 模式沒有「開啟自動同步」、「設定」與「立即同步」的入口（設定含槓桿上限），狀態文字不叫人去按它們；
+      // 跟單頁在 Simple 模式也一樣只說明、不給勾選框（autoSyncEntry）
+      case 'manual':      return mode === 'simple' ? S.manualSimple : S.manual;
+      case 'feeAboveCap': return mode === 'simple' ? S.feeAboveCapSimple : S.feeAboveCap;
+      default:            return S[st.kind];
+    }
+  };
+  const tank = (
+    <SyncGasTank
+      balance={syncGas}
+      affordable={tankAffordable}
+      busy={!!busy['syncGas']}
+      onDeposit={() => setGasDialog('deposit')}
+      onWithdraw={() => setGasDialog('withdraw')}
+    />
+  );
+  const syncDialogs = autoSync.supported && (
+    <>
+      <SyncGasDialog
+        open={gasDialog !== null}
+        mode={gasDialog ?? 'deposit'}
+        onClose={() => setGasDialog(null)}
+        balance={syncGas}
+        suggested={suggestedDeposit}
+        busy={!!busy['syncGas']}
+        onSubmit={(wei) => { if (gasDialog) void doSyncGas(gasDialog, wei); }}
+      />
+      <AutoSyncSettingsDialog
+        open={syncSettingsFor !== null}
+        onClose={() => setSyncSettingsFor(null)}
+        initialEnabled={syncSettingsFor?.enabled ?? false}
+        initialSettings={syncSettingsFor?.settings ?? { maxLeverage: 1, minSyncInterval: DEFAULT_COOLDOWN, tipWei: DEFAULT_TIP_WEI }}
+        maxTipWei={autoSync.maxTipWei}
+        executionFee={execFee.wei}
+        legs={syncSettingsFor?.rec.latestLegs ?? syncSettingsFor?.rec.positionIds.length ?? 0}
+        tankBalance={syncGas}
+        showLeverage={mode === 'expert'}
+        busy={syncSettingsFor !== null && !!busy[`autosync_${syncSettingsFor.rec.index}`]}
+        executor={autoSync.executorLock && mode === 'expert'
+          ? { initial: syncSettingsFor?.rec.executor ?? '', follower: wallet.address ?? null }
+          : undefined}
+        onSave={(enabled, settings, executor) => {
+          if (syncSettingsFor) void doSaveAutoSync(syncSettingsFor.rec, enabled, settings, executor);
+        }}
+      />
+      <ResyncConfirmDialog
+        open={resyncTarget !== null}
+        onClose={() => setResyncTarget(null)}
+        loading={resyncTarget?.loading ?? false}
+        error={resyncTarget?.error ?? null}
+        version={resyncTarget?.version ?? null}
+        preview={resyncTarget?.preview ?? null}
+        currentMaxLeverage={resyncTarget?.heldMax ?? 0}
+        busy={resyncTarget !== null && !!busy[`resync_${resyncTarget.rec.index}`]}
+        onConfirm={() => {
+          if (resyncTarget && resyncTarget.version !== null) {
+            // 確認視窗顯示的那一版有幾檔，就付幾份執行費（不用頁面載入時讀的檔數，交易者可能已經又發一版）
+            void doResync(resyncTarget.rec, resyncTarget.version, resyncTarget.preview?.legs.length ?? null);
+          }
+        }}
+      />
+    </>
+  );
+
   // ── Guard ─────────────────────────────────────────────────────────────────
   if (!wallet.isConnected) {
     return (
@@ -718,6 +1075,10 @@ export default function PortfolioPage() {
     return (
       <Container maxWidth="lg" sx={{ py: 3, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '60vh', gap: 3 }}>
         <Box sx={{ width: '100%' }}><LegacyAssetsBanner state={legacyAssets} /></Box>
+        {autoSync.supported && hasTankBalance && (
+          <Card sx={{ p: 2.5, width: '100%', border: '1px solid', borderColor: 'divider' }}>{tank}</Card>
+        )}
+        {syncDialogs}
         <EmptyState
           icon="💼"
           title={t.portfolio.page.emptyTitle}
@@ -836,13 +1197,19 @@ export default function PortfolioPage() {
         </Grid>
       )}
 
+      {/* 沒有跟單部位卡（Simple Mode、旗標關閉、已全部取消）但油箱還有錢：單獨一張，提得出來。 */}
+      {autoSync.supported && !copyDesk.records && hasTankBalance && (
+        <Card sx={{ p: 2.5, border: '1px solid', borderColor: 'divider' }}>{tank}</Card>
+      )}
+
       {/* ─── A. Copy Records ────────────────────────────────────────────── */}
       {copyDesk.records && (
       <Card sx={{ border: '1px solid', borderColor: 'divider', overflow: 'hidden' }}>
-        <Box sx={{ px: 3, py: 2, borderBottom: '1px solid', borderColor: 'divider' }}>
+        <Box sx={{ px: 3, py: 2, borderBottom: '1px solid', borderColor: 'divider', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 1.5 }}>
           <Typography variant="subtitle2" sx={{ fontWeight: 'bold', color: 'text.secondary', textTransform: 'uppercase', letterSpacing: 1 }}>
             {t.portfolio.page.copyPositions}
           </Typography>
+          {autoSync.supported && (copyRecs.length > 0 || hasTankBalance) && tank}
         </Box>
 
         {copyRecs.length === 0 ? (
@@ -876,6 +1243,7 @@ export default function PortfolioPage() {
                     t.portfolio.page.copyColumn.current,
                     t.portfolio.page.copyColumn.return,
                     t.portfolio.page.copyColumn.stopLoss,
+                    ...(autoSync.supported ? [t.portfolio.autoSync.column] : []),
                     t.portfolio.page.copyColumn.actions,
                   ]).map(label => (
                     <TableCell key={label} sx={{ color: 'text.secondary', fontWeight: 'bold', fontSize: '0.75rem', py: 1.5, whiteSpace: 'nowrap' }}>
@@ -890,9 +1258,31 @@ export default function PortfolioPage() {
                   // M1：一鍵平掉所有跟單倉位，任何一檔價格過期整筆都會 revert。
                   const unfStale = unfollowStaleNotice(rec.index);
                   // 「更新到最新版」會帶到 /copy 重新跟單；跟單旗標關閉時那條路由被收起，這組標示也不出現。
-                  const outdated = FEATURE_COPY_TRADING && rec.strategyCount !== null && isOutdated(rec.versionId, rec.strategyCount);
+                  // 合約支援自動同步時改成就地同步，不經過 /copy，所以旗標關閉也照樣可以同步既有的跟單。
+                  const outdated = (FEATURE_COPY_TRADING || autoSync.supported) && rec.strategyCount !== null && isOutdated(rec.versionId, rec.strategyCount);
                   const refreshKey = `refresh_${rec.index}`;
                   const stopHit = stopLossReached(rec.initialAmount, rec.currentValue, stopLoss[rec.index] ?? null);
+                  // ADR-024：合約支援自動同步時，「更新到最新版」改成就地同步（resyncAtVersion），不必取消再重跟
+                  const resyncKey = `resync_${rec.index}`;
+                  const autoKey = `autosync_${rec.index}`;
+                  const latestVersion = rec.strategyCount !== null && rec.strategyCount > 0n ? rec.strategyCount - 1n : null;
+                  const sync = autoSync.supported
+                    ? syncStatus({
+                        recordVersion: rec.versionId,
+                        latestVersion,
+                        config:        rec.syncConfig,
+                        state:         rec.syncState,
+                        gasBalance:    syncGas,
+                        executionFee:  execFee.loaded ? execFee.wei : null,
+                        latestLegs:    rec.latestLegs,
+                        nowSec,
+                        copiedAt:      Number(rec.copiedAt),
+                        execFeeCap:    rec.execFeeCap,
+                        executor:      rec.executor,
+                      })
+                    : null;
+                  const syncOn = rec.syncConfig?.autoSync ?? false;
+                  const rowBusy = busy[unfKey] || busy[refreshKey] || busy[resyncKey] || busy[autoKey];
                   return (
                     <TableRow
                       key={rec.index}
@@ -913,7 +1303,11 @@ export default function PortfolioPage() {
                           {SHORT_ADDR(rec.trader)}
                         </Typography>
                         {outdated && (
-                          <MuiTooltip title={t.portfolio.page.copyOutdatedHint}>
+                          <MuiTooltip
+                            title={autoSync.supported
+                              ? (mode === 'expert' ? t.portfolio.autoSync.outdatedHint : t.portfolio.autoSync.outdatedHintSimple)
+                              : t.portfolio.page.copyOutdatedHint}
+                          >
                             <Chip
                               size="small"
                               color="warning"
@@ -957,8 +1351,102 @@ export default function PortfolioPage() {
                           </Select>
                         </MuiTooltip>
                       </TableCell>
+                      {autoSync.supported && (
+                        <TableCell sx={{ minWidth: 190 }}>
+                          <Typography variant="caption" sx={{ fontFamily: MONO, fontWeight: 'bold', display: 'block' }}>
+                            {latestVersion === null
+                              ? '—'
+                              : rec.versionId >= latestVersion
+                                ? interpolate(t.portfolio.autoSync.versionsLatest, { current: versionLabel(rec.versionId) })
+                                : interpolate(t.portfolio.autoSync.versions, { current: versionLabel(rec.versionId), latest: versionLabel(latestVersion) })}
+                          </Typography>
+                          <Stack direction="row" sx={{ mt: 0.5, flexWrap: 'wrap', gap: 0.5 }}>
+                            <Chip
+                              size="small"
+                              color={syncOn ? 'success' : 'default'}
+                              variant={syncOn ? 'filled' : 'outlined'}
+                              label={syncOn ? t.portfolio.autoSync.on : t.portfolio.autoSync.off}
+                              sx={{ height: 20, fontSize: '0.6875rem', fontWeight: 'bold' }}
+                            />
+                            {(rec.syncState?.syncCount ?? 0) > 0 && (
+                              <Chip
+                                size="small"
+                                variant="outlined"
+                                label={interpolate(t.portfolio.autoSync.syncCount, { count: rec.syncState?.syncCount ?? 0 })}
+                                sx={{ height: 20, fontSize: '0.6875rem' }}
+                              />
+                            )}
+                            {rec.executor && (
+                              <MuiTooltip title={t.portfolio.autoSync.executorTip}>
+                                <Chip
+                                  size="small"
+                                  variant="outlined"
+                                  label={interpolate(t.portfolio.autoSync.executorChip, { addr: SHORT_ADDR(rec.executor) })}
+                                  sx={{ height: 20, fontSize: '0.6875rem', fontFamily: MONO }}
+                                />
+                              </MuiTooltip>
+                            )}
+                            {rec.syncState?.followerClosed && (
+                              <MuiTooltip title={t.portfolio.autoSync.followerClosed}>
+                                <Box component="span" sx={{ display: 'inline-flex', alignItems: 'center', color: 'text.secondary', cursor: 'help' }}>
+                                  <Icon icon="solar:info-circle-linear" width={16} />
+                                </Box>
+                              </MuiTooltip>
+                            )}
+                          </Stack>
+                          {sync && (
+                            <Typography
+                              variant="caption"
+                              sx={{ display: 'block', mt: 0.5, color: sync.kind === 'needsGas' || sync.kind === 'feeAboveCap' ? 'warning.main' : 'text.secondary' }}
+                            >
+                              {syncStatusText(sync)}
+                            </Typography>
+                          )}
+                        </TableCell>
+                      )}
                       <TableCell sx={{ whiteSpace: 'nowrap' }}>
-                        {outdated && (
+                        {/* 立即同步會依新版開新部位（含槓桿）：只在 Expert Mode、而且先開確認視窗看過新版內容才送。
+                            Simple Mode 收的是入口，不是退出——取消與關閉自動同步仍在。 */}
+                        {outdated && autoSync.supported && mode === 'expert' && (
+                          <Button
+                            size="small"
+                            variant="contained"
+                            color="warning"
+                            startIcon={<Icon icon="solar:refresh-bold" width={16} />}
+                            onClick={() => void openResync(rec)}
+                            disabled={rowBusy || !!unfStale}
+                            title={unfStale ?? undefined}
+                            sx={{ mr: 1, fontWeight: 'bold' }}
+                          >
+                            {busy[resyncKey] ? t.portfolio.autoSync.syncing : t.portfolio.autoSync.syncNow}
+                          </Button>
+                        )}
+                        {autoSync.supported && mode === 'expert' && (
+                          <Button
+                            size="small"
+                            variant="outlined"
+                            color="inherit"
+                            onClick={() => openSyncSettings(rec)}
+                            disabled={rowBusy}
+                            sx={{ mr: 1, borderColor: 'divider' }}
+                          >
+                            {t.portfolio.autoSync.settings}
+                          </Button>
+                        )}
+                        {/* Simple Mode 不給設定（裡面有槓桿上限），但開著的自動同步一定要關得掉 */}
+                        {autoSync.supported && mode !== 'expert' && syncOn && rec.syncConfig && (
+                          <Button
+                            size="small"
+                            variant="outlined"
+                            color="inherit"
+                            onClick={() => { if (rec.syncConfig) void doSaveAutoSync(rec, false, rec.syncConfig); }}
+                            disabled={rowBusy}
+                            sx={{ mr: 1, borderColor: 'divider' }}
+                          >
+                            {busy[autoKey] ? '…' : t.portfolio.autoSync.disable}
+                          </Button>
+                        )}
+                        {outdated && !autoSync.supported && (
                           <Button
                             size="small"
                             variant="contained"
@@ -978,7 +1466,7 @@ export default function PortfolioPage() {
                           variant={stopHit ? 'contained' : 'outlined'}
                           color="error"
                           onClick={() => void doUnfollow(rec.index)}
-                          disabled={busy[unfKey] || busy[refreshKey] || !!unfStale}
+                          disabled={rowBusy || !!unfStale}
                           title={unfStale ?? undefined}
                           sx={{ fontWeight: 'bold' }}
                         >
@@ -1346,6 +1834,8 @@ export default function PortfolioPage() {
       </Grid>
       </>
       )}
+
+      {syncDialogs}
     </Container>
   );
 }

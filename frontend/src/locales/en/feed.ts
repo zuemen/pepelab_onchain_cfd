@@ -36,6 +36,8 @@ export const feed: Catalog['feed'] = {
     unfollow: 'Stopped copying',
     slash: 'Slash',
     retirement: 'Carbon retirement',
+    resync: 'Auto-sync',
+    autoSync: 'Sync settings',
   },
 
   sentence: {
@@ -61,6 +63,11 @@ export const feed: Catalog['feed'] = {
     long: 'long',
     short: 'short',
     separator: '; ',
+    resync: '{count} copies moved to version {version}',
+    autoSyncOn: '{count} copies switched auto-sync on {when}',
+    autoSyncOff: '{count} copies switched auto-sync off {when}',
+    today: 'today',
+    onDay: 'on {day}',
   },
 
   item: {

@@ -75,3 +75,17 @@ scripts/poc/video/out/
 
 # Claude Code 的 agent worktree（本機暫存）
 .claude/worktrees/
+
+# 金鑰檔（copy-sync 執行者、keeper 等熱錢包）：加密 keystore 與密碼檔一律不入庫，整個 repo 都適用。
+# README 建議放在 repo 外（~/.foundry/keystores/<名稱>、~/.copy-sync-password；GitHub Actions 寫到 $RUNNER_TEMP），
+# copy-sync 遇到 repo 目錄裡的 keystore／密碼檔也會拒絕啟動（agent/copy-sync/src/keys.ts）。這裡是放錯位置時的
+# 另一道保險：Foundry `cast wallet new` 這類沒有副檔名的 keystore 擋不住，所以不能只靠這幾條。
+*.keystore
+*.keystore.json
+keystore*.json
+*-keystore.json
+UTC--*
+.copy-sync-*
+*.password
+*password*.txt
+.*password*

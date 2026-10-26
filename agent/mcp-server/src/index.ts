@@ -5,6 +5,10 @@
 //     - get_funding_rate        → PerpetualExchange.getFundingRate
 //     - get_position            → PerpetualExchange.getPosition (+ unrealized/funding)
 //     - get_session             → AgentSessionManager.sessions（限額/預算/到期）
+//     - get_agent_verification  → ERC-8126 驗證 attestation（風險分數 + verifier 簽章）
+//     - copy_sync_status        → CopyTracker 跟單自動同步狀態（ADR-024；copyTools.ts）
+//     - prepare_copy_sync_tx    → 產生跟單同步的「未簽名」交易，交給跟隨者自己的錢包簽（不簽名、不送出）
+//     - prepare_copy_follow_tx  → 由 agent 發起跟單：approve＋釘版本跟單（可一併開自動同步）的未簽名交易
 //   write（Phase 2，經 AgentSessionManager session 限額）:
 //     - open_position           → openPositionForSession
 //     - close_position          → closePositionForSession
@@ -54,6 +58,7 @@ import {
   evaluatePolicy,
   defaultStatePath,
   redactSecrets,
+  AGENT_CHAIN_ID,
 } from "@pepelab/shared";
 import {
   TOOL_ANNOTATIONS,
@@ -61,6 +66,7 @@ import {
   writeConfirmRequired,
   CONFIRM_DISABLED_WARNING,
 } from "./writeTools.ts";
+import { makeCopyReads, registerCopyTools } from "./copyTools.ts";
 
 loadEnv();
 
@@ -290,6 +296,22 @@ server.tool(
     }
   },
 );
+
+// ── read: 跟單自動同步（ADR-024）——查狀態、產生待簽交易；不簽名、不送出、不需要私鑰 ──
+{
+  const override = process.env.COPY_TRACKER_ADDRESS?.trim();
+  if (override && !ethers.isAddress(override)) {
+    console.error(`[copy tools] COPY_TRACKER_ADDRESS 不是合法地址，改用 addresses.ts 的 CopyTracker`);
+  }
+  registerCopyTools(
+    server,
+    makeCopyReads(provider, {
+      chainId: AGENT_CHAIN_ID,
+      tracker: override && ethers.isAddress(override) ? ethers.getAddress(override) : ADDRESSES.CopyTracker,
+      exchange: ADDRESSES.PerpetualExchange,
+    }),
+  );
+}
 
 // ── write: 經 AgentSessionManager 在 session 限額內下單（人類確認走 MCP elicitation）──
 registerWriteTools(server, writeDeps);

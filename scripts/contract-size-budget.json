@@ -11,6 +11,37 @@
           "reason": "初始釘選：等於 master 的 runtime 大小（contracts/foundry.toml：solc 0.8.36、via_ir、optimizer_runs 200；本機 0.8.30 也是 23,911 B）。距 EIP-170 尚有 665 B，保留給必要的安全修正；任何新增功能都要先在別處省下空間。"
         }
       ]
+    },
+    "CopyTracker": {
+      "artifact": "CopyTracker.sol/CopyTracker.json",
+      "maxRuntimeBytes": 20026,
+      "history": [
+        {
+          "bytes": 16985,
+          "date": "2026-10-26",
+          "reason": "初始釘選：自動同步版 CopyTracker（ADR-024：resyncFor、同步油箱、跨版本計分、跟單槓桿夾值）。從約 9.8 KB 成長到 16,985 B（solc 0.8.36、via_ir、optimizer_runs 200），距 EIP-170 尚有 7,591 B；釘住它，之後的成長要寫理由，不要悄悄吃掉餘裕。"
+        },
+        {
+          "bytes": 17880,
+          "date": "2026-10-26",
+          "reason": "自動同步審查修正（ADR-024）：開啟自動同步時冷卻不得低於 MIN_SYNC_INTERVAL（1 小時，擋交易者在同一區塊反覆發版＋自己同步、用交易費磨掉跟隨者保證金）；第三方同步的執行費同意上限 syncExecFeeCap／ExecutionFeeAboveCap（owner 調高 executionFee 不能在跟隨者沒有重新同意時多扣油箱）；pendingSync 對份額低於 MIN_MARGIN 的新腿回報不可同步。+895 B，距 EIP-170 仍有 6,696 B。"
+        },
+        {
+          "bytes": 19281,
+          "date": "2026-10-26",
+          "reason": "自動同步第二輪審查修正（ADR-024）：本人手動同步改走釘版本的 resyncAtVersion（交易者在跟隨者按下前發的新版不會被直接採用，M10 在同步路徑上的對應）；withdrawSyncGasTo 讓不能收 ETH 的合約錢包跟隨者把油箱領到別的地址（否則 ETH 永久卡在 tracker）；previewCopyAllocationWithCap 讓「跟單＋自動同步」的預覽套用跟隨者的槓桿上限、與上鏈結果一致；跟單附帶 ETH 不足改用專用錯誤 InsufficientExecutionFee。+1,401 B（大半是第二個回傳動態陣列的預覽函式的 ABI 編碼），距 EIP-170 仍有 5,295 B。"
+        },
+        {
+          "bytes": 19568,
+          "date": "2026-10-26",
+          "reason": "自動同步第三輪審查修正（ADR-024、KNOWN_LIMITATIONS #39）：執行費同意值改由跟隨者簽名帶入（setAutoSync／followTraderAtVersionWithAutoSync／resyncAtVersion 新增 maxExecFeePerLeg），不再取執行當下的交易所費率——交易所 owner 搶先調高 executionFee 原本可把整個油箱（本人立即同步）或預存 ETH（跟單＋自動同步）收進交易所；本人經 resyncFor 從油箱付款也受 syncExecFeeCap 約束（附帶 ETH 付清全部成本時例外）。+287 B，距 EIP-170 仍有 5,008 B。"
+        },
+        {
+          "bytes": 20026,
+          "date": "2026-10-26",
+          "reason": "自動同步第四輪審查修正（ADR-024、KNOWN_LIMITATIONS #41）：指定執行者 syncExecutor／setSyncExecutor／NotSyncExecutor——跟隨者可以只讓自己的 agent（另一把熱錢包）代為同步，其他人一律被拒，第三方挑時機的空間收回到跟隨者手上；文件原本承諾的「personal 模式避開第三方」在合約層才真的成立。跟單結束時一併清除。+458 B，距 EIP-170 仍有 4,550 B。"
+        }
+      ]
     }
   }
 }

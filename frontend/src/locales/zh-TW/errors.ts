@@ -101,6 +101,25 @@ export const errors = {
     AssetNotHighEsg: '此標的的 ESG 綜合分數未達高分門檻，不符合 ESG 獎勵資格',
     EsgScoreTooLow: '此標的的 ESG 分數低於門檻，不符合獎勵資格',
     SelfCopyNotAllowed: '不能跟單自己',
+    StrategyVersionMismatch:
+      '交易者在你送出前發布了新版策略：為了不讓你用到沒看過的版本，這筆交易沒有執行。請重新整理頁面、確認新版後再送出',
+    TraderNotEligible: '這位交易者的質押不足或正在申請取回質押，暫時不能接受新的資金（既有部位不受影響）',
+    PositionStillOpen: '有一檔部位現在平不掉（價格過期、市場休市或暫停…），整筆交易已退回、部位維持原狀，請稍後再試',
+    RecordAlreadyInactive: '這筆紀錄已經結束，請重新整理頁面',
+    // ── CopyTracker 自動同步（ADR-024）────────────────────────────────────────
+    AlreadySynced: '已經是交易者的最新版，不需要同步',
+    InsufficientSyncGas: '自動同步油箱的 ETH 不夠付這次同步的執行費（與小費），請先存入油箱',
+    InsufficientExecutionFee:
+      '附帶的 ETH 不夠付這次開倉的執行費（交易所的執行費率可能剛調整過），交易沒有執行；請重新整理頁面後再送出',
+    InvalidRecipient: '收款地址無效（例如 0x0），請確認地址後再送出',
+    SyncCooldown: '還在冷卻時間內（自動同步設定的最短間隔），其他人要等冷卻結束才能代為同步；本人手動同步不受限',
+    AutoSyncDisabled: '這筆紀錄沒有開啟自動同步，只有本人能手動同步',
+    InvalidSyncConfig: '自動同步設定超出範圍：槓桿上限需為 1–5×、冷卻至少 1 小時，小費不能超過合約上限',
+    ExecutionFeeAboveCap:
+      '交易所的執行費高於你同意的費率（送出時畫面上顯示的，或開啟自動同步時同意的），整筆退回、油箱沒有被動用；重新整理頁面看過新費率後再送出，或重新儲存自動同步設定以同意新費率',
+    NothingToRedeploy: '舊部位平倉後沒有釋出任何保證金（可能已全部被清算），沒有東西可以重新部署',
+    SyncDisturbedOtherPositions: '這次平倉連帶動到了你其他的部位（例如觸發自動減倉），為了不動用其他資金，同步整筆退回；請稍後再試',
+    EthTransferFailed: 'ETH 轉回錢包失敗，油箱餘額沒有變動，請確認收款地址能接收 ETH',
     PositionIdsNotSorted:
       '倉位 ID 陣列必須嚴格遞增（已自動排序仍失敗代表有重複 ID），請重新整理頁面再試',
     RewardExceedsBudget: '本次發放金額超過質押合約的獎勵預算（rewardBudget），請聯絡管理員調整',

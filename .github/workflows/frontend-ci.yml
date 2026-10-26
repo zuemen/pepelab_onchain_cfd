@@ -21,6 +21,9 @@ on:
       - 'agent/keeper/marketMode.ts'
       # /rwa 的價格來源一致性測試（src/lib/pepefi/rwaProfile.keeper.test.ts）直接載入 keeper 的 feeds.ts。
       - 'agent/keeper/feeds.ts'
+      # ABI 漂移守門（src/contracts/abi/abiSync.test.ts）直接讀合約原始碼：只改 CopyTracker.sol、沒有重新覆寫
+      # CopyTracker.json 的 PR 也要跑到它，否則前端會用舊介面編碼交易，到使用者按下去才失敗。
+      - 'contracts/src/CopyTracker.sol'
       - '.github/workflows/frontend-ci.yml'
   pull_request:
     paths:
@@ -36,6 +39,9 @@ on:
       - 'agent/keeper/marketMode.ts'
       # /rwa 的價格來源一致性測試（src/lib/pepefi/rwaProfile.keeper.test.ts）直接載入 keeper 的 feeds.ts。
       - 'agent/keeper/feeds.ts'
+      # ABI 漂移守門（src/contracts/abi/abiSync.test.ts）直接讀合約原始碼：只改 CopyTracker.sol、沒有重新覆寫
+      # CopyTracker.json 的 PR 也要跑到它，否則前端會用舊介面編碼交易，到使用者按下去才失敗。
+      - 'contracts/src/CopyTracker.sol'
       - '.github/workflows/frontend-ci.yml'
   workflow_dispatch:
 

@@ -34,6 +34,10 @@ export type FeedEvent =
   | (EventBase & { kind: 'slash'; trader: string; follower: string; amount: bigint })
   /** 碳權退役（#333）。amount 已換成 18 位小數；tonnes 是 1e18 = 1 噸。事件沒有發起人：這是平台的動作。 */
   | (EventBase & { kind: 'retire'; amount: bigint; tonnes: bigint })
+  /** 跟單自動同步（ADR-024）：某筆跟單的部位被調成交易者的 toVersion。跟隨者與執行者不上動態。 */
+  | (EventBase & { kind: 'resync'; trader: string; follower: string; fromVersion: number; toVersion: number })
+  /** 跟隨者開啟或關閉某筆跟單的自動同步。trader 讀不到時這則不列。 */
+  | (EventBase & { kind: 'autoSync'; trader: string; follower: string; enabled: boolean })
 
 /** 一版策略裡的一檔，與 StrategyRegistry.getStrategyVersion 回傳的相同。 */
 export interface FeedLeg {
@@ -85,13 +89,20 @@ export type FeedItem = {
   | { type: 'unfollow'; day: string; count: number }
   | { type: 'slash'; amount: bigint }
   | { type: 'retirement'; amount: bigint; tonnes: bigint }
+  /** 同一位交易者、同一個目標版本的同步合成一則。 */
+  | { type: 'resync'; toVersion: number; count: number }
+  /** 同一位交易者同一天（UTC）開啟（或關閉）自動同步的合成一則。 */
+  | { type: 'autoSync'; day: string; enabled: boolean; count: number }
 )
 
 export type FeedType = FeedItem['type']
 
 export const FEED_TYPES: readonly FeedType[] = [
-  'strategy', 'bigOpen', 'bigClose', 'liquidation', 'follow', 'unfollow', 'slash', 'retirement',
+  'strategy', 'bigOpen', 'bigClose', 'liquidation', 'follow', 'unfollow', 'slash', 'retirement', 'resync', 'autoSync',
 ]
+
+/** 跟單功能的動態類型：跟單旗標關閉的建置不列（FeedPage 的 VISIBLE_TYPES）。 */
+export const COPY_FEED_TYPES: readonly FeedType[] = ['follow', 'unfollow', 'resync', 'autoSync']
 
 // ── 轉換 ─────────────────────────────────────────────────────────────────────
 
@@ -128,6 +139,7 @@ const newestFirst = (a: { blockNumber: number; logIndex: number }, b: { blockNum
  * - 策略發布：和前一版比出新增、移除、權重變化與方向翻轉；讀不到前一版時 diff 為 null（畫面只說「發布了新版」）。
  * - 跟隨、取消：同一位交易者同一天各合成一則。
  * - 碳權退役：一律列出，主角是平台（actor 為空字串）。
+ * - 自動同步（ADR-024）：同一位交易者同一版的同步合成一則；開關自動同步依交易者、日期、開或關合成。
  */
 export function buildFeed(events: readonly FeedEvent[], ctx: FeedContext): FeedItem[] {
   const threshold = ctx.threshold ?? WHALE_THRESHOLD
@@ -137,6 +149,7 @@ export function buildFeed(events: readonly FeedEvent[], ctx: FeedContext): FeedI
 
   const items: FeedItem[] = []
   const groups = new Map<string, Extract<FeedEvent, { kind: 'follow' | 'unfollow' }>[]>()
+  const syncGroups = new Map<string, Extract<FeedEvent, { kind: 'resync' | 'autoSync' }>[]>()
   const base = (e: FeedEvent, actor: string) => ({
     id: `${e.kind}:${e.txHash}:${e.logIndex}`,
     blockNumber: e.blockNumber,
@@ -200,6 +213,17 @@ export function buildFeed(events: readonly FeedEvent[], ctx: FeedContext): FeedI
         // 一律列出：退役是平台把跟單費的一部分拿去做的事，金額小也要看得到
         items.push({ ...base(e, ''), type: 'retirement', amount: e.amount, tonnes: e.tonnes })
         break
+      case 'resync': {
+        const key = `resync:${e.trader.toLowerCase()}:${e.toVersion}`
+        syncGroups.set(key, [...(syncGroups.get(key) ?? []), e])
+        break
+      }
+      case 'autoSync': {
+        if (!e.trader) break
+        const key = `autoSync:${e.trader.toLowerCase()}:${utcDay(e.timestamp)}:${e.enabled ? 'on' : 'off'}`
+        syncGroups.set(key, [...(syncGroups.get(key) ?? []), e])
+        break
+      }
       default:
         break
     }
@@ -214,6 +238,16 @@ export function buildFeed(events: readonly FeedEvent[], ctx: FeedContext): FeedI
       items.push({ ...common, type: 'follow', day, count: group.length, totalMargin })
     } else {
       items.push({ ...common, type: 'unfollow', day, count: group.length })
+    }
+  }
+
+  for (const [key, group] of syncGroups) {
+    const last = [...group].sort(newestFirst)[0]
+    const common = { ...base(last, last.trader), id: key }
+    if (last.kind === 'resync') {
+      items.push({ ...common, type: 'resync', toVersion: last.toVersion, count: group.length })
+    } else {
+      items.push({ ...common, type: 'autoSync', day: utcDay(last.timestamp), enabled: last.enabled, count: group.length })
     }
   }
 

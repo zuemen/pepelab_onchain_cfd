@@ -19,12 +19,31 @@ export function dotenvLoadOptions(path: string) {
   return { path, quiet: true, override: false, debug: false, fast: false, encoding: "utf8" } as const;
 }
 
+/**
+ * `AGENT_SKIP_DOTENV=1`（或 `true`）：完全不讀 .env。
+ *
+ * 給「宣稱不讀任何 .env」的本機腳本用（scripts/demo-autosync.sh、agent/copy-sync/anvil-e2e.sh）：
+ * 開發者的 agent/.env 可能有正式的 COPY_SYNC_NOTIFY_WEBHOOK 或 COPY_SYNC_KEYSTORE，不關掉的話，
+ * Anvil 的測試事件會被 POST 到正式 webhook，腳本自己設的測試金鑰也會和 .env 的 keystore 衝突。
+ * 只能由呼叫端的環境設定——寫在 .env 裡沒有意義（讀到它時已經在讀 .env 了），所以不從 .env 取。
+ */
+export function dotenvSkipped(env: NodeJS.ProcessEnv = process.env): boolean {
+  const v = env.AGENT_SKIP_DOTENV?.trim().toLowerCase();
+  return v === "1" || v === "true";
+}
+
+/** 載入指定的 .env 檔；`AGENT_SKIP_DOTENV` 開著時什麼都不做。 */
+export function loadEnvFile(path: string): void {
+  if (dotenvSkipped()) return;
+  config(dotenvLoadOptions(path));
+}
+
 /** 統一從 agent/.env 載入環境變數（不論從哪個 workspace 啟動）。 */
 export function loadEnv(): void {
   // 此檔在 agent/shared/src/env.ts → 往上三層到 agent/
   const here = dirname(fileURLToPath(import.meta.url));
   const agentRoot = resolve(here, "../../");
-  config(dotenvLoadOptions(resolve(agentRoot, ".env")));
+  loadEnvFile(resolve(agentRoot, ".env"));
 }
 
 /** 取得 PAY_TO：env 優先，否則回退到 addresses 的 FeeRouter（依專案決策）。 */

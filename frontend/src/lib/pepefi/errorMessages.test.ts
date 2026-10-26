@@ -120,3 +120,32 @@ describe('RWA／休市閘門的 revert data（公開節點只回 data、沒有�
     expect(prettyError(closed)).toContain('休市')
   })
 })
+
+describe('CopyTracker 自動同步（ADR-024）的 revert', () => {
+  it('每一種同步會被擋的原因各有可行動的說法', () => {
+    expect(prettyError(revertLike('AlreadySynced'))).toContain('最新版')
+    expect(prettyError(revertLike('InsufficientSyncGas'))).toContain('油箱')
+    expect(prettyError(revertLike('SyncCooldown'))).toContain('冷卻')
+    expect(prettyError(revertLike('AutoSyncDisabled'))).toContain('只有本人')
+    expect(prettyError(revertLike('InvalidSyncConfig'))).toContain('1–5×')
+    expect(prettyError(revertLike('PositionStillOpen'))).toContain('維持原狀')
+    expect(prettyError(revertLike('StrategyVersionMismatch'))).toContain('新版')
+  })
+
+  it('只剩訊息字串時，關鍵字掃描不會先撞上較早的 Insufficient* 規則', () => {
+    const e = { message: 'execution reverted: InsufficientSyncGas(400000000000000, 0)' }
+    expect(prettyError(e)).toContain('油箱')
+  })
+
+  it('跟單附帶的 ETH 不夠付開倉執行費：講執行費，不叫使用者「存入油箱」', () => {
+    const named = prettyError(revertLike('InsufficientExecutionFee'))
+    expect(named).toContain('執行費')
+    expect(named).not.toContain('油箱')
+    const e = { message: 'execution reverted: InsufficientExecutionFee(300000000000000, 100000000000000)' }
+    expect(prettyError(e)).toBe(named)
+  })
+
+  it('油箱提領到無效的收款地址', () => {
+    expect(prettyError(revertLike('InvalidRecipient'))).toContain('收款地址')
+  })
+})

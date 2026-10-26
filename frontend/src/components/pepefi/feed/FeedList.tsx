@@ -81,6 +81,12 @@ export function describeFeedItem(item: FeedItem, today: string): string {
         // 退役金額常常不到 1 美元，取到分，不用會四捨五入成 $0 的 fCompact
         amount: `$${fUsd(Number(item.amount) / 1e18)}`,
       });
+    case 'resync':
+      return interpolate(S.resync, { count: item.count, version: item.toVersion + 1 });
+    case 'autoSync': {
+      const when = item.day === today ? S.today : interpolate(S.onDay, { day: item.day });
+      return interpolate(item.enabled ? S.autoSyncOn : S.autoSyncOff, { count: item.count, when });
+    }
     default:
       return '';
   }
@@ -95,6 +101,8 @@ const TONE: Record<FeedType, 'default' | 'primary' | 'success' | 'warning' | 'er
   unfollow: 'warning',
   slash: 'error',
   retirement: 'success',
+  resync: 'info',
+  autoSync: 'default',
 };
 
 const short = (address: string) => `${address.slice(0, 6)}…${address.slice(-4)}`;

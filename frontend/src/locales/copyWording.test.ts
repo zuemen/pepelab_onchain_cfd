@@ -63,8 +63,8 @@ const ALLOWED: ReadonlyArray<{ key: string; why: string }> = [
   { key: 'custody.expert.facts.copy', why: 'custodyContent 在旗標關閉時不取這一句（custody.test.ts 釘住）' },
   { key: 'custody.expert.differenceHeading', why: '同上：旗標關閉時整段「和 eToro 的差別」不顯示' },
   { key: 'custody.expert.difference.snapshot', why: '同上' },
+  { key: 'custody.expert.difference.autoSync', why: '同上（ADR-024 自動同步那一句）' },
   { key: 'custody.expert.difference.stopLoss', why: '同上' },
-  { key: 'custody.expert.difference.reason', why: '同上' },
   { key: 'portfolio.quickAction.copyTrader', why: '旗標關閉時改用 quickAction.marketplace' },
   { key: 'portfolio.page.emptyDescription', why: '旗標關閉時改用 emptyDescriptionNoCopy' },
   { key: 'portfolio.page.openCount', why: 'Expert 表頭；旗標關閉時改用 openCountNoCopy' },
@@ -81,7 +81,7 @@ const ALLOWED: ReadonlyArray<{ key: string; why: string }> = [
   { key: 'portfolio.page.copyPerformance', why: '跟單績效圖：旗標關閉時不顯示' },
   { key: 'portfolio.page.unfollow', why: '跟單部位卡的取消按鈕（既有跟單要能取消）' },
   { key: 'portfolio.page.unfollowedOk', why: '取消跟單成功的提示' },
-  { key: 'portfolio.page.copyOutdatedHint', why: '「策略已更新」標示：PortfolioPage 的 outdated 受跟單旗標控制，旗標關閉時不渲染' },
+  { key: 'portfolio.page.copyOutdatedHint', why: '「策略已更新」標示：合約不支援自動同步時，PortfolioPage 的 outdated 受跟單旗標控制，旗標關閉時不渲染（支援時改用不含跟單用語的 portfolio.autoSync.outdatedHint）' },
   { key: 'portfolio.page.copyRefreshStep', why: '同上（「更新到最新版」完成後的提示）' },
   { key: 'portfolio.page.stopLossHint', why: '跟單部位卡的停損提醒說明：跟 unfollow 一樣，既有跟單要能設提醒並取消' },
   { key: 'portfolio.close.copyManaged', why: '只在該列屬於 active 跟單紀錄時出現' },
@@ -109,6 +109,9 @@ const ALLOWED: ReadonlyArray<{ key: string; why: string }> = [
   { key: 'feed.sentence.unfollow', why: '同上' },
   { key: 'feed.sentence.unfollowOn', why: '同上' },
   { key: 'feed.item.copy', why: '動態上的跟單鈕只在跟單旗標開啟時渲染（FeedList 的 canCopy）' },
+  { key: 'feed.sentence.resync', why: '自動同步（ADR-024）的動態類型在 COPY_FEED_TYPES 裡，旗標關閉時 FeedPage／TraderFeedSection 不列' },
+  { key: 'feed.sentence.autoSyncOn', why: '同上' },
+  { key: 'feed.sentence.autoSyncOff', why: '同上' },
 
   // ── 非使用者畫面 ──
   { key: 'admin.treasury.claim.note', why: '管理員頁（營運方自己看，描述實際的費用分潤模型）' },

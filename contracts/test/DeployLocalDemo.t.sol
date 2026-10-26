@@ -179,6 +179,69 @@ contract DeployLocalDemoTest is Test {
         assertGe(CarbonRetirement(d.carbonRetirement).availableTonnes(), 100_000e18);
     }
 
+    // ── ADR-024：自動同步跟單在本機展示環境（碳評等槓桿上限＋RWA KYC） ─────────
+
+    /// sBTC 是高碳（最多 1 倍）：策略配 2 倍時跟單自動夾成 1 倍，不再整筆 revert。
+    /// 交易者改版加入需要 KYC 的 sAAPL：未 KYC 的跟隨者同步整筆 revert、部位維持舊版；
+    /// 審核通過後同一個第三方再按一次就同步成功，小費從跟隨者的油箱付。
+    function test_copyAutoSync_clampsHighCarbonLeverageAndWaitsForKyc() public {
+        CopyTracker ct = CopyTracker(payable(d.copyTracker));
+        address keeper = makeAddr("keeper");
+        vm.startPrank(deployer);
+        MockUSDC(d.usdc).mint(alice, 1_000e18);
+        MockUSDC(d.usdc).mint(follower, 5_000e18);
+        vm.stopPrank();
+        vm.startPrank(alice);
+        MockUSDC(d.usdc).approve(d.traderStake, 1_000e18);
+        TraderStake(d.traderStake).stake(1_000e18);
+        StrategyRegistry(d.strategyRegistry).registerTrader("Alice");
+        StrategyRegistry.Allocation[] memory v0 = new StrategyRegistry.Allocation[](3);
+        v0[0] = StrategyRegistry.Allocation(_id("sBTC"), 4_000, true, 2);
+        v0[1] = StrategyRegistry.Allocation(_id("sETH"), 3_000, true, 2);
+        v0[2] = StrategyRegistry.Allocation(_id("sGOLD"), 3_000, true, 1);
+        StrategyRegistry(d.strategyRegistry).publishStrategy(v0);
+        vm.stopPrank();
+
+        vm.deal(follower, 1 ether);
+        uint256 fee = _exchange().executionFee();
+        vm.startPrank(follower);
+        MockUSDC(d.usdc).approve(d.copyTracker, 5_000e18);
+        ct.followTraderAtVersionWithAutoSync{value: fee * 3 + 0.05 ether}(alice, 5_000e18, 0, 5, 1 hours, 0.0001 ether, fee);
+        vm.stopPrank();
+        uint256[] memory ids = ct.getCopyRecords(follower)[0].positionIds;
+        assertEq(_exchange().getPosition(ids[0]).leverage, 1, "sBTC clamped to its carbon-tier ceiling");
+        assertEq(_exchange().getPosition(ids[1]).leverage, 2);
+
+        StrategyRegistry.Allocation[] memory v1 = new StrategyRegistry.Allocation[](3);
+        v1[0] = StrategyRegistry.Allocation(_id("sETH"), 4_000, true, 2);
+        v1[1] = StrategyRegistry.Allocation(_id("sAAPL"), 3_000, true, 1);
+        v1[2] = StrategyRegistry.Allocation(_id("sGOLD"), 3_000, false, 1);
+        vm.prank(alice);
+        StrategyRegistry(d.strategyRegistry).publishStrategy(v1);
+
+        // 第三方同步要等跟隨者設定的冷卻（合約下限 MIN_SYNC_INTERVAL = 1 小時）
+        vm.prank(keeper);
+        vm.expectRevert(abi.encodeWithSelector(CopyTracker.SyncCooldown.selector, ct.syncReadyAt(follower, 0)));
+        ct.resyncFor(follower, 0);
+        vm.warp(ct.syncReadyAt(follower, 0));
+
+        vm.prank(keeper);
+        vm.expectRevert(abi.encodeWithSelector(PerpetualExchange.NotKycVerified.selector, follower));
+        ct.resyncFor(follower, 0);
+        assertEq(ct.getCopyRecords(follower)[0].versionId, 0);
+        assertTrue(_exchange().getPosition(ids[0]).isOpen);
+
+        address[] memory list = new address[](1);
+        list[0] = follower;
+        vm.prank(deployer);
+        KYCRegistry(d.kyc).batchVerify(list);
+        vm.prank(keeper);
+        ct.resyncFor(follower, 0);
+        assertEq(ct.getCopyRecords(follower)[0].versionId, 1);
+        assertEq(keeper.balance, 0.0001 ether);
+        assertEq(ct.syncGasBalance(follower), 0.05 ether - fee * 3 - 0.0001 ether);
+    }
+
     function test_refusesToRunOffTheLocalChain() public {
         vm.chainId(84532);
         DeployLocalDemo other = new DeployLocalDemo();

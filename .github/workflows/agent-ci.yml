@@ -12,17 +12,29 @@ on:
   # frontend/src/contracts/** 也要觸發：signal-api 的 Vercel bundle 內聯了
   # addresses.ts / agentAuth.ts（esbuild metafile），agent 測試也讀那裡的 ABI JSON。
   # 只改前端合約檔卻不跑這支，bundle:check 就永遠看不到那次漂移。
+  # frontend/src/lib/pepefi/chainLogs.ts：copy-sync 的分段 getLogs（logs.ts）直接 import 它的
+  # CHUNK_SIZE／chunkRanges／isRangeLimitError；只改它的 PR 也要跑 typecheck 與 test:copy-sync。
+  # contracts/src 的三支：copy-sync 的 abi.test.ts 直接解析這三份原始碼核對 src/abi.ts；只改合約、
+  # 沒有跟著改執行者 ABI 的 PR 也要在這裡變紅。
   push:
     branches: [master]
     paths:
       - 'agent/**'
       - 'frontend/src/contracts/**'
+      - 'frontend/src/lib/pepefi/chainLogs.ts'
+      - 'contracts/src/CopyTracker.sol'
+      - 'contracts/src/StrategyRegistry.sol'
+      - 'contracts/src/PerpetualExchange.sol'
       - 'frontend/tsconfig.json'
       - '.github/workflows/agent-ci.yml'
   pull_request:
     paths:
       - 'agent/**'
       - 'frontend/src/contracts/**'
+      - 'frontend/src/lib/pepefi/chainLogs.ts'
+      - 'contracts/src/CopyTracker.sol'
+      - 'contracts/src/StrategyRegistry.sol'
+      - 'contracts/src/PerpetualExchange.sol'
       - 'frontend/tsconfig.json'
       - '.github/workflows/agent-ci.yml'
   workflow_dispatch:

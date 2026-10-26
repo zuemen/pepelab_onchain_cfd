@@ -1,0 +1,7 @@
+{
+  // 跟單自動同步執行者（ADR-024）。比照 heroes/：獨立一份，不放進 agent/tsconfig.json
+  // （那份是 signal-api Vercel bundle 指紋的來源之一，改它就要重打 bundle）。
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": { "types": ["node"] },
+  "include": ["./**/*.ts"]
+}
