@@ -8,7 +8,7 @@
    "name": "Base Sepolia",
    "role": "正式測試網（交易、agent session、x402 都在這條鏈）",
    "rpc": "https://sepolia.base.org",
-   "block": 50361533,
+   "block": 50398268,
    "components": [
     {
      "id": "PerpetualExchange",
@@ -326,11 +326,11 @@
      "addresses": [
       {
        "key": "CopyTracker",
-       "address": "0x15A9Cbf803a3EEee2794B74Ad78252d27Ccd347C"
+       "address": "0x31297044a7b3A0F57e7CDa7fE619E996da1c64A9"
       }
      ],
-     "status": "behind",
-     "detail": "與原始碼現行版不一致：長度不同（鏈上 9764 B，原始碼 20026 B）",
+     "status": "equal",
+     "detail": "完全一致",
      "leaked": [],
      "reads": [
       {
@@ -346,7 +346,7 @@
       "evidence": [],
       "note": null
      },
-     "matched": null
+     "matched": "CopyTracker.sol:CopyTracker"
     },
     {
      "id": "StrategyRegistry",
@@ -864,11 +864,11 @@
      "addresses": [
       {
        "key": "PepeAMM",
-       "address": "0x93be44a81a2796d378f65ebcc8d5f8b40166ad63"
+       "address": "0xb40603df54d0af75f1915106F352672372570d97"
       }
      ],
-     "status": "behind",
-     "detail": "與原始碼現行版不一致：長度不同（鏈上 3320 B，原始碼 4994 B）",
+     "status": "equal",
+     "detail": "完全一致",
      "leaked": [],
      "reads": [
       {
@@ -884,7 +884,7 @@
       "evidence": [],
       "note": null
      },
-     "matched": null
+     "matched": "PepeAMM.sol:PepeAMM"
     },
     {
      "id": "PepeIncentives",
@@ -898,11 +898,11 @@
      "addresses": [
       {
        "key": "PepeIncentives",
-       "address": "0xc257Dd9b9eb392893a89d307664713E8660672F0"
+       "address": "0x588dda0b1f5c46242fbbb694771dfc30179e21c3"
       }
      ],
      "status": "equal",
-     "detail": "程式碼一致；只有 CBOR metadata（原始碼文字雜湊）不同",
+     "detail": "完全一致",
      "leaked": [],
      "reads": [
       {
@@ -1260,7 +1260,7 @@
    "name": "Sepolia",
    "role": "legacy 展示鏈（不是產品路徑；合約未做金鑰輪替）",
    "rpc": "https://ethereum-sepolia-rpc.publicnode.com",
-   "block": 11996034,
+   "block": 11996639,
    "components": [
     {
      "id": "PerpetualExchange",
@@ -2302,7 +2302,7 @@
     "commit": "622eb3b",
     "date": "2026-10-26"
    },
-   "sourceDigest": "d01b0ed40f892b7b",
+   "sourceDigest": "c7ac994bc9b607c1",
    "deployed": "未部署（ops/monitoring/README.md；2026-10-01 只做過唯讀試跑）",
    "acceptance": {
     "status": "未驗收",

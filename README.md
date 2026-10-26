@@ -59,7 +59,7 @@
 | CarbonRetirement | `0x93B72Dd20913107aC9eEe4e9420D9C8aB802Fd28` | #344 cutover 新增：買入並銷毀**模擬碳權**（§3.3） |
 | FeeRouter（x402，Circle USDC） | `0x780E18146Bc77E50c3e5EcaED913FC31F62c0f6A` | 分配 x402 收入的 70/20/10（trader／平台／保險金庫）。2026-10-10 重新部署（[`docs/CUTOVER_LOG_2026-10-10.md`](docs/CUTOVER_LOG_2026-10-10.md)），取代 treasury 為外洩地址的舊 router `0x29e5…B57d` |
 | StrategyRegistry | `0xe8d807C3BaFB4D3AeCbA094322eE8dD7Ca16C20c` | |
-| CopyTracker | `0x15A9Cbf803a3EEee2794B74Ad78252d27Ccd347C` | 快照版。平台站預設開啟跟單（ADR-023）；自動同步版（ADR-024）尚未部署，見 [`docs/OWNER_ACTIONS.md`](docs/OWNER_ACTIONS.md) 第 8 步 |
+| CopyTracker | `0x31297044a7b3A0F57e7CDa7fE619E996da1c64A9` | 自動同步版（ADR-024），2026-10-26 部署並改接（[`docs/CUTOVER_LOG_2026-10-26.md`](docs/CUTOVER_LOG_2026-10-26.md)）；快照版 `0x15A9…347C` 上的跟單照算進跟隨人數 |
 | TraderStake | `0x01aEB530bcFc69f036309ffe55acc7eA6C5a28Fe` | |
 | KYCRegistry | `0x5D95fD9e7a5f80E5369e24783F1f98E0f952360d` | 只擋標記為 RWA 的資產 |
 | MockUSDC（保證金，測試幣） | `0x69fd695Bc7C3aFdb35ABA35cD6890C506400b035` | 已部署的是舊版，`mint` 無限制（任何人可鑄）；原始碼已限制為 owner／swapRouter，需重新部署才生效。僅限測試網 |
@@ -167,8 +167,8 @@ PR #191、#198 合併時只改了原始碼。2026-10-20 的 #344 cutover（`Rede
 - **私鑰**：跟隨者的私鑰永遠不離開自己的錢包；執行者 `agent/copy-sync` 用一把只放少量 gas 的獨立熱錢包，
   外洩的最壞情況只是有人觸發合約本來就允許的同步。
 
-Base Sepolia 現行的 CopyTracker 是快照版：要由擁有者部署新 tracker 並改接 exchange、TraderStake、FeeRouter
-（[`docs/OWNER_ACTIONS.md`](docs/OWNER_ACTIONS.md) 第 8 步），之前只能在本機鏈展示（[`docs/DEMO_SCRIPT.md`](docs/DEMO_SCRIPT.md)）。
+Base Sepolia 上的 CopyTracker 自 2026-10-26 起是自動同步版（[`docs/CUTOVER_LOG_2026-10-26.md`](docs/CUTOVER_LOG_2026-10-26.md)），
+public 執行者由 GitHub Actions `copy-sync-executor.yml` 排程執行（即時性見 KNOWN_LIMITATIONS #40）。
 `scripts/demo-autosync.sh` 一條指令在本機 Anvil 上用真的合約與真的執行者跑完整個流程並逐步斷言
 （跟單＋開啟自動同步 → 交易者發新版 → public 執行者同步、拿小費 → 陌生人重放被擋 → RWA 未 KYC 整筆擋下、KYC 後同步成功 →
 指定自己的 agent 為唯一執行者、public 執行者與陌生人被擋、agent 同步成功 → 關閉後 agent 只通知新版 → 提領油箱）。

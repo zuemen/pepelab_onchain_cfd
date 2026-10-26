@@ -65,7 +65,7 @@ was not, the reason is given rather than glossed over.
 | 41 | 交易者決定版本與發布時機：可在同一區塊搶先發版，也可以每個冷卻期改版一次，讓跟隨者反覆付交易費、在價格來回中反覆實現績效費 | **By design, bounded in frequency only**（2026-10-26）— 冷卻由合約強制且不得低於 1 小時（同一區塊反覆發版＋自己同步只成功一次），但不限制每一輪的金額；績效費沒有高水位線（交易所端，未改）；虧損跨版本累計計分 |
 | 42 | 同步是「全平再開」，不是差額調倉：只改一個權重，所有腿也都一出一進 | **Accepted**（2026-10-26）— 每輪約付 2 ×（份額 × 槓桿 × 費率）的交易費，獲利腿的績效費每次都實現；冷卻限制頻率 |
 | 43 | `followersByTrader` 會重複記錄同一位跟隨者，`getFollowerCount` 因此偏高 | **Open**（既有問題，2026-10-26 記錄）— 執行者 agent 去重；合約未改 |
-| 44 | 自動同步版 CopyTracker 尚未部署；舊 tracker 的跟單不能遷移，`PepeIncentives` 綁著舊 tracker | **Open**（2026-10-26）— 擁有者執行 OWNER_ACTIONS 第 8 步之前公開站沒有此功能 |
+| 44 | 自動同步版 CopyTracker 尚未部署；舊 tracker 的跟單不能遷移，`PepeIncentives` 綁著舊 tracker | **Fixed**（2026-10-26，CUTOVER_LOG_2026-10-26）— 已部署並改接；`PepeIncentives` 重新部署綁新 tracker（舊的已暫停）；舊 tracker 上的跟單照算進跟隨人數並分開標示。仍然存在：舊跟單不能遷移成自動同步、只能 `deactivateWithoutScoring` |
 | 45 | 交易者發布含極小權重（例如 1 bps）的版本，可以讓跟隨者的自動同步一直失敗、停在舊版 | **Open**（2026-10-26）— 資金沒有風險：那條腿低於交易所最小保證金，整筆 revert `MarginTooLow`；`pendingSync` 回報不可同步、執行者分類為容量問題；跟隨者可隨時取消跟單 |
 
 ---
@@ -1629,10 +1629,12 @@ personal 模式的執行者在交易者發布新版時會通知本人（`new-ver
 - 交易所的 `positionAgent` 綁定開倉的那顆 tracker，新 tracker 平不掉舊 tracker 開的腿：舊跟單不能轉成自動同步。
   換 tracker 之後舊 tracker 失去授權，舊跟單的取消會 revert `PositionStillOpen`，出路是 `deactivateWithoutScoring` 後在交易所自行平倉。
 - `PepeIncentives.copyTracker` 是 immutable：換 tracker 之後，新跟單的「跟單獎勵」（`claimCopyReward`）讀的是舊 tracker，
-  會 revert `NotFollowing`，直到 PepeIncentives 重新部署。
-- 畫面上的跟隨人數與跟單事件只讀 `addresses.ts` 的那一顆 tracker（排行榜、交易者頁、動態牆、歷史頁）：換 tracker 之後，
-  舊 tracker 上的跟單（2026-10-26 讀回：24 位回放交易者合計 79 筆紀錄）不會再算進去，跟隨人數會歸零，直到在新 tracker 上
-  重新回放或有新的跟單（[`OWNER_ACTIONS.md`](OWNER_ACTIONS.md) 第 8 步第 1 項）。
+  會 revert `NotFollowing`，直到 PepeIncentives 重新部署。**2026-10-26 已重新部署**（綁新 tracker，CUTOVER_LOG_2026-10-26）。
+  舊實例已 `pause()`、PEPE 已收回；新實例從空狀態開始，所以已在舊實例領過交易挖礦、等級或 ESG 持有獎勵的部位，在新實例上
+  還能再領一次（測試網，接受）。
+- 跟隨人數：排行榜與交易者頁把舊 tracker 上還在跟的人也算進去，並分開標示「含舊版 N」（`legacyCopyTrackers.ts`）。
+  動態牆、歷史頁、投資組合與跟單提醒只讀現行 tracker：舊跟單不會出現在投資組合的跟單列表，也不能從 UI 取消
+  （部位仍在「部位」頁籤平得掉；紀錄用 `deactivateWithoutScoring` 收尾）。
 
 ## 45. 極小權重讓同步卡住
 
