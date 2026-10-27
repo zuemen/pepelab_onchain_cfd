@@ -8,7 +8,7 @@ import { CARBON_RETIREMENT_ABI } from 'src/contracts/carbonRetirement'
 import { buildFeed, isFeedIncomplete, type FeedEvent, type FeedItem, type FeedLeg } from 'src/lib/pepefi/feed'
 import { mapLimit, withRetry, RPC_CONCURRENCY } from 'src/lib/pepefi/rpcBatch'
 import { isWhaleTrade, WHALE_THRESHOLD } from 'src/lib/pepefi/whale'
-import { UI_RETRIES, avgBlockTime, scanFromBlock, getLogsChunked, isChunkScanAborted } from 'src/lib/pepefi/chainLogs'
+import { UI_RETRIES, UI_SCAN_CONCURRENCY, avgBlockTime, scanFromBlock, getLogsChunked, isChunkScanAborted } from 'src/lib/pepefi/chainLogs'
 
 import { useCarbonRouting } from './useCarbonRouting'
 import { useExchangeActivity } from './useExchangeActivity'
@@ -129,7 +129,7 @@ export function useChainFeed(
         block.number,
         undefined,
         () => { failed += 1 },
-        { retries: UI_RETRIES, signal: ac.signal },
+        { retries: UI_RETRIES, concurrency: UI_SCAN_CONCURRENCY, signal: ac.signal },
       )
       if (isStale()) return
 

@@ -247,6 +247,15 @@ export type ChunkRunOptions = Pick<ChunkScanOptions, 'retries' | 'retryDelayMs' 
 /** UI 呼叫端統一的重試次數。 */
 export const UI_RETRIES = 2
 
+/**
+ * UI 掃 24 小時事件時同時在飛的段數。預設 concurrency 1 是序列：sepolia.base.org 一段約 0.5 秒往返、
+ * 24 小時 217 段，一個掃描就要約兩分鐘；動態牆同時跑兩個這樣的掃描（社群事件、交易所活動），
+ * 2026-10-27 在正式站實測要約 70 秒才出現第一則。併發 3 是 MAX_CHUNKS 註解裡實測過的值
+ * （約 41 秒、218 次請求全部 HTTP 200），與排行榜、KYC 佇列用的併發度相同；兩個掃描同時跑
+ * 約每秒 12 筆，仍在節點每秒 20 筆的讀取額度內。429 照常由 retries 退避處理。
+ */
+export const UI_SCAN_CONCURRENCY = 3
+
 export interface ChunkScanResult<T> {
   logs: T[]
   /** 重試後仍失敗的段數。> 0 代表結果不完整，UI 必須顯示「讀取失敗」而非「沒有資料」。 */
