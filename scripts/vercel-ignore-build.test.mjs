@@ -76,6 +76,15 @@ test("沒有基準、基準不存在、沒指定路徑 → 一律建置", () => 
   assert.equal(run(cwd, { VERCEL_GIT_PREVIOUS_SHA: "HEAD" }), 1);
 });
 
+test("同一個 commit 重新部署（手動 Redeploy，例如改了環境變數）→ 建置", () => {
+  const r = repo();
+  r.commit("agent/x.ts", "1");
+  const deployed = r.commit("frontend/a.ts", "1");
+  assert.equal(run(join(r.dir, "frontend"), { VERCEL_GIT_PREVIOUS_SHA: deployed }, "."), 1);
+  // 短 SHA 也認得
+  assert.equal(run(join(r.dir, "frontend"), { VERCEL_GIT_PREVIOUS_SHA: deployed.slice(0, 7) }, "."), 1);
+});
+
 test("dependabot 分支 → 跳過 preview", () => {
   const r = repo();
   const base = r.commit("frontend/a.ts", "1");
@@ -91,6 +100,8 @@ test("兩個 vercel.json 都掛上 ignoreCommand", async () => {
   for (const p of ["frontend/vercel.json", "agent/signal-api/vercel.json"]) {
     const cmd = JSON.parse(readFileSync(p, "utf8")).ignoreCommand ?? "";
     assert.match(cmd, /scripts\/vercel-ignore-build\.sh \./, p);
+    // 比對路徑也要包含腳本本身：判斷邏輯改了，用它的專案要重建
+    assert.match(cmd, /\.sh \..* \.\.\/(\.\.\/)?scripts\/vercel-ignore-build\.sh$/, p);
   }
 });
 

@@ -1,5 +1,5 @@
 {
-  "ignoreCommand": "bash ../../scripts/vercel-ignore-build.sh . ../package.json ../package-lock.json",
+  "ignoreCommand": "bash ../../scripts/vercel-ignore-build.sh . ../package.json ../package-lock.json ../../scripts/vercel-ignore-build.sh",
   "git": { "deploymentEnabled": { "**": false, "master": true, "preview/**": true } },
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": null,

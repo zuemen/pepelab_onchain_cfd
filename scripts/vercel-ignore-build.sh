@@ -16,8 +16,9 @@
 # 任何不確定（沒有基準 SHA、shallow clone 裡找不到它、git 出錯）一律照常建置。
 #
 # 用法（在 vercel.json 的 ignoreCommand，工作目錄是專案的 Root Directory）：
-#   bash ../scripts/vercel-ignore-build.sh .                 # frontend
-#   bash ../../scripts/vercel-ignore-build.sh . ../package.json ../package-lock.json   # agent/signal-api
+#   bash ../scripts/vercel-ignore-build.sh . ../scripts/vercel-ignore-build.sh          # frontend
+#   bash ../../scripts/vercel-ignore-build.sh . ../package.json ../package-lock.json ../../scripts/vercel-ignore-build.sh   # agent/signal-api
+# 比對路徑包含這支腳本本身：判斷邏輯改了，用它的專案都要重建一次。
 set -u
 
 ref="${VERCEL_GIT_COMMIT_REF:-}"
@@ -49,6 +50,13 @@ if ! git cat-file -e "${prev}^{commit}" 2>/dev/null; then
     echo "build: clone 裡找不到上一次部署的 commit ${prev}"
     exit 1
   fi
+fi
+
+# 基準就是 HEAD：同一個 commit 再部署一次，只會是有人在 Vercel 按了 Redeploy（多半是剛改了
+# 環境變數）。比對 diff 一定是空的，跳過會讓新的環境變數永遠讀不進去（2026-10-27 實際發生）。
+if [ "$(git rev-parse "${prev}^{commit}" 2>/dev/null)" = "$(git rev-parse HEAD 2>/dev/null)" ]; then
+  echo "build: 重新部署同一個 commit ${prev:0:7}（手動 Redeploy）"
+  exit 1
 fi
 
 git diff --quiet "$prev" HEAD -- "$@"
