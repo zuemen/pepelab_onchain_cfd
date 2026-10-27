@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 
-import { netWorthOf, spotValueOf, type NetWorthParts, isPortfolioProvablyEmpty, type PortfolioEmptinessCheck } from './portfolio'
+import { liquidOf, netWorthOf, spotValueOf, type NetWorthParts, isPortfolioProvablyEmpty, type PortfolioEmptinessCheck } from './portfolio'
 
 /** 把人看得懂的美金金額變成 18-dec。 */
 const usd = (n: number): bigint => BigInt(Math.round(n * 1e6)) * 10n ** 12n
@@ -172,5 +172,16 @@ describe('isPortfolioProvablyEmpty', () => {
       walletCash:       null, // 錢包餘額還沒讀到 —— 不是真的 0
     })
     expect(isPortfolioProvablyEmpty(afterCaughtError)).toBe(false)
+  })
+})
+
+describe('liquidOf', () => {
+  it('只算錢包與可用保證金——鎖住的保證金、質押、金庫、代幣化資產都不算', () => {
+    expect(liquidOf(parts({ spotHoldings: usd(900) }))).toBe(usd(1_500))
+  })
+
+  it('任一項讀不到就是 null，不把讀取失敗當 0', () => {
+    expect(liquidOf(parts({ walletCash: null }))).toBeNull()
+    expect(liquidOf(parts({ freeMargin: null }))).toBeNull()
   })
 })

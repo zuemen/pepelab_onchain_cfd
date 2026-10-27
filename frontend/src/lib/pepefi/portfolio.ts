@@ -98,6 +98,19 @@ export function netWorthOf(parts: NetWorthParts): NetWorth {
   return { total, incomplete: missing.length > 0, missing }
 }
 
+/**
+ * 不必平倉、解除質押或贖回就能動用的錢：錢包 USDC ＋ 可用保證金。
+ *
+ * 淨值把流動性、風險完全不同的東西用同一把尺加起來——鎖在部位裡的保證金要
+ * 平倉、質押要等冷卻期且可能被罰沒、LP 金庫會因穿倉補貼縮水、代幣化資產照
+ * 預言機價計、贖回還要看資產金庫有沒有準備。只秀總額會讓人以為整筆隨時拿得
+ * 出來，這個數字把「現在就能動的」分開講。任一項讀不到就是 null，不猜。
+ */
+export function liquidOf(parts: Pick<NetWorthParts, 'walletCash' | 'freeMargin'>): bigint | null {
+  if (parts.walletCash === null || parts.freeMargin === null) return null
+  return parts.walletCash + parts.freeMargin
+}
+
 // 「投資組合是空的」判斷曾經把「沒讀到」跟「讀到、是 0」混為一談——
 // null（未讀）被 `?? 0n` 攤平成 0，於是一個有錢但剛好某項還沒讀完的使用者
 // 被判定成空,推去 /exchange。這個函式把六項讀取結果（含成功與否）攤在一起,

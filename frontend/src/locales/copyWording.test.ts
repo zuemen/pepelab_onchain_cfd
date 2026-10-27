@@ -70,6 +70,7 @@ const ALLOWED: ReadonlyArray<{ key: string; why: string }> = [
   { key: 'portfolio.quickAction.copyTrader', why: '旗標關閉時改用 quickAction.marketplace' },
   { key: 'portfolio.page.emptyDescription', why: '旗標關閉時改用 emptyDescriptionNoCopy' },
   { key: 'portfolio.page.openCount', why: 'Expert 表頭；旗標關閉時改用 openCountNoCopy' },
+  { key: 'portfolio.netWorth.risk.staked', why: '淨資產卡已質押欄的說明；旗標關閉時改用 risk.stakedNoCopy' },
   { key: 'vault.markup.howItWorksBody', why: '旗標關閉時改用 howItWorksBodyNoCopy' },
   { key: 'esg.retirement.fundingCopy', why: 'CarbonRetirementCard 只在跟單旗標開啟時顯示這一句（#333）' },
 
