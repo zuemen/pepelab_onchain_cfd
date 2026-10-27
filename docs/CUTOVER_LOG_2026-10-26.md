@@ -55,5 +55,59 @@
 
 ## 待辦
 
-- 公開站實際走一次：示範交易者發版 → 示範跟隨者跟單、開自動同步（冷卻 1 小時）→ 等 1 小時發新版 → 執行者同步 → 投資組合顯示已同步；領跟單獎勵；session 下單；x402 付費。結果補在下方。
+- ~~公開站實際走一次~~ → 2026-10-27 完成，見下一節。
 - keeper 改用 Cloudflare 觸發（OWNER_ACTIONS 第 2 步），需要 Cloudflare 帳號。
+
+## 公開站實測（2026-10-26～27）
+
+全部是 Base Sepolia 上的真實交易。示範錢包是另外新建的測試網錢包，不是平台角色。
+
+### 跟單與自動同步
+
+| # | 動作 | tx | 結果 |
+|---|---|---|---|
+| 1 | 示範交易者「AutoSync Demo」`0x1B3d…8EcB` 質押、註冊、發布 v1（ETH 40% 多 2×、BTC 30% 多、XAU 30% 多） | v1 `0x30baa20d4fa7033efaac0ee223768443426660d118001e2beb48d3dc77ea82cc` | — |
+| 2 | 跟隨者 1 `0x3Ea5…5fE4` 跟單 60 USDC，開啟自動同步（冷卻 3600 秒、槓桿上限 2×） | `0x33d9226867d7458eb9abd602b708dfe09b84880b35e2341129978fbbb9f525cc` | — |
+| 3 | 跟隨者 2 `0xA9f4…9CCf`：在**正式站網頁**（專家模式）跟單，同一筆交易開啟自動同步（冷卻 1 小時、槓桿上限 2×） | approve `0xb5f0b38c020599ef448aae332f6ea83e840955d58d5b387e73a863695fcf7e9a`、follow `0xb025439b7fa22a64725a1fdb0ba35bdd818bbaf413718e168a2e47e3f5cc774f` | 網頁顯示「已跟隨交易者並開啟自動同步」 |
+| 4 | 跟隨者 2 在 /rewards 領跟單獎勵 | `0x16b7fe1760d44163186a1d792fdd3b27d31f82cc67c371f05baa8105d7ef3cee` | 500 PEPE |
+| 5 | 交易者發布 v2（ETH 50% 多 5×、BTC 30% **空**、XAU 20% 多），10/27 04:12 UTC | `0xd9f6a0268f416cac97e7d4867d1dc5c9e2ae60d7f4b6a58b697a8086d4d20101` | — |
+| 6 | 手動觸發 `copy-sync-executor.yml`（run 40448475325，master） | `0x961eca40923f6500616ce769a763e27e851cf9c8beafc1caa15d3ec78ad34f88` | 見下方三點 |
+
+第 6 步的結果：
+- 跟隨者 1 由 v1 同步到 v2，3 條腿，重新部署保證金 58.84 USDC；執行者 gas 0.0000125 ETH。
+- `Resynced` 事件讀回：follower `0x3Ea5…`、trader `0x1B3d…`、版本 0 → 1、executor `0xB534…CcAA`。
+- 跟隨者 2 被擋下（剛跟單，冷卻到 05:07 UTC），這是合約規則的保護。
+
+投資組合的同步欄顯示「第 2 版（最新）・自動同步：開・已同步 1 次」。ETH 在 v2 是 5×，但跟隨者的槓桿上限是 2×，所以實際以 2× 開倉。
+
+### Session 與 agent（x402）
+
+- `/sessions` 建立 session #0（使用者 `0x48b0…FbA5`、agent `0x497E…64Da`；單筆 50、總額 100 USDC、槓桿 ≤ 3×、72 小時），交易 `0x7c5e4747…`，並核發授權 VC。
+- `examples/x402-autotrade.ts` 實跑：以 x402 付費取資料，再用 `openPositionForSession` 在限額內下單，交易 `0x26ae5861124e8b64e86c0afb2f782e407e4930fac36c5dd62c962ca031fa6882`（position 2635）。
+
+### x402 70/20/10 上鏈（10/27）
+
+1. 線上 signal-api（Vercel 專案 `agent`）原本沒有 `UPSTASH_REDIS_REST_URL/TOKEN`，付費回應是 `settlement disabled`，從來沒有排入佇列；`/oracle` 也缺 `ORACLE_BENEFICIARY_ADDRESS`。
+2. 擁有者補上三個變數。`ORACLE_BENEFICIARY_ADDRESS` 設為 keeper `0x540aECD37E7A7885824e7b7e996eBddfb842ef17`：價格是它推的，而且與 x402 FeeRouter 的 treasury、vault 都不重複。
+3. 補完變數按 Redeploy，部署被 Ignored Build Step 取消（同一個 commit，diff 為空）。#381 修好後，agent 隨合併 `b9ec364` 重新部署。
+4. 付費：`/signals` 0.01 USDC（`0x653ffc92…`）、`/oracle/sETH` 0.005 USDC（`0xe12a3857…`），兩筆回應都是 `settled:true`。
+5. 手動觸發 `x402-settlement-worker.yml`（run 40444477948），`settled=2`，其餘計數都是 0：
+   - `/signals` 那筆：`0x700677c35aa60f80073060cd73f19dec45a1477c1023ae8c7c9f93bd13daa1e2`
+   - `/oracle` 那筆：`0x4cd8054dacc4f12aa301ab13399cf464d242359aec4cec918ee07273e27c2e41`
+6. 鏈上讀回（USDC 6 位小數）：`traderEarnings(0x1B3d…)` 7000、`traderEarnings(keeper)` 3500、`platformEarnings` 3000、保險金庫 +1500。這正好是 0.01 與 0.005 的 70/20/10。`/revenue` 顯示 feeUsd 0.015。
+
+**平台與租戶現在共用同一個 Upstash（`pepelab-rwa-poc-kya`）**：Vercel Marketplace 的免費名額已經用完。
+
+- 為什麼可以共用：
+  - 租戶設了 `X402_SETTLEMENT_MODE=off`，線上 `GET /` 讀得到，所以租戶不會排入 `x402:settlement:*`；
+  - 平台只用 `x402:settlement:*`，與租戶的 `x402:kya:*`、`vc:status:*` 不重疊。
+- 共用前清掉了一筆租戶殘留：`x402:settlement:queue` 裡有一筆 10/9 驗收付款（`0xe2cd…f55a`，付給租戶的 payTo），是在租戶設 off 之前排入的。
+  - worker 不逐筆核對收款人，若不處理，會拿平台 PAY_TO 的錢去結算它。
+  - 已改名封存成 `rwa-poc:archived:x402:settlement:queue:20261009`（`RENAMENX`，可改回）。
+- GitHub repo secret `UPSTASH_REDIS_REST_URL/TOKEN` 已換成這個 DB（舊 DB 的佇列實測全 0）。
+- 日後租戶若要開分潤（拿掉 off），**必須先拆成兩個 DB**。
+- 待辦：可寫入的 token 在設定過程中曝光過，影片錄完後要重設 Upstash 憑證，並同步更新三處：agent 的 `UPSTASH_*`、GitHub secret、租戶專案的 `KV_*`。
+
+### 證明影片
+
+`PepeFi_自動同步_證明影片_20261027.mp4`（5:08）：動畫解說，加上正式站、真終端機（`gh run view --log`、`cast call`）與 Blockscout 的真實畫面。檔案放在專題資料夾，不進 repo。
