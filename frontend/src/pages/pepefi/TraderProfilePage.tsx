@@ -1,4 +1,5 @@
 import { MONO } from 'src/components/pepefi/brandKit'
+import { Contract } from 'ethers'
 import { useState, useEffect, useCallback } from 'react'
 import { useParams, Link as RouterLink } from 'react-router'
 import { useContracts } from 'src/hooks/useContracts'
@@ -25,7 +26,8 @@ import HeroRiskStats from 'src/components/pepefi/hero/HeroRiskStats'
 import HeroPerformance from 'src/components/pepefi/hero/HeroPerformance'
 import { fetchHeroDetail, type HeroDetail } from 'src/lib/pepefi/heroData'
 import { heroDisclosure } from 'src/lib/pepefi/heroDisclosure'
-import { followerReaderOf, readActiveFollowers } from 'src/lib/pepefi/activeFollowers'
+import { followerReaderOf, readFollowersAcross } from 'src/lib/pepefi/activeFollowers'
+import { legacyCopyTrackersFor, LEGACY_COPY_TRACKER_ABI } from 'src/contracts/legacyCopyTrackers'
 import { readMany, valueOr } from 'src/lib/pepefi/multicall'
 import { readStrategyVersions } from 'src/lib/pepefi/traderReads'
 import TxProof from 'src/components/pepefi/hero/TxProof'
@@ -99,6 +101,7 @@ function TraderProfileView() {
   const [name,          setName]          = useState('')
   const [registered,    setRegistered]    = useState(false)
   const [followers,     setFollowers]     = useState<bigint | null>(null)
+  const [legacyFollowers, setLegacyFollowers] = useState(0)
   const [followerList,  setFollowerList]  = useState<string[]>([])
   const [allocs,        setAllocs]        = useState<RawAlloc[]>([])
   const [hasStrategy,   setHasStrategy]   = useState(false)
@@ -144,7 +147,10 @@ function TraderProfileView() {
     const go = async () => {
       // 名稱、策略版數、質押、聲譽、資格、收益一批，跟隨者另一條（它自己也是幾批），兩條同時讀。
       // 每一批都併成 Multicall3（見 multicall.ts）。讀不到（或合約沒部署）的欄位維持空白，不是 0。
-      const [first, active] = await Promise.all([
+      // 換過 tracker 時，舊 tracker 上還在跟的人也算進去並分開標示（contracts/legacyCopyTrackers.ts）。
+      const legacyReaders = legacyCopyTrackersFor(chainId, String(contracts.copyTracker.target))
+        .map((address) => followerReaderOf(new Contract(address, LEGACY_COPY_TRACKER_ABI, contracts.copyTracker.runner), provider, chainId))
+      const [first, across] = await Promise.all([
         readMany(provider, chainId, [
           { contract: contracts.registry,    method: 'traders',          args: [traderAddr] },
           { contract: contracts.registry,    method: 'getStrategyCount', args: [traderAddr] },
@@ -155,7 +161,7 @@ function TraderProfileView() {
         ]),
         // 目前的跟隨者，不是 getFollowerCount 的「被跟單過幾次」（見 activeFollowers.ts）。
         // 清單只列還在跟的人、每人一次，前 10 位；讀不到時人數顯示「—」，不是 0。
-        readActiveFollowers([traderAddr], followerReaderOf(contracts.copyTracker, provider, chainId)),
+        readFollowersAcross([traderAddr], followerReaderOf(contracts.copyTracker, provider, chainId), legacyReaders),
       ])
       if (!alive()) return
       const [traderRaw, countRaw, stakeRaw, scoreRaw, eligibleRaw, earningsRaw] = first
@@ -164,9 +170,10 @@ function TraderProfileView() {
         setName(displayName)
         setRegistered(isRegistered)
       }
-      const mine = active.get(traderAddr.toLowerCase()) ?? null
-      setFollowers(mine === null ? null : BigInt(mine.length))
-      setFollowerList(mine?.slice(0, 10) ?? [])
+      const mine = across.get(traderAddr.toLowerCase()) ?? null
+      setFollowers(mine === null ? null : BigInt(mine.all.length))
+      setLegacyFollowers(mine?.legacyOnly ?? 0)
+      setFollowerList(mine?.all.slice(0, 10) ?? [])
       if (stakeRaw.status === 'ok') setStakeInfo(stakeRaw.value as StakeInfo)
       if (scoreRaw.status === 'ok') setRepScore(scoreRaw.value as bigint)
       if (eligibleRaw.status === 'ok') setEligible(eligibleRaw.value as boolean)
@@ -453,7 +460,7 @@ function TraderProfileView() {
             </Grid>
             {FEATURE_COPY_TRADING && (
             <Grid size={STAT_SIZE}>
-              <StatCard title={t.traderProfile.stats.followers} value={followers === null ? '—' : String(followers)} sub={t.traderProfile.stats.copiers} />
+              <StatCard title={t.traderProfile.stats.followers} value={followers === null ? '—' : String(followers)} sub={legacyFollowers > 0 ? interpolate(t.traderProfile.stats.legacyCopiers, { count: legacyFollowers }) : t.traderProfile.stats.copiers} />
             </Grid>
             )}
             <Grid size={STAT_SIZE}>

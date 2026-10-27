@@ -122,10 +122,10 @@ export function AssetDetailPanel({
       <Stack direction="row" spacing={1.25} alignItems="flex-start">
         <AssetIcon symbol={sym} size={32} />
         <Box sx={{ minWidth: 0, flex: 1 }}>
-          <Typography variant="subtitle1" sx={{ fontWeight: 'bold', lineHeight: 1.2 }}>{sym}</Typography>
+          <Typography variant="subtitle1" sx={{ fontWeight: 'bold', lineHeight: 1.2 }}>{assetRow.ticker}</Typography>
           <Typography variant="body2" color="text.secondary" noWrap>{assetRow.name}</Typography>
           <Box sx={{ mt: 0.75 }}>
-            <AssetProvenanceSummary tier={assetRow.tier} freshness={assetRow.freshness} />
+            <AssetProvenanceSummary tier={assetRow.tier} />
           </Box>
         </Box>
         <IconButton size="small" onClick={onClose} aria-label={dl.cancel}>
@@ -170,7 +170,7 @@ export function AssetDetailPanel({
             label={
               mode === 'buy'
                 ? dl.buyAmountLabel
-                : interpolate(dl.sellAmountLabel, { symbol: sym })
+                : interpolate(dl.sellAmountLabel, { symbol: assetRow.ticker })
             }
             value={amount}
             onChange={(e) => onAmountChange(e.target.value)}
@@ -179,7 +179,7 @@ export function AssetDetailPanel({
               input: {
                 endAdornment: (
                   <InputAdornment position="end">
-                    {mode === 'buy' ? 'USDC' : sym}
+                    {mode === 'buy' ? 'USDC' : assetRow.ticker}
                   </InputAdornment>
                 ),
               },
@@ -199,7 +199,7 @@ export function AssetDetailPanel({
               {quote === null
                 ? dl.needAmount
                 : mode === 'buy'
-                  ? interpolate(dl.buyQuote, { amount: f18(quote.out), symbol: sym })
+                  ? interpolate(dl.buyQuote, { amount: f18(quote.out), symbol: assetRow.ticker })
                   : interpolate(dl.sellQuote, { amount: fUsd(Number(quote.out) / 1e18) })}
             </Typography>
             {/* #134：預估費用金額——不只是費率，這一筆實際要付多少。買進與

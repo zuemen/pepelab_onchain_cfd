@@ -8,6 +8,7 @@ import Typography from '@mui/material/Typography'
 
 import { t, interpolate } from 'src/locales'
 import { MONO, PEPE } from 'src/components/pepefi/brandKit'
+import AssetIcon from 'src/components/pepefi/AssetIcon'
 import { TableSkeleton } from 'src/components/pepefi/Skeleton'
 import { fCompact } from 'src/lib/pepefi/whale'
 
@@ -104,9 +105,12 @@ export default function MarketSentimentBar({ sentiment, mode, ready }: Props) {
               >
                 <Box>
                   <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.5 }}>
-                    <Typography variant="caption" sx={{ fontWeight: 700 }}>
-                      {r.icon} {r.label}
-                    </Typography>
+                    <Stack direction="row" spacing={0.75} alignItems="center">
+                      <AssetIcon symbol={r.label} size={16} />
+                      <Typography variant="caption" sx={{ fontWeight: 700 }}>
+                        {r.label}
+                      </Typography>
+                    </Stack>
                     <Typography variant="caption" sx={{ fontFamily: MONO, color: 'text.secondary' }}>
                       {fCompact(r.total)}
                     </Typography>

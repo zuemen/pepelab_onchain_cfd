@@ -37,10 +37,10 @@ function meta(over: Partial<Omit<AssetMeta, 'carbon'>> & { carbon?: CarbonOverri
         }
   return {
     symbol: 'sTEST',
+    ticker: 'TEST',
     name: 'Test Asset',
     category: 'equity',
     regulated: false,
-    icon: '?',
     carbon,
     ...rest,
   }

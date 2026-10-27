@@ -1,0 +1,57 @@
+name: Copy Sync Executor (Base Sepolia)
+
+# 跟單自動同步的 public 執行者（ADR-024，agent/copy-sync/README.md）：每一輪把「跟隨者已開啟自動同步、
+# 交易者有新版、冷卻已過、執行費在同意範圍內」的紀錄以 resyncFor 調成交易者鏈上最新版，賺跟隨者設定的小費。
+# 執行者沒有任何選擇空間（同步內容由合約讀 StrategyRegistry 決定），金鑰是只放少量 ETH 的熱錢包：
+# 外洩的最壞情況是有人觸發合約本來就允許的同步，加上錢包裡那點 gas。
+#
+# 持鑰 workflow 的守門（scripts/check-workflow-guards.mjs）：整檔 sha256 釘在 PINNED_WORKFLOWS、私鑰只放
+# environment `copy-sync` 的 secret、只允許 schedule／workflow_dispatch、只用 checkout 與 setup-node。
+# 守門不允許 actions/cache，所以不保存狀態檔：每一輪從 --lookback-blocks 重掃。回看 86,400 塊（約 48 小時）
+# 要蓋住「最長的冷卻（前端選項 24 小時）＋ GitHub 排程的延遲（實測最長約 6 小時）」——交易者發版的事件
+# 落在回看區間之外、而冷卻才剛過的紀錄，會被漏掉。
+#
+# RPC 刻意寫死公開的 publicnode（不是 secret）：getLogs 一段最多 1 萬塊；Alchemy 免費端點一段只准 10 塊
+# （CUTOVER_LOG_2026-10-20.md），每輪會打上千次。CopyTracker 位址不寫死：執行者讀 frontend/src/contracts/addresses.ts，
+# 換 tracker 時只改那一處。
+#
+# Secrets（environment `copy-sync`）：
+#   COPY_SYNC_PRIVATE_KEY   執行者熱錢包（不是部署者、keeper，也不是任何跟隨者）；明文只因為這是 CI secret
+#                           （--allow-plaintext-key，README「金鑰模型」）
+on:
+  schedule:
+    # 名目 15 分鐘；GitHub 排程是 best-effort（keeper 實測間隔 68 分鐘到 5.8 小時）。即時性見 KNOWN_LIMITATIONS #40。
+    - cron: '7,22,37,52 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# 同一把金鑰不要兩個 job 同時送（nonce）；取消正在送交易的 job 會留下不確定的鏈上狀態。
+concurrency:
+  group: copy-sync-executor
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment:
+      name: copy-sync
+      deployment: false
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '20'
+      # 安裝依賴的 step 拿不到私鑰；--ignore-scripts：不讓依賴樹在持鑰的 job 裡執行安裝腳本。
+      - name: Install agent dependencies
+        run: cd agent && npm ci --ignore-scripts --no-audit --no-fund
+      - name: Copy sync (public, one round)
+        env:
+          AGENT_SKIP_DOTENV: '1'
+          COPY_SYNC_RPC_URL: https://base-sepolia-rpc.publicnode.com
+          COPY_SYNC_PRIVATE_KEY: ${{ secrets.COPY_SYNC_PRIVATE_KEY }}
+        run: cd agent && npm run copy-sync --silent -- --once --mode public --allow-plaintext-key --lookback-blocks 86400

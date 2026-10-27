@@ -24,9 +24,9 @@
 | 5 | 完整 cutover：#130、GuardedOracle、AssetVaultV2 升級 V2_5、InsuranceVault＋平台 FeeRouter＋CopyTracker（腳本已備；**前提：#130 完成＋timelock 或明確選擇不移交**）、PepeIncentives、PepeAMM、SessionCredentialAnchor（平台首次部署） | 本機 forge（先 dispatch keeper；先跑 cutover 演練） | 不含阻塞項 6–8 小時；阻塞項解除後另 2–3 小時，加 timelock 48 小時等待與 2 天緩衝 | `Verify130`、`post-deploy-smoke.mjs` |
 | 6 | 每台 agent 主機 `npm run vc-status:init` | 各 agent 主機 | 每台 5 分 | `agent/.state/vc-status/index.json` 存在 |
 | 7 | 重跑發布狀態與 smoke test，確認「原始碼較新」變成「鏈上＝原始碼」 | 本機 | 45–60 分（含 `forge build`） | `check-deployment-status.mjs --offline`、`post-deploy-smoke.mjs` |
-| 8 | 部署自動同步版 CopyTracker（ADR-024）：先盤點舊 tracker 的跟單，部署後依序改接 FeeRouter、TraderStake、exchange，啟動執行者 | 本機 forge／cast＋repo PR | 2–3 小時（不含舊跟單的公告與等待） | `cast call … copyTracker()`、`authorizedAgents(…)`、第 7 步重跑 |
-| 9 | 重寫 sICLN、sESGU 的碳分級為 High（`docs/data/carbon-tier-etf-waci.md` 的決定 B；#344 cutover 漏做） | 本機 forge | 15 分 | `medianCarbonTier`、`maxLeverageForAsset` |
-| 10 | 兌換頁的 PepeAMM 仍讀退役的 MockOracle `0xeD90…`（報價停在 2026-10-21）：決定重新部署 PepeAMM 或讓 keeper 繼續寫舊 oracle | 本機 forge＋repo PR，或 keeper 設定 | 30–60 分 | `cast call <PepeAMM> "oracle()(address)"` |
+| 8 | **✅ 2026-10-26 完成（CUTOVER_LOG_2026-10-26）** 部署自動同步版 CopyTracker（ADR-024）：先盤點舊 tracker 的跟單，部署後依序改接 FeeRouter、TraderStake、exchange，啟動執行者 | 本機 forge／cast＋repo PR | 2–3 小時（不含舊跟單的公告與等待） | `cast call … copyTracker()`、`authorizedAgents(…)`、第 7 步重跑 |
+| 9 | **✅ 2026-10-26 完成** 重寫 sICLN、sESGU 的碳分級為 High（`docs/data/carbon-tier-etf-waci.md` 的決定 B；#344 cutover 漏做） | 本機 forge | 15 分 | `medianCarbonTier`、`maxLeverageForAsset` |
+| 10 | **✅ 2026-10-26 完成（重新部署）** 兌換頁的 PepeAMM 仍讀退役的 MockOracle `0xeD90…`（報價停在 2026-10-21）：決定重新部署 PepeAMM 或讓 keeper 繼續寫舊 oracle | 本機 forge＋repo PR，或 keeper 設定 | 30–60 分 | `cast call <PepeAMM> "oracle()(address)"` |
 
 **合計：動手約 15–20 小時，分散在至少 3–4 天**（第 5 步第 4 項等 #130 與治理 timelock；timelock 48 小時等待與 cutover 後 2 天緩衝不計入動手時間）。
 第 8 步（2026-10-26 新增）與第 1–7 步互不依賴，#344 cutover（[`CUTOVER_LOG_2026-10-20.md`](CUTOVER_LOG_2026-10-20.md)）之後隨時可做；做完要再跑一次第 7 步。
@@ -113,6 +113,7 @@ done
 gh api repos/zuemen/pepelab_onchain_cfd/actions/secrets --jq '[.secrets[].name]'   # 不應再有兩個 *_PRIVATE_KEY
 grep -ln 'secrets.KEEPER_PRIVATE_KEY\|secrets.FEE_SETTLEMENT_PRIVATE_KEY' .github/workflows/*
 # 只應列出 admin-base-sepolia、base-sepolia-keeper、price-keeper、x402-settlement-worker 四支
+# （copy-sync-executor.yml 用的是 environment copy-sync 的 COPY_SYNC_PRIVATE_KEY，不在這個 grep 裡）
 # 分支保護：rulesets 與傳統 branch protection 兩種設定方式都查，兩者擇一有設定即可
 gh api repos/zuemen/pepelab_onchain_cfd/rulesets --jq '[.[] | {name, enforcement}]'
 gh api repos/zuemen/pepelab_onchain_cfd/branches/master/protection \
@@ -737,11 +738,10 @@ Base Sepolia 現行的 `0x15A9…347C`（#344 cutover，部署區塊 48354990）
    每筆紀錄的第 6 個欄位是 `active`。處理方式：
    - **回放帳號（模擬跟隨者）**：金鑰在擁有者手上（`heroes/keys/84532.json`）。換 tracker 之前以該帳號呼叫舊 tracker 的
      `unfollowAndCloseAll(recordIdx)` 正常取消（照常計分）；或保留不動，接受它們之後只能 `deactivateWithoutScoring`。
-     回放資料集（`frontend/public/data/heroes/84532/`）已匯出，不受影響；**但畫面上的跟隨人數會歸零**：排行榜與交易者頁
-     以 `readActiveFollowers(contracts.copyTracker)` 讀 `addresses.ts` 的那一顆 tracker（`TraderLeaderboard.tsx`、
-     `TraderProfilePage.tsx`），動態牆與歷史頁的跟單事件也只掃那一顆。2026-10-26 唯讀讀回：24 位回放交易者在舊 tracker 上
-     `getFollowerCount` 合計 79（含重複，KNOWN_LIMITATIONS #43）。換 tracker 之前先決定：在新 tracker 上重新回放跟單
-     （`agent/heroes` 公開鏈回放，可換新帳號重跑），或接受展示時跟隨人數為 0。
+     回放資料集（`frontend/public/data/heroes/84532/`）已匯出，不受影響。排行榜與交易者頁的跟隨人數把被換下來的 tracker
+     上還在跟的人也算進去並分開標示（`frontend/src/contracts/legacyCopyTrackers.ts`，換 tracker 時把舊的加進去）；動態牆與
+     歷史頁的跟單事件只掃現行那一顆。2026-10-26 唯讀讀回：24 位回放交易者在舊 tracker 上 `getFollowerCount` 合計 79
+     （含重複，KNOWN_LIMITATIONS #43），換 tracker 後沒有歸零。
    - **真實使用者**：事先公告換 tracker 的時間，請他們在那之前取消跟單。來不及的，換 tracker 之後部位仍在他們自己名下，
      Portfolio 的「部位」頁籤看得到、平得掉（`exchange.closePosition` 只要求是部位本人）；舊 tracker 上的紀錄可用
      `deactivateWithoutScoring(recordIdx)` 收尾（BaseScan 的 Write Contract 或 `cast send … --account <自己的 keystore>`）。

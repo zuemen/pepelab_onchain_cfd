@@ -76,6 +76,9 @@ const SEPOLIA: ChainAddresses = {
 // StrategyRegistry、CopyTracker、InsuranceVault、平台 FeeRouter（收款人＝#333 的分流合約）、PepeIncentives、
 // EsgRewardDistributor，以及交易所專用的 MockOracle（ORACLE_KIND=fresh；之前共用的 0xeD90… 已退役，keeper 不再寫）。
 // 舊交易所 0x827e… 列在 legacyExchanges.ts，使用者從 /legacy 領回保證金。
+// 2026-10-26（OWNER_ACTIONS 第 8–10 步，docs/CUTOVER_LOG_2026-10-26.md）：自動同步版 CopyTracker（ADR-024；
+// 舊的 0x15A9… 列在 legacyCopyTrackers.ts，跟隨人數照算）、綁新 tracker 的 PepeIncentives（舊的 0xc257… 已暫停）、
+// 讀交易所 MockOracle 的 PepeAMM（舊的 0x93be… 讀退役的 0xeD90…）。
 const BASE_SEPOLIA: ChainAddresses = {
   MockUSDC:          "0x69fd695Bc7C3aFdb35ABA35cD6890C506400b035",
   MockUSDT:          "0x5c8A1e970D275Cc269e09A949D68693120416d78",
@@ -85,15 +88,15 @@ const BASE_SEPOLIA: ChainAddresses = {
   FeeRouter:         "0x89Aa6799b2CdAa43FF7985ff706456Ca6F0e5d29",
   PerpetualExchange: "0xbF3074C98e17d88B4127899C98C81AE94c9fC979",
   StrategyRegistry:  "0xe8d807C3BaFB4D3AeCbA094322eE8dD7Ca16C20c",
-  CopyTracker:       "0x15A9Cbf803a3EEee2794B74Ad78252d27Ccd347C",
+  CopyTracker:       "0x31297044a7b3A0F57e7CDa7fE619E996da1c64A9",
   MockSwapRouter:    "0xC9b0e5C219AA1B3eB00E92Fd9a883B182F0AE8Ae",
   ESGRegistry:       "0xBF5B9cD78566791d79c687A732b4ed5bc3E95dFf",
   KYCRegistry:       "0x5D95fD9e7a5f80E5369e24783F1f98E0f952360d",
-  PepeAMM:           "0x93be44a81a2796d378f65ebcc8d5f8b40166ad63",
+  PepeAMM:           "0xb40603df54d0af75f1915106F352672372570d97",
   PepeToken:              "0xccd05cbdc2f7961a4c27d3633694022722786a0f",
   PepeClaim:              "0x459d238aC61eC4A0E08608FBcd363227B860CF34",
   EsgRewardDistributor:   "0x4C9232eE2caAe2B065eb1Ca9AD966Ef69A0D2433",
-  PepeIncentives:         "0xc257Dd9b9eb392893a89d307664713E8660672F0",
+  PepeIncentives:         "0x588dda0b1f5c46242fbbb694771dfc30179e21c3",
   PepeStaking:            "0xC78D68cA1B217ba241c23Ebad3118c6ec0dc0D34",
   AssetVault:             "0xC30DFe1C9EBb47197b785995aA9Cd0F5B89557A5",
 }

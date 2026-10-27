@@ -58,7 +58,7 @@ export const rwa = {
     rwaUnflagged: '未標記',
     rwaNote: {
       goldMismatch:
-        '黃金屬於現實世界資產，但此部署在鏈上沒有把 sGOLD 標記為 rwaAsset，所以開倉不檢查 KYC。這裡照實顯示鏈上狀態。',
+        '黃金屬於現實世界資產，但此部署在鏈上沒有把 XAU 標記為 rwaAsset，所以開倉不檢查 KYC。這裡照實顯示鏈上狀態。',
       unflaggedRwa: '這檔參照現實世界資產，但鏈上沒有標記為 rwaAsset。',
       cryptoNotRwa: '加密資產不是現實世界資產（RWA），鏈上也沒有標記。',
       cryptoFlagged: '加密資產不是現實世界資產，但鏈上標記為 rwaAsset。',

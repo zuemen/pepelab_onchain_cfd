@@ -1,4 +1,5 @@
 import { MONO, LiveDot } from 'src/components/pepefi/brandKit'
+import { Contract } from 'ethers';
 import { useRef, useState, Fragment, useEffect, useCallback } from 'react';
 import { Link as RouterLink } from 'react-router';
 import { useContracts } from 'src/hooks/useContracts';
@@ -42,7 +43,8 @@ import {
   type ClosedEvent,
   type LeaderboardSortKey,
 } from 'src/lib/pepefi/leaderboardMetrics';
-import { followerReaderOf, readActiveFollowers } from 'src/lib/pepefi/activeFollowers';
+import { followerReaderOf, readFollowersAcross } from 'src/lib/pepefi/activeFollowers';
+import { legacyCopyTrackersFor, LEGACY_COPY_TRACKER_ABI } from 'src/contracts/legacyCopyTrackers';
 import { readTraderBasics } from 'src/lib/pepefi/traderReads';
 import {
   fetchHeroIndex,
@@ -283,8 +285,11 @@ export default function TraderLeaderboard() {
       // 目前的跟隨人數，不是 getFollowerCount 的「被跟單過幾次」（見 activeFollowers.ts）。
       // 跟隨者與每位交易者的名稱、策略、聲譽、質押同時讀。兩邊都併成 Multicall3（見 multicall.ts）：
       // 一筆一筆讀在 Base Sepolia 是 386 個請求、26 秒，併起來是 6 個、2 秒。
+      // 換過 tracker 時，舊 tracker 上還在跟的人也算進去並分開標示（contracts/legacyCopyTrackers.ts）。
+      const legacyReaders = legacyCopyTrackersFor(wallet.chainId, String(contracts.copyTracker.target))
+        .map((address) => followerReaderOf(new Contract(address, LEGACY_COPY_TRACKER_ABI, contracts.copyTracker.runner), wallet.provider, wallet.chainId));
       const [followersOf, basics] = await Promise.all([
-        readActiveFollowers(addresses as string[], followerReaderOf(contracts.copyTracker, wallet.provider, wallet.chainId)),
+        readFollowersAcross(addresses as string[], followerReaderOf(contracts.copyTracker, wallet.provider, wallet.chainId), legacyReaders),
         readTraderBasics(addresses as string[], contracts, wallet.provider, wallet.chainId),
       ]);
       if (ac.signal.aborted) return;
@@ -292,18 +297,21 @@ export default function TraderLeaderboard() {
       const cards = (addresses as string[]).map((addr, i): TraderCard => {
         const active = followersOf.get(addr.toLowerCase()) ?? null;
         const b = basics[i];
-        return buildTraderCard(
+        const card = buildTraderCard(
           {
             address:       addr,
             displayName:   b.displayName,
             allocs:        b.allocs,
-            followerCount: active === null ? null : BigInt(active.length),
+            followerCount: active === null ? null : BigInt(active.all.length),
             reputation:    b.reputation,
             stake:         b.stake,
             totalSlashed:  b.totalSlashed,
           },
           aggregates,
         );
+        return active !== null && active.legacyOnly > 0
+          ? { ...card, legacyFollowerCount: BigInt(active.legacyOnly) }
+          : card;
       });
 
       if (ac.signal.aborted) return;
@@ -850,6 +858,13 @@ export default function TraderLeaderboard() {
 
                       <TableCell align="right" sx={{ fontFamily: MONO }}>
                         {trader.followerCount === null ? '—' : String(trader.followerCount)}
+                        {trader.legacyFollowerCount !== undefined && (
+                          <Tooltip title={interpolate(t.marketplace.card.legacyFollowersTip, { count: String(trader.legacyFollowerCount) })}>
+                            <Typography component="div" variant="caption" sx={{ color: 'text.secondary', whiteSpace: 'nowrap', cursor: 'help' }}>
+                              {interpolate(t.marketplace.card.legacyFollowers, { count: String(trader.legacyFollowerCount) })}
+                            </Typography>
+                          </Tooltip>
+                        )}
                       </TableCell>
 
                       <TableCell align="right" sx={{ fontFamily: MONO }}>

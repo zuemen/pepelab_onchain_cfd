@@ -90,6 +90,63 @@ export async function readActiveFollowers(
   )
 }
 
+export interface FollowersAcross {
+  /** 現行 tracker 的跟隨者，加上只在舊 tracker 上還在跟的人；同一個人只算一次。 */
+  all: string[]
+  /** 其中只在舊 tracker 上還在跟的人數（不會自動同步、不再計分；見 contracts/legacyCopyTrackers.ts）。 */
+  legacyOnly: number
+}
+
+/**
+ * 合併現行與舊 tracker 的跟隨者。現行讀不到 → null（讀不到不能說成 0 人）；某一顆舊 tracker
+ * 讀不到 → 只少算那一顆，不讓整格變「—」：現行的人數仍然是對的。
+ */
+export function combineFollowers(
+  current: string[] | null,
+  legacy: ReadonlyArray<string[] | null>,
+): FollowersAcross | null {
+  if (current === null) return null
+  const seen = new Set(current.map(lower))
+  const all = [...current]
+  let legacyOnly = 0
+  for (const list of legacy) {
+    for (const follower of list ?? []) {
+      const key = lower(follower)
+      if (seen.has(key)) continue
+      seen.add(key)
+      all.push(follower)
+      legacyOnly += 1
+    }
+  }
+  return { all, legacyOnly }
+}
+
+/**
+ * readActiveFollowers 的多 tracker 版：先讀現行，再一顆一顆讀舊的（依序，不同時送，免得公開 RPC 的
+ * 每秒上限被加倍），最後用 combineFollowers 合併。
+ */
+export async function readFollowersAcross(
+  traders: string[],
+  current: FollowerReader,
+  legacy: readonly FollowerReader[],
+): Promise<Map<string, FollowersAcross | null>> {
+  const now = await readActiveFollowers(traders, current)
+  const old: Array<Map<string, string[] | null>> = []
+  for (const reader of legacy) {
+    try {
+      old.push(await readActiveFollowers(traders, reader))
+    } catch {
+      old.push(new Map())
+    }
+  }
+  return new Map(
+    traders.map((trader) => {
+      const key = lower(trader)
+      return [key, combineFollowers(now.get(key) ?? null, old.map((m) => m.get(key) ?? null))]
+    }),
+  )
+}
+
 /** 一批讀取的結果；合約拒絕或節點沒回答都是 null（跟單者清單裡沒有「拒絕」這種答案）。 */
 async function readEach<T>(
   provider: CallProvider | null,

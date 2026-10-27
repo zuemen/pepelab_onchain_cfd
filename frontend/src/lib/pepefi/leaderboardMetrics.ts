@@ -20,6 +20,8 @@ export interface TraderCard {
   allocs:         RawAlloc[];
   /** 目前的跟隨人數（見 activeFollowers.ts），不是被跟單過幾次；讀不到時為 null。 */
   followerCount:  bigint | null;
+  /** followerCount 裡只在舊 CopyTracker 上還在跟的人數（見 contracts/legacyCopyTrackers.ts）；沒有就省略。 */
+  legacyFollowerCount?: bigint;
   hasStrategy:    boolean;
   reputation:     bigint | null;
   stake:          bigint | null;

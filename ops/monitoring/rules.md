@@ -10,8 +10,8 @@
 > - 「**部署版不發此事件**」：合約已部署，但鏈上那一版不發這個事件（前端 ABI 來自 master 原始碼，比部署版新）。
 >   這些事件**現在不會響**；有對應 setter 的由「狀態」規則每輪讀 getter 比對。依據是 [`deployed.json`](deployed.json)（唯讀 RPC 抓的 runtime bytecode，CI 離線比對 topic0）。
 
-共 **59** 條規則：運作中 53 條（事件 38、狀態 13、HTTP 2），部署版不發此事件 5 條，待部署 1 條。鏈：base-sepolia（84532）。
-已部署 bytecode 快照：區塊 48393754（2026-10-21）。
+共 **60** 條規則：運作中 54 條（事件 39、狀態 13、HTTP 2），部署版不發此事件 5 條，待部署 1 條。鏈：base-sepolia（84532）。
+已部署 bytecode 快照：區塊 50395526（2026-10-26）。
 
 ## 總表
 
@@ -76,6 +76,7 @@
 | [`guarded-oracle-halt-takeover`](#guarded-oracle-halt-takeover) GuardedOracle 停機被 admin 接手（不再到期） | 權限 | 事件 | SEV-1 | 部署版不發此事件 | 每一筆 | [§1](../../docs/INCIDENT_RESPONSE.md#1-嚴重度分級) [§3](../../docs/INCIDENT_RESPONSE.md#3-暫停與凍結現行部署能做什麼) |
 | [`copytracker-slash-reserve`](#copytracker-slash-reserve) CopyTracker 罰沒準備金提領 | 大額提領 | 事件 | SEV-2 | 運作中 | 每一筆 | [§1](../../docs/INCIDENT_RESPONSE.md#1-嚴重度分級) |
 | [`pepe-incentives-daily-params`](#pepe-incentives-daily-params) PepeIncentives 簽到點數參數變更 | 風險參數 | 事件 | SEV-3 | 運作中 | 每一筆 | [§3](../../docs/INCIDENT_RESPONSE.md#3-暫停與凍結現行部署能做什麼) |
+| [`pepeamm-admin`](#pepeamm-admin) 兌換池（PepeAMM）oracle 護欄變更與移除流動性 | 風險參數 | 事件 | SEV-3 | 運作中 | 每一筆 | [§3](../../docs/INCIDENT_RESPONSE.md#3-暫停與凍結現行部署能做什麼) |
 
 「嚴重度」是規則的預設等級；狀態規則依門檻在 SEV-1～SEV-3 之間升降（見各規則）。恢復通知固定標為 SEV-4，但依原嚴重度決定是否送出。
 
@@ -138,15 +139,15 @@ Ownable 合約的 owner 被轉移。未經排程的轉移等同特權金鑰外�
 | PythAdapter（ABI `PythOracleAdapter`） | addresses.ts BASE_SEPOLIA_ORACLE_SHOWCASE.PythAdapter | `0x551C0B2e75a9129fe697210223F1Ca6e64F3C6d5` |
 | KYCRegistry（ABI `KYCRegistry`） | addresses.ts BASE_SEPOLIA.KYCRegistry | `0x5D95fD9e7a5f80E5369e24783F1f98E0f952360d` |
 | TraderStake（ABI `TraderStake`） | addresses.ts BASE_SEPOLIA.TraderStake | `0x01aEB530bcFc69f036309ffe55acc7eA6C5a28Fe` |
-| CopyTracker（ABI `CopyTracker`） | addresses.ts BASE_SEPOLIA.CopyTracker | `0x15A9Cbf803a3EEee2794B74Ad78252d27Ccd347C` |
+| CopyTracker（ABI `CopyTracker`） | addresses.ts BASE_SEPOLIA.CopyTracker | `0x31297044a7b3A0F57e7CDa7fE619E996da1c64A9` |
 | AssetVault（ABI `AssetVault`） | addresses.ts BASE_SEPOLIA.AssetVault | `0xC30DFe1C9EBb47197b785995aA9Cd0F5B89557A5` |
 | MockUSDC（ABI `MockUSDC`） | addresses.ts BASE_SEPOLIA.MockUSDC | `0x69fd695Bc7C3aFdb35ABA35cD6890C506400b035` |
 | MockUSDT（ABI `MockUSDT`） | addresses.ts BASE_SEPOLIA.MockUSDT | `0x5c8A1e970D275Cc269e09A949D68693120416d78` |
 | PepeToken（ABI `PepeToken`） | addresses.ts BASE_SEPOLIA.PepeToken | `0xccd05cbdc2f7961a4c27d3633694022722786a0f` |
-| PepeAMM（ABI `PepeAMM`） | addresses.ts BASE_SEPOLIA.PepeAMM | `0x93be44a81a2796d378f65ebcc8d5f8b40166ad63` |
+| PepeAMM（ABI `PepeAMM`） | addresses.ts BASE_SEPOLIA.PepeAMM | `0xb40603df54d0af75f1915106F352672372570d97` |
 | PepeClaim（ABI `PepeClaim`） | addresses.ts BASE_SEPOLIA.PepeClaim | `0x459d238aC61eC4A0E08608FBcd363227B860CF34` |
 | PepeStaking（ABI `PepeStaking`） | addresses.ts BASE_SEPOLIA.PepeStaking | `0xC78D68cA1B217ba241c23Ebad3118c6ec0dc0D34` |
-| PepeIncentives（ABI `PepeIncentives`） | addresses.ts BASE_SEPOLIA.PepeIncentives | `0xc257Dd9b9eb392893a89d307664713E8660672F0` |
+| PepeIncentives（ABI `PepeIncentives`） | addresses.ts BASE_SEPOLIA.PepeIncentives | `0x588dda0b1f5c46242fbbb694771dfc30179e21c3` |
 | EsgRewardDistributor（ABI `EsgRewardDistributor`） | addresses.ts BASE_SEPOLIA.EsgRewardDistributor | `0x4C9232eE2caAe2B065eb1Ca9AD966Ef69A0D2433` |
 
 - 事件：`OwnershipTransferred(address,address)`
@@ -310,7 +311,7 @@ V1 FeeRouter 與 x402 FeeRouter（官方 USDC）的 exchange／copyTracker 被�
 | X402FeeRouter（ABI `FeeRouter`） | x402.ts X402_FEE_ROUTER[84532] | `0x780E18146Bc77E50c3e5EcaED913FC31F62c0f6A` |
 
 - 預期：`FeeRouter.exchange()` = `PerpetualExchange`（`0xbF3074C98e17d88B4127899C98C81AE94c9fC979`）
-- 預期：`FeeRouter.copyTracker()` = `CopyTracker`（`0x15A9Cbf803a3EEee2794B74Ad78252d27Ccd347C`）
+- 預期：`FeeRouter.copyTracker()` = `CopyTracker`（`0x31297044a7b3A0F57e7CDa7fE619E996da1c64A9`）
 - 預期：`FeeRouter.insuranceVault()` = `InsuranceVault`（`0x899263e34107a36a5216499F9CC7fb7a5afc7aaF`）
 - 預期：`FeeRouter.platformTreasury()` = 鏈上快照 `0xe5b1b4009c41dd5c02e216f42f33b3a8d4ee0a0c`（platformTreasury 是 immutable，前端設定沒有這個位址；快照只用來確認這顆 FeeRouter 沒有被換成另一顆）
 - 預期：`X402FeeRouter.exchange()` = 零位址
@@ -336,7 +337,7 @@ V1 FeeRouter 與 x402 FeeRouter（官方 USDC）的 exchange／copyTracker 被�
 - 預期：`PerpetualExchange.feeRouter()` = `FeeRouter`（`0x89Aa6799b2CdAa43FF7985ff706456Ca6F0e5d29`）
 - 預期：`PerpetualExchange.insuranceVault()` = `InsuranceVault`（`0x899263e34107a36a5216499F9CC7fb7a5afc7aaF`）
 - 預期：`PerpetualExchange.kyc()` = `KYCRegistry`（`0x5D95fD9e7a5f80E5369e24783F1f98E0f952360d`）
-- 預期：`TraderStake.copyTracker()` = `CopyTracker`（`0x15A9Cbf803a3EEee2794B74Ad78252d27Ccd347C`）
+- 預期：`TraderStake.copyTracker()` = `CopyTracker`（`0x31297044a7b3A0F57e7CDa7fE619E996da1c64A9`）
 - 預期：`AssetVaultV2.oracle()` = `GuardedOracle`（`0x8E9e59BE9589Ad88EC14F3ef6bdcc43E8B76f842`）
 - 預期：`AssetVaultV2.esgRegistry()` = `ESGRegistryV2`（`0xBF5B9cD78566791d79c687A732b4ed5bc3E95dFf`）
 - 門檻：任一 getter 的讀值 ≠ 預期位址
@@ -364,7 +365,7 @@ V1 FeeRouter 與 x402 FeeRouter（官方 USDC）的 exchange／copyTracker 被�
 
 | 合約 | 位址來源 | 位址 |
 |---|---|---|
-| PepeIncentives（ABI `PepeIncentives`） | addresses.ts BASE_SEPOLIA.PepeIncentives | `0xc257Dd9b9eb392893a89d307664713E8660672F0` |
+| PepeIncentives（ABI `PepeIncentives`） | addresses.ts BASE_SEPOLIA.PepeIncentives | `0x588dda0b1f5c46242fbbb694771dfc30179e21c3` |
 
 - 預期：`PepeIncentives.esgRegistry()` = 零位址
 - 門檻：任一 getter 的讀值 ≠ 預期位址
@@ -432,7 +433,7 @@ PepeIncentives（交易挖礦、簽到、跟單獎勵）被 owner 暫停或解�
 
 | 合約 | 位址來源 | 位址 |
 |---|---|---|
-| PepeIncentives（ABI `PepeIncentives`） | addresses.ts BASE_SEPOLIA.PepeIncentives | `0xc257Dd9b9eb392893a89d307664713E8660672F0` |
+| PepeIncentives（ABI `PepeIncentives`） | addresses.ts BASE_SEPOLIA.PepeIncentives | `0x588dda0b1f5c46242fbbb694771dfc30179e21c3` |
 
 - 事件：`Paused(address)`、`Unpaused(address)`
 - 門檻：每一筆
@@ -792,7 +793,7 @@ GuardedOracle.paused() 為 true（事件規則可能因掃描中斷漏掉，狀�
 | 合約 | 位址來源 | 位址 |
 |---|---|---|
 | PepeToken（ABI `PepeToken`） | addresses.ts BASE_SEPOLIA.PepeToken | `0xccd05cbdc2f7961a4c27d3633694022722786a0f` |
-| PepeIncentives（ABI `PepeIncentives`） | addresses.ts BASE_SEPOLIA.PepeIncentives | `0xc257Dd9b9eb392893a89d307664713E8660672F0` |
+| PepeIncentives（ABI `PepeIncentives`） | addresses.ts BASE_SEPOLIA.PepeIncentives | `0x588dda0b1f5c46242fbbb694771dfc30179e21c3` |
 
 - 讀取：`token.balanceOf(address)`
 - 門檻：餘額較 24 小時高點下降 ≥ `INCENTIVES_BALANCE_DROP_BPS`（預設 3000 bps） → SEV-2
@@ -986,7 +987,7 @@ CopyTracker 的罰沒準備金被提出。
 
 | 合約 | 位址來源 | 位址 |
 |---|---|---|
-| CopyTracker（ABI `CopyTracker`） | addresses.ts BASE_SEPOLIA.CopyTracker | `0x15A9Cbf803a3EEee2794B74Ad78252d27Ccd347C` |
+| CopyTracker（ABI `CopyTracker`） | addresses.ts BASE_SEPOLIA.CopyTracker | `0x31297044a7b3A0F57e7CDa7fE619E996da1c64A9` |
 
 - 事件：`SlashReserveWithdrawn(address,uint256)`
 - 門檻：每一筆
@@ -1000,9 +1001,23 @@ PepeIncentives（#219 點數版，#344 cutover 部署）的每日簽到基本點
 
 | 合約 | 位址來源 | 位址 |
 |---|---|---|
-| PepeIncentives（ABI `PepeIncentives`） | addresses.ts BASE_SEPOLIA.PepeIncentives | `0xc257Dd9b9eb392893a89d307664713E8660672F0` |
+| PepeIncentives（ABI `PepeIncentives`） | addresses.ts BASE_SEPOLIA.PepeIncentives | `0x588dda0b1f5c46242fbbb694771dfc30179e21c3` |
 
 - 事件：`DailyParamsSet(uint256,uint256,uint8)`
+- 門檻：每一筆
+- 處置：[INCIDENT_RESPONSE「3. 暫停與凍結：現行部署能做什麼」](../../docs/INCIDENT_RESPONSE.md#3-暫停與凍結現行部署能做什麼)
+
+### pepeamm-admin
+
+**兌換池（PepeAMM）oracle 護欄變更與移除流動性**｜風險參數｜事件｜SEV-3｜運作中
+
+PepeAMM 的 maxOracleAge／maxOracleDeviationBps 被改，或 owner 移除流動性。放寬 maxOracleAge 會讓兌換用更舊的 oracle 價（2026-10-26 部署後設為 21600 秒，與交易所的 maxPriceAge 一致）；放寬偏離上限會讓池價離 oracle 更遠。正常營運也可能調整，所以是 SEV-3 稽核通知。
+
+| 合約 | 位址來源 | 位址 |
+|---|---|---|
+| PepeAMM（ABI `PepeAMM`） | addresses.ts BASE_SEPOLIA.PepeAMM | `0xb40603df54d0af75f1915106F352672372570d97` |
+
+- 事件：`MaxOracleAgeSet(uint256,uint256)`、`MaxOracleDeviationBpsSet(uint256,uint256)`、`LiquidityRemoved(address,uint256,uint256,uint256)`
 - 門檻：每一筆
 - 處置：[INCIDENT_RESPONSE「3. 暫停與凍結：現行部署能做什麼」](../../docs/INCIDENT_RESPONSE.md#3-暫停與凍結現行部署能做什麼)
 
@@ -1044,6 +1059,10 @@ PepeIncentives（#219 點數版，#344 cutover 部署）的每日簽到基本點
 | ChainlinkOracleAdapter | `setFeed(bytes32,address)` | [`chainlink-adapter-config`](#chainlink-adapter-config) |
 | CopyTracker | `transferOwnership(address)` | [`owner-transferred`](#owner-transferred) |
 | CopyTracker | `withdrawSlashReserve(address,uint256)` | [`copytracker-slash-reserve`](#copytracker-slash-reserve) |
+| CopyTracker | `setAutoSync(uint256,bool,uint8,uint32,uint96,uint256)` | 不監控：跟隨者對自己那一筆跟單的操作，不是管理函式：只有紀錄的跟隨者本人（msg.sender）能呼叫，只動自己的設定或油箱（ADR-024） |
+| CopyTracker | `setSyncExecutor(uint256,address)` | 不監控：跟隨者對自己那一筆跟單的操作，不是管理函式：只有紀錄的跟隨者本人（msg.sender）能呼叫，只動自己的設定或油箱（ADR-024） |
+| CopyTracker | `withdrawSyncGas(uint256)` | 不監控：跟隨者對自己那一筆跟單的操作，不是管理函式：只有紀錄的跟隨者本人（msg.sender）能呼叫，只動自己的設定或油箱（ADR-024） |
+| CopyTracker | `withdrawSyncGasTo(address,uint256)` | 不監控：跟隨者對自己那一筆跟單的操作，不是管理函式：只有紀錄的跟隨者本人（msg.sender）能呼叫，只動自己的設定或油箱（ADR-024） |
 | ESGRegistryV2 | `grantRole(bytes32,address)` | [`access-role-changed`](#access-role-changed) |
 | ESGRegistryV2 | `renounceRole(bytes32,address)` | [`access-role-changed`](#access-role-changed) |
 | ESGRegistryV2 | `revokeRole(bytes32,address)` | [`access-role-changed`](#access-role-changed) |
@@ -1088,6 +1107,9 @@ PepeIncentives（#219 點數版，#344 cutover 部署）的每日簽到基本點
 | PepeAMM | `renounceOwnership()` | [`owner-transferred`](#owner-transferred) |
 | PepeAMM | `transferOwnership(address)` | [`owner-transferred`](#owner-transferred) |
 | PepeAMM | `addLiquidity(uint256)` | 不監控：注入流動性（資金流入），不是取出或設定變更 |
+| PepeAMM | `setMaxOracleAge(uint256)` | [`pepeamm-admin`](#pepeamm-admin) |
+| PepeAMM | `setMaxOracleDeviationBps(uint256)` | [`pepeamm-admin`](#pepeamm-admin) |
+| PepeAMM | `removeLiquidity(uint256,uint256,uint256)` | [`pepeamm-admin`](#pepeamm-admin) |
 | PepeClaim | `renounceOwnership()` | [`owner-transferred`](#owner-transferred) |
 | PepeClaim | `transferOwnership(address)` | [`owner-transferred`](#owner-transferred) |
 | PepeClaim | `setClaimAmount(uint256)` | [`pepe-claim-admin`](#pepe-claim-admin) |
@@ -1163,7 +1185,7 @@ PepeIncentives（#219 點數版，#344 cutover 部署）的每日簽到基本點
 | GuardedOracle | `PriceUpdated` | keeper 的例行寫價；被拒絕的寫價由 guarded-oracle-price-rejected 監控 |
 | TraderStake | `ReputationUpdated`、`Slashed`、`Staked`、`UnstakeCancelled`、`UnstakeRequested`、`Unstaked` | 交易員自己的質押操作，與 CopyTracker 依協議規則執行的 slash／聲譽更新；能執行 slash 的地址由 traderstake-copytracker-set 與 core-wiring 監控 |
 | CopyTracker | `PositionCloseSkipped`、`RecordDeactivatedWithoutScoring`、`SlashFailed`、`SlashScoringWaived`、`TraderFollowed`、`TraderSlashed`、`TraderUnfollowed` | 使用者自己的跟單／取消跟單，與依協議規則執行的平倉記錄、slash 與評分結果；能執行 slash 的 CopyTracker 由 traderstake-copytracker-set 與 core-wiring 監控，罰沒準備金提出由 copytracker-slash-reserve 監控 |
-| CopyTracker | `AutoSyncSet`、`Resynced`、`SyncExecutorSet`、`SyncGasDeposited`、`SyncGasWithdrawn` | **部署版不發此事件**：部署版是快照版 CopyTracker，沒有自動同步（ADR-024）。這五個事件是跟隨者自己的操作（開關自動同步、指定或解除唯一的執行者、存提自己的油箱）與任何人依合約規則執行的同步，不是管理操作：油箱只有跟隨者本人能提領、指定執行者只有跟隨者本人能設定、同步只能調成交易者鏈上最新版、扣款不超過跟隨者簽名同意的執行費上限，都由合約強制；同步被擋的原因由執行者 agent（agent/copy-sync）通知跟隨者。換成自動同步版後這一組會被檢查器擋下，要重新分類（OWNER_ACTIONS 第 8 步） |
+| CopyTracker | `AutoSyncSet`、`Resynced`、`SyncExecutorSet`、`SyncGasDeposited`、`SyncGasWithdrawn` | 自動同步版 CopyTracker（ADR-024）2026-10-26 部署（docs/CUTOVER_LOG_2026-10-26.md）。這五個事件是跟隨者自己的操作（開關自動同步、指定或解除唯一的執行者、存提自己的油箱）與任何人依合約規則執行的同步，不是管理操作：油箱只有跟隨者本人能提領、指定執行者只有跟隨者本人能設定、同步只能調成交易者鏈上最新版、扣款不超過跟隨者簽名同意的執行費上限，都由合約強制；同步被擋的原因由執行者 agent（agent/copy-sync）通知跟隨者。 |
 | KYCRegistry | `KYCBatchVerified`、`KYCVerified` | owner 的例行 KYC 核准；owner 變更由 owner-transferred 監控 |
 | KYCRegistry | `KYCRevoked`、`KYCSubmitted` | **部署版不發此事件**：部署版是舊的 KYCRegistry，沒有送件與撤銷流程 |
 | AssetVault | `Minted`、`Redeemed`、`VaultFunded` | 使用者自己的操作或例行結算，不是管理操作；資金面由大額提領、保險金與儲備率規則涵蓋 |
@@ -1176,7 +1198,7 @@ PepeIncentives（#219 點數版，#344 cutover 部署）的每日簽到基本點
 | MockUSDT | `Approval`、`Transfer` | ERC-20／ERC-721 的一般轉帳與授權，量大且不是管理操作 |
 | PepeToken | `Approval`、`Transfer` | ERC-20／ERC-721 的一般轉帳與授權，量大且不是管理操作 |
 | PepeAMM | `Swap` | 使用者自己的操作或例行結算，不是管理操作；資金面由大額提領、保險金與儲備率規則涵蓋 |
-| PepeAMM | `LiquidityAdded`、`LiquidityRemoved`、`MaxOracleAgeSet`、`MaxOracleDeviationBpsSet` | **部署版不發此事件**：部署版的 PepeAMM 是舊版：沒有 LP 份額與 oracle 護欄參數，不會發這些事件 |
+| PepeAMM | `LiquidityAdded` | 注入流動性（資金流入）。2026-10-26 換成新版 PepeAMM（讀交易所的 MockOracle）；移除流動性與 oracle 護欄參數變更由規則 pepeamm-admin 監控。 |
 | PepeClaim | `Claimed` | 使用者自己的操作或例行結算，不是管理操作；資金面由大額提領、保險金與儲備率規則涵蓋 |
 | PepeStaking | `RewardNotified`、`Staked`、`Withdrawn`、`YieldClaimed` | 使用者的質押操作與 owner 例行注入獎勵（資金流入） |
 | PepeIncentives | `CopyClaimed`、`EsgHoldClaimed`、`TierClaimed`、`TradeMined` | 使用者自己的操作或例行結算，不是管理操作；資金面由大額提領、保險金與儲備率規則涵蓋 |

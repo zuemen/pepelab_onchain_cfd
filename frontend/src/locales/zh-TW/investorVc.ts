@@ -17,7 +17,7 @@ export const investorVc = {
   checkingShort: '確認 KYC 方式中…',
   unknownRetry: '無法確認 KYC 方式，請重試',
   intro:
-    'RWA 市場（例如 sAAPL）開倉需要有效的合格投資人資格。上傳發證機構給你的憑證（VC），驗證後送上鏈登記。鏈上只記錄地址、類型、到期日與憑證雜湊，不含任何個人資料。',
+    'RWA 市場（例如 AAPL）開倉需要有效的合格投資人資格。上傳發證機構給你的憑證（VC），驗證後送上鏈登記。鏈上只記錄地址、類型、到期日與憑證雜湊，不含任何個人資料。',
   mineVerified: '你的錢包已具 RWA 市場資格（要求：{type}）；憑證到期：{date}',
   mineNotVerified: '你的錢包目前沒有有效的 RWA 市場資格（要求：{type}；未登記、已到期或已撤銷）。',
   upload: '上傳 VC 檔案',

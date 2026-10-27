@@ -240,7 +240,7 @@ export const sessions = {
     step2Mid2: ' 指向它（或 MCP ',
     step2Mid3: ' 的 ',
     step2After: '）。',
-    step3: '完成後直接對 agent 說：「幫我用 3x 槓桿做多 sBTC、保證金 200」即可，無需再報帳號/位址。',
+    step3: '完成後直接對 agent 說：「幫我用 3x 槓桿做多 BTC、保證金 200」即可，無需再報帳號/位址。',
 
     addrKeyBold1: '地址',
     addrKeyMid1: '（',

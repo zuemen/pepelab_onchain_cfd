@@ -5,7 +5,7 @@ import { ASSET_IDS } from 'src/contracts/addresses'
 import { t } from 'src/locales'
 
 import { tierOf, type Tier } from './carbon'
-import { ASSET_META, ASSETS_LIST } from './assetMeta'
+import { tickerOf, ASSET_META, ASSET_LABEL, ASSETS_LIST } from './assetMeta'
 
 // issue #100 ①：代號卡 → 身世卡。這份測試釘住「ASSET_IDS 裡的每一顆資產都有
 // 完整的身世欄位」，並把碳強度數字與 docs/data/carbon-intensity.md 對齊——
@@ -136,6 +136,47 @@ describe('ASSETS_LIST（既有 API 不受影響）', () => {
       expect(a.provenance).toBeDefined()
       expect(a.carbon).toBeDefined()
       expect(a.requiresKYC).toBe(a.regulated)
+    }
+  })
+})
+
+// 畫面上的代號是標的的真實代號，鏈上 symbol（sETH）只用來查表與加進錢包。見 ADR-0002 規則 1。
+describe('ASSET_META · 畫面代號（ticker）', () => {
+  it.each(ALL_IDS)('%s 的 ticker 是真實代號：不是鏈上 symbol，也沒有 s 前綴', (id) => {
+    const m = ASSET_META[id]
+    expect(m.ticker).not.toBe(m.symbol)
+    expect(m.ticker).toMatch(/^[A-Z]+$/)
+  })
+
+  it('黃金與綠債用真實代號，不是拿掉 s——GOLD、BOND 是別的證券的代號', () => {
+    expect(tickerOf('sGOLD')).toBe('XAU')
+    expect(tickerOf('sBOND')).toBe('BGRN')
+    expect(tickerOf('sETH')).toBe('ETH')
+  })
+
+  it('ticker 彼此不重複，畫面上不會有兩顆資產長得一樣', () => {
+    const tickers = ALL_IDS.map((id) => ASSET_META[id].ticker)
+    expect(new Set(tickers).size).toBe(tickers.length)
+  })
+
+  it('ASSET_LABEL 與 ASSETS_LIST.label 給的是 ticker', () => {
+    for (const a of ASSETS_LIST) {
+      expect(ASSET_LABEL[a.id]).toBe(a.ticker)
+      expect(a.label).toBe(a.ticker)
+    }
+  })
+
+  it('不認得的字串原樣回傳——USDC、PEPE、已經是 ticker 的字', () => {
+    expect(tickerOf('USDC')).toBe('USDC')
+    expect(tickerOf('PEPE')).toBe('PEPE')
+    expect(tickerOf('ETH')).toBe('ETH')
+  })
+
+  it('資產名稱不帶「Synthetic」，中文名稱不帶「合成」', () => {
+    for (const id of ALL_IDS) {
+      const m = ASSET_META[id]
+      expect(m.name).not.toMatch(/synthetic/i)
+      expect((t.tokens.assetName as Record<string, string>)[m.symbol]).not.toContain('合成')
     }
   })
 })

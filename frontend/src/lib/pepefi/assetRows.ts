@@ -54,7 +54,10 @@ export interface VaultGateState {
 }
 
 export interface AssetRow {
+  /** 鏈上 symbol（sETH），查表用；畫面顯示 ticker。 */
   symbol: string
+  /** 畫面代號（ETH），見 AssetMeta.ticker。 */
+  ticker: string
   name: string
   /** 見證過期一律視同未評等，見 tierForAsset。 */
   tier: Tier
@@ -122,6 +125,7 @@ export function buildAssetRows(
 
     return {
       symbol: input.symbol,
+      ticker: input.meta?.ticker ?? input.symbol,
       name: input.meta?.name ?? input.symbol,
       tier,
       tradingFeeBps,

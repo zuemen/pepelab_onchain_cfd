@@ -98,12 +98,14 @@ export const marketplace: Catalog['marketplace'] = {
     verifiedOnChain: 'Verified On-Chain',
     noName: '—',
     noStrategy: 'No strategy',
-    /** 策略籌碼：↑sBTC 50% 3× */
+    /** 策略籌碼：↑BTC 50% 3× */
     allocChip: '{side}{asset} {weight}% {leverage}×',
 
     volLabel: 'Vol 7d',
     pnlLabel: 'PnL 7d',
     followersLabel: 'Followers',
+    legacyFollowers: 'incl. {count} legacy',
+    legacyFollowersTip: '{count} of them follow through the previous contract: positions stay in the follower’s own account, but they do not auto-sync and no longer count towards slash scoring when cancelled.',
     stakeLabel: 'Stake',
 
     slashed: '⚠ {amount} USDC slashed',

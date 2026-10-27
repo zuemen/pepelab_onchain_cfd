@@ -15,6 +15,7 @@ import Typography from '@mui/material/Typography'
 import TableContainer from '@mui/material/TableContainer'
 
 import { t, interpolate } from 'src/locales'
+import { tickerOf } from 'src/lib/pepefi/assetMeta'
 import { deviationLevel } from 'src/lib/pepefi/oracleWitness'
 import { usd, ageText, timeText, signedBps } from 'src/lib/pepefi/rwaLabels'
 
@@ -148,7 +149,7 @@ export function OracleWitnessView({
                 const stale = r.ageSec !== null && maxPriceAge !== null && r.ageSec > maxPriceAge
                 return (
                   <TableRow key={r.symbol} data-testid={`oracle-row-${r.symbol}`}>
-                    <TableCell sx={{ fontWeight: 700, whiteSpace: 'nowrap' }}>{r.symbol}</TableCell>
+                    <TableCell sx={{ fontWeight: 700, whiteSpace: 'nowrap' }}>{tickerOf(r.symbol)}</TableCell>
                     <TableCell sx={{ fontFamily: 'monospace', whiteSpace: 'nowrap' }}>
                       {r.onchain.price !== null ? usd(r.onchain.price) : onchainLoading ? t.rwa.common.loading : o.onchainFailed}
                     </TableCell>

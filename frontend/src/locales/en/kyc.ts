@@ -73,11 +73,11 @@ export const kyc: Catalog['kyc'] = {
   status: {
     cardTitle: 'KYC Verification Status',
     verifiedTitle: 'Verified',
-    verifiedBody: 'You can trade regulated RWA assets (e.g. sAAPL, sTSLA).',
+    verifiedBody: 'You can trade regulated RWA assets (e.g. AAPL, TSLA).',
     pendingTitle: 'Under review',
     pendingBody: 'Your application has been submitted and is awaiting reviewer approval — no need to resubmit.',
     unverifiedTitle: 'Not verified',
-    unverifiedBody: 'Trading regulated RWA assets (e.g. sAAPL, sTSLA) requires KYC verification first.',
+    unverifiedBody: 'Trading regulated RWA assets (e.g. AAPL, TSLA) requires KYC verification first.',
     unverifiedAction: 'Submit KYC Application',
     notRequiredTitle: 'No verification required on this chain',
     notRequiredBody: 'This chain has no KYC gate deployed — no verification is needed to trade any asset.',

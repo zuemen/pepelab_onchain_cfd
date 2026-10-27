@@ -20,6 +20,8 @@ import { sessionClassOf } from 'src/lib/pepefi/marketHours'
 import { RWA_CLASS, keeperPrimary, keeperSecondary } from 'src/lib/pepefi/rwaProfile'
 import { bpsToPct, rwaFlagNote, attestorNote, closureRule, carbonCapped, kycRequirement } from 'src/lib/pepefi/rwaCards'
 
+import AssetIcon from 'src/components/pepefi/AssetIcon'
+
 // ----------------------------------------------------------------------
 
 export interface RwaAssetCardProps {
@@ -87,12 +89,10 @@ export function RwaAssetCard({ symbol, chain, kycAddress, modeSupport, nowSec }:
   return (
     <Card variant="outlined" data-testid={`rwa-card-${symbol}`} sx={{ p: 2.5, height: '100%' }}>
       <Stack direction="row" spacing={1.5} alignItems="center" sx={{ mb: 1 }}>
-        <Typography sx={{ fontSize: 26, lineHeight: 1 }} aria-hidden>
-          {meta?.icon ?? '?'}
-        </Typography>
+        <AssetIcon symbol={symbol} size={32} />
         <Box sx={{ minWidth: 0 }}>
           <Typography variant="h6" sx={{ fontWeight: 800, lineHeight: 1.2 }}>
-            {symbol}
+            {meta?.ticker ?? symbol}
           </Typography>
           <Typography variant="caption" color="text.secondary">
             {meta?.provenance?.referenceId ?? '—'}

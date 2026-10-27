@@ -66,11 +66,21 @@ export interface AssetTransition {
 }
 
 export interface AssetMeta {
+  /**
+   * 鏈上識別碼:合成代幣的 ERC-20 symbol(sETH)、ASSET_IDS 與 catalog 的鍵。
+   * 只拿來查表、加進錢包,不上畫面——畫面顯示的是 `ticker`。
+   */
   symbol:    string
+  /**
+   * 畫面上的代號:標的在真實世界的代號(sETH → ETH、sGOLD → XAU、sBOND → BGRN)。
+   * 黃金與綠債不是把 s 拿掉——GOLD 是 Barrick Gold、BOND 是 PIMCO 的 ETF,
+   * 兩個都是別的真實證券。見 ADR-0002 規則 1。
+   */
+  ticker:    string
+  /** 標的原名(英文),不帶「Synthetic」。中文名稱在 catalog 的 tokens.assetName。 */
   name:      string
   category:  AssetCategory
   regulated: boolean  // equity / bond / ETF — requires KYC gate
-  icon:      string
   /** issue #100 ①。ASSET_IDS 裡的每一顆都有;PEPE(工具代幣,非追蹤標的)沒有。 */
   provenance?: AssetProvenance
   carbon?:     AssetCarbon
@@ -97,10 +107,10 @@ export const CATEGORY_LABEL: Record<AssetCategory, string> = {
 export const ASSET_META: Record<string, AssetMeta> = {
   [ASSET_IDS.sBTC]: {
     symbol:    'sBTC',
-    name:      'Synthetic Bitcoin',
+    ticker:    'BTC',
+    name:      'Bitcoin',
     category:  'crypto',
     regulated: false,
-    icon:      '₿',
     provenance: {
       referenceId: 'BTC · Bitcoin mainnet (proof-of-work)',
       priceFeed:   'coingecko',
@@ -116,10 +126,10 @@ export const ASSET_META: Record<string, AssetMeta> = {
   },
   [ASSET_IDS.sETH]: {
     symbol:    'sETH',
-    name:      'Synthetic Ethereum',
+    ticker:    'ETH',
+    name:      'Ethereum',
     category:  'crypto',
     regulated: false,
-    icon:      'Ξ',
     provenance: {
       referenceId: 'ETH · Ethereum mainnet (proof-of-stake)',
       priceFeed:   'coingecko',
@@ -135,10 +145,10 @@ export const ASSET_META: Record<string, AssetMeta> = {
   },
   [ASSET_IDS.sAAPL]: {
     symbol:    'sAAPL',
-    name:      'Synthetic Apple Inc.',
+    ticker:    'AAPL',
+    name:      'Apple Inc.',
     category:  'equity',
     regulated: true,
-    icon:      '🍎',
     provenance: {
       referenceId: 'NASDAQ: AAPL · Apple Inc.',
       priceFeed:   'yahoo',
@@ -154,10 +164,10 @@ export const ASSET_META: Record<string, AssetMeta> = {
   },
   [ASSET_IDS.sTSLA]: {
     symbol:    'sTSLA',
-    name:      'Synthetic Tesla Inc.',
+    ticker:    'TSLA',
+    name:      'Tesla Inc.',
     category:  'equity',
     regulated: true,
-    icon:      '⚡',
     provenance: {
       referenceId: 'NASDAQ: TSLA · Tesla, Inc.',
       priceFeed:   'yahoo',
@@ -173,10 +183,10 @@ export const ASSET_META: Record<string, AssetMeta> = {
   },
   [ASSET_IDS.sGOLD]: {
     symbol:    'sGOLD',
-    name:      'Synthetic Gold (XAU/USD)',
+    ticker:    'XAU',
+    name:      'Gold',
     category:  'commodity',
     regulated: false,
-    icon:      '🥇',
     provenance: {
       referenceId: 'COMEX: GC=F · front-month gold future (XAU/USD)',
       priceFeed:   'yahoo',
@@ -192,10 +202,10 @@ export const ASSET_META: Record<string, AssetMeta> = {
   },
   [ASSET_IDS.sBOND]: {
     symbol:    'sBOND',
-    name:      'Synthetic Green Bond ETF (BGRN)',
+    ticker:    'BGRN',
+    name:      'iShares USD Green Bond ETF',
     category:  'bond',
     regulated: true,
-    icon:      '📜',
     provenance: {
       referenceId: 'NASDAQ: BGRN · iShares USD Green Bond ETF',
       priceFeed:   'yahoo',
@@ -221,10 +231,10 @@ export const ASSET_META: Record<string, AssetMeta> = {
   },
   [ASSET_IDS.sNVDA]: {
     symbol:    'sNVDA',
-    name:      'Synthetic NVIDIA Corp.',
+    ticker:    'NVDA',
+    name:      'NVIDIA Corp.',
     category:  'equity',
     regulated: true,
-    icon:      '🖥',
     provenance: {
       referenceId: 'NASDAQ: NVDA · NVIDIA Corporation',
       priceFeed:   'yahoo',
@@ -240,10 +250,10 @@ export const ASSET_META: Record<string, AssetMeta> = {
   },
   [ASSET_IDS.sMSFT]: {
     symbol:    'sMSFT',
-    name:      'Synthetic Microsoft Corp.',
+    ticker:    'MSFT',
+    name:      'Microsoft Corp.',
     category:  'equity',
     regulated: true,
-    icon:      '🪟',
     provenance: {
       referenceId: 'NASDAQ: MSFT · Microsoft Corporation',
       priceFeed:   'yahoo',
@@ -259,10 +269,10 @@ export const ASSET_META: Record<string, AssetMeta> = {
   },
   [ASSET_IDS.sGOOGL]: {
     symbol:    'sGOOGL',
-    name:      'Synthetic Alphabet Inc.',
+    ticker:    'GOOGL',
+    name:      'Alphabet Inc.',
     category:  'equity',
     regulated: true,
-    icon:      '🔍',
     provenance: {
       referenceId: 'NASDAQ: GOOGL · Alphabet Inc. Class A',
       priceFeed:   'yahoo',
@@ -278,10 +288,10 @@ export const ASSET_META: Record<string, AssetMeta> = {
   },
   [ASSET_IDS.sICLN]: {
     symbol:    'sICLN',
-    name:      'Synthetic iShares Clean Energy ETF',
+    ticker:    'ICLN',
+    name:      'iShares Global Clean Energy ETF',
     category:  'etf',
     regulated: true,
-    icon:      '🌿',
     provenance: {
       referenceId: 'NASDAQ: ICLN · iShares Global Clean Energy ETF',
       priceFeed:   'yahoo',
@@ -304,10 +314,10 @@ export const ASSET_META: Record<string, AssetMeta> = {
   },
   [ASSET_IDS.sESGU]: {
     symbol:    'sESGU',
-    name:      'Synthetic iShares MSCI USA ESG ETF',
+    ticker:    'ESGU',
+    name:      'iShares ESG Aware MSCI USA ETF',
     category:  'etf',
     regulated: true,
-    icon:      '🌱',
     provenance: {
       referenceId: 'ESGU · iShares ESG Aware MSCI USA ETF',
       priceFeed:   'yahoo',
@@ -352,10 +362,10 @@ for (const chain of Object.values(chainMap)) {
   if (!chain.PepeToken || chain.PepeToken === ZERO_ADDRESS) continue
   ASSET_META[chain.PepeToken] = {
     symbol:    'PEPE',
+    ticker:    'PEPE',
     name:      'Pepe RWA Utility Token',
     category:  'crypto',
     regulated: false,
-    icon:      '🐸',
   }
 }
 
@@ -371,11 +381,23 @@ for (const chain of Object.values(chainMap)) {
 export const ASSETS_LIST = Object.entries(ASSET_IDS).map(([, id]) => ({
   id: id as `0x${string}`,
   ...ASSET_META[id],
-  label:       ASSET_META[id].symbol,    // backward compat
+  label:       ASSET_META[id].ticker,    // backward compat
   requiresKYC: ASSET_META[id].regulated, // backward compat
 }))
 
-/** id → symbol lookup */
+/** id → 畫面代號(ticker)。要查表用的鏈上 symbol 請讀 ASSET_META[id].symbol。 */
 export const ASSET_LABEL: Record<string, string> = Object.fromEntries(
-  Object.entries(ASSET_META).map(([id, m]) => [id, m.symbol])
+  Object.entries(ASSET_META).map(([id, m]) => [id, m.ticker])
 )
+
+const TICKER_BY_SYMBOL: Record<string, string> = Object.fromEntries(
+  Object.values(ASSET_META).map((m) => [m.symbol, m.ticker])
+)
+
+/**
+ * 鏈上 symbol → 畫面代號(sETH → ETH)。手上只有 AssetSymbol 的畫面走這裡。
+ * 不認得的原樣回傳:USDC、PEPE、已經是 ticker 的字串本來就是畫面代號。
+ */
+export function tickerOf(symbol: string): string {
+  return TICKER_BY_SYMBOL[symbol] ?? symbol
+}

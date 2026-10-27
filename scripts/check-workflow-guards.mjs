@@ -102,19 +102,22 @@ export const ENVIRONMENTS = {
   keeper: ["base-sepolia-keeper.yml#keep", "price-keeper.yml#update-prices", "admin-base-sepolia.yml#admin-call"],
   settlement: ["x402-settlement-worker.yml#settle"],
   "admin-approval": ["admin-base-sepolia.yml#approve"],
+  // 跟單自動同步的 public 執行者（ADR-024）：熱錢包，只能簽 resyncFor。
+  "copy-sync": ["copy-sync-executor.yml#sync"],
 };
 
 /** 鏈上私鑰 secret → 引用它的 job 必須綁的 environment。 */
 export const PROTECTED_SECRETS = {
   KEEPER_PRIVATE_KEY: "keeper",
   FEE_SETTLEMENT_PRIVATE_KEY: "settlement",
+  COPY_SYNC_PRIVATE_KEY: "copy-sync",
 };
 
 /** 這兩種觸發會讓不受信任的來源（fork 的 PR、別的 workflow 的結果）在有 secrets 的情境下執行。 */
 export const FORBIDDEN_TRIGGERS = ["pull_request_target", "workflow_run"];
 
 /** 放鏈上私鑰的 environment。綁它們的 workflow（admin 除外）只能用下面這兩種觸發、不可有 inputs。 */
-export const KEY_ENVIRONMENTS = ["keeper", "settlement"];
+export const KEY_ENVIRONMENTS = ["keeper", "settlement", "copy-sync"];
 export const KEYED_WORKFLOW_TRIGGERS = ["schedule", "workflow_dispatch"];
 
 export const ADMIN = {
@@ -147,6 +150,7 @@ export const GUARD_SHA256 = {
 export const PINNED_WORKFLOWS = {
   "admin-base-sepolia.yml": "8df9986b12144f64b0e7df584f0b96270880a3cf32bea537bdeb5aafefb09130",
   "base-sepolia-keeper.yml": "27c61c6cc8ca0782c4d7c956b1a61ecb6ffeeebfe537282b58b829a01767c54f",
+  "copy-sync-executor.yml": "7491e911440f46230b48ae47980af4e3eacc7278ec882847361f86b5d668c71e",
   "price-keeper.yml": "5048608805fa691f7249ee5a24b21bc1d008b01517c969395a7e2efaf42808c9",
   "x402-settlement-worker.yml": "c8558cd02626ff245bc26aa17102e7c24009305f2bd4c8f01e9d5138ce53dce1",
 };
@@ -175,7 +179,7 @@ const TEMPLATE_PROBE_ID = "zz-template-probe";
 export const ALLOWED_KEYED_ACTIONS = ["actions/checkout", "actions/setup-node", "foundry-rs/foundry-toolchain"];
 
 /** 綁了就算「持有私鑰」的 environment（admin-approval 本身沒有私鑰，但它是 admin 核准的關卡）。 */
-const PINNING_ENVIRONMENTS = ["keeper", "settlement", "admin-approval"];
+const PINNING_ENVIRONMENTS = ["keeper", "settlement", "admin-approval", "copy-sync"];
 
 /** 整檔指紋：去 BOM、CRLF→LF，其餘一個字都不改。 */
 export function fileDigest(text) {

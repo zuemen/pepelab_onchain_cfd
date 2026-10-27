@@ -23,6 +23,8 @@ export const traderProfile = {
     staked: '質押金額',
     followers: '跟隨者',
     copiers: '跟單者',
+    /** 換過 CopyTracker 之後，舊 tracker 上還在跟的人（contracts/legacyCopyTrackers.ts）。 */
+    legacyCopiers: '跟單者（含舊版合約 {count} 位）',
     earnings: '收益',
     strategies: '策略數',
     versions: '版本',
@@ -31,14 +33,14 @@ export const traderProfile = {
   strategy: {
     title: '最新策略',
     empty: '尚未發布策略。',
-    /** 分配標籤：↑ sBTC 50% · 3× */
+    /** 分配標籤：↑ BTC 50% · 3× */
     chip: '{side} {asset} {weight}% · {leverage}×',
   },
 
   history: {
     titleOne: '策略歷史（{count} 個版本）',
     titleMany: '策略歷史（{count} 個版本）',
-    /** 摘要行：sBTC L 3× · sETH S 2× */
+    /** 摘要行：BTC L 3× · ETH S 2× */
     summaryEntry: '{asset} {side} {leverage}×',
     long: '多',
     short: '空',
@@ -159,7 +161,7 @@ export const traderProfile = {
     winRate: '勝率',
     winRateSub: '{count} 筆平倉',
     esgCorrelation: '與永續型資產的相關性',
-    esgCorrelationSub: '日報酬對 sESGU',
+    esgCorrelationSub: '日報酬對 ESGU',
     avgHold: '平均持有',
     avgHoldValue: '{days} 天',
     equityTitle: '淨值',
@@ -200,7 +202,7 @@ export const traderProfile = {
     /** 量表下的三段說明：VaR 是什麼、怎麼分級、對照平台資產的實際級數。 */
     riskScoreNote: '風險分數看最近一年每天的報酬。把這些日報酬由差到好排好，第 5% 那一天的跌幅叫做「單日 95% 風險值（VaR）」，意思是大約每 20 天會有 1 天跌得比它更多。',
     riskScoreBands: 'VaR 每超過一道門檻加 1 級，門檻標在上方每一格下面。這組門檻是本平台自訂的：參考 eToro 用 VaR 分 1–10 級的做法，但不是 eToro 的公式。資料不足 30 天的交易者不評分。',
-    riskScoreReference: '用平台資產最近一年（2025-10 至 2026-10）、不加槓桿的價格對照：綠色債券 ETF（sBOND）約 2 級、ESG 美股大盤 ETF（sESGU）約 4 級、AAPL／GOOGL／MSFT、黃金與潔淨能源 ETF（sICLN）約 6 級、BTC 與 NVDA 約 7 級、TSLA 與 ETH 約 8 級。9、10 級通常要用槓桿才會到。',
+    riskScoreReference: '用平台資產最近一年（2025-10 至 2026-10）、不加槓桿的價格對照：綠色債券 ETF（BGRN）約 2 級、ESG 美股大盤 ETF（ESGU）約 4 級、AAPL／GOOGL／MSFT、黃金與潔淨能源 ETF（sICLN）約 6 級、BTC 與 NVDA 約 7 級、TSLA 與 ETH 約 8 級。9、10 級通常要用槓桿才會到。',
     worstDay: '最差單日',
     worstWeek: '最差一週',
     drawdown1y: '近一年最大回撤',

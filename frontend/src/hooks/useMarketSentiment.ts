@@ -19,7 +19,6 @@ import { mapLimit, withRetry, RPC_CONCURRENCY } from 'src/lib/pepefi/rpcBatch'
 export interface AssetSentiment {
   asset:      string
   label:      string
-  icon:       string
   long:       bigint
   short:      bigint
   total:      bigint
@@ -75,7 +74,7 @@ export function useMarketSentiment(exchange: Contract | null): MarketSentiment {
         try {
           const long  = await withRetry(() => exchange.globalLongNotional(a.id))  as bigint
           const short = await withRetry(() => exchange.globalShortNotional(a.id)) as bigint
-          return { asset: a.id as string, label: a.symbol, icon: a.icon, long, short }
+          return { asset: a.id as string, label: a.ticker, long, short }
         } catch {
           return null
         }
