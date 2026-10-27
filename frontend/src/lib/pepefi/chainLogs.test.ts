@@ -552,3 +552,19 @@ describe('節點範圍上限變動時的自動對半切開', () => {
     expect(p.getLogs.mock.calls.length).toBeLessThan(64)
   })
 })
+
+describe('動態牆的 24 小時掃描要併發（2026-10-27：序列時正式站約 70 秒才出現第一則）', () => {
+  it('UI_SCAN_CONCURRENCY 在 2–3 之間：再高公開節點會回 429', async () => {
+    const { UI_SCAN_CONCURRENCY } = await import('./chainLogs')
+    expect(UI_SCAN_CONCURRENCY).toBeGreaterThanOrEqual(2)
+    expect(UI_SCAN_CONCURRENCY).toBeLessThanOrEqual(3)
+  })
+
+  it('社群事件與交易所活動兩個掃描都帶 concurrency', async () => {
+    const { readFileSync } = await import('node:fs')
+    for (const rel of ['../../hooks/useChainFeed.ts', '../../hooks/useExchangeActivity.ts']) {
+      const src = readFileSync(new URL(rel, import.meta.url), 'utf8')
+      expect(src, rel).toMatch(/getLogsChunked\([\s\S]*?concurrency: UI_SCAN_CONCURRENCY/)
+    }
+  })
+})

@@ -6,7 +6,7 @@ import { ASSET_LABEL } from 'src/lib/pepefi/assetMeta'
 import { notionalOf, isWhaleTrade, WHALE_THRESHOLD } from 'src/lib/pepefi/whale'
 import { mapLimit, withRetry, RPC_CONCURRENCY } from 'src/lib/pepefi/rpcBatch'
 import { t as tr, interpolate } from 'src/locales'
-import { UI_RETRIES, avgBlockTime, chunkRanges, scanFromBlock, getLogsChunked, isChunkScanAborted } from 'src/lib/pepefi/chainLogs'
+import { UI_RETRIES, UI_SCAN_CONCURRENCY, avgBlockTime, chunkRanges, scanFromBlock, getLogsChunked, isChunkScanAborted } from 'src/lib/pepefi/chainLogs'
 
 // 交易所活動的單一掃描來源。
 //
@@ -211,7 +211,7 @@ export function useExchangeActivity(
         latestNum,
         tick,
         () => { failedChunks += 1 },
-        { retries: UI_RETRIES, signal: ac.signal },
+        { retries: UI_RETRIES, concurrency: UI_SCAN_CONCURRENCY, signal: ac.signal },
       )
       if (isStale()) return
       setFailedChunks(failedChunks)
