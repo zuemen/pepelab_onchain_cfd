@@ -31,9 +31,9 @@ build 會檢查：專屬租戶必須有自己的 signal-api，且該網址要在
 
 | 變數 | 值 | 說明 |
 |---|---|---|
-| `UPSTASH_REDIS_REST_URL`／`TOKEN` | Vercel Marketplace 的 Upstash `pepelab-rwa-poc-kya`（sin1、免費、不淘汰） | **獨立 DB，不是平台的**。KYA 花費帳、防重放與撤銷驗證端狀態（ADR-021）跨實例共用 |
+| `UPSTASH_REDIS_REST_URL`／`TOKEN` | Vercel Marketplace 的 Upstash `pepelab-rwa-poc-kya`（sin1、免費、不淘汰） | KYA 花費帳、防重放與撤銷驗證端狀態（ADR-021）跨實例共用。**2026-10-27 起平台的 x402 結算佇列也用這個 DB**（Marketplace 免費名額已用完）。可以共用是因為：本租戶 `X402_SETTLEMENT_MODE=off`，不會排入 `x402:settlement:*`；殘留的一筆已封存。細節見 `docs/CUTOVER_LOG_2026-10-26.md`。**本租戶若要開分潤，必須先拆成兩個 DB** |
 | `VC_STATUS_URL` | `https://raw.githubusercontent.com/zuemen/pepelab_onchain_cfd/master/docs/tenants/rwa-poc/vc-status` | 撤銷狀態清單（本目錄 `vc-status/`，有簽章的公開資料） |
-| `X402_SETTLEMENT_MODE` | `off` | **待擁有者新增**（ADR-021 §5）。本租戶沒有分潤結算目標：付費回應 `settled:false`＋`revenue_sharing_off`，不入結算佇列 |
+| `X402_SETTLEMENT_MODE` | `off` | 已設定（2026-10-27 從線上 `GET /` 讀到 off；ADR-021 §5）。本租戶沒有分潤結算目標：付費回應 `settled:false`＋`revenue_sharing_off`，不入結算佇列 |
 | `VC_STATUS_STATE_PATH` | `/tmp/vc-status-state.json` | 設了 Upstash 後**不再使用**（撤銷驗證端狀態改存 Upstash，`VC_STATUS_STATE_STORE` 不設＝自動），可留可刪 |
 | `BASE_SEPOLIA_RPC_URL`、`KYA_RPC_URL` | `https://base-sepolia-rpc.publicnode.com` | `sepolia.base.org` 會擋雲端機房 IP |
 | `CORS_ALLOWED_ORIGINS` | `https://pepelab-rwa-poc.vercel.app` | |
