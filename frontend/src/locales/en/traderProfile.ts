@@ -69,6 +69,14 @@ export const traderProfile: Catalog['traderProfile'] = {
     readFailedBody: "The on-chain Slashed events could not be read, so this page cannot tell whether this trader has ever been slashed. Please refresh later.",
     totalFromContract: 'Cumulative slashed amount recorded by the contract: {amount} USDC',
     outsideWindow: 'No Slashed events in the last {span}, but the contract records a cumulative {amount} USDC slashed — it happened before the scan window.',
+    emptyInWindow: 'No Slashed events in the last {span}.',
+  },
+
+  deferred: {
+    body: 'This section scans on-chain records range by range, which takes a while. Load it when you need it.',
+    load: 'Load',
+    activityTitle: 'Open Positions and Activity Timeline',
+    slashTitle: 'Slash History',
   },
 
   actions: {

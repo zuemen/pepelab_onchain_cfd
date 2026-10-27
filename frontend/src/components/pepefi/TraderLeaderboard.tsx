@@ -24,7 +24,6 @@ import { traderAvatarSrc } from 'src/utils/pepefi-assets';
 import { t, interpolate } from 'src/locales';
 import { heroDisclosure } from 'src/lib/pepefi/heroDisclosure';
 import {
-  parseAllocs,
   buildVolumeMap,
   buildMarginMap,
   buildPnlMap,
@@ -39,7 +38,6 @@ import {
   scoreChipColor,
   fPnL,
   fWinRate,
-  type RawAlloc,
   type TraderCard,
   type OpenedEvent,
   type ClosedEvent,
@@ -47,7 +45,7 @@ import {
 } from 'src/lib/pepefi/leaderboardMetrics';
 import { followerReaderOf, readFollowersAcross } from 'src/lib/pepefi/activeFollowers';
 import { legacyCopyTrackersFor, LEGACY_COPY_TRACKER_ABI } from 'src/contracts/legacyCopyTrackers';
-import { mapLimit, withRetry, RPC_CONCURRENCY } from 'src/lib/pepefi/rpcBatch';
+import { readTraderBasics } from 'src/lib/pepefi/traderReads';
 import {
   fetchHeroIndex,
   heroByAddress,
@@ -285,63 +283,36 @@ export default function TraderLeaderboard() {
       };
 
       // 目前的跟隨人數，不是 getFollowerCount 的「被跟單過幾次」（見 activeFollowers.ts）。
-      // 所有交易者一起讀，同一位跟單者的紀錄只讀一次。換過 tracker 時，舊 tracker 上還在跟的人也算進去
-      // 並分開標示（contracts/legacyCopyTrackers.ts）。
+      // 跟隨者與每位交易者的名稱、策略、聲譽、質押同時讀。兩邊都併成 Multicall3（見 multicall.ts）：
+      // 一筆一筆讀在 Base Sepolia 是 386 個請求、26 秒，併起來是 6 個、2 秒。
+      // 換過 tracker 時，舊 tracker 上還在跟的人也算進去並分開標示（contracts/legacyCopyTrackers.ts）。
       const legacyReaders = legacyCopyTrackersFor(wallet.chainId, String(contracts.copyTracker.target))
-        .map((address) => followerReaderOf(new Contract(address, LEGACY_COPY_TRACKER_ABI, contracts.copyTracker.runner)));
-      const followersOf = await readFollowersAcross(addresses as string[], followerReaderOf(contracts.copyTracker), legacyReaders);
+        .map((address) => followerReaderOf(new Contract(address, LEGACY_COPY_TRACKER_ABI, contracts.copyTracker.runner), wallet.provider, wallet.chainId));
+      const [followersOf, basics] = await Promise.all([
+        readFollowersAcross(addresses as string[], followerReaderOf(contracts.copyTracker, wallet.provider, wallet.chainId), legacyReaders),
+        readTraderBasics(addresses as string[], contracts, wallet.provider, wallet.chainId),
+      ]);
       if (ac.signal.aborted) return;
 
-      // 每位交易者四筆 eth_call，幾十位一次全送出會撞上公開 RPC 的每秒上限（429），
-      // 被擋掉的那筆會被下面的 catch 讀成「沒名字／沒策略」。限制併發並重試，見 rpcBatch.ts。
-      const cards = await mapLimit(
-        addresses as string[],
-        RPC_CONCURRENCY,
-        async (addr): Promise<TraderCard> => {
-          let tRaw: [boolean, string, bigint] = [false, '', 0n];
-          try {
-            tRaw = (await withRetry(() => contracts.registry.traders(addr))) as unknown as [boolean, string, bigint];
-          } catch { /* unregistered or unavailable */ }
-          const active = followersOf.get(addr.toLowerCase()) ?? null;
-          const fc = active === null ? null : BigInt(active.all.length);
-
-          let allocs: RawAlloc[] = [];
-          try {
-            const stratRaw = (await withRetry(() => contracts.registry.getLatestStrategy(addr))) as unknown as [unknown[], bigint];
-            allocs = parseAllocs(stratRaw[0] as unknown[]);
-          } catch { /* no strategy yet */ }
-
-          let reputation:   bigint | null = null;
-          let stake:        bigint | null = null;
-          let totalSlashed: bigint | null = null;
-          try {
-            const [score, si] = await Promise.all([
-              withRetry(() => contracts.traderStake.reputationScore(addr)),
-              withRetry(() => contracts.traderStake.getStake(addr)),
-            ]);
-            reputation   = score as bigint;
-            const s      = si as unknown as { amount: bigint; totalSlashed: bigint };
-            stake        = s.amount;
-            totalSlashed = s.totalSlashed;
-          } catch { /* TraderStake not deployed */ }
-
-          const card = buildTraderCard(
-            {
-              address:      addr,
-              displayName:  tRaw[1],
-              allocs,
-              followerCount: fc,
-              reputation,
-              stake,
-              totalSlashed,
-            },
-            aggregates,
-          );
-          return active !== null && active.legacyOnly > 0
-            ? { ...card, legacyFollowerCount: BigInt(active.legacyOnly) }
-            : card;
-        },
-      );
+      const cards = (addresses as string[]).map((addr, i): TraderCard => {
+        const active = followersOf.get(addr.toLowerCase()) ?? null;
+        const b = basics[i];
+        const card = buildTraderCard(
+          {
+            address:       addr,
+            displayName:   b.displayName,
+            allocs:        b.allocs,
+            followerCount: active === null ? null : BigInt(active.all.length),
+            reputation:    b.reputation,
+            stake:         b.stake,
+            totalSlashed:  b.totalSlashed,
+          },
+          aggregates,
+        );
+        return active !== null && active.legacyOnly > 0
+          ? { ...card, legacyFollowerCount: BigInt(active.legacyOnly) }
+          : card;
+      });
 
       if (ac.signal.aborted) return;
       const heroes = heroIndex ? heroByAddress(heroIndex) : null;

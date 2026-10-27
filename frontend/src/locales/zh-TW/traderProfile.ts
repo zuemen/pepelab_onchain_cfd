@@ -68,6 +68,15 @@ export const traderProfile = {
     readFailedBody: '無法讀取鏈上的罰沒事件，因此不能據此判斷此交易員是否曾被罰沒。請稍後重新整理。',
     totalFromContract: '合約記錄的累計罰沒：{amount} USDC',
     outsideWindow: '最近 {span} 內沒有罰沒事件，但合約記錄的累計罰沒為 {amount} USDC——罰沒發生在掃描範圍之前。',
+    emptyInWindow: '最近 {span} 內沒有罰沒事件。',
+  },
+
+  /** 要逐段掃描事件的區塊（目前部位與時間軸、最近動態、罰沒紀錄）預設收起，點了才掃，不跟主要內容搶讀鏈額度。 */
+  deferred: {
+    body: '這一區要逐段掃描鏈上紀錄，比較花時間，需要時再載入。',
+    load: '載入',
+    activityTitle: '目前部位與動態時間軸',
+    slashTitle: '罰沒紀錄',
   },
 
   actions: {
