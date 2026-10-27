@@ -61,7 +61,7 @@ export const stake: Catalog['stake'] = {
     title: 'How Trader Stake works',
     publish: 'Stake ≥ 100 {token} to publish strategies on the Marketplace.',
     slashing:
-      'If a follower suffers > 30% loss, 50% of that loss amount (capped at 50% of your stake) is slashed and sent to them.',
+      "When a follower unfollows, if that copy's price loss reaches 30% (before trading fees, borrow fees and funding), 50% of that loss (capped at 50% of your stake) is slashed. The slashed amount goes into the platform reserve, not to the follower.",
     reputation:
       'Reputation = stake × 100 ÷ (stake + totalSlashed × 5) — degrades as you get slashed.',
     cooldown: 'Unstaking requires a 24-hour cooldown.',
@@ -75,6 +75,6 @@ export const stake: Catalog['stake'] = {
     minimum: 'Minimum stake: {amount} {token} · Skin in the game for anyone using your strategy',
     addDescription:
       'Staking puts your capital at risk — it can be deducted when the TraderStake contract’s slashing rules are triggered. In return, you earn credibility (reputation score) and can publish strategies.',
-    slashing: 'Slashing is enforced by the TraderStake contract: at most 50% of your stake per event, paid to the affected party.',
+    slashing: 'Slashing is enforced by the TraderStake contract: at most 50% of your stake per event, held in the platform reserve rather than paid directly to any user.',
   },
 };

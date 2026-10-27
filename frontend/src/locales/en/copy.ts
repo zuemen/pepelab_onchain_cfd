@@ -73,7 +73,7 @@ export const copy: Catalog['copy'] = {
     netMargin: 'Net margin deposited',
     executionFee: 'Execution Fee (ETH)',
     split:
-      'Copy fee is split 70% → trader · 20% → platform · 10% → slash pool. Execution fee pays Keeper bots.',
+      'Copy fee is split 70% → trader · 20% → platform · 10% → insurance vault. Execution fee pays Keeper bots.',
   },
 
   skinInGame: {
@@ -87,7 +87,7 @@ export const copy: Catalog['copy'] = {
     noStakeWarning:
       '⚠ This trader has no stake — they have no skin-in-the-game. You cannot trigger slashing if they cause losses.',
     slashRule:
-      "⚠ If your loss exceeds 30%, this trader's stake will be slashed (50% of loss, capped at 50% of stake) and transferred to you as compensation.",
+      "⚠ When you unfollow, if this copy's price loss reaches 30% (before trading fees, borrow fees and funding), this trader's stake is slashed (50% of the loss, capped at 50% of the stake). The slashed amount goes into the platform reserve, not to you. If you close any of the copied positions yourself, this copy is not scored for slashing.",
   },
 
   confirm: {
