@@ -6,6 +6,9 @@ import type { Catalog } from '../zh-TW';
 export const portfolio: Catalog['portfolio'] = {
   netWorth: {
     title: 'Net Worth',
+    titleTooltip: 'Each part valued at current prices and added up — not an amount you can withdraw all at once. The parts differ in liquidity and risk; hover each heading below for details.',
+    liquid: 'Available now',
+    liquidTooltip: 'Wallet USDC + free margin in your trading account: usable without closing a position, unstaking or redeeming. Excludes margin locked in positions, stake, the LP vault and tokenized assets.',
     unrealisedPnl: 'Unrealised PnL',
     unrealisedPnlTooltip: 'What your open positions would net if closed now: mark-price PnL after fees and funding, the same figure as the trading terminal. Excludes the 10% performance fee some positions pay on profit; funding as of the last settlement; excludes the bankruptcy bailout. Shows — when any position cannot be read',
 
@@ -23,6 +26,15 @@ export const portfolio: Catalog['portfolio'] = {
       trading: 'Trading',
       staked: 'Staked',
       lpVault: 'LP Vault',
+    },
+
+    risk: {
+      spot: 'Valued at the oracle price, not a traded price; while the underlying market is closed the price may sit at its last update. Redeeming pays USDC at the current oracle price, and only while the asset vault holds enough USDC. These are synthetic tokens — they cannot be exchanged for the real stock or commodity.',
+      wallet: 'USDC in your Web3 wallet, usable any time. Its value depends on the stablecoin holding its $1 peg.',
+      trading: 'Free margin can be withdrawn any time; margin locked in positions comes back only when you close them. Leveraged positions are liquidated when losses reach maintenance margin. Excludes unrealised PnL, which is shown next to net worth.',
+      staked: 'USDC staked in TraderStake. After requesting an unstake you wait 1 day to withdraw. When one of your followers exits with a loss of 30% or more, half that loss is slashed from your stake, up to 50% of the stake.',
+      stakedNoCopy: 'USDC staked in TraderStake. After requesting an unstake you wait 1 day to withdraw. When the contract\'s slashing rules trigger, up to 50% of the stake can be deducted at once.',
+      lpVault: 'The LP vault covers traders\' bankruptcies; each bailout lowers the share value. Shown is the USDC your shares would redeem for at the current share price; if the vault runs short it cannot redeem in full.',
     },
 
     /** 某一項讀不到時的說明（Unread Balance，見 CONTEXT.md）。 */
