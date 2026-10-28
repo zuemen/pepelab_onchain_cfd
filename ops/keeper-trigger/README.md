@@ -16,7 +16,7 @@
 
 `.github/workflows/base-sepolia-keeper.yml` 名目上每 15 分鐘跑一次，但 GitHub 排程是 best-effort：實測間隔 68–169 分鐘，2026-09-30 甚至 4.5 小時沒有執行。交易所的 `maxPriceAge` 是 6 小時，所以只要一次寫價失敗再遇上排程延遲，資產就會過期、無法交易（當天 sBTC 就是這樣）。
 
-這個 Worker 每 20 分鐘用 Cloudflare 的 cron 檢查一次 `WORKFLOW_FILES` 裡的每一支 keeper（預設 `base-sepolia-keeper.yml` 與 Ethereum Sepolia 的 `price-keeper.yml`；後者在 2026-10-01 同樣因排程節流而過期，見 #208。另有專屬租戶 rwa-poc 的 `keeper-rwa-poc.yml`）；某支 keeper 超過 15 分鐘沒有執行、而且目前沒有排隊或執行中的 run，才觸發它一次 `workflow_dispatch`。各支獨立判斷，一支觸發失敗不影響其他支。GitHub 排程仍然保留，兩者並存。keeper 在不需要寫價時不會送交易，多跑一次只花 Actions 分鐘數（公開 repo 免費）。
+這個 Worker 每 20 分鐘用 Cloudflare 的 cron 檢查一次 `WORKFLOW_FILES` 裡的每一支 keeper（預設 `base-sepolia-keeper.yml` 與 Ethereum Sepolia 的 `price-keeper.yml`；後者在 2026-10-01 同樣因排程節流而過期，見 #208。另有專屬租戶 rwa-poc 的 `keeper-rwa-poc.yml`，以及跟單自動同步的 public 執行者 `copy-sync-executor.yml`：它名目上也是每 15 分鐘，2026-10-27 實測 3.5–5.5 小時才跑一次，交易者發新版後跟隨者要等這麼久才被同步）；某支 workflow 超過 15 分鐘沒有執行、而且目前沒有排隊或執行中的 run，才觸發它一次 `workflow_dispatch`。各支獨立判斷，一支觸發失敗不影響其他支。GitHub 排程仍然保留，兩者並存。keeper 在不需要寫價時不會送交易，多跑一次只花 Actions 分鐘數（公開 repo 免費）。
 
 Worker 本身**不持有任何鏈上金鑰**，對任何 HTTP 請求都回 404（`workers_dev = false`、`preview_urls = false`，不產生公開網址）。它唯一的憑證是一個權限為 **Actions: Read and write** 的 GitHub 憑證：擁有者本人的 fine-grained PAT，或 GitHub App 的私鑰（Worker 用它換一小時的 installation token，見「改用 GitHub App」）。兩種憑證能做的事相同，都比「觸發 keeper」多很多，下面逐項寫明。
 
@@ -262,7 +262,7 @@ Worker 的程式不會替你建立 App。先完成「部署前必做」第 1–5
 
 ## 調整
 
-`wrangler.toml` 的 `[vars]`：`WORKFLOW_FILES`（逗號分隔，目前是兩支平台 keeper 加上租戶 `keeper-rwa-poc.yml`；舊的單一 `WORKFLOW_FILE` 仍相容，`WORKFLOW_FILES` 優先）、`MIN_GAP_SEC`（預設 900）、`WORKFLOW_REF`（預設 master）、`GITHUB_APP_ID` 與 `GITHUB_APP_INSTALLATION_ID`（改用 GitHub App 時才設，見上方）。cron 間隔改 `[triggers] crons`。
+`wrangler.toml` 的 `[vars]`：`WORKFLOW_FILES`（逗號分隔，目前是兩支平台 keeper、租戶 `keeper-rwa-poc.yml` 與 `copy-sync-executor.yml`；舊的單一 `WORKFLOW_FILE` 仍相容，`WORKFLOW_FILES` 優先）、`MIN_GAP_SEC`（預設 900）、`WORKFLOW_REF`（預設 master）、`GITHUB_APP_ID` 與 `GITHUB_APP_INSTALLATION_ID`（改用 GitHub App 時才設，見上方）。cron 間隔改 `[triggers] crons`。
 
 ## 測試
 
