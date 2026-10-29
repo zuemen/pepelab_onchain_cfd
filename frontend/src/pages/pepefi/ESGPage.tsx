@@ -1,632 +1,298 @@
-import { MONO } from 'src/components/pepefi/brandKit'
-import { useState, useMemo } from 'react';
-import {
-  RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis,
-  ResponsiveContainer, Tooltip as RadarTooltip,
-} from 'recharts';
-import { useContracts } from 'src/hooks/useContracts';
-import { useV2Contracts } from 'src/hooks/useV2Contracts';
-import { useCarbonTiers } from 'src/hooks/useCarbonTiers';
-import { AttestedTierChips } from 'src/components/pepefi/AttestedCarbonTier';
-import { usePepefiWallet } from 'src/layouts/pepefi';
-import { useESG } from 'src/hooks/useESG';
-import { ASSET_IDS } from 'src/contracts/addresses';
-import { t, interpolate } from 'src/locales';
-import { ASSET_META } from 'src/lib/pepefi/assetMeta';
-import { assetDisplayName } from 'src/lib/pepefi/assetName';
-import ESGBadge from 'src/components/pepefi/ESGBadge';
-import AssetIcon from 'src/components/pepefi/AssetIcon';
-import CarbonRetirementCard from 'src/components/pepefi/CarbonRetirementCard';
-import Skeleton from 'src/components/pepefi/Skeleton';
+import { useState } from 'react';
 
 import Box from '@mui/material/Box';
-import Container from '@mui/material/Container';
-import Typography from '@mui/material/Typography';
 import Card from '@mui/material/Card';
-import Grid from '@mui/material/Grid';
-import Stack from '@mui/material/Stack';
 import Chip from '@mui/material/Chip';
-import Divider from '@mui/material/Divider';
+import Grid from '@mui/material/Grid';
+import Link from '@mui/material/Link';
 import Alert from '@mui/material/Alert';
-import LinearProgress from '@mui/material/LinearProgress';
-import ButtonBase from '@mui/material/ButtonBase';
+import Stack from '@mui/material/Stack';
 import Table from '@mui/material/Table';
+import Divider from '@mui/material/Divider';
+import TableRow from '@mui/material/TableRow';
+import Container from '@mui/material/Container';
 import TableBody from '@mui/material/TableBody';
 import TableCell from '@mui/material/TableCell';
-import TableContainer from '@mui/material/TableContainer';
 import TableHead from '@mui/material/TableHead';
-import TableRow from '@mui/material/TableRow';
+import Typography from '@mui/material/Typography';
+import TableContainer from '@mui/material/TableContainer';
 
-// ── All 11 asset IDs ──────────────────────────────────────────────────────────
+import { t, interpolate } from 'src/locales';
+import { usePepefiWallet } from 'src/layouts/pepefi';
+import { ASSET_IDS } from 'src/contracts/addresses';
+import { ASSET_META } from 'src/lib/pepefi/assetMeta';
+import { useCarbonTiers } from 'src/hooks/useCarbonTiers';
+import { MONO } from 'src/components/pepefi/brandKit';
+import AssetIcon from 'src/components/pepefi/AssetIcon';
+import { useV2Contracts } from 'src/hooks/useV2Contracts';
+import { assetDisplayName } from 'src/lib/pepefi/assetName';
+import { AttestedTierChips } from 'src/components/pepefi/AttestedCarbonTier';
+import CarbonRetirementCard from 'src/components/pepefi/CarbonRetirementCard';
+import { AssetCarbonFact, AssetTransitionFact } from 'src/components/pepefi/AssetProvenance';
+import {
+  ESG_PROVIDERS,
+  ratingCell,
+  hasThirdPartyRating,
+  type EsgLight,
+  type RatingCell,
+  type EsgProvider,
+} from 'src/lib/pepefi/esgRatings';
 
-const ALL_ASSET_IDS = [
-  ASSET_IDS.sBTC,  ASSET_IDS.sETH,   ASSET_IDS.sAAPL, ASSET_IDS.sTSLA,
-  ASSET_IDS.sGOLD, ASSET_IDS.sBOND,  ASSET_IDS.sNVDA, ASSET_IDS.sMSFT,
-  ASSET_IDS.sGOOGL,ASSET_IDS.sICLN,  ASSET_IDS.sESGU,
+// issue #383：平台不替資產評分。這一頁只轉述第三方評級（資料在 lib/pepefi/esgRatingsData.ts），
+// 碳分級另外標成平台的風險政策。各家不加總、不平均、不排名，所以資產照類別排，不照評級排。
+
+const ASSETS = [
+  ASSET_IDS.sAAPL, ASSET_IDS.sNVDA, ASSET_IDS.sMSFT, ASSET_IDS.sGOOGL, ASSET_IDS.sTSLA,
+  ASSET_IDS.sICLN, ASSET_IDS.sESGU, ASSET_IDS.sBOND,
+  ASSET_IDS.sBTC,  ASSET_IDS.sETH,  ASSET_IDS.sGOLD,
 ];
 
-// ── Rating table (7 tiers, AAA → CCC) ────────────────────────────────────────
-
-const RATING_TABLE = [
-  { rating: 'AAA', min: 80,  label: t.esg.rating.aaa, desc: t.esg.rating.aaaDesc, color: '#00b8d9', bg: 'rgba(0, 184, 217, 0.16)' },
-  { rating: 'AA',  min: 70,  label: t.esg.rating.aa,  desc: t.esg.rating.aaDesc,  color: '#22c55e', bg: 'rgba(34, 197, 94, 0.16)' },
-  { rating: 'A',   min: 60,  label: t.esg.rating.a,   desc: t.esg.rating.aDesc,   color: '#bef264', bg: 'rgba(190, 242, 100, 0.16)' },
-  { rating: 'BBB', min: 50,  label: t.esg.rating.bbb, desc: t.esg.rating.bbbDesc, color: '#ffab00', bg: 'rgba(255, 171, 0, 0.16)' },
-  { rating: 'BB',  min: 40,  label: t.esg.rating.bb,  desc: t.esg.rating.bbDesc,  color: '#ff5630', bg: 'rgba(255, 86, 48, 0.16)' },
-  { rating: 'B',   min: 30,  label: t.esg.rating.b,   desc: t.esg.rating.bDesc,   color: '#ff5630', bg: 'rgba(255, 86, 48, 0.12)' },
-  { rating: 'CCC', min: 0,   label: t.esg.rating.ccc, desc: t.esg.rating.cccDesc, color: '#ff5630', bg: 'rgba(255, 86, 48, 0.08)' },
-];
-
-// ── One-line rationale per asset ──────────────────────────────────────────────
-
-const ESG_RATIONALE: Record<string, string> = {
-  [ASSET_IDS.sBTC]:   t.esg.rationale.sBTC,
-  [ASSET_IDS.sETH]:   t.esg.rationale.sETH,
-  [ASSET_IDS.sAAPL]:  t.esg.rationale.sAAPL,
-  [ASSET_IDS.sTSLA]:  t.esg.rationale.sTSLA,
-  [ASSET_IDS.sGOLD]:  t.esg.rationale.sGOLD,
-  [ASSET_IDS.sBOND]:  t.esg.rationale.sBOND,
-  [ASSET_IDS.sNVDA]:  t.esg.rationale.sNVDA,
-  [ASSET_IDS.sMSFT]:  t.esg.rationale.sMSFT,
-  [ASSET_IDS.sGOOGL]: t.esg.rationale.sGOOGL,
-  [ASSET_IDS.sICLN]:  t.esg.rationale.sICLN,
-  [ASSET_IDS.sESGU]:  t.esg.rationale.sESGU,
+const LIGHT_COLOR: Record<EsgLight, 'success' | 'warning' | 'error'> = {
+  leader: 'success',
+  average: 'warning',
+  laggard: 'error',
 };
 
-// ── Radar accent color per asset ──────────────────────────────────────────────
+const tp = t.esg.thirdParty;
 
-const RADAR_COLOR: Record<string, string> = {
-  [ASSET_IDS.sBTC]:   '#f7931a',
-  [ASSET_IDS.sETH]:   '#627eea',
-  [ASSET_IDS.sAAPL]:  '#a2aaad',
-  [ASSET_IDS.sTSLA]:  '#cc0000',
-  [ASSET_IDS.sGOLD]:  '#ffd700',
-  [ASSET_IDS.sBOND]:  '#10b981',
-  [ASSET_IDS.sNVDA]:  '#76b900',
-  [ASSET_IDS.sMSFT]:  '#00a4ef',
-  [ASSET_IDS.sGOOGL]: '#ea4335',
-  [ASSET_IDS.sICLN]:  '#00c853',
-  [ASSET_IDS.sESGU]:  '#2e7d32',
-};
+/** 表格裡的一格。四種情況的意思不同，畫法也刻意不同（見 esgRatings.ts 的 RatingCell）。 */
+function RatingCellView({ cell }: { cell: RatingCell }) {
+  switch (cell.kind) {
+    case 'rated':
+      return cell.light ? (
+        <Chip size="small" color={LIGHT_COLOR[cell.light]} label={cell.rating.rating} sx={{ fontFamily: MONO, fontWeight: 'bold' }} />
+      ) : (
+        <Typography variant="body2" sx={{ fontFamily: MONO, fontWeight: 'bold' }}>{cell.rating.rating}</Typography>
+      );
+    case 'notPublic':
+      return <Typography variant="caption" color="text.secondary">{tp.cell.notPublic}</Typography>;
+    case 'unrated':
+      return <Chip size="small" variant="outlined" label={tp.cell.unrated} sx={{ borderStyle: 'dashed' }} />;
+    case 'notApplicable':
+      return <Typography variant="caption" color="text.disabled">{tp.cell.notApplicable}</Typography>;
+  }
+}
 
-// ── Category badge style ──────────────────────────────────────────────────────
+/** 詳細資訊裡一家評級機構的卡片。這家根本不評這類資產時不畫。 */
+function ProviderCard({ provider, cell }: { provider: EsgProvider; cell: RatingCell }) {
+  const p = tp.provider[provider];
+  if (cell.kind === 'notApplicable') return null;
 
-const CAT_COLOR: Record<string, string> = {
-  crypto:    'rgba(99, 102, 241, 0.16)',
-  equity:    'rgba(168, 85, 247, 0.16)',
-  commodity: 'rgba(245, 158, 11, 0.16)',
-  etf:       'rgba(0, 184, 217, 0.16)',
-  bond:      'rgba(16, 185, 129, 0.16)',
-};
-
-const CAT_TEXT_COLOR: Record<string, string> = {
-  crypto:    '#6366f1',
-  equity:    '#a855f7',
-  commodity: '#f59e0b',
-  etf:       '#00b8d9',
-  bond:      '#10b981',
-};
-
-// ── Bar color by score ("綠/黃/紅 按分數") ───────────────────────────────────
-
-const barColor = (score: number) =>
-  score >= 65 ? 'success.main' :
-  score >= 40 ? 'warning.main' : 'error.main';
-
-const DIMS = [
-  { key: 'environmental' as const, short: 'E', label: t.esg.dimension.environmental },
-  { key: 'social'        as const, short: 'S', label: t.esg.dimension.social        },
-  { key: 'governance'    as const, short: 'G', label: t.esg.dimension.governance    },
-];
+  return (
+    <Box sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 1.5, p: 2, height: '100%' }}>
+      <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 'bold' }}>{p.name}</Typography>
+      {cell.kind === 'rated' ? (
+        <Stack spacing={0.75} sx={{ mt: 0.5 }}>
+          <Stack direction="row" spacing={1} alignItems="center">
+            <Typography variant="h5" sx={{ fontFamily: MONO, fontWeight: 'bold', lineHeight: 1 }}>
+              {cell.rating.rating}
+            </Typography>
+            {cell.light && <Chip size="small" color={LIGHT_COLOR[cell.light]} label={tp.light[cell.light]} />}
+          </Stack>
+          <Typography variant="caption" color="text.secondary">{p.scale}</Typography>
+          {cell.rating.spGlobal?.underReview && (
+            <Typography variant="caption" color="warning.main">{tp.detail.spUnderReview}</Typography>
+          )}
+          {cell.rating.spGlobal && (
+            <Typography variant="caption" color="text.secondary">
+              {cell.rating.spGlobal.csaRespondent ? tp.detail.spRespondent : tp.detail.spPublicInfo}
+            </Typography>
+          )}
+          <Typography variant="caption" color="text.secondary">
+            {tp.detail.ratedOn}: <Box component="span" sx={{ fontFamily: MONO }}>{cell.rating.ratedOn}</Box>
+            {'  ·  '}
+            {tp.detail.retrievedOn}: <Box component="span" sx={{ fontFamily: MONO }}>{cell.rating.retrievedOn}</Box>
+          </Typography>
+          <Link href={cell.rating.sourceUrl} target="_blank" rel="noopener noreferrer" variant="caption">
+            {tp.detail.source}
+          </Link>
+        </Stack>
+      ) : (
+        <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+          {interpolate(cell.kind === 'notPublic' ? tp.detail.notPublic : tp.detail.unrated, { provider: p.name })}
+        </Typography>
+      )}
+    </Box>
+  );
+}
 
 export default function ESGPage() {
   const wallet = usePepefiWallet();
-  const contracts   = useContracts(wallet.provider, wallet.signer, wallet.chainId);
-  const { data: esg, loaded: esgLoaded, error: esgFailed, unavailable: esgUnavailable } = useESG(contracts?.esgRegistry ?? null);
-  // #152：見證碳等級來自 V2 stack 的 ESGRegistryV2,跟上面那份舊評等是兩個不同
-  // 的合約、兩套不同的資料。刻意各自讀取、各自呈現,不在這裡合併成一個物件。
   const v2 = useV2Contracts(wallet.provider, wallet.signer, wallet.chainId);
   const carbonTiers = useCarbonTiers(v2?.esgRegistryV2 ?? null);
-  const [selected, setSelected] = useState<string>(ASSET_IDS.sESGU);
+  const [selected, setSelected] = useState<string>(ASSETS[0]);
 
-  const isLoading = wallet.isConnected && !esgUnavailable && !esgLoaded;
-
-  const sorted = useMemo(
-    () =>
-      [...ALL_ASSET_IDS].sort((a, b) => {
-        const ca = esg[a]?.composite ?? -1;
-        const cb = esg[b]?.composite ?? -1;
-        return cb - ca;
-      }),
-    [esg]
-  );
-
-  const selInfo  = esg[selected];
-  const selMeta  = ASSET_META[selected];
-  const selColor = RADAR_COLOR[selected] ?? '#6366f1';
-
-  const radarData = selInfo
-    ? DIMS.map(d => ({ subject: d.label, value: selInfo[d.key], fullMark: 100 }))
-    : [];
+  // 讀不到見證登記時碳分級整欄不畫,不留「本網路尚未部署」這類提示（CONTEXT.md 的 The Vault 詞條）。
+  const showTier = !carbonTiers.unavailable;
+  const selMeta = ASSET_META[selected];
 
   return (
     <Container maxWidth="lg" sx={{ py: 3, display: 'flex', flexDirection: 'column', gap: 4 }}>
-      {/* Header */}
       <Box>
-        <Typography variant="h4" sx={{ fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: 1.5 }}>
-          {t.esg.title}
-        </Typography>
-        <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-          {t.esg.subtitle}
-        </Typography>
+        <Typography variant="h4" sx={{ fontWeight: 'bold' }}>{t.esg.title}</Typography>
+        <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>{t.esg.lead}</Typography>
       </Box>
 
-      {!wallet.isConnected && (
-        <Alert severity="info" variant="outlined" sx={{ py: 0 }}>
-          {t.esg.connectWallet}
-        </Alert>
-      )}
-      {wallet.isConnected && esgUnavailable && (
-        <Alert severity="warning" variant="outlined" sx={{ py: 0 }}>
-          {t.esg.wrongNetwork}
-        </Alert>
-      )}
-      {wallet.isConnected && !esgUnavailable && esgFailed && (
-        <Alert severity="error" variant="outlined" sx={{ py: 0 }}>
-          {t.esg.loadFailed}
-        </Alert>
-      )}
+      {/* ── 總覽表 ── */}
+      <Card sx={{ p: { xs: 2, md: 3 } }}>
+        <Stack direction="row" spacing={1.5} flexWrap="wrap" useFlexGap sx={{ mb: 2 }}>
+          {(['leader', 'average', 'laggard'] as const).map((l) => (
+            <Chip key={l} size="small" color={LIGHT_COLOR[l]} label={tp.light[l]} />
+          ))}
+          <Chip size="small" variant="outlined" label={tp.cell.unrated} sx={{ borderStyle: 'dashed' }} />
+        </Stack>
 
-      {/* ── A. Methodology ───────────────────────────────────────────────────── */}
-      <Card sx={{ p: 3, display: 'flex', flexDirection: 'column', gap: 3.5 }}>
-        <Typography variant="subtitle2" sx={{ fontWeight: 'bold', color: 'text.secondary', textTransform: 'uppercase', letterSpacing: 1 }}>
-          {t.esg.methodology.title}
-        </Typography>
+        {/* 欄位多,手機上表格左右滑動,不把字擠到換行。 */}
+        <TableContainer sx={{ overflowX: 'auto' }}>
+          <Table size="small" sx={{ minWidth: 640 }}>
+            <TableHead>
+              <TableRow>
+                <TableCell sx={{ fontWeight: 'bold' }}>{tp.column.asset}</TableCell>
+                {ESG_PROVIDERS.map((p) => (
+                  <TableCell key={p} sx={{ fontWeight: 'bold', whiteSpace: 'nowrap' }}>{tp.provider[p].name}</TableCell>
+                ))}
+                {showTier && (
+                  <TableCell sx={{ fontWeight: 'bold', borderLeft: '1px solid', borderLeftColor: 'divider' }}>
+                    {tp.column.carbonTier}
+                    <Typography variant="caption" color="text.secondary" display="block">{tp.column.carbonTierSub}</Typography>
+                  </TableCell>
+                )}
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {ASSETS.map((id) => {
+                const meta = ASSET_META[id];
+                return (
+                  <TableRow
+                    key={id}
+                    hover
+                    selected={id === selected}
+                    onClick={() => setSelected(id)}
+                    onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setSelected(id); } }}
+                    tabIndex={0}
+                    sx={{ cursor: 'pointer' }}
+                  >
+                    <TableCell>
+                      <Stack direction="row" spacing={1} alignItems="center">
+                        <AssetIcon symbol={meta?.ticker ?? '?'} size={24} />
+                        <Box sx={{ minWidth: 0 }}>
+                          <Stack direction="row" spacing={0.75} alignItems="center">
+                            <Typography variant="body2" sx={{ fontWeight: 'bold' }}>{meta?.ticker}</Typography>
+                            {!hasThirdPartyRating(id) && (
+                              <Chip size="small" variant="outlined" label={tp.noRating} sx={{ borderStyle: 'dashed', height: 20 }} />
+                            )}
+                          </Stack>
+                          <Typography variant="caption" color="text.secondary" noWrap display="block">
+                            {assetDisplayName(meta)}
+                          </Typography>
+                        </Box>
+                      </Stack>
+                    </TableCell>
+                    {ESG_PROVIDERS.map((p) => (
+                      <TableCell key={p}><RatingCellView cell={ratingCell(id, p)} /></TableCell>
+                    ))}
+                    {showTier && (
+                      <TableCell sx={{ borderLeft: '1px solid', borderLeftColor: 'divider' }}>
+                        {carbonTiers.error ? (
+                          // 讀失敗不能畫成「未評等」——那是一個結論,而這裡沒有結論。
+                          <Typography variant="caption" color="warning.main">{t.esg.attested.failed}</Typography>
+                        ) : (
+                          <AttestedTierChips attested={carbonTiers.data[id]} loading={!carbonTiers.loaded} />
+                        )}
+                      </TableCell>
+                    )}
+                  </TableRow>
+                );
+              })}
+            </TableBody>
+          </Table>
+        </TableContainer>
+      </Card>
 
-        {/* Three dimensions */}
-        <Grid container spacing={2}>
-          {[
-            {
-              short: 'E', color: '#22c55e', label: t.esg.dimension.environmental,
-              items: t.esg.dimension.environmentalItems,
-            },
-            {
-              short: 'S', color: '#00b8d9', label: t.esg.dimension.social,
-              items: t.esg.dimension.socialItems,
-            },
-            {
-              short: 'G', color: '#86efac', label: t.esg.dimension.governance,
-              items: t.esg.dimension.governanceItems,
-            },
-          ].map(({ short, color, label, items }) => (
-            <Grid size={{ xs: 12, md: 4 }} key={short}>
-              <Box
-                sx={{
-                  borderRadius: 1.5,
-                  border: '1px solid',
-                  borderColor: `${color}30`,
-                  bgcolor: `${color}08`,
-                  p: 3,
-                  height: '100%',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: 1.5,
-                }}
-              >
-                <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 1 }}>
-                  <Typography variant="h4" sx={{ fontWeight: '900', color: color, fontFamily: MONO, lineHeight: 1 }}>
-                    {short}
-                  </Typography>
-                  <Typography variant="subtitle2" sx={{ fontWeight: 'bold', color: 'text.primary' }}>
-                    {label}
-                  </Typography>
+      {/* ── 選中資產的詳細資訊 ── */}
+      {selMeta && (
+        <Card sx={{ p: { xs: 2, md: 3 }, display: 'flex', flexDirection: 'column', gap: 2.5 }}>
+          <Stack direction="row" spacing={1.5} alignItems="center">
+            <AssetIcon symbol={selMeta.ticker} size={32} />
+            <Box>
+              <Typography variant="h6" sx={{ fontWeight: 'bold', lineHeight: 1.2 }}>{selMeta.ticker}</Typography>
+              <Typography variant="caption" color="text.secondary">{assetDisplayName(selMeta)}</Typography>
+            </Box>
+          </Stack>
+
+          {!hasThirdPartyRating(selected) && (
+            <Alert severity="info" variant="outlined">{tp.detail.noRating}</Alert>
+          )}
+          <Grid container spacing={2}>
+            {ESG_PROVIDERS.map((p) => {
+              const cell = ratingCell(selected, p);
+              return cell.kind === 'notApplicable' ? null : (
+                <Grid key={p} size={{ xs: 12, sm: 6, md: 4 }}>
+                  <ProviderCard provider={p} cell={cell} />
+                </Grid>
+              );
+            })}
+          </Grid>
+
+          <Divider />
+          <Box>
+            <Typography variant="subtitle2" sx={{ fontWeight: 'bold' }}>{tp.detail.rawTitle}</Typography>
+            <Typography variant="caption" color="text.secondary">{tp.detail.rawLead}</Typography>
+            <Stack spacing={2} sx={{ mt: 1.5 }}>
+              <AssetCarbonFact meta={selMeta} showTier={false} />
+              <AssetTransitionFact meta={selMeta} />
+            </Stack>
+          </Box>
+
+          {showTier && (
+            <>
+              <Divider />
+              <Box>
+                <Typography variant="subtitle2" sx={{ fontWeight: 'bold' }}>{tp.detail.carbonTierTitle}</Typography>
+                <Box sx={{ my: 1 }}>
+                  {carbonTiers.error ? (
+                    <Typography variant="caption" color="warning.main">{t.esg.attested.failed}</Typography>
+                  ) : (
+                    <AttestedTierChips attested={carbonTiers.data[selected]} loading={!carbonTiers.loaded} />
+                  )}
                 </Box>
-                <Stack spacing={0.5} component="ul" sx={{ pl: 0, m: 0 }}>
-                  {items.map(item => (
-                    <Typography
-                      key={item}
-                      component="li"
-                      variant="caption"
-                      color="text.secondary"
-                      sx={{ display: 'flex', alignItems: 'flex-start', gap: 1, listStyle: 'none' }}
-                    >
-                      <Box component="span" sx={{ color: color }}>·</Box>
-                      {item}
-                    </Typography>
-                  ))}
-                </Stack>
+                <Typography variant="caption" color="text.secondary">{tp.detail.carbonTierNote}</Typography>
               </Box>
+            </>
+          )}
+        </Card>
+      )}
+
+      {/* ── 怎麼讀、為什麼這樣呈現 ── */}
+      <Card sx={{ p: { xs: 2, md: 3 }, display: 'flex', flexDirection: 'column', gap: 2 }}>
+        <Typography variant="subtitle2" sx={{ fontWeight: 'bold' }}>{tp.legend.title}</Typography>
+        <Stack component="ul" spacing={0.75} sx={{ pl: 2.5, m: 0 }}>
+          {[tp.legend.light, tp.legend.scoreOnly, tp.legend.noAverage].map((s) => (
+            <Typography key={s} component="li" variant="body2" color="text.secondary">{s}</Typography>
+          ))}
+        </Stack>
+        <Grid container spacing={2}>
+          {ESG_PROVIDERS.map((p) => (
+            <Grid key={p} size={{ xs: 12, md: 4 }}>
+              <Typography variant="body2" sx={{ fontWeight: 'bold' }}>{tp.provider[p].name}</Typography>
+              <Typography variant="caption" color="text.secondary" display="block">{tp.provider[p].scale}</Typography>
+              <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 0.5 }}>{tp.provider[p].scope}</Typography>
             </Grid>
           ))}
         </Grid>
-
-        {/* Rating table */}
-        <Box>
-          <Typography variant="overline" color="text.secondary" sx={{ display: 'block', mb: 2, fontWeight: 'bold' }}>
-            {t.esg.methodology.ratingTable}
-          </Typography>
-          <Box
-            sx={{
-              display: 'grid',
-              gridTemplateColumns: { xs: 'repeat(2, 1fr)', sm: 'repeat(4, 1fr)', md: 'repeat(7, 1fr)' },
-              gap: 1.5,
-            }}
-          >
-            {RATING_TABLE.map(({ rating, min, label, desc, color, bg }) => (
-              <Box
-                key={rating}
-                sx={{
-                  borderRadius: 1.5,
-                  p: 2,
-                  bgcolor: bg,
-                  border: '1px solid',
-                  borderColor: `${color}30`,
-                  textAlign: 'center',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: 0.5,
-                }}
-              >
-                <Typography variant="h5" sx={{ fontWeight: '900', color, fontFamily: MONO, lineHeight: 1 }}>
-                  {rating}
-                </Typography>
-                <Typography variant="caption" sx={{ fontWeight: 'bold', color, fontSize: '0.6875rem' }}>
-                  {label}
-                </Typography>
-                <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.625rem' }}>
-                  {min > 0 ? interpolate(t.esg.rating.atLeast, { min }) : t.esg.rating.below30}
-                </Typography>
-                <Typography variant="caption" color="text.secondary" sx={{ display: { xs: 'none', md: 'block' }, fontSize: '0.5625rem', lineHeight: 1.2, mt: 0.5 }}>
-                  {desc}
-                </Typography>
-              </Box>
-            ))}
-          </Box>
-        </Box>
+        <Divider />
+        <Typography variant="subtitle2" sx={{ fontWeight: 'bold' }}>{tp.method.title}</Typography>
+        <Stack component="ul" spacing={0.75} sx={{ pl: 2.5, m: 0 }}>
+          {tp.method.items.map((s) => (
+            <Typography key={s} component="li" variant="body2" color="text.secondary">{s}</Typography>
+          ))}
+        </Stack>
+        {showTier && <Alert severity="info" variant="outlined">{t.esg.attested.vsOld}</Alert>}
+        <Typography variant="caption" color="text.disabled">{tp.rights}</Typography>
       </Card>
 
-      {/* ── 見證碳等級（#152）──────────────────────────────────────────────────
-          刻意獨立成一張卡、夾在舊評等與逐資產排行之間:上面剛講完 AAA→CCC 是
-          什麼,這裡立刻說明「另外還有一套,講的是別的事」,兩者的對比讀得出來。
-          兩套資料不合併——舊評等講整體永續表現,見證碳等級講鏈上見證的定價
-          依據,來源與用途都不同。 */}
-      {/* 讀不到見證登記時整塊不渲染,不留任何提示：CONTEXT.md 的 The Vault 詞條
-          規定畫面不得出現「本網路尚未部署」這類訊息,而「沒有見證登記」跟「還沒
-          連錢包」在這裡會走到同一條路徑——兩者都不該被說成是關於這條鏈的結論。 */}
-      {!carbonTiers.unavailable && (
-      <Card sx={{ p: 3 }}>
-        <Typography variant="h6" sx={{ fontWeight: 'bold' }}>
-          {t.esg.attested.title}
-        </Typography>
-        <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-          {t.esg.attested.lead}
-        </Typography>
-
-        {/* 兩套資料的差別寫在這裡,不是寫在某個 tooltip 裡——這是整個區塊存在的
-            理由,不是補充說明。 */}
-        <Alert severity="info" variant="outlined" sx={{ mt: 2 }}>
-          {t.esg.attested.vsOld}
-        </Alert>
-
-        {carbonTiers.error ? (
-          // 讀失敗不能畫成「全部未評等」——那是一個結論,而這裡沒有結論。
-          <Alert severity="warning" variant="outlined" sx={{ mt: 2 }}>
-            {t.esg.attested.failed}
-          </Alert>
-        ) : (
-          <>
-            <TableContainer sx={{ mt: 2 }}>
-              <Table size="small">
-                <TableHead>
-                  <TableRow>
-                    <TableCell sx={{ fontWeight: 'bold', whiteSpace: 'nowrap' }}>{t.esg.attested.column.asset}</TableCell>
-                    <TableCell sx={{ fontWeight: 'bold', whiteSpace: 'nowrap' }}>{t.esg.attested.column.tier}</TableCell>
-                  </TableRow>
-                </TableHead>
-                <TableBody>
-                  {ALL_ASSET_IDS.map((id) => {
-                    const meta = ASSET_META[id];
-                    return (
-                      <TableRow key={id}>
-                        <TableCell sx={{ whiteSpace: 'nowrap' }}>
-                          <Stack direction="row" spacing={1} alignItems="center">
-                            <AssetIcon symbol={meta?.ticker ?? '?'} size={20} />
-                            <Typography variant="body2" sx={{ fontWeight: 'bold' }}>{meta?.ticker ?? '—'}</Typography>
-                          </Stack>
-                        </TableCell>
-                        <TableCell>
-                          <AttestedTierChips
-                            attested={carbonTiers.data[id]}
-                            loading={!carbonTiers.loaded}
-                          />
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })}
-                </TableBody>
-              </Table>
-            </TableContainer>
-          </>
-        )}
-      </Card>
-      )}
-
-      {/* ── 碳權退役紀錄（#105，ADR-022）──────────────────────────────────────
-          接在見證碳等級後面：上面講碳排怎麼決定成本，這裡講手續費的一部分被拿去做什麼。
-          退役的是**模擬碳權**，聲明在元件裡、不可收合。沒有設定退役合約位址時元件回 null，
-          不留任何「尚未部署」提示（同上方見證碳等級的處理）。 */}
+      {/* ── 碳權退役紀錄（#105，ADR-022）。沒有設定退役合約位址時元件回 null。 ── */}
       <CarbonRetirementCard />
-
-      {/* ── B (left) + C (right) ─────────────────────────────────────────────── */}
-      <Grid container spacing={3} alignItems="flex-start">
-        {/* B. 11-asset ranking */}
-        <Grid size={{ xs: 12, md: 7 }}>
-          <Typography variant="overline" color="text.secondary" sx={{ display: 'block', mb: 2, fontWeight: 'bold', letterSpacing: 1 }}>
-            {t.esg.ranking.title}
-          </Typography>
-
-          <Stack spacing={1.5}>
-            {sorted.map((id, rank) => {
-              const info  = esg[id];
-              const meta  = ASSET_META[id];
-              const isSel = id === selected;
-
-              return (
-                <ButtonBase
-                  key={id}
-                  onClick={() => setSelected(id)}
-                  sx={{
-                    display: 'block',
-                    width: '100%',
-                    borderRadius: 1.5,
-                    border: '1px solid',
-                    p: 2.5,
-                    textAlign: 'left',
-                    transition: 'all 0.2s',
-                    bgcolor: isSel ? 'rgba(0, 167, 111, 0.08)' : 'background.paper',
-                    borderColor: isSel ? 'primary.main' : 'divider',
-                    boxShadow: isSel ? '0 0 12px rgba(0, 167, 111, 0.16)' : 'none',
-                    '&:hover': {
-                      borderColor: isSel ? 'primary.main' : 'text.secondary',
-                      bgcolor: isSel ? 'rgba(0, 167, 111, 0.12)' : 'rgba(255,255,255,0.02)',
-                    },
-                  }}
-                >
-                  {/* Top row */}
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-                    <Typography variant="caption" sx={{ color: 'text.secondary', fontFamily: MONO, width: 24, textAlign: 'right' }}>
-                      {interpolate(t.esg.ranking.rank, { n: rank + 1 })}
-                    </Typography>
-                    <AssetIcon symbol={meta?.ticker ?? '?'} size={24} />
-                    <Box sx={{ flexGrow: 1, minWidth: 0 }}>
-                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                        <Typography variant="subtitle2" sx={{ fontWeight: 'bold', fontFamily: MONO }}>
-                          {meta?.ticker ?? '?'}
-                        </Typography>
-                        {meta && (
-                          <Chip
-                            label={meta.category}
-                            size="small"
-                            sx={{
-                              fontSize: '0.625rem',
-                              height: 18,
-                              bgcolor: CAT_COLOR[meta.category] ?? 'action.hover',
-                              color: CAT_TEXT_COLOR[meta.category] ?? 'text.secondary',
-                              fontWeight: 'bold',
-                              textTransform: 'uppercase',
-                            }}
-                          />
-                        )}
-                      </Box>
-                      <Typography variant="caption" color="text.secondary" sx={{ display: 'block', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap', maxWidth: 220 }}>
-                        {assetDisplayName(meta)}
-                      </Typography>
-                    </Box>
-
-                    {/* Composite big number */}
-                    {isLoading ? (
-                      <Skeleton width={40} height={32} />
-                    ) : info ? (
-                      <Box sx={{ textAlign: 'right', mr: 2 }}>
-                        <Typography variant="h5" sx={{ fontWeight: '800', fontFamily: MONO, lineHeight: 1, color: barColor(info.composite) }}>
-                          {info.composite}
-                        </Typography>
-                        <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.625rem' }}>{t.esg.ranking.outOf}</Typography>
-                      </Box>
-                    ) : (
-                      <Typography color="text.secondary">—</Typography>
-                    )}
-
-                    {info && (
-                      <Box>
-                        <ESGBadge composite={info.composite} rating={info.rating} size="sm" />
-                      </Box>
-                    )}
-                  </Box>
-
-                  {/* E/S/G progress bars */}
-                  {isLoading ? (
-                    <Stack spacing={1} sx={{ mt: 2 }}>
-                      {DIMS.map(d => <Skeleton key={d.key} height={6} variant="rectangular" />)}
-                    </Stack>
-                  ) : info ? (
-                    <Stack spacing={0.75} sx={{ mt: 2 }}>
-                      {DIMS.map(({ key, short }) => {
-                        const val = info[key];
-                        const bc  = barColor(val);
-                        return (
-                          <Box key={key} sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-                            <Typography variant="caption" sx={{ fontWeight: 'bold', width: 12, color: bc }}>
-                              {short}
-                            </Typography>
-                            <Box sx={{ flexGrow: 1 }}>
-                              <LinearProgress
-                                variant="determinate"
-                                value={val}
-                                sx={{
-                                  height: 6,
-                                  borderRadius: 3,
-                                  bgcolor: 'background.neutral',
-                                  '& .MuiLinearProgress-bar': {
-                                    bgcolor: bc,
-                                    borderRadius: 3,
-                                  },
-                                }}
-                              />
-                            </Box>
-                            <Typography variant="caption" sx={{ fontFamily: MONO, color: 'text.secondary', width: 24, textAlign: 'right' }}>
-                              {val}
-                            </Typography>
-                          </Box>
-                        );
-                      })}
-                    </Stack>
-                  ) : null}
-
-                  {/* Rationale */}
-                  {ESG_RATIONALE[id] && (
-                    <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 2, pt: 1.5, borderTop: '1px solid', borderColor: 'divider', fontStyle: 'italic', lineHeight: 1.5 }}>
-                      {ESG_RATIONALE[id]}
-                    </Typography>
-                  )}
-                </ButtonBase>
-              );
-            })}
-          </Stack>
-        </Grid>
-
-        {/* C. Radar chart (sticky) */}
-        <Grid size={{ xs: 12, md: 5 }} sx={{ position: { md: 'sticky' }, top: { md: 88 } }}>
-          <Typography variant="overline" color="text.secondary" sx={{ display: 'block', mb: 2, fontWeight: 'bold', letterSpacing: 1 }}>
-            {t.esg.radar.title}
-          </Typography>
-
-          <Card sx={{ p: 3, display: 'flex', flexDirection: 'column', gap: 2.5 }}>
-            {/* Selected asset header */}
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-              <AssetIcon symbol={selMeta?.ticker ?? '?'} size={36} />
-              <Box sx={{ flexGrow: 1, minWidth: 0 }}>
-                <Typography variant="subtitle1" sx={{ fontWeight: 'bold', fontFamily: MONO }}>
-                  {selMeta?.ticker ?? '?'}
-                </Typography>
-                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>
-                  {assetDisplayName(selMeta)}
-                </Typography>
-              </Box>
-              {selInfo && (
-                <ESGBadge composite={selInfo.composite} rating={selInfo.rating} size="md" />
-              )}
-            </Box>
-
-            {/* Radar chart */}
-            {isLoading ? (
-              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 240 }}>
-                <Skeleton width={180} height={180} variant="circular" />
-              </Box>
-            ) : radarData.length === 0 ? (
-              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 240 }}>
-                <Typography variant="body2" color="text.secondary">{t.esg.radar.noData}</Typography>
-              </Box>
-            ) : (
-              <Box sx={{ width: '100%', height: 240 }}>
-                <ResponsiveContainer width="100%" height={240}>
-                  <RadarChart data={radarData} margin={{ top: 8, right: 28, bottom: 8, left: 28 }}>
-                    <PolarGrid stroke="rgba(255,255,255,0.06)" />
-                    <PolarAngleAxis dataKey="subject" tick={{ fill: '#919eab', fontSize: 10, fontWeight: 500 }} />
-                    <PolarRadiusAxis angle={30} domain={[0, 100]} tick={{ fill: '#637381', fontSize: 8 }} tickCount={4} />
-                    <Radar
-                      name={selMeta?.ticker ?? ''}
-                      dataKey="value"
-                      stroke={selColor}
-                      fill={selColor}
-                      fillOpacity={0.2}
-                      strokeWidth={2}
-                    />
-                    <RadarTooltip
-                      contentStyle={{ background: '#161c24', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 8, fontSize: 11, color: '#fff' }}
-                      itemStyle={{ color: '#fff' }}
-                      formatter={(value: any) => [value as number, '']}
-                    />
-                  </RadarChart>
-                </ResponsiveContainer>
-              </Box>
-            )}
-
-            {/* Dimension values list */}
-            {selInfo && (
-              <Stack spacing={1.5} sx={{ borderTop: '1px solid', borderColor: 'divider', pt: 2.5 }}>
-                {DIMS.map(({ key, short, label }) => {
-                  const val = selInfo[key];
-                  const bc  = barColor(val);
-                  return (
-                    <Box key={key} sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-                      <Typography variant="caption" sx={{ fontWeight: 'bold', width: 14, color: bc }}>
-                        {short}
-                      </Typography>
-                      <Typography variant="caption" color="text.secondary" sx={{ width: 80 }}>
-                        {label}
-                      </Typography>
-                      <Box sx={{ flexGrow: 1 }}>
-                        <LinearProgress
-                          variant="determinate"
-                          value={val}
-                          sx={{
-                            height: 6,
-                            borderRadius: 3,
-                            bgcolor: 'background.neutral',
-                            '& .MuiLinearProgress-bar': {
-                              bgcolor: bc,
-                              borderRadius: 3,
-                            },
-                          }}
-                        />
-                      </Box>
-                      <Typography variant="caption" sx={{ fontFamily: MONO, fontWeight: 'bold', color: bc, width: 24, textAlign: 'right' }}>
-                        {val}
-                      </Typography>
-                    </Box>
-                  );
-                })}
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, borderTop: '1px solid', borderColor: 'divider', pt: 1.5, mt: 0.5 }}>
-                  <Box sx={{ width: 14 }} />
-                  <Typography variant="caption" sx={{ fontWeight: 'bold', width: 80 }}>
-                    {t.esg.radar.composite}
-                  </Typography>
-                  <Box sx={{ flexGrow: 1 }}>
-                    <LinearProgress
-                      variant="determinate"
-                      value={selInfo.composite}
-                      sx={{
-                        height: 6,
-                        borderRadius: 3,
-                        bgcolor: 'background.neutral',
-                        '& .MuiLinearProgress-bar': {
-                          bgcolor: barColor(selInfo.composite),
-                          borderRadius: 3,
-                        },
-                      }}
-                    />
-                  </Box>
-                  <Typography variant="caption" sx={{ fontFamily: MONO, fontWeight: 'bold', color: barColor(selInfo.composite), width: 24, textAlign: 'right' }}>
-                    {selInfo.composite}
-                  </Typography>
-                </Box>
-              </Stack>
-            )}
-
-            {/* Rationale detail */}
-            {ESG_RATIONALE[selected] && (
-              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1, borderTop: '1px solid', borderColor: 'divider', pt: 2, fontStyle: 'italic', lineHeight: 1.5 }}>
-                {ESG_RATIONALE[selected]}
-              </Typography>
-            )}
-
-            <Typography variant="caption" color="text.secondary" align="center" sx={{ display: 'block', opacity: 0.5, mt: 1 }}>
-              {t.esg.radar.hint}
-            </Typography>
-          </Card>
-        </Grid>
-      </Grid>
     </Container>
   );
 }

@@ -132,10 +132,6 @@ export const exchange: Catalog['exchange'] = {
     tokenToEth: 'Swap {token} → ETH',
   },
 
-  esgLeaderboard: {
-    title: 'ESG Leaderboard',
-  },
-
   /** 按鈕正在跑交易的時候，格子裡顯示的字。 */
   working: '…',
 

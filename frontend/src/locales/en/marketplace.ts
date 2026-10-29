@@ -8,9 +8,13 @@ export const marketplace: Catalog['marketplace'] = {
   subtitle: 'Browse and copy on-chain verified strategies',
   networkError: 'Network error — check wallet',
 
-  esgFiltered: 'Filtered',
-  esgAll: 'All',
-  esgButton: 'ESG {state}',
+  /** See `../zh-TW/marketplace.ts`. */
+  hiddenTrader: {
+    title: 'This trader has been withdrawn',
+    body: 'This simulated trader’s strategy relied on a basis that is no longer used, so it is no longer listed. Its on-chain record is not deleted and can still be found in a block explorer; any related positions in your name stay in your portfolio and you can close them yourself.',
+    back: 'Back to the trader leaderboard',
+  },
+
 
   sort: {
     score: 'Sort: TraderScore',
@@ -19,7 +23,6 @@ export const marketplace: Catalog['marketplace'] = {
     volume: 'Sort: Volume (7d)',
     pnl: 'Sort: PnL (7d)',
     stake: 'Sort: Stake',
-    esg: 'Sort: ESG Score',
   },
 
   refreshAria: 'Refresh marketplace data',
@@ -37,7 +40,6 @@ export const marketplace: Catalog['marketplace'] = {
     reputation: 'Reputation',
     strategy: 'Strategy',
     winRate: 'Win Rate',
-    esg: 'ESG',
     actions: 'Actions',
     insufficientSample: 'Small sample',
     unranked: 'Not enough data to be ranked ({rule})',
@@ -56,7 +58,6 @@ export const marketplace: Catalog['marketplace'] = {
       winRate: 'Share of positions closed in the last {days} days that made money; the number in brackets is how many closed. Fewer than 5 is marked "Small sample" and is indicative only.',
       followers: 'People currently copying this trader, each counted once. Those who have unfollowed are not included.',
       stake: 'USDC the trader has staked in the TraderStake contract. When a copier loses 30% or more, half of that loss is slashed (at most half the stake); ⚠ means the trader has been slashed.',
-      esg: 'Weight-averaged ESG composite (0–100) of the assets in the current strategy. Use the "ESG" button above to show only traders at 60 or more.',
     },
   },
 

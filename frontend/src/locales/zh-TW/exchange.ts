@@ -167,10 +167,6 @@ export const exchange = {
     tokenToEth: '兌換 {token} → ETH',
   },
 
-  esgLeaderboard: {
-    title: 'ESG 排行榜',
-  },
-
   /** 按鈕正在跑交易的時候，格子裡顯示的字。 */
   working: '…',
 

@@ -17,6 +17,7 @@ import { useMode } from 'src/contexts/mode-context';
 import { useChainFeed } from 'src/hooks/useChainFeed';
 import { useContracts } from 'src/hooks/useContracts';
 import { useHeroDataset } from 'src/hooks/useSimulatedTraders';
+import { isHiddenTrader } from 'src/lib/pepefi/hiddenTraders';
 import { heroDisclosure } from 'src/lib/pepefi/heroDisclosure';
 import { FEATURE_COPY_TRADING } from 'src/lib/pepefi/featureFlags';
 import { describeScanWindow } from 'src/lib/pepefi/chainLogs';
@@ -73,7 +74,11 @@ function Feed() {
   const [actor, setActor] = useState('');
   const [shown, setShown] = useState(PAGE);
 
-  const visible = useMemo(() => filterFeed(feed.items, { types: VISIBLE_TYPES }), [feed.items]);
+  // #383：下架的交易者（hiddenTraders.ts）的動態也不列出。
+  const visible = useMemo(
+    () => filterFeed(feed.items, { types: VISIBLE_TYPES }).filter((i) => !isHiddenTrader(wallet.chainId, i.actor)),
+    [feed.items, wallet.chainId],
+  );
   const filtered = useMemo(() => filterFeed(visible, { types, actor: actor || null }), [visible, types, actor]);
   const actors = useMemo(() => {
     const byAddress = new Map<string, string>();

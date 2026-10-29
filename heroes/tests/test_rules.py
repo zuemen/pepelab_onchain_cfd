@@ -27,7 +27,6 @@ CASES = [
     ("momentum", {"top_k": 3, "lookback": 60}),
     ("mean_reversion", {"top_k": 3, "lookback": 60}),
     ("risk_parity", {"universe": ["sGOLD", "sBOND", "sBTC", "sESGU"], "lookback": 30}),
-    ("esg_tilt", {"top_k": 4}),
     ("long_short", {"lookback": 60, "long_k": 2, "short_k": 1}),
 ]
 
@@ -88,3 +87,12 @@ def test_requested_leverage_is_clipped_to_each_assets_carbon_ceiling():
 def test_a_signal_rule_does_not_republish_an_unchanged_strategy():
     # 漂移固定，動量前三名永遠相同：只有第一天發布一次
     assert len(RULES["momentum"](PRICES, {**BASE, "top_k": 3, "lookback": 60}, 1)) == 1
+
+
+def test_no_rule_picks_assets_by_a_platform_esg_score():
+    # #383：平台不再自評 ESG。依平台分數選股的 esg_tilt 拿掉，用它的 ESG Master 也一起拿掉。
+    from herolab.roster import TRADERS
+
+    assert "esg_tilt" not in RULES
+    assert all(spec.rule in RULES for spec in TRADERS)
+    assert "ESG Master" not in {spec.name for spec in TRADERS}

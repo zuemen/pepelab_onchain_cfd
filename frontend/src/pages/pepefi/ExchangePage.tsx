@@ -39,12 +39,8 @@ import {
   type QuoteSnapshot,
   scheduleAmmRefresh,
 } from 'src/lib/pepefi/ammSwapFlow';
-import { useESG } from 'src/hooks/useESG';
-import ESGBadge from 'src/components/pepefi/ESGBadge';
-import { ASSET_LABEL } from 'src/lib/pepefi/assetMeta';
 import Skeleton from 'src/components/pepefi/Skeleton';
 import PaperTradingBadge from 'src/components/pepefi/PaperTradingBadge';
-import AssetIcon from 'src/components/pepefi/AssetIcon';
 import { useToast } from 'src/components/pepefi/ToastProvider';
 
 import Box from '@mui/material/Box';
@@ -52,27 +48,12 @@ import Container from '@mui/material/Container';
 import Typography from '@mui/material/Typography';
 import Card from '@mui/material/Card';
 import Grid from '@mui/material/Grid';
-import Stack from '@mui/material/Stack';
 import Button from '@mui/material/Button';
 import Chip from '@mui/material/Chip';
 import Alert from '@mui/material/Alert';
-import LinearProgress from '@mui/material/LinearProgress';
 import Backdrop from '@mui/material/Backdrop';
 import CircularProgress from '@mui/material/CircularProgress';
 import { Icon } from '@iconify/react';
-
-// ── Config ────────────────────────────────────────────────────────────────────
-type AssetId = `0x${string}`;
-
-
-// ── Types ─────────────────────────────────────────────────────────────────────
-interface ESGAssetInfo {
-  composite: number;
-  rating: string;
-  environmental: number;
-  social: number;
-  governance: number;
-}
 
 // ── Formatting ────────────────────────────────────────────────────────────────
 const f18    = (v: bigint, d = 2) => (Number(v) / 1e18).toFixed(d);
@@ -143,9 +124,6 @@ function makeAmmReader(amm: Contract, provider: Provider): AmmReader {
 export default function ExchangePage() {
   const wallet = usePepefiWallet();
   const contracts    = useContracts(wallet.provider, wallet.signer, wallet.chainId);
-  const { data: esgData } = useESG(contracts?.esgRegistry ?? null);
-
-  const esg = (esgData ?? {}) as unknown as Record<string, ESGAssetInfo>;
 
   const [usdcBal,   setUsdcBal]   = useState(0n);
   const [usdtBal,   setUsdtBal]   = useState(0n);
@@ -606,65 +584,6 @@ export default function ExchangePage() {
         <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 100 }}>
           <Typography color="text.secondary">{t.exchange.loadingChainData}</Typography>
         </Box>
-
-      {/* ESG Leaderboard */}
-      {Object.keys(esg).length > 0 && (
-        <Card sx={{ p: 3, display: 'flex', flexDirection: 'column', gap: 2.5 }}>
-          <Typography variant="subtitle2" sx={{ fontWeight: 'bold', color: 'text.secondary', textTransform: 'uppercase', letterSpacing: 1 }}>
-            {t.exchange.esgLeaderboard.title}
-          </Typography>
-          <Stack spacing={2}>
-            {Object.entries(esg)
-              .sort(([, a], [, b]) => b.composite - a.composite)
-              .map(([id, info]) => {
-                const label = ASSET_LABEL[id as AssetId] ?? id.slice(0, 8);
-                const barColor =
-                  info.composite >= 80 ? 'success.main' :
-                  info.composite >= 60 ? 'info.main'    :
-                  info.composite >= 40 ? 'warning.main'   :
-                                         'error.main';
-                return (
-                  <Box key={id} sx={{ display: 'grid', gridTemplateColumns: '120px 1fr auto', gap: 3, alignItems: 'center' }}>
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                      <AssetIcon symbol={label} size={24} />
-                      <Typography variant="caption" sx={{ fontFamily: MONO, fontWeight: 'bold' }}>
-                        {label}
-                      </Typography>
-                    </Box>
-                    <Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
-                      {[
-                        { label: 'E', val: info.environmental },
-                        { label: 'S', val: info.social        },
-                        { label: 'G', val: info.governance    },
-                      ].map(({ label: l, val }) => (
-                        <Box key={l} sx={{ flexGrow: 1 }}>
-                          <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.5 }}>
-                            <Typography variant="caption" sx={{ fontSize: '0.625rem', color: 'text.secondary', fontWeight: 'bold' }}>{l}</Typography>
-                            <Typography variant="caption" sx={{ fontSize: '0.625rem', color: 'text.secondary', fontFamily: MONO }}>{val}</Typography>
-                          </Box>
-                          <LinearProgress
-                            variant="determinate"
-                            value={val}
-                            sx={{
-                              height: 6,
-                              borderRadius: 3,
-                              bgcolor: 'background.neutral',
-                              '& .MuiLinearProgress-bar': {
-                                bgcolor: barColor,
-                                borderRadius: 3,
-                              },
-                            }}
-                          />
-                        </Box>
-                      ))}
-                    </Box>
-                    <ESGBadge composite={info.composite} rating={info.rating} size="sm" />
-                  </Box>
-                );
-              })}
-          </Stack>
-        </Card>
-      )}
       </Container>
     );
   }

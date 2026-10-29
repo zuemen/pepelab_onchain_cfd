@@ -126,8 +126,6 @@ def test_outputs_follow_the_published_schema():
     # 排行榜用它判斷「交易了多久」、夠不夠資格列入排名，所以放在索引裡，不只在詳細檔
     assert summary["activeSince"] == "2024-10-01"
     assert summary["winRatePct"] == 100.0 and summary["closedTrades"] == 1
-    # ESG：(53 × 5000 + 80 × 3000 + 81 × 2000) / 10000 = 66.7 → 67
-    assert summary["esgScore"] == 67
     assert summary["sparkline"] == [999.0, 1049.0, 1104.0]
     detail = details[OWNER.lower()]
     assert detail["trades"][0]["pnlUsd"] == 104.0 and detail["trades"][0]["closePrice"] == 121.0

@@ -73,7 +73,7 @@ export const landing: Catalog['landing'] = {
     one: 'Install MetaMask and switch to the Base Sepolia testnet',
     two: 'Go to Exchange and click "Get 1000 USDC" for test funds',
     three: 'Go to Assets, buy XAU and BGRN, then check Portfolio for the allocation and PnL across all four classes',
-    four: "Switch to Expert Mode, check traders' on-chain records and ESG scores on Marketplace, and copy one — or register as a trader on the Trader page",
+    four: "Switch to Expert Mode, check traders' on-chain records and carbon tier mix on Marketplace, and copy one — or register as a trader on the Trader page",
   },
 
   copyOff: {
@@ -105,7 +105,7 @@ export const landing: Catalog['landing'] = {
   /** #36：主視覺介紹與 Paper Trading 說明，各自拆成 `<b>` 前後的片段。 */
   markup: {
     heroBefore:
-      'Pick a trader and see every position, every strategy version and their ESG score before you decide to copy. ',
+      'Pick a trader and see every position, every strategy version and its carbon tier mix before you decide to copy. ',
     heroBold: 'Positions opened by copy trading are in your own name',
     heroAfter:
       ', and only you can stop copying. Tokenized equities, bonds, gold and crypto — every step checkable on-chain.',

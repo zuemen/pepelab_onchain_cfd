@@ -20,7 +20,6 @@ from dataclasses import dataclass, field
 import numpy as np
 import pandas as pd
 
-from .assets import esg_composite
 from .schedule import day_timestamp
 
 E18 = 10**18
@@ -247,14 +246,6 @@ def follower_history(events: list[dict], trader: str, months: list[str], clock: 
     return out
 
 
-def _esg_score(legs: list[dict]) -> int | None:
-    total = sum(l["weightBps"] for l in legs)
-    if total == 0:
-        return None
-    # 與前端 MarketplacePage.getEsgComposite 相同：Math.round(加權平均)
-    return int(sum(esg_composite(l["asset"]) * l["weightBps"] for l in legs) / total + 0.5)
-
-
 def _correlation(equity: pd.Series, benchmark: pd.Series) -> float | None:
     value = equity.pct_change().corr(benchmark.pct_change())
     return None if value is None or math.isnan(value) else round(float(value), 3)
@@ -292,7 +283,6 @@ def build_outputs(doc: dict, prices: pd.DataFrame) -> tuple[dict, dict[str, dict
             "sharpe": round(sharpe(equity), 2),
             "winRatePct": round(sum(1 for t in closed if net_pnl(t) > 0) / len(closed) * 100, 1) if closed else None,
             "closedTrades": len(closed),
-            "esgScore": _esg_score(latest),
             "window7d": window_stats(trades, end_ts, 7),
             "window30d": window_stats(trades, end_ts, 30),
             "sparkline": _sparkline(equity),

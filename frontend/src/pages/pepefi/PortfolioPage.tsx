@@ -7,7 +7,6 @@ import {
   CartesianGrid, ReferenceLine, ResponsiveContainer,
 } from 'recharts';
 
-import { useESG } from 'src/hooks/useESG';
 import { paths } from 'src/routes/paths';
 import { useContracts } from 'src/hooks/useContracts';
 import { kycActionMode, useVcKycRegistry } from 'src/hooks/useVcKycRegistry';
@@ -50,7 +49,6 @@ import { spotValueOf, isPortfolioProvablyEmpty, type NetWorthParts, type Portfol
 import { COLUMN_LABELS, columnLabelForMode, openPositionColumnsForMode, type OpenPositionColumnKey } from 'src/lib/pepefi/openPositionColumns';
 
 import StatCard from 'src/components/pepefi/StatCard';
-import ESGBadge from 'src/components/pepefi/ESGBadge';
 import NetWorthHero from 'src/components/pepefi/dashboard/NetWorthHero';
 import RwaAllocation from 'src/components/pepefi/dashboard/RwaAllocation';
 import { useSynthHoldings } from 'src/hooks/useSynthHoldings';
@@ -60,8 +58,8 @@ import { readAssetMode, isPriceTracked, closeBlockReason, closeAvailability, rea
 import { SwitchChainButton } from 'src/components/pepefi/SwitchChainButton';
 import KYCStatusCard from 'src/components/pepefi/dashboard/KYCStatusCard';
 import QuickActions from 'src/components/pepefi/dashboard/QuickActions';
-import PortfolioAnalysis from 'src/components/pepefi/dashboard/PortfolioAnalysis';
 import CarbonTierMixCard from 'src/components/pepefi/CarbonTierMixCard';
+import PricingTierCell from 'src/components/pepefi/PricingTierCell';
 import { holdingValue } from 'src/lib/pepefi/assetClass';
 import { usePricingCarbonTiers } from 'src/hooks/usePricingCarbonTiers';
 import EmptyState from 'src/components/pepefi/EmptyState';
@@ -314,7 +312,6 @@ export default function PortfolioPage() {
   const vcKyc = useVcKycRegistry(wallet.chainId, wallet.provider);
   const kycAction = kycActionMode(vcKyc, contracts ? String(contracts.kycRegistry.target) : null);
   const livePrices = useLivePrices();
-  const { data: esg } = useESG(contracts?.esgRegistry ?? null);
   // 代幣化資產持倉——RWA 配置環的另一半來源，見 RwaAllocation 的 props 註解。
   const synthHoldings = useSynthHoldings();
 
@@ -1616,7 +1613,7 @@ export default function PortfolioPage() {
                       looks wrong against it. Titles carry the explanation. */}
                   {([
                     [t.portfolio.column.asset, ''],
-                    [t.portfolio.column.esg, ''],
+                    [t.portfolio.column.carbonTier, ''],
                     [t.portfolio.column.side, ''],
                     [t.portfolio.column.entry, t.portfolio.columnHint.entry],
                     [t.portfolio.column.oracle, t.portfolio.columnHint.oracle],
@@ -1654,11 +1651,8 @@ export default function PortfolioPage() {
                       {ASSET_LABEL[row.asset] ?? row.asset.slice(0, 8)}
                     </TableCell>
                     <TableCell>
-                      {esg[row.asset] ? (
-                        <ESGBadge composite={esg[row.asset].composite} rating={esg[row.asset].rating} />
-                      ) : (
-                        <Typography variant="caption" color="text.secondary">—</Typography>
-                      )}
+                      {/* #383：原本是平台自評的 ESG 徽章，改成交易所定價用的碳分級——它直接決定這個部位的手續費與槓桿。 */}
+                      <PricingTierCell tier={pricingTiers.tierOf(row.asset)} />
                     </TableCell>
                     <TableCell>
                       <Chip
@@ -1722,9 +1716,6 @@ export default function PortfolioPage() {
         )}
       </Card>
       )}
-
-      {/* ─── Analysis (expert only) ─────────────────────────────────────── */}
-      {mode === 'expert' && <PortfolioAnalysis rows={pricedPositions} esg={esg} />}
 
       {/* #333：自己持倉（永續部位＋現貨代幣）依市值的碳分級組成（等級讀自交易所定價用的鏈上見證） */}
       {(pricedPositions.length > 0 || synthHoldings.rows.length > 0) && (

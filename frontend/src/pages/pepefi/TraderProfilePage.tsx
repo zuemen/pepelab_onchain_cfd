@@ -5,8 +5,6 @@ import { useParams, Link as RouterLink } from 'react-router'
 import { useContracts } from 'src/hooks/useContracts'
 import { usePepefiWallet } from 'src/layouts/pepefi'
 import { TableSkeleton, CardSkeleton } from 'src/components/pepefi/Skeleton'
-import { useESG } from 'src/hooks/useESG'
-import ESGBadge from 'src/components/pepefi/ESGBadge'
 import { ASSET_LABEL } from 'src/lib/pepefi/assetMeta'
 import StatCard from 'src/components/pepefi/StatCard'
 import { traderAvatarSrc } from 'src/utils/pepefi-assets'
@@ -35,6 +33,9 @@ import ListDialog, { ExpandListButton } from 'src/components/pepefi/ListDialog'
 import StrategySides from 'src/components/pepefi/feed/StrategySides'
 import TraderFeedSection from 'src/components/pepefi/feed/TraderFeedSection'
 import CarbonTierMixCard from 'src/components/pepefi/CarbonTierMixCard'
+import PricingTierCell from 'src/components/pepefi/PricingTierCell'
+import HiddenTraderNotice from 'src/components/pepefi/HiddenTraderNotice'
+import { isHiddenTrader } from 'src/lib/pepefi/hiddenTraders'
 import { usePricingCarbonTiers } from 'src/hooks/usePricingCarbonTiers'
 
 import Box from '@mui/material/Box';
@@ -87,6 +88,9 @@ const fmtDate = (ts: bigint) =>
  */
 export default function TraderProfilePage() {
   const { address } = useParams<{ address: string }>()
+  const wallet = usePepefiWallet()
+  // #383：下架的交易者（hiddenTraders.ts）不顯示績效、也不讓人跟。
+  if (address && isHiddenTrader(wallet.chainId, address)) return <HiddenTraderNotice />
   return <TraderProfileView key={address?.toLowerCase() ?? ''} />
 }
 
@@ -96,7 +100,6 @@ function TraderProfileView() {
   const { address: traderAddr } = useParams<{ address: string }>()
   const contracts = useContracts(wallet.provider, wallet.signer, wallet.chainId)
   const pricingTiers = usePricingCarbonTiers(contracts?.exchange ?? null)
-  const { data: esg } = useESG(contracts?.esgRegistry ?? null)
 
   const [name,          setName]          = useState('')
   const [registered,    setRegistered]    = useState(false)
@@ -265,7 +268,7 @@ function TraderProfileView() {
                 <TableRow>
                   {[
                     t.traderProfile.history.column.asset,
-                    t.traderProfile.history.column.esg,
+                    t.traderProfile.history.column.carbonTier,
                     t.traderProfile.history.column.side,
                     t.traderProfile.history.column.leverage,
                     t.traderProfile.history.column.weight,
@@ -281,11 +284,7 @@ function TraderProfileView() {
                       {ASSET_LABEL[a.asset] ?? '?'}
                     </TableCell>
                     <TableCell>
-                      {esg[a.asset] ? (
-                        <ESGBadge composite={esg[a.asset].composite} rating={esg[a.asset].rating} />
-                      ) : (
-                        <Typography variant="caption" color="text.disabled">—</Typography>
-                      )}
+                      <PricingTierCell tier={pricingTiers.tierOf(a.asset)} />
                     </TableCell>
                     <TableCell sx={{ fontWeight: 'bold', color: a.isLong ? 'success.main' : 'error.main' }}>
                       {a.isLong ? t.traderProfile.history.longLabel : t.traderProfile.history.shortLabel}

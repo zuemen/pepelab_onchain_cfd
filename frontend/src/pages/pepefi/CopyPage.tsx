@@ -10,13 +10,15 @@ import { usePepefiWallet } from 'src/layouts/pepefi'
 import { prettyError } from 'src/lib/pepefi/errorMessages'
 import { ASSET_LABEL, ASSET_META } from 'src/lib/pepefi/assetMeta'
 import { useKYC } from 'src/hooks/useKYC'
-import { useESG } from 'src/hooks/useESG'
+import { usePricingCarbonTiers } from 'src/hooks/usePricingCarbonTiers'
+import { isHiddenTrader } from 'src/lib/pepefi/hiddenTraders'
 import { useLivePrices } from 'src/hooks/useLivePrices'
 import { useExecutionFee, formatEth } from 'src/hooks/useExecutionFee'
 import { t, interpolate } from 'src/locales'
 import { STABLE_LABEL } from 'src/lib/pepefi/tokenLabel'
 import { firstBlocking, stalenessNotice } from 'src/lib/pepefi/priceFreshness'
-import ESGBadge from 'src/components/pepefi/ESGBadge'
+import CarbonTierMixCard from 'src/components/pepefi/CarbonTierMixCard'
+import HiddenTraderNotice from 'src/components/pepefi/HiddenTraderNotice'
 import KYCModal from 'src/components/pepefi/KYCModal'
 import { traderAvatarSrc } from 'src/utils/pepefi-assets'
 import TraderRankBadge from 'src/components/pepefi/TraderRankBadge'
@@ -106,6 +108,14 @@ const asTx = (tx: unknown): TxResp => tx as TxResp
 
 export default function CopyPage() {
   const wallet = usePepefiWallet()
+  const { traderAddress } = useParams<{ traderAddress: string }>()
+  // #383：下架的交易者（hiddenTraders.ts）不開放跟單。
+  if (traderAddress && isHiddenTrader(wallet.chainId, traderAddress)) return <HiddenTraderNotice />
+  return <CopyPageView />
+}
+
+function CopyPageView() {
+  const wallet = usePepefiWallet()
   const { mode } = useMode()
   const { traderAddress } = useParams<{ traderAddress: string }>()
   // 從投資組合「更新到最新版」過來時，金額已經帶在 ?amount= 上。
@@ -148,7 +158,7 @@ export default function CopyPage() {
     contracts?.kycRegistry ?? null,
     wallet.address ?? null,
   )
-  const { data: esg } = useESG(contracts?.esgRegistry ?? null)
+  const pricingTiers = usePricingCarbonTiers(contracts?.exchange ?? null)
   const livePrices = useLivePrices()
   const execFee = useExecutionFee(contracts?.exchange ?? null)
   const autoSync = useAutoSyncSupport(contracts?.copyTracker ?? null, wallet.provider)
@@ -600,53 +610,14 @@ export default function CopyPage() {
         <StrategySides legs={stratAllocs} exchange={contracts?.exchange ?? null} />
       )}
 
-      {/* Strategy ESG composite */}
-      {stratAllocs.length > 0 && (() => {
-        const totalW = stratAllocs.reduce((s, a) => s + Number(a.weight), 0)
-        if (totalW === 0) return null
-        let wavg = 0
-        let allRated = true
-        for (const a of stratAllocs) {
-          const info = esg[a.asset]
-          if (!info) { allRated = false; break }
-          wavg += info.composite * Number(a.weight)
-        }
-        if (!allRated) return null
-        const composite = Math.round(wavg / totalW)
-        const rating    = composite >= 80 ? 'AAA' : composite >= 70 ? 'AA' : composite >= 60 ? 'A' : composite >= 50 ? 'BBB' : 'CCC'
-        const tierName  = composite >= 80 ? t.copy.esg.champion : composite >= 60 ? t.copy.esg.aware : t.copy.esg.considerGreener
-        const tierColorHex = composite >= 80 ? '#22c55e' : composite >= 60 ? '#c0ca33' : '#ffab00'
-        return (
-          <Card sx={{ p: 2.5, display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 2 }}>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-              <Typography variant="h5">🌱</Typography>
-              <Box>
-                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontWeight: 'bold' }}>
-                  {t.copy.esg.title}
-                </Typography>
-                <Typography variant="subtitle2" sx={{ fontWeight: 'bold', color: tierColorHex }}>
-                  {tierName}
-                </Typography>
-              </Box>
-            </Box>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, ml: 'auto' }}>
-              <ESGBadge composite={composite} rating={rating} size="md" />
-              <Typography variant="h5" sx={{ fontWeight: 'extrabold', fontFamily: MONO, color: tierColorHex }}>
-                {composite}
-              </Typography>
-              <Button
-                component={RouterLink}
-                to="/esg"
-                variant="text"
-                size="small"
-                sx={{ textTransform: 'none' }}
-              >
-                {t.copy.esg.details}
-              </Button>
-            </Box>
-          </Card>
-        )
-      })()}
+      {/* #383：原本是平台自評 ESG 分數的加權平均，改成這份策略依權重的碳分級組成（交易所定價用的那一套）。 */}
+      {stratAllocs.length > 0 && (
+        <CarbonTierMixCard
+          holdings={stratAllocs.map((a) => ({ asset: a.asset, weight: Number(a.weight) }))}
+          tierOf={pricingTiers.tierOf}
+          source="trader"
+        />
+      )}
 
       {/* Total margin input */}
       <Card sx={{ p: 3, display: 'flex', flexDirection: 'column', gap: 2.5 }}>

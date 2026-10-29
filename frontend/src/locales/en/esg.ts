@@ -9,7 +9,7 @@ export const esg: Catalog['esg'] = {
     title: 'Attested Carbon Tier',
     lead: 'The Tier is itself the attested fact — recorded on chain by an Attestor alongside the basis they reached it on, not converted from a carbon intensity at read time. The vault prices its mint fee on this Tier.',
     vsOld:
-      'The ESG rating above describes overall sustainability conduct (the composite of the E/S/G axes); this section describes the attested basis for pricing. Different sources, different purposes — shown side by side rather than merged into one score.',
+      'The third-party ratings above are rating agencies’ judgements of overall sustainability conduct; this section describes the attested basis for pricing, which is the platform’s risk policy. Different sources, different purposes — shown side by side rather than merged into one score.',
     column: {
       asset: 'Asset',
       tier: 'Attested tier',
@@ -74,102 +74,75 @@ export const esg: Catalog['esg'] = {
     pct: '{pct}%',
   },
 
-  title: '🌱 ESG Asset Explorer',
-  subtitle: 'Environmental · Social · Governance — 11 synthetic assets, on-chain registry',
+  title: 'ESG Information',
+  lead: 'The platform does not rate assets. Below is what each rating agency has published itself, each with its source, rating date and the date we read it. Click a row for that asset’s details.',
 
-  connectWallet: 'Connect wallet to load live ESG scores from the on-chain ESGRegistry.',
-  wrongNetwork:
-    'No ESGRegistry is deployed on this network. Switch to Base Sepolia or Ethereum Sepolia to see live on-chain scores.',
-  loadFailed: 'Failed to load ESG data — refresh the page.',
-
-  methodology: {
-    title: 'A · ESG Scoring Methodology',
-    ratingTable: 'Seven-Tier Rating Table',
-  },
-
-  /** 三個維度的名稱，以及各自的檢查項目。 */
-  dimension: {
-    environmental: 'Environmental',
-    environmentalItems: [
-      'Carbon footprint & energy mix',
-      'Physical climate risk',
-      'Land / water use impact',
-      'Waste & emission management',
-    ],
-
-    social: 'Social',
-    socialItems: [
-      'Labour practices & worker safety',
-      'Community & stakeholder impact',
-      'Data privacy & security',
-      'Supply chain responsibility',
-    ],
-
-    governance: 'Governance',
-    governanceItems: [
-      'Board independence & diversity',
-      'Executive accountability',
-      'Disclosure & transparency',
-      'Shareholder rights protection',
-    ],
-  },
-
-  /** 七級評級。代號留在元件裡，這裡是它的名稱與一句話說明。 */
-  rating: {
-    aaa: 'ESG Champion',
-    aaaDesc: 'Best-in-class across all three dimensions',
-    aa: 'ESG Leader',
-    aaDesc: 'Strong, consistent performance across E, S, and G',
-    a: 'ESG Aware',
-    aDesc: 'Above-average; room for improvement in one dimension',
-    bbb: 'Satisfactory',
-    bbbDesc: 'Meets baseline standards; notable gaps remain',
-    bb: 'Developing',
-    bbDesc: 'Below average; improvement initiatives underway',
-    b: 'Below Standard',
-    bDesc: 'Significant ESG risks not yet adequately managed',
-    ccc: 'High Risk',
-    cccDesc: 'Material ESG concerns with limited mitigation evidence',
-
-    /** 門檻那一格：有下限就寫下限，最後一級寫上限。 */
-    atLeast: '≥ {min}',
-    below30: '< 30',
-  },
-
-  ranking: {
-    title: 'B · 11-Asset ESG Ranking (composite, high to low)',
-    rank: '#{n}',
-    outOf: '/ 100',
-  },
-
-  radar: {
-    title: 'C · E/S/G Radar Chart',
-    noData: 'No on-chain score for this asset yet',
-    composite: 'Composite',
-    hint: 'Click any asset card on the left to update the radar',
-  },
-
-  /** 每個標的一句話的評分理由。 */
-  rationale: {
-    sBTC: 'Proof-of-work energy intensity dominates an otherwise permissionless, decentralized governance model.',
-    sETH: 'The PoS Merge cut energy use 99.95%; transparent on-chain governance and an inclusive developer culture lift all dimensions.',
-    sAAPL:
-      'Carbon-neutrality supply chain commitment and strong board independence; minor labour concerns in manufacturing cap the S score.',
-    sTSLA:
-      'EV mission drives E above industry average; CEO governance controversy and workforce-relations incidents weigh on S and G.',
-    sGOLD:
-      'Mining causes significant land disruption and CO₂; adoption of Responsible Mining standards remains uneven across producers.',
-    sBOND:
-      'Tracks the iShares USD Green Bond ETF: every holding is an investment-grade green bond screened against the Green Bond Principles, funding earmarked environmental projects, with issuer-level ESG data available.',
-    sNVDA:
-      'Data-center GPU power demand is high, offset by an AI-efficiency roadmap; semiconductor-industry governance standards are above average.',
-    sMSFT:
-      'Carbon-negative pledge, 100 % renewable electricity target, and robust board governance deliver near-champion ESG performance.',
-    sGOOGL:
-      "World's largest corporate renewable-energy buyer (E↑); antitrust investigations and data-privacy controversies moderately restrain S and G.",
-    sICLN:
-      'Tracks global clean-energy producers; near-perfect E score; land use and grid-stability considerations create nuanced social exposure.',
-    sESGU:
-      'Broad MSCI USA ESG-screened index delivers top-quartile performance across all three dimensions with strong sector diversification.',
+  /** See `../zh-TW/esg.ts`. */
+  thirdParty: {
+    rights:
+      'Ratings are the copyright of each rating agency. They are quoted here, with a link to the original page, for an academic, non-commercial project; check the original page for the latest value before citing one.',
+    legend: {
+      title: 'How to read this table',
+      light: 'Colours follow only the groups an agency defines itself (currently only MSCI: Leader, Average, Laggard).',
+      scoreOnly: 'Agencies that publish only a score with no groups of their own (S&P Global) are shown as the number, uncoloured; the platform does not draw thresholds for them.',
+      noAverage: 'Every agency uses a different method and scale, so ratings are never added up, averaged or used to rank assets.',
+    },
+    column: {
+      asset: 'Asset',
+      carbonTier: 'Carbon tier',
+      carbonTierSub: 'Platform risk policy',
+    },
+    light: {
+      leader: 'Leader',
+      average: 'Average',
+      laggard: 'Laggard',
+    },
+    cell: {
+      notPublic: 'Not public',
+      unrated: 'Unrated',
+      notApplicable: 'Not covered',
+    },
+    noRating: 'Unrated',
+    provider: {
+      msci: {
+        name: 'MSCI',
+        scale: 'AAA–CCC. AAA and AA are Leaders; A, BBB and BB are Average; B and CCC are Laggards.',
+        scope: 'ETFs carry the MSCI ESG Fund Rating, read from the iShares product page. MSCI company ratings are only available to paying clients, so equities show “Not public”.',
+      },
+      spGlobal: {
+        name: 'S&P Global',
+        scale: '0–100, comparable only with peers in the same industry, never across industries.',
+        scope: 'Rates companies only — not ETFs or crypto assets.',
+      },
+      ccdata: {
+        name: 'CCData × CCRI',
+        scale: 'AA–E, covering the 40 most liquid crypto assets.',
+        scope: 'The edition we could read first-hand is the first one, from July 2023; later editions no longer have an original page, so the grade may be out of date.',
+      },
+    },
+    detail: {
+      ratedOn: 'Rated',
+      retrievedOn: 'Read on',
+      source: 'Original page',
+      spUnderReview: 'S&P marks this score as under review: it is assessing a controversy linked to the company, and the score may be adjusted.',
+      spRespondent: 'This company responds to S&P’s Corporate Sustainability Assessment (CSA).',
+      spPublicInfo: 'This company does not respond to S&P’s CSA; the score is modelled from public information.',
+      notPublic: '{provider} rates this kind of asset, but its individual ratings are not public.',
+      unrated: '{provider} rates this kind of asset, but has not rated this one.',
+      noRating: 'No agency has published a rating for this asset. That does not mean it was rated poorly — nobody has rated it.',
+      rawTitle: 'Raw environmental data',
+      rawLead: 'Figures and their sources only — never converted into a score or a colour.',
+      carbonTierTitle: 'Carbon tier (platform risk policy)',
+      carbonTierNote:
+        'The carbon tier applies fixed thresholds to published emissions data and sets this asset’s trading fee and leverage cap on the exchange. It is the platform’s risk policy, not an ESG rating.',
+    },
+    method: {
+      title: 'Why it is shown this way',
+      items: [
+        'ESG ratings are specialist research. The platform does not score assets itself; it only quotes what rating agencies publish.',
+        'Sustainalytics and MSCI company ratings currently have no public lookup, so they are not listed. CDP’s terms restrict its scores to internal use, so it is not listed either.',
+        '“Not public” means rated but not visible; “Unrated” means not rated; “Not covered” means the agency does not rate this kind of asset at all. They mean different things and are labelled separately.',
+      ],
+    },
   },
 };

@@ -105,18 +105,8 @@ export function AssetProvenanceBody({
   if (!p || !c || !str) return null
 
   const nowSec = Math.floor(nowMs / 1000)
-
-  const expired = attestationExpired(c.observed, nowMs)
-  // 見證過期 → 這顆資產視同未評等（詞彙表 Attestation：lapsed 就停止計數）。
-  // 這條規則只有一個定義，在 assetRows.ts 的 tierForAsset——資產表跟這裡
-  // 不能對同一顆資產算出不同的分級。
-  const shownTier: Tier = tierForAsset(meta, nowMs)
   const heldDays =
     heldSinceSec !== undefined ? Math.max(0, Math.floor((nowSec - heldSinceSec) / 86400)) : null
-  // 發行方的轉型揭露：只有 assetMeta 帶 `transition`、catalog 也有那一檔的文字時才顯示。
-  const tt = tp.transition
-  const transitionStr = (tt.assets as Record<string, { text: string; source: string } | undefined>)[meta.symbol]
-  const transition = meta.transition && transitionStr ? { ...meta.transition, ...transitionStr } : null
 
   return (
     <Stack spacing={1.5} divider={<Divider flexItem />}>
@@ -133,80 +123,11 @@ export function AssetProvenanceBody({
         </Box>
       </Field>
 
-      {/* ── 碳強度 ── */}
-      <Box>
-        <Typography variant="caption" color="text.secondary" display="block">
-          {tp.carbonTitle}
-        </Typography>
-        <Stack direction="row" spacing={1} alignItems="baseline" flexWrap="wrap" useFlexGap sx={{ mt: 0.25 }}>
-          <Chip size="small" color={TIER_COLOR[shownTier]} label={tp.carbonTier[shownTier]} />
-          {c.intensity !== null && !expired && (
-            <Typography variant="body2" sx={{ fontFamily: MONO }}>
-              {c.intensity} <Typography component="span" variant="caption" color="text.secondary">
-                {tp.carbonBasis.revenue}
-              </Typography>
-            </Typography>
-          )}
-          {c.intensity === null && (
-            <Typography variant="caption" color="text.secondary">
-              {tp.carbonBasis[c.basis]}
-            </Typography>
-          )}
-        </Stack>
-
-        {(shownTier === 'unrated') && (
-          <Alert severity="warning" variant="outlined" sx={{ mt: 1, py: 0 }}>
-            {tp.carbonUnratedNote}
-          </Alert>
-        )}
-
-        <Stack spacing={0.25} sx={{ mt: 1 }}>
-          <Typography variant="caption" color="text.secondary">
-            {tp.observedLabel}: <Box component="span" sx={{ fontFamily: MONO }}>{c.observed}</Box>
-            {c.observed !== '—' && (
-              <>
-                {'  ·  '}
-                {tp.nextDueLabel}: <Box component="span" sx={{ fontFamily: MONO }}>{nextAttestationDue(c.observed)}</Box>
-              </>
-            )}
-          </Typography>
-          <Typography variant="caption" color="text.secondary">
-            {tp.sourceLabel}:{' '}
-            <Link href={c.sourceUrl} target="_blank" rel="noopener noreferrer">
-              {str.carbonSource}
-            </Link>
-          </Typography>
-          <Typography variant="caption" color="text.secondary">
-            {tp.caveatLabel}: {str.carbonCaveat}
-          </Typography>
-        </Stack>
-      </Box>
+      <AssetCarbonFact meta={meta} nowMs={nowMs} />
 
       {/* ── 發行方的轉型揭露（docs/data/carbon-tier-etf-waci.md）——緊接在碳強度下面，
            讓「排多少」和「在做什麼」並排；刻意不給 chip 或分數，也不進定價。 ── */}
-      {transition && (
-        <Box data-testid="asset-transition">
-          <Typography variant="caption" color="text.secondary" display="block">
-            {tt.title}
-          </Typography>
-          <Typography variant="body2" sx={{ mt: 0.25 }}>
-            {transition.text}
-          </Typography>
-          <Stack spacing={0.25} sx={{ mt: 1 }}>
-            <Typography variant="caption" color="text.secondary">
-              {tp.sourceLabel}:{' '}
-              <Link href={transition.sourceUrl} target="_blank" rel="noopener noreferrer">
-                {transition.source}
-              </Link>
-              {'  ·  '}
-              {tt.readLabel}: <Box component="span" sx={{ fontFamily: MONO }}>{transition.observed}</Box>
-            </Typography>
-            <Typography variant="caption" color="text.secondary">
-              {tt.note}
-            </Typography>
-          </Stack>
-        </Box>
-      )}
+      <AssetTransitionFact meta={meta} />
 
       {/* ── KYC 理由 ── */}
       <Box>
@@ -280,6 +201,118 @@ export function AssetProvenanceBody({
         {tp.disclaimer}
       </Typography>
     </Stack>
+  )
+}
+
+/** 發行方的轉型揭露：只有 assetMeta 帶 `transition`、catalog 也有那一檔的文字時才有。 */
+function transitionOf(meta: AssetMeta) {
+  const transitionStr = (t.tokens.provenance.transition.assets as Record<string, { text: string; source: string } | undefined>)[meta.symbol]
+  return meta.transition && transitionStr ? { ...meta.transition, ...transitionStr } : null
+}
+
+export interface AssetCarbonFactProps {
+  meta: AssetMeta
+  nowMs?: number
+  /**
+   * 顯示 assetMeta 的碳分級 chip。ESG 頁（#383）關掉它：那一頁的分級欄讀的是鏈上見證，
+   * 兩者在重新見證之前可能不同，同一個面板裡出現兩個分級會讓人以為有兩套制度。
+   */
+  showTier?: boolean
+}
+
+/** 碳強度、依據、見證日、出處與限制。/tokens 的身世面板與 ESG 頁共用。 */
+export function AssetCarbonFact({ meta, nowMs = Date.now(), showTier = true }: AssetCarbonFactProps) {
+  const c = meta.carbon
+  const tp = t.tokens.provenance
+  const str = tp.assets[meta.symbol as keyof typeof tp.assets]
+  if (!c || !str) return null
+
+  const expired = attestationExpired(c.observed, nowMs)
+  // 見證過期 → 這顆資產視同未評等（詞彙表 Attestation：lapsed 就停止計數）。
+  // 這條規則只有一個定義，在 assetRows.ts 的 tierForAsset——資產表跟這裡
+  // 不能對同一顆資產算出不同的分級。
+  const shownTier: Tier = tierForAsset(meta, nowMs)
+
+  return (
+      <Box>
+        <Typography variant="caption" color="text.secondary" display="block">
+          {tp.carbonTitle}
+        </Typography>
+        <Stack direction="row" spacing={1} alignItems="baseline" flexWrap="wrap" useFlexGap sx={{ mt: 0.25 }}>
+          {showTier && <Chip size="small" color={TIER_COLOR[shownTier]} label={tp.carbonTier[shownTier]} />}
+          {c.intensity !== null && !expired && (
+            <Typography variant="body2" sx={{ fontFamily: MONO }}>
+              {c.intensity} <Typography component="span" variant="caption" color="text.secondary">
+                {tp.carbonBasis.revenue}
+              </Typography>
+            </Typography>
+          )}
+          {c.intensity === null && (
+            <Typography variant="caption" color="text.secondary">
+              {tp.carbonBasis[c.basis]}
+            </Typography>
+          )}
+        </Stack>
+
+        {(shownTier === 'unrated') && (
+          <Alert severity="warning" variant="outlined" sx={{ mt: 1, py: 0 }}>
+            {tp.carbonUnratedNote}
+          </Alert>
+        )}
+
+        <Stack spacing={0.25} sx={{ mt: 1 }}>
+          <Typography variant="caption" color="text.secondary">
+            {tp.observedLabel}: <Box component="span" sx={{ fontFamily: MONO }}>{c.observed}</Box>
+            {c.observed !== '—' && (
+              <>
+                {'  ·  '}
+                {tp.nextDueLabel}: <Box component="span" sx={{ fontFamily: MONO }}>{nextAttestationDue(c.observed)}</Box>
+              </>
+            )}
+          </Typography>
+          <Typography variant="caption" color="text.secondary">
+            {tp.sourceLabel}:{' '}
+            <Link href={c.sourceUrl} target="_blank" rel="noopener noreferrer">
+              {str.carbonSource}
+            </Link>
+          </Typography>
+          <Typography variant="caption" color="text.secondary">
+            {tp.caveatLabel}: {str.carbonCaveat}
+          </Typography>
+        </Stack>
+      </Box>
+  )
+}
+
+/** 發行方的轉型揭露：只轉述發行方公布的內容，不給 chip 或分數，也不進定價。/tokens 與 ESG 頁共用。 */
+export function AssetTransitionFact({ meta }: { meta: AssetMeta }) {
+  const tp = t.tokens.provenance
+  const tt = tp.transition
+  const transition = transitionOf(meta)
+  if (!transition) return null
+
+  return (
+    <Box data-testid="asset-transition">
+      <Typography variant="caption" color="text.secondary" display="block">
+        {tt.title}
+      </Typography>
+      <Typography variant="body2" sx={{ mt: 0.25 }}>
+        {transition.text}
+      </Typography>
+      <Stack spacing={0.25} sx={{ mt: 1 }}>
+        <Typography variant="caption" color="text.secondary">
+          {tp.sourceLabel}:{' '}
+          <Link href={transition.sourceUrl} target="_blank" rel="noopener noreferrer">
+            {transition.source}
+          </Link>
+          {'  ·  '}
+          {tt.readLabel}: <Box component="span" sx={{ fontFamily: MONO }}>{transition.observed}</Box>
+        </Typography>
+        <Typography variant="caption" color="text.secondary">
+          {tt.note}
+        </Typography>
+      </Stack>
+    </Box>
   )
 }
 

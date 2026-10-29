@@ -1646,6 +1646,19 @@ StrategyRegistry 只要求每條腿的權重介於 1 到 5,000 bps、至少三�
 （近似值：實際釋出的金額要平倉後才知道）；執行者 agent 以 `eth_call` 模擬，把 `MarginTooLow` 分類為容量問題並通知。跟隨者的出路是
 等交易者發布正常的版本，或取消跟單（`unfollowAndCloseAll`，照常計分）。合約刻意不跳過太小的腿：那樣的組合不是交易者發布過的任何一版。
 
+## 46. 平台自評的 ESG 分數仍留在鏈上（added 2026-10-29）
+
+#383 決定平台不再自評 ESG：ESG 頁改為轉述第三方評級（`frontend/src/lib/pepefi/esgRatingsData.ts`），前端所有依平台
+E／S／G 綜合分的顯示、排序、篩選都已拿掉，`CarbonAttestations.sol` 之後的見證也一律把 E／S／G 寫成 0。但下面這些沒有改：
+
+- **鏈上舊資料**：已經寫進 `ESGRegistry`（V1）與 `ESGRegistryV2` 的 E／S／G 分數還在，任何人都讀得到。要清掉得由見證者
+  重新見證（V2，寫 0）；V1 沒有前端在讀。
+- **`PepeIncentives.claimEsgHoldReward`** 仍以 `esgRegistry.compositeScore(asset) >= esgMinScore`（原始碼預設 70）當門檻，
+  門檻依據就是平台的舊分數。前端沒有任何地方呼叫它，所以使用者碰不到；合約不改（重新部署要再走一次 cutover，沒有對應的效益）。
+  要正式關掉，由 owner 呼叫 `setEsgRegistry(address(0))`（不再檢查分數）或 `setEsgParams` 把 `bps` 設成 0（不再發獎勵）。
+- **ESG Master**：依平台分數選股的模擬交易者。它已在 Base Sepolia 註冊，前端用 `hiddenTraders.ts` 隱藏，英雄榜管線
+  不再產生它（`heroes/herolab/roster.py`）；既有的英雄榜資料檔沒有重新產生，裡面仍有它的紀錄與 `esgScore` 欄位，前端不讀。
+
 ## Frontend
 
 **~~Dead Minimal UI template code still reaches the production bundle.~~ 已修正（2026-09-30）。**

@@ -403,10 +403,8 @@ describe('makeTraderComparator', () => {
     },
     ...over,
   })
-  type EsgOf = Parameters<typeof makeTraderComparator>[1]
-  const noEsg: EsgOf = () => null
-  const names = (cards: TraderCard[], key: Parameters<typeof makeTraderComparator>[0], esg: EsgOf = noEsg) =>
-    [...cards].sort(makeTraderComparator(key, esg)).map(c => c.displayName)
+  const names = (cards: TraderCard[], key: Parameters<typeof makeTraderComparator>[0]) =>
+    [...cards].sort(makeTraderComparator(key)).map(c => c.displayName)
 
   it('主要欄位大在前', () => {
     const cards = [
@@ -438,16 +436,6 @@ describe('makeTraderComparator', () => {
       card({ displayName: 'second', pnl7d: 5n, score: { ...card({}).score, total: 42 } }),
     ]
     expect(names(cards, 'pnl')).toEqual(['first', 'second'])
-  })
-
-  it('esg 排序用外部傳進來的加權分,平手一樣退回 TraderScore', () => {
-    const esgMap: Record<string, number> = { hi: 80, tie1: 50, tie2: 50 }
-    const cards = [
-      card({ displayName: 'tie1', score: { ...card({}).score, total: 30 } }),
-      card({ displayName: 'hi',   score: { ...card({}).score, total: 10 } }),
-      card({ displayName: 'tie2', score: { ...card({}).score, total: 70 } }),
-    ]
-    expect(names(cards, 'esg', (c) => esgMap[c.displayName] ?? null)).toEqual(['hi', 'tie2', 'tie1'])
   })
 })
 
@@ -483,7 +471,7 @@ describe('sorting by the simulated-trader figures', () => {
     ),
     hero: {
       address, name: address, rule: 'buy_hold', totalReturnPct, maxDrawdownPct, sharpe,
-      winRatePct: null, closedTrades: 0, esgScore: null, window7d: window, window30d: window, sparkline: [],
+      winRatePct: null, closedTrades: 0, window7d: window, window30d: window, sparkline: [],
       activeSince: '2024-10-01',
     },
   })
@@ -494,7 +482,7 @@ describe('sorting by the simulated-trader figures', () => {
     emptyAggregates,
   )
   const order = (key: 'return' | 'drawdown' | 'sharpe') =>
-    [plain, steady, wild].sort(makeTraderComparator(key, () => null)).map((t) => t.address)
+    [plain, steady, wild].sort(makeTraderComparator(key)).map((t) => t.address)
 
   it('puts the highest return first', () => {
     expect(order('return')).toEqual(['0xb', '0xa', '0xc'])
@@ -510,8 +498,8 @@ describe('sorting by the simulated-trader figures', () => {
 
   it('keeps a trader without the data last rather than treating it as zero', () => {
     const losing = withHero('0xd', -20, 50, -1.5)
-    expect([plain, losing].sort(makeTraderComparator('return', () => null)).map((t) => t.address)).toEqual(['0xd', '0xc'])
-    expect([plain, losing].sort(makeTraderComparator('sharpe', () => null)).map((t) => t.address)).toEqual(['0xd', '0xc'])
+    expect([plain, losing].sort(makeTraderComparator('return')).map((t) => t.address)).toEqual(['0xd', '0xc'])
+    expect([plain, losing].sort(makeTraderComparator('sharpe')).map((t) => t.address)).toEqual(['0xd', '0xc'])
   })
 })
 
@@ -530,7 +518,7 @@ describe('ranking', () => {
     ...card(address, 0),
     hero: {
       address, name: address, rule: 'buy_hold', totalReturnPct: 0, maxDrawdownPct: 0, sharpe: 0,
-      winRatePct: null, closedTrades: 0, esgScore: null, window7d: window, window30d: window, sparkline: [],
+      winRatePct: null, closedTrades: 0, window7d: window, window30d: window, sparkline: [],
       activeSince,
     },
   })

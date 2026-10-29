@@ -48,7 +48,7 @@ export const traderProfile: Catalog['traderProfile'] = {
 
     column: {
       asset: 'Asset',
-      esg: 'ESG',
+      carbonTier: 'Carbon tier',
       side: 'Side',
       leverage: 'Lev',
       weight: 'Weight',

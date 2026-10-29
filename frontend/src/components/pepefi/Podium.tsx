@@ -12,7 +12,6 @@ import Typography from '@mui/material/Typography';
 import { t } from 'src/locales';
 import { MONO, shortAddr } from 'src/components/pepefi/brandKit';
 import { traderAvatarSrc } from 'src/utils/pepefi-assets';
-import ESGBadge from 'src/components/pepefi/ESGBadge';
 import AllocationRow from 'src/components/pepefi/AllocationRow';
 import { scoreChipColor, fPnL, fWinRate, fReturnPct, type TraderCard } from 'src/lib/pepefi/leaderboardMetrics';
 
@@ -31,8 +30,6 @@ const MEDAL_BORDER = [
 interface Props {
   /** 目前排序下,排除「資料不足」交易者後的前三名——已經是最終要顯示的那三位,不在這裡再篩一次。 */
   podium: TraderCard[];
-  /** 交易者的加權 ESG {分數, 評等},缺資料時回傳 null——由 MarketplacePage 帶著 useESG 的資料算。 */
-  esgOf: (trader: TraderCard) => { composite: number; rating: string } | null;
   onScoreClick: (el: HTMLElement, trader: TraderCard) => void;
   /** 報酬率那格的標籤。有績效資料時它是 30 天的數字，要跟表格的「累積報酬」分清楚。 */
   returnLabel?: string;
@@ -72,14 +69,12 @@ function Stat({ label, value, tone }: { label: string; value: string; tone?: 'up
  */
 export default function Podium({
   podium,
-  esgOf,
   onScoreClick,
   returnLabel = t.marketplace.scoreBreakdown.returnLabel,
 }: Props) {
   if (podium.length === 0) return null;
 
   const card = (trader: TraderCard, rank: number) => {
-    const esg = esgOf(trader);
     return (
     <Card
       key={trader.address}
@@ -152,12 +147,6 @@ export default function Podium({
       {/* 疊在卡片連結上面：圖示的提示（資產名稱、權重）要能滑鼠移上去看。 */}
       <Box sx={{ position: 'relative', zIndex: 1, alignSelf: 'flex-start' }}>
         <AllocationRow allocs={trader.allocs} hasStrategy={trader.hasStrategy} size={26} />
-      </Box>
-
-      {/* ESG 評等獨立一行，而且沒有評等時也留著這一行的高度：接在資產圖示後面的話，
-          資產多的那張會被擠到換行，三張卡片下面的數字就對不齊。 */}
-      <Box sx={{ minHeight: 24, display: 'flex', alignItems: 'center', position: 'relative', zIndex: 1, alignSelf: 'flex-start' }}>
-        {esg && <ESGBadge composite={esg.composite} rating={esg.rating} size="sm" />}
       </Box>
 
       <Divider sx={{ borderColor: 'divider' }} />

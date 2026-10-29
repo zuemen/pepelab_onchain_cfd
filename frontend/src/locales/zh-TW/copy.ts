@@ -22,14 +22,6 @@ export const copy = {
     chip: '{side} {asset} {weight}% · {leverage}×',
   },
 
-  esg: {
-    title: '策略 ESG 評分',
-    champion: 'ESG 冠軍',
-    aware: 'ESG 關注者',
-    considerGreener: '考慮選擇更環保的標的',
-    details: '詳情 →',
-  },
-
   amount: {
     title: '跟單金額',
     placeholder: '1000',

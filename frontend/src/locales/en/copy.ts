@@ -24,14 +24,6 @@ export const copy: Catalog['copy'] = {
     chip: '{side} {asset} {weight}% · {leverage}×',
   },
 
-  esg: {
-    title: 'Strategy ESG Score',
-    champion: 'ESG Champion',
-    aware: 'ESG Aware',
-    considerGreener: 'Consider greener assets',
-    details: 'Details →',
-  },
-
   amount: {
     title: 'Copy Amount',
     placeholder: '1000',

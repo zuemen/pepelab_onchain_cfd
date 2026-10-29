@@ -7,7 +7,6 @@ import { usePepefiWallet } from 'src/layouts/pepefi';
 import { ASSET_IDS, CHAIN_NAMES } from 'src/contracts/addresses';
 import Skeleton, { TableSkeleton } from 'src/components/pepefi/Skeleton';
 import EmptyState from 'src/components/pepefi/EmptyState';
-import { useESG } from 'src/hooks/useESG';
 import {
   avgBlockTime,
   chunkRanges,
@@ -16,7 +15,7 @@ import {
   UI_RETRIES,
   isChunkScanAborted,
 } from 'src/lib/pepefi/chainLogs';
-import ESGBadge from 'src/components/pepefi/ESGBadge';
+import { isHiddenTrader } from 'src/lib/pepefi/hiddenTraders';
 import AllocationRow from 'src/components/pepefi/AllocationRow';
 import Podium from 'src/components/pepefi/Podium';
 import ScoreBreakdownPopover from 'src/components/pepefi/ScoreBreakdownPopover';
@@ -119,14 +118,8 @@ const LEADERBOARD_CONCURRENCY  = 3;
 // ── Types ────────────────────────────────────────────────────────────────────
 type SortKey = LeaderboardSortKey;
 
-const ESG_FRIENDLY_THRESHOLD = 60;   // weighted composite ≥ 60
-
 // ── Helpers ──────────────────────────────────────────────────────────────────
 const shortAddr = (addr: string) => `${addr.slice(0, 6)}…${addr.slice(-4)}`;
-
-/** 加權後的 ESG 綜合分 → 評等字母。門檻跟 PortfolioAnalysis / CopyPage 同一組。 */
-const esgRatingOf = (composite: number): string =>
-  composite >= 80 ? 'AAA' : composite >= 70 ? 'AA' : composite >= 60 ? 'A' : composite >= 50 ? 'BBB' : 'CCC';
 
 const fVol = (v: bigint): string => {
   const n = Number(v) / 1e18;
@@ -153,7 +146,6 @@ const fWindow = (hours: number): string =>
 export default function TraderLeaderboard() {
   const wallet = usePepefiWallet();
   const contracts  = useContracts(wallet.provider, wallet.signer, wallet.chainId);
-  const { data: esg } = useESG(contracts?.esgRegistry ?? null);
 
   const [traders,    setTraders]    = useState<TraderCard[]>([]);
   const [isLoading,  setIsLoading]  = useState(false);
@@ -163,7 +155,6 @@ export default function TraderLeaderboard() {
   const [tradersReadFailed, setTradersReadFailed] = useState(false);
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [sortKey,    setSortKey]    = useState<SortKey>('score');
-  const [esgOnly,    setEsgOnly]    = useState(false);
   const [search,     setSearch]     = useState('');
   const [scorePopover, setScorePopover] = useState<{ anchorEl: HTMLElement; trader: TraderCard } | null>(null);
   // 實際掃了幾塊、換算成多久。寫死的常數不能再拿來當文案,因為同一個數字在
@@ -244,7 +235,10 @@ export default function TraderLeaderboard() {
       ]);
       if (ac.signal.aborted) return;
       const rawLogs   = logsRes.status      === 'fulfilled' ? logsRes.value      : [];
-      const addresses = addressesRes.status === 'fulfilled' ? addressesRes.value : [];
+      // #383：隱藏的交易者（hiddenTraders.ts）在這裡就濾掉，連跟隨者與策略都不讀。
+      const addresses = addressesRes.status === 'fulfilled'
+        ? addressesRes.value.filter((a) => !isHiddenTrader(wallet.chainId, a))
+        : [];
       const scanFailed = logsRes.status === 'rejected' ? chunks : failedChunks;
       setScanFailedChunks(scanFailed);
       setTradersReadFailed(addressesRes.status === 'rejected');
@@ -333,40 +327,16 @@ export default function TraderLeaderboard() {
 
   useEffect(() => { void fetchAll() }, [fetchAll]);
 
-  const getEsgComposite = (t: TraderCard): number | null => {
-    if (!t.hasStrategy || t.allocs.length === 0) return null;
-    const totalW = t.allocs.reduce((s, a) => s + Number(a.weight), 0);
-    if (totalW === 0) return null;
-    let wavg = 0;
-    for (const a of t.allocs) {
-      const info = esg[a.asset];
-      if (!info) return null;
-      wavg += info.composite * Number(a.weight);
-    }
-    return Math.round(wavg / totalW);
-  };
-
-  /** 交易者的加權 ESG {分數, 評等},缺資料時為 null。表格「策略」欄與領獎台卡片共用。 */
-  const esgFor = (t: TraderCard): { composite: number; rating: string } | null => {
-    const c = getEsgComposite(t);
-    return c === null ? null : { composite: c, rating: esgRatingOf(c) };
-  };
-
-  // 有策略、且(若開了 ESG 篩選)通過門檻的交易者——這是「排行榜裡本來就有的人」。
-  // 搜尋框再篩一層在下面的 visible,兩者分開算是為了區分「這條鏈真的沒人」跟
-  // 「有人,只是搜尋詞沒有比對到」這兩種完全不同的空狀態。
-  const filtered = traders.filter(tr => {
-    if (!tr.hasStrategy) return false;
-    if (!esgOnly) return true;
-    const score = getEsgComposite(tr);
-    return score !== null && score >= ESG_FRIENDLY_THRESHOLD;
-  });
+  // 有策略的交易者——這是「排行榜裡本來就有的人」。搜尋框再篩一層在下面的 visible,
+  // 兩者分開算是為了區分「這條鏈真的沒人」跟「有人,只是搜尋詞沒有比對到」這兩種完全
+  // 不同的空狀態。（#383 拿掉了依平台自評 ESG 綜合分的篩選。）
+  const filtered = traders.filter(tr => tr.hasStrategy);
 
   // 平手時再比 TraderScore——見 makeTraderComparator。種子資料裡好幾位的 7 日量、
   // PnL 完全一樣,少了 tie-break 順序就只是資料抓回來的先後,看起來像沒排序。
   const visible = [...filtered]
     .filter(tr => matchesSearch(tr, search))
-    .sort(makeTraderComparator(sortKey, getEsgComposite));
+    .sort(makeTraderComparator(sortKey));
 
   // 先篩選、再排名（見 leaderboardMetrics 的 rankLeaderboard）：資料不足的人不佔名次，
   // 領獎台永遠是目前排序的名次 1–3，表格從第 4 名接著排，不重複也不跳號；資料不足的人
@@ -396,7 +366,7 @@ export default function TraderLeaderboard() {
     }
   }, [usingHeroData, sortKey]);
   // 表頭的欄數：「資料不足」分隔列要橫跨整張表。績效資料多三欄（累積報酬、最大回撤、Sharpe）。
-  const columnCount = usingHeroData ? 14 : 11;
+  const columnCount = usingHeroData ? 13 : 10;
   const volLabel = usingHeroData ? t.marketplace.hero.volLabel : t.marketplace.card.volLabel;
   const pnlLabel = usingHeroData ? t.marketplace.hero.pnlLabel : t.marketplace.card.pnlLabel;
 
@@ -414,7 +384,6 @@ export default function TraderLeaderboard() {
     { key: 'followers', label: t.marketplace.sort.followers },
     { key: 'volume', label: usingHeroData ? t.marketplace.hero.sortVolume : t.marketplace.sort.volume },
     { key: 'stake', label: t.marketplace.sort.stake },
-    { key: 'esg', label: t.marketplace.sort.esg },
   ];
 
   // 欄位標題的說明：滑鼠移到標題上顯示這一欄怎麼算。近期視窗有績效資料時是 30 天，否則 7 天。
@@ -435,7 +404,6 @@ export default function TraderLeaderboard() {
     pnl: tip(tips.pnl),
     followers: tip(tips.followers),
     stake: tip(tips.stake),
-    esg: tip(tips.esg),
   };
 
   /** 標題文字加虛線底線，提示「移上去有說明」。 */
@@ -507,24 +475,6 @@ export default function TraderLeaderboard() {
               },
             }}
           />
-
-          <Button
-            size="small"
-            variant={esgOnly ? 'contained' : 'outlined'}
-            color={esgOnly ? 'success' : 'inherit'}
-            onClick={() => setEsgOnly(v => !v)}
-            startIcon={<Icon icon="solar:leaf-bold" />}
-            sx={{
-              borderRadius: 1,
-              borderColor: 'divider',
-              textTransform: 'none',
-              fontWeight: 'bold',
-            }}
-          >
-            {interpolate(t.marketplace.esgButton, {
-              state: esgOnly ? t.marketplace.esgFiltered : t.marketplace.esgAll,
-            })}
-          </Button>
 
           {/* 窄螢幕沒有欄位標頭可點,這個下拉是排序的替代入口——跟表頭共用同一個 sortKey。 */}
           <FormControl size="small" sx={{ minWidth: 160 }}>
@@ -621,7 +571,6 @@ export default function TraderLeaderboard() {
             <Podium
               podium={podium}
               returnLabel={usingHeroData ? t.marketplace.hero.podiumReturn : undefined}
-              esgOf={esgFor}
               onScoreClick={(el, trader) => setScorePopover({ anchorEl: el, trader })}
             />
           ) : (
@@ -682,7 +631,6 @@ export default function TraderLeaderboard() {
                   </TableCell>
                   {sortableHeader('followers', t.marketplace.card.followersLabel)}
                   {sortableHeader('stake', t.marketplace.card.stakeLabel)}
-                  {sortableHeader('esg', t.marketplace.table.esg)}
                   <TableCell
                     align="center"
                     sx={{
@@ -699,7 +647,6 @@ export default function TraderLeaderboard() {
                 {tableRows.map(trader => {
                   const rank = rankOf.get(trader.address);
                   const star = isStarTrader(trader);
-                  const esgComposite = esgFor(trader);
 
                   return (
                     <Fragment key={trader.address}>
@@ -793,14 +740,7 @@ export default function TraderLeaderboard() {
                       </TableCell>
 
                       <TableCell sx={{ maxWidth: 260 }}>
-                        <Stack spacing={0.5}>
-                          <AllocationRow allocs={trader.allocs} hasStrategy={trader.hasStrategy} />
-                          {esgComposite && (
-                            <Box sx={{ alignSelf: 'flex-start' }}>
-                              <ESGBadge composite={esgComposite.composite} rating={esgComposite.rating} size="sm" />
-                            </Box>
-                          )}
-                        </Stack>
+                        <AllocationRow allocs={trader.allocs} hasStrategy={trader.hasStrategy} />
                       </TableCell>
 
                       {usingHeroData && (
@@ -878,10 +818,6 @@ export default function TraderLeaderboard() {
                             </Tooltip>
                           )}
                         </Box>
-                      </TableCell>
-
-                      <TableCell align="right">
-                        {esgComposite ? `${esgComposite.composite}` : '—'}
                       </TableCell>
 
                       <TableCell

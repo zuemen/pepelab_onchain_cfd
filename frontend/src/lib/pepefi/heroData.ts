@@ -35,7 +35,6 @@ export interface HeroSummary {
   /** 沒有任何平倉時為 null。 */
   winRatePct: number | null
   closedTrades: number
-  esgScore: number | null
   window7d: HeroWindow
   window30d: HeroWindow
   sparkline: number[]
@@ -126,7 +125,7 @@ const isSummary = (x: unknown): boolean =>
   typeof x.address === 'string' && /^0x[0-9a-fA-F]{40}$/.test(x.address) &&
   typeof x.name === 'string' && typeof x.rule === 'string' &&
   isNum(x.totalReturnPct) && isNum(x.maxDrawdownPct) && isNum(x.sharpe) &&
-  isNumOrNull(x.winRatePct) && isNum(x.closedTrades) && isNumOrNull(x.esgScore) &&
+  isNumOrNull(x.winRatePct) && isNum(x.closedTrades) &&
   isWindow(x.window7d) && isWindow(x.window30d) &&
   Array.isArray(x.sparkline) && x.sparkline.every(isNum) &&
   (x.activeSince === null || typeof x.activeSince === 'string')
