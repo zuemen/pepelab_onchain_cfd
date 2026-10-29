@@ -37,6 +37,9 @@ describe('ESG_RATINGS', () => {
         expect(r.rating).toMatch(/^\d{1,3}$/)
         expect(Number(r.rating)).toBeLessThanOrEqual(100)
         expect(d?.kind, 'S&P 頁面上的審查中、是否回覆問卷、CSA 分數要一起記').toBe('spGlobal')
+        if (d?.kind !== 'spGlobal') break
+        // 模型只補 CSA 算 0 分的題目，所以 ESG 分數不會低於 CSA 分數；卡片上「模型補上的分數」靠這點。
+        expect(d.csaScore, 'CSA 分數不能高於 ESG 分數').toBeLessThanOrEqual(Number(r.rating))
         break
       case 'ccdata':
         expect(r.rating).toMatch(/^[A-E]{1,2}$/)

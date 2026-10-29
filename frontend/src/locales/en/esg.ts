@@ -121,7 +121,7 @@ export const esg: Catalog['esg'] = {
       },
       spGlobal: {
         name: 'S&P Global',
-        scale: '0–100, higher is better, comparable only with peers in the same industry, never across industries.',
+        scale: 'S&P Global ESG Score, 0–100, higher is better; comparable only with peers in the same industry, never across industries.',
         scope: 'Rates companies only — not ETFs or crypto assets.',
       },
       ccdata: {
@@ -190,10 +190,14 @@ export const esg: Catalog['esg'] = {
       fundRisk: 'Portfolio corporate ESG risk score (0–50, lower is better)',
       fundRiskValue: 'Current {now}, historical {hist}',
       fundCoverage: 'Share of fund assets with a score',
-      spCsa: 'CSA score (without modelling)',
+      spCsa: 'Disclosed questions only (CSA score)',
+      spModelled: 'Points added by S&P’s model',
+      spHowTitle: 'Where the two scores come from',
+      spHow:
+        'S&P sends companies its Corporate Sustainability Assessment (CSA) every year. Questions the company does not disclose, and that cannot be found in public sources, score 0 in the CSA score. The ESG Score above instead lets S&P’s model estimate those questions from how industry peers score on the same question and how this company scores elsewhere, then marks it down for how little was disclosed. The model is S&P’s — the platform estimates nothing itself.',
       spUnderReview: 'S&P marks this score as under review: it is assessing a controversy linked to the company, and the score may be adjusted.',
-      spRespondent: 'This company responds to S&P’s Corporate Sustainability Assessment (CSA).',
-      spPublicInfo: 'This company does not respond to S&P’s CSA; the score is modelled from public information.',
+      spRespondent: 'This company answers S&P’s questionnaire, so fewer questions are left blank.',
+      spPublicInfo: 'This company does not answer S&P’s questionnaire; S&P relies on public sources, so more questions are left blank.',
       noRating: 'No agency has published a rating for this asset. That does not mean it was rated poorly — nobody has rated it.',
       rawTitle: 'Raw environmental data',
       rawLead: 'Figures and their sources only — never converted into a score or a colour.',

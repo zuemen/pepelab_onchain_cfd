@@ -148,8 +148,8 @@ function ScoreBar({ label, value, max }: { label: string; value: number; max: nu
   );
 }
 
-/** 評級以外的細項，依評級機構分開畫。 */
-function RatingDetail({ detail }: { detail: EsgRatingDetail }) {
+/** 評級以外的細項，依評級機構分開畫。rating 是卡片上的大數字，S&P 要拿它跟 CSA 分數比。 */
+function RatingDetail({ detail, rating }: { detail: EsgRatingDetail; rating: string }) {
   const d = tp.detail;
   switch (detail.kind) {
     case 'msciFund':
@@ -253,14 +253,20 @@ function RatingDetail({ detail }: { detail: EsgRatingDetail }) {
         <Stack spacing={1.5}>
           <FactList>
             <Fact label={d.spCsa}>{detail.csaScore}</Fact>
+            {/* 兩個數字都是 S&P 公布的，這裡只是相減，讓人看得出模型補了多少。 */}
+            <Fact label={d.spModelled}>+{Number(rating) - detail.csaScore}</Fact>
             <Fact label={d.industry} stacked>{detail.industry}</Fact>
           </FactList>
           {detail.underReview && (
             <Alert severity="warning" variant="outlined" sx={{ py: 0, typography: 'caption' }}>{d.spUnderReview}</Alert>
           )}
-          <Typography variant="caption" color="text.secondary" sx={{ bgcolor: 'action.hover', borderRadius: 1, px: 1.25, py: 0.75 }}>
-            {detail.csaRespondent ? d.spRespondent : d.spPublicInfo}
-          </Typography>
+          <Box sx={{ bgcolor: 'action.hover', borderRadius: 1, px: 1.5, py: 1.25 }}>
+            <SectionLabel>{d.spHowTitle}</SectionLabel>
+            <Typography variant="caption" color="text.secondary" component="p">{d.spHow}</Typography>
+            <Typography variant="caption" color="text.secondary" component="p" sx={{ mt: 0.75 }}>
+              {detail.csaRespondent ? d.spRespondent : d.spPublicInfo}
+            </Typography>
+          </Box>
         </Stack>
       );
   }
@@ -309,7 +315,7 @@ function ProviderCard({ provider, cell }: { provider: EsgProvider; cell: RatedCe
         <Typography variant="caption" color="text.secondary" component="p" sx={{ mt: 1 }}>{p.scale}</Typography>
       </Box>
 
-      {rating.detail && <RatingDetail detail={rating.detail} />}
+      {rating.detail && <RatingDetail detail={rating.detail} rating={rating.rating} />}
 
       <Box
         sx={{

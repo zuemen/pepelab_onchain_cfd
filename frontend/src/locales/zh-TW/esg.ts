@@ -136,7 +136,7 @@ export const esg = {
       },
       spGlobal: {
         name: 'S&P Global',
-        scale: '0–100，越高越好，只能跟同產業的公司比，不能跨產業比較。',
+        scale: 'S&P Global ESG 分數，0–100，越高越好；只能跟同產業的公司比，不能跨產業比較。',
         scope: '只評公司，不評 ETF 與加密資產。',
       },
       ccdata: {
@@ -208,10 +208,14 @@ export const esg = {
       fundRisk: '投資組合的企業 ESG 風險分數（0–50，越低越好）',
       fundRiskValue: '目前 {now}，歷史 {hist}',
       fundCoverage: '有評分的資產占基金規模',
-      spCsa: 'CSA 分數（不含模型推估）',
+      spCsa: '只算有揭露的題目（CSA 分數）',
+      spModelled: 'S&P 模型補上的分數',
+      spHowTitle: '兩個分數怎麼來',
+      spHow:
+        'S&P 每年發永續問卷（CSA）給公司。公司沒揭露、公開資料也找不到的題目，CSA 分數一律算 0 分；上方的 ESG 分數則由 S&P 用模型估這些題目：參考同產業公司在這一題的表現，以及這家公司其他題目的表現，再依揭露得多完整往下打折。模型是 S&P 的，平台沒有自己估分。',
       spUnderReview: 'S&P 標示評分審查中：正在評估一件與這家公司有關的爭議，分數可能調整。',
-      spRespondent: '這家公司有回覆 S&P 的永續問卷（CSA）。',
-      spPublicInfo: '這家公司沒有回覆 S&P 的永續問卷，分數依公開資訊與模型推估。',
+      spRespondent: '這家公司有回覆 S&P 的問卷，空白的題目較少。',
+      spPublicInfo: '這家公司沒有回覆 S&P 的問卷，只能從公開資料找，空白的題目較多。',
       noRating: '目前沒有任何一家公開了這檔資產的評級。這不代表它被評為差，只是沒有人評。',
       rawTitle: '原始環境數據',
       rawLead: '只列數據和出處，不換算成分數或燈號。',
