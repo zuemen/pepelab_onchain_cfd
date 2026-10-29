@@ -93,14 +93,14 @@ export const esg = {
    * （lib/pepefi/esgRatingsData.ts），這裡只放講解它們的字。
    */
   thirdParty: {
-    /** 條款：S&P 與 MSCI 寫明未經同意不得轉載，團隊在 #383 決定以學術專題身分照樣附出處顯示。 */
+    /** 條款：S&P、MSCI、Morningstar 寫明未經同意不得轉載，LSEG 要書面同意；團隊在 #383 決定以學術專題身分附出處顯示。 */
     rights:
       '評級的著作權屬於各評級機構。這裡為學術、非商業的專題用途轉述並附上原始頁面；要引用請回原始頁面查最新值。',
     legend: {
       title: '怎麼讀這張表',
-      light: '燈號只用評級機構自己定義的分組（目前只有 MSCI 有：領先、中等、落後）。',
-      scoreOnly: '只給分數、沒有自己分組的機構（S&P Global），只顯示數字、不上色；平台不替它切門檻。',
-      noAverage: '各家方法、尺度都不同，所以不加總、不平均，也不依評級排名。',
+      light: '燈號只用評級機構自己定義的分組：MSCI 的領先／中等／落後、Sustainalytics 的五個風險等級、Morningstar 基金的地球數。綠、黃、紅代表那家分組裡較佳、中等、較差的一組。',
+      scoreOnly: '只給分數、沒有自己分組的機構（LSEG、S&P Global），只顯示數字、不上色；平台不替它們切門檻。',
+      noAverage: '各家方法、尺度、方向都不同（Sustainalytics 越低越好，其他越高越好），所以不加總、不平均，也不依評級排名。',
     },
     column: {
       asset: '資產',
@@ -108,9 +108,9 @@ export const esg = {
       carbonTierSub: '平台風險政策',
     },
     light: {
-      leader: '領先',
-      average: '中等',
-      laggard: '落後',
+      good: '較佳',
+      middle: '中等',
+      poor: '較差',
     },
     cell: {
       notPublic: '未公開',
@@ -124,9 +124,19 @@ export const esg = {
         scale: 'AAA–CCC。AAA、AA 為領先，A、BBB、BB 為中等，B、CCC 為落後。',
         scope: 'ETF 用的是 MSCI ESG 基金評級，讀自 iShares 產品頁；MSCI 的公司評級只提供付費客戶，所以股票標「未公開」。',
       },
+      sustainalytics: {
+        name: 'Sustainalytics',
+        scale: '股票是 ESG 風險分數，越低越好，分成可忽略、低、中、高、嚴重五級；ETF 是 Morningstar 的地球數（1–5，越多越好），跟同類基金比。',
+        scope: 'Morningstar Sustainalytics 的評級，讀自 morningstar.com 的個股與基金頁。',
+      },
+      lseg: {
+        name: 'LSEG',
+        scale: '2026 年版 ESG Scores，0–5，越高越好；另有環境、社會、治理三項與 12 個主題的分數。',
+        scope: '只評公司，依公司自行揭露的年度資料；讀自 LSEG 官網的 ESG Scores Finder。',
+      },
       spGlobal: {
         name: 'S&P Global',
-        scale: '0–100，只能跟同產業的公司比，不能跨產業比較。',
+        scale: '0–100，越高越好，只能跟同產業的公司比，不能跨產業比較。',
         scope: '只評公司，不評 ETF 與加密資產。',
       },
       ccdata: {
@@ -135,10 +145,70 @@ export const esg = {
         scope: '目前查得到的是 2023 年 7 月的第一版，之後的版本查不到原始頁面，所以評級可能已經過時。',
       },
     },
+    /** 評級機構自己的分組名稱。 */
+    group: {
+      msci: { good: '領先', middle: '中等', poor: '落後' },
+      sustainalytics: { negligible: '可忽略風險', low: '低風險', medium: '中風險', high: '高風險', severe: '嚴重風險' },
+      globes: { g1: '低', g2: '低於平均', g3: '平均', g4: '高於平均', g5: '高' },
+      controversy: { c1: '低', c2: '中等', c3: '顯著', c4: '高', c5: '嚴重' },
+    },
+    /** Sustainalytics 頁面上的議題與爭議領域。 */
+    issue: {
+      humanCapital: '人力資本',
+      businessEthics: '商業倫理',
+      dataPrivacy: '資料隱私與資安',
+      productGovernance: '產品治理',
+      carbonProducts: '碳排（產品與服務）',
+    },
+    area: {
+      customer: '客戶',
+      societyCommunity: '社會與社區',
+      operations: '營運',
+      businessEthics: '商業倫理',
+      employee: '員工',
+    },
+    /** LSEG 的三項與 12 個主題。 */
+    pillar: { e: '環境', s: '社會', g: '治理' },
+    theme: {
+      climateTransition: '氣候轉型',
+      energyResourceUse: '能源與資源使用',
+      biodiversity: '生物多樣性',
+      waterUse: '用水',
+      wastePollution: '廢棄物與污染',
+      labourRelations: '勞資關係',
+      healthSafety: '健康與安全',
+      humanRightsCommunity: '人權與社區',
+      boardManagement: '董事會與管理',
+      shareholderRights: '股東權益',
+      conductAntiCorruption: '商業行為與反貪腐',
+      taxTransparency: '稅務透明與會計',
+    },
     detail: {
       ratedOn: '評級日',
       retrievedOn: '查詢日',
+      fiscalYear: '資料年度',
+      fiscalYearValue: 'FY{year}（公司自行揭露）',
       source: '原始頁面',
+      outOf: '／{max}',
+      industry: '產業分類',
+      industryRank: '產業排名',
+      industryRankValue: '第 {rank} 名，共 {of} 家',
+      pillars: '環境、社會、治理（0–5）',
+      themes: '12 個主題（0–5）',
+      msciQuality: 'ESG 品質分數（0–10）',
+      msciPeer: '同類基金百分位',
+      msciPeerValue: '{pct}%（共 {count} 檔）',
+      msciWaci: '持股加權碳強度（tCO2e／每百萬美元營收）',
+      msciItr: '隱含升溫',
+      msciCoverage: 'MSCI 涵蓋率',
+      controversy: '最高爭議等級（1 低、5 嚴重）',
+      controversyAsOf: '爭議評估日',
+      controversyAreas: '涉及領域',
+      topIssues: '前三大重大 ESG 議題',
+      fundRisk: '投資組合的企業 ESG 風險分數（0–50，越低越好）',
+      fundRiskValue: '目前 {now}，歷史 {hist}',
+      fundCoverage: '有評分的資產占基金規模',
+      spCsa: 'CSA 分數（不含模型推估）',
       spUnderReview: 'S&P 標示評分審查中：正在評估一件與這家公司有關的爭議，分數可能調整。',
       spRespondent: '這家公司有回覆 S&P 的永續問卷（CSA）。',
       spPublicInfo: '這家公司沒有回覆 S&P 的永續問卷，分數依公開資訊與模型推估。',
@@ -155,7 +225,7 @@ export const esg = {
       title: '為什麼這樣呈現',
       items: [
         'ESG 評級是專業研究，平台不自己替資產打分數，只轉述評級機構公布的結果。',
-        'Sustainalytics 與 MSCI 的公司評級目前都沒有公開查詢，所以沒有列；CDP 的條款限定分數只能內部使用，所以也沒有列。',
+        'MSCI 的公司評級目前沒有公開查詢，所以股票的 MSCI 欄是「未公開」；CDP 的條款限定分數只能內部使用，Bloomberg 與 WRDS 是學校的學術授權，都不能放上公開網站。',
         '「未公開」是有評但看不到；「未評等」是沒有評；「不適用」是這家根本不評這類資產。三者意思不同，分開標示。',
       ],
     },

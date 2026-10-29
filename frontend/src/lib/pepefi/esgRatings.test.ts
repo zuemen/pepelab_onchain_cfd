@@ -13,7 +13,7 @@ describe('ratingCell', () => {
     expect(cell.kind).toBe('rated')
     if (cell.kind !== 'rated') return
     expect(cell.rating.rating).toBe('A')
-    expect(cell.light).toBe('average')
+    expect(cell.light).toBe('middle')
   })
 
   it('S&P Global 只給 0–100 的分數，沒有自己的分組，所以不上燈', () => {
@@ -36,6 +36,29 @@ describe('ratingCell', () => {
 
   it('這家有評這類資產、也公開，但沒有評這一檔：標「未評等」', () => {
     expect(ratingCell(ASSET_IDS.sICLN, 'msci', [])).toEqual({ kind: 'unrated' })
+  })
+})
+
+describe('ratingCell · 燈號只跟著評級機構自己的分組', () => {
+  const lightOf = (asset: string, provider: Parameters<typeof ratingCell>[1]) => {
+    const cell = ratingCell(asset, provider)
+    return cell.kind === 'rated' ? cell.light : cell.kind
+  }
+
+  it('Sustainalytics 公司風險等級：可忽略與低風險亮綠燈，中風險亮黃燈', () => {
+    expect(lightOf(ASSET_IDS.sNVDA, 'sustainalytics')).toBe('good')   // 14.01 低風險
+    expect(lightOf(ASSET_IDS.sGOOGL, 'sustainalytics')).toBe('middle') // 20.91 中風險
+  })
+
+  it('Morningstar 基金的地球數：4 顆以上綠燈，3 顆黃燈', () => {
+    expect(lightOf(ASSET_IDS.sICLN, 'sustainalytics')).toBe('good')
+    expect(lightOf(ASSET_IDS.sBOND, 'sustainalytics')).toBe('middle')
+  })
+
+  it('LSEG 只給 0–5 分、沒有自己的分組，不上燈；也不評 ETF 與加密資產', () => {
+    expect(lightOf(ASSET_IDS.sAAPL, 'lseg')).toBeNull()
+    expect(lightOf(ASSET_IDS.sICLN, 'lseg')).toBe('notApplicable')
+    expect(lightOf(ASSET_IDS.sBTC, 'lseg')).toBe('notApplicable')
   })
 })
 
