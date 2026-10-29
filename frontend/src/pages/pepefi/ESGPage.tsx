@@ -88,13 +88,46 @@ function groupLabel(r: EsgRating, light: EsgLight | null): string | null {
   return null;
 }
 
-/** 一列「標題：值」。 */
-function Fact({ label, children }: { label: string; children: ReactNode }) {
+/** 卡片裡一個段落的小標。 */
+function SectionLabel({ children }: { children: ReactNode }) {
   return (
-    <Stack direction="row" spacing={1} justifyContent="space-between" alignItems="baseline">
-      <Typography variant="caption" color="text.secondary">{label}</Typography>
-      <Typography variant="body2" sx={{ fontFamily: MONO, textAlign: 'right' }}>{children}</Typography>
-    </Stack>
+    <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontWeight: 600, mb: 0.75 }}>
+      {children}
+    </Typography>
+  );
+}
+
+/**
+ * 一列「標題：值」。標題靠左、值靠右；值是長文字（例如產業分類）時用 stacked，
+ * 標題在上、值在下，免得兩邊互相擠成好幾行。
+ */
+function Fact({ label, children, stacked = false }: { label: string; children: ReactNode; stacked?: boolean }) {
+  return (
+    <Box
+      sx={{
+        py: 0.75,
+        display: 'flex',
+        gap: stacked ? 0.25 : 2,
+        flexDirection: stacked ? 'column' : 'row',
+        justifyContent: 'space-between',
+        alignItems: stacked ? 'flex-start' : 'baseline',
+      }}
+    >
+      <Typography variant="caption" color="text.secondary" sx={{ minWidth: 0 }}>{label}</Typography>
+      <Typography
+        variant="body2"
+        sx={{ fontWeight: 600, fontVariantNumeric: 'tabular-nums', flexShrink: 0, textAlign: stacked ? 'left' : 'right' }}
+      >
+        {children}
+      </Typography>
+    </Box>
+  );
+}
+
+/** 一組 Fact，列與列之間用細虛線隔開。 */
+function FactList({ children }: { children: ReactNode }) {
+  return (
+    <Stack divider={<Divider flexItem sx={{ borderStyle: 'dashed' }} />}>{children}</Stack>
   );
 }
 
@@ -102,14 +135,14 @@ function Fact({ label, children }: { label: string; children: ReactNode }) {
 function ScoreBar({ label, value, max }: { label: string; value: number; max: number }) {
   return (
     <Box>
-      <Stack direction="row" justifyContent="space-between">
+      <Stack direction="row" justifyContent="space-between" spacing={1}>
         <Typography variant="caption" color="text.secondary">{label}</Typography>
-        <Typography variant="caption" sx={{ fontFamily: MONO, fontWeight: 'bold' }}>{value}</Typography>
+        <Typography variant="caption" sx={{ fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>{value}</Typography>
       </Stack>
       <LinearProgress
         variant="determinate"
         value={(value / max) * 100}
-        sx={{ height: 5, borderRadius: 1, bgcolor: 'action.hover', '& .MuiLinearProgress-bar': { bgcolor: 'text.secondary' } }}
+        sx={{ mt: 0.25, height: 5, borderRadius: 1, bgcolor: 'action.hover', '& .MuiLinearProgress-bar': { bgcolor: 'text.secondary' } }}
       />
     </Box>
   );
@@ -121,51 +154,72 @@ function RatingDetail({ detail }: { detail: EsgRatingDetail }) {
   switch (detail.kind) {
     case 'msciFund':
       return (
-        <Stack spacing={0.5}>
+        <FactList>
           <Fact label={d.msciQuality}>{detail.qualityScore}</Fact>
           <Fact label={d.msciPeer}>{interpolate(d.msciPeerValue, { pct: fNum(detail.peerPercentile, { dp: 2 }), count: fNum(detail.peerCount, { dp: 0 }) })}</Fact>
           <Fact label={d.msciWaci}>{fNum(detail.waci, { dp: 2 })}</Fact>
           <Fact label={d.msciItr}>{detail.impliedTemperatureRise}</Fact>
           <Fact label={d.msciCoverage}>{pct(detail.coveragePct)}</Fact>
-        </Stack>
+        </FactList>
       );
     case 'sustainalyticsCompany':
       return (
-        <Stack spacing={1}>
-          <Fact label={d.controversy}>
-            {detail.controversyLevel} {tp.group.controversy[`c${detail.controversyLevel}`]}
-          </Fact>
-          <Fact label={d.controversyAsOf}>{detail.controversyAsOf}</Fact>
+        <Stack spacing={2}>
+          <FactList>
+            <Fact label={d.controversy}>
+              {detail.controversyLevel}・{tp.group.controversy[`c${detail.controversyLevel}`]}
+            </Fact>
+            <Fact label={d.controversyAsOf}>{detail.controversyAsOf}</Fact>
+          </FactList>
           <Box>
-            <Typography variant="caption" color="text.secondary">{d.controversyAreas}</Typography>
-            <Stack direction="row" spacing={0.5} flexWrap="wrap" useFlexGap sx={{ mt: 0.5 }}>
+            <SectionLabel>{d.controversyAreas}</SectionLabel>
+            <Stack direction="row" spacing={0.5} flexWrap="wrap" useFlexGap>
               {detail.controversyAreas.map((a) => <Chip key={a} size="small" variant="outlined" label={tp.area[a]} />)}
             </Stack>
           </Box>
           <Box>
-            <Typography variant="caption" color="text.secondary">{d.topIssues}</Typography>
-            <Stack component="ol" spacing={0.25} sx={{ m: 0, mt: 0.5, pl: 2.5 }}>
-              {detail.topIssues.map((i) => <Typography key={i} component="li" variant="body2">{tp.issue[i]}</Typography>)}
+            <SectionLabel>{d.topIssues}</SectionLabel>
+            <Stack component="ol" spacing={0.75} sx={{ m: 0, p: 0, listStyle: 'none' }}>
+              {detail.topIssues.map((issue, i) => (
+                <Stack key={issue} component="li" direction="row" spacing={1} alignItems="center">
+                  <Box
+                    aria-hidden
+                    sx={{
+                      width: 20,
+                      height: 20,
+                      flexShrink: 0,
+                      borderRadius: '50%',
+                      display: 'grid',
+                      placeItems: 'center',
+                      bgcolor: 'action.selected',
+                      typography: 'caption',
+                      fontWeight: 600,
+                    }}
+                  >
+                    {i + 1}
+                  </Box>
+                  <Typography variant="body2">{tp.issue[issue]}</Typography>
+                </Stack>
+              ))}
             </Stack>
           </Box>
         </Stack>
       );
     case 'morningstarFund':
       return (
-        <Stack spacing={0.5}>
-          <Typography variant="caption" color="text.secondary">{d.fundRisk}</Typography>
-          <Typography variant="body2" sx={{ fontFamily: MONO }}>
+        <FactList>
+          <Fact label={d.fundRisk} stacked>
             {interpolate(d.fundRiskValue, { now: fNum(detail.corporateRiskScore, { dp: 2 }), hist: fNum(detail.corporateRiskScoreHistorical, { dp: 2 }) })}
-          </Typography>
+          </Fact>
           <Fact label={d.fundCoverage}>{pct(detail.aumCoveragePct)}</Fact>
-        </Stack>
+        </FactList>
       );
     case 'lseg':
       return (
-        <Stack spacing={1.5}>
+        <Stack spacing={2.5}>
           <Box>
-            <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 'bold' }}>{d.pillars}</Typography>
-            <Grid container spacing={1.5} sx={{ mt: 0.25 }}>
+            <SectionLabel>{d.pillars}</SectionLabel>
+            <Grid container spacing={2}>
               {(['e', 's', 'g'] as const).map((k) => (
                 <Grid key={k} size={{ xs: 12, sm: 4 }}>
                   <ScoreBar label={tp.pillar[k]} value={detail.pillars[k]} max={5} />
@@ -174,12 +228,12 @@ function RatingDetail({ detail }: { detail: EsgRatingDetail }) {
             </Grid>
           </Box>
           <Box>
-            <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 'bold' }}>{d.themes}</Typography>
-            <Grid container spacing={1.5} sx={{ mt: 0.25 }}>
+            <SectionLabel>{d.themes}</SectionLabel>
+            <Grid container spacing={2}>
               {(['e', 's', 'g'] as const).map((k) => (
                 <Grid key={k} size={{ xs: 12, sm: 4 }}>
-                  <Typography variant="caption" sx={{ fontWeight: 'bold' }}>{tp.pillar[k]}</Typography>
-                  <Stack spacing={0.75} sx={{ mt: 0.5 }}>
+                  <Typography variant="body2" sx={{ fontWeight: 600 }}>{tp.pillar[k]}</Typography>
+                  <Stack spacing={1} sx={{ mt: 0.75 }}>
                     {LSEG_THEMES[k].map((theme) => (
                       <ScoreBar key={theme} label={tp.theme[theme]} value={detail.themes[theme]} max={5} />
                     ))}
@@ -188,19 +242,23 @@ function RatingDetail({ detail }: { detail: EsgRatingDetail }) {
               ))}
             </Grid>
           </Box>
-          <Stack spacing={0.5}>
+          <FactList>
             <Fact label={d.industryRank}>{interpolate(d.industryRankValue, { rank: detail.rank, of: detail.rankOf })}</Fact>
             <Fact label={d.industry}>{detail.industry}</Fact>
-          </Stack>
+          </FactList>
         </Stack>
       );
     case 'spGlobal':
       return (
-        <Stack spacing={0.5}>
-          <Fact label={d.spCsa}>{detail.csaScore}</Fact>
-          <Fact label={d.industry}>{detail.industry}</Fact>
-          {detail.underReview && <Typography variant="caption" color="warning.main">{d.spUnderReview}</Typography>}
-          <Typography variant="caption" color="text.secondary">
+        <Stack spacing={1.5}>
+          <FactList>
+            <Fact label={d.spCsa}>{detail.csaScore}</Fact>
+            <Fact label={d.industry} stacked>{detail.industry}</Fact>
+          </FactList>
+          {detail.underReview && (
+            <Alert severity="warning" variant="outlined" sx={{ py: 0, typography: 'caption' }}>{d.spUnderReview}</Alert>
+          )}
+          <Typography variant="caption" color="text.secondary" sx={{ bgcolor: 'action.hover', borderRadius: 1, px: 1.25, py: 0.75 }}>
             {detail.csaRespondent ? d.spRespondent : d.spPublicInfo}
           </Typography>
         </Stack>
@@ -210,39 +268,75 @@ function RatingDetail({ detail }: { detail: EsgRatingDetail }) {
 
 type RatedCell = Extract<RatingCell, { kind: 'rated' }>;
 
-/** 詳細資訊裡一家評級機構的卡片。只畫有評級的；未公開、未評等、不適用在上方表格已經標了。 */
+/** 卡片底部的一個日期。 */
+function DateLine({ label, value }: { label: string; value: string }) {
+  return (
+    <Typography variant="caption" color="text.secondary" sx={{ fontVariantNumeric: 'tabular-nums' }}>
+      {label}
+      <Box component="span" sx={{ ml: 1, color: 'text.primary' }}>{value}</Box>
+    </Typography>
+  );
+}
+
+/**
+ * 詳細資訊裡一家評級機構的卡片。只畫有評級的；未公開、未評等、不適用在上方表格已經標了。
+ * 卡片撐滿整格高，底部（日期與原始頁面）推到最下面，並排的兩張卡底部才會對齊。
+ */
 function ProviderCard({ provider, cell }: { provider: EsgProvider; cell: RatedCell }) {
   const p = tp.provider[provider];
+  const { rating } = cell;
+  const group = groupLabel(rating, cell.light);
 
   return (
-    <Box sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 1.5, p: 2, height: '100%' }}>
-      <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 'bold' }}>{p.name}</Typography>
-      <Stack spacing={1.25} sx={{ mt: 0.5 }}>
-          <Stack direction="row" spacing={1} alignItems="center">
-            <Typography variant="h5" sx={{ fontFamily: MONO, fontWeight: 'bold', lineHeight: 1 }}>
-              {cell.rating.rating}
-            </Typography>
-            {(() => {
-              const g = groupLabel(cell.rating, cell.light);
-              return g && <Chip size="small" color={cell.light ? LIGHT_COLOR[cell.light] : 'default'} label={g} />;
-            })()}
-          </Stack>
-          <Typography variant="caption" color="text.secondary">{p.scale}</Typography>
-          {cell.rating.detail && <RatingDetail detail={cell.rating.detail} />}
-          <Divider />
-          <Typography variant="caption" color="text.secondary">
-            {cell.rating.ratedOn !== null ? (
-              <>{tp.detail.ratedOn}: <Box component="span" sx={{ fontFamily: MONO }}>{cell.rating.ratedOn}</Box></>
-            ) : cell.rating.detail?.kind === 'lseg' ? (
-              <>{tp.detail.fiscalYear}: {interpolate(tp.detail.fiscalYearValue, { year: cell.rating.detail.fiscalYear })}</>
-            ) : null}
-            {'  ·  '}
-            {tp.detail.retrievedOn}: <Box component="span" sx={{ fontFamily: MONO }}>{cell.rating.retrievedOn}</Box>
-          </Typography>
-          <Link href={cell.rating.sourceUrl} target="_blank" rel="noopener noreferrer" variant="caption">
-            {tp.detail.source}
-          </Link>
-      </Stack>
+    <Box
+      sx={{
+        height: '100%',
+        p: 2.5,
+        border: '1px solid',
+        borderColor: 'divider',
+        borderRadius: 1.5,
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 2,
+      }}
+    >
+      <Box>
+        <Typography variant="subtitle2" color="text.secondary">{p.name}</Typography>
+        <Stack direction="row" spacing={1.25} alignItems="center" sx={{ mt: 0.75 }}>
+          <Typography variant="h4" sx={{ fontFamily: MONO, fontWeight: 'bold', lineHeight: 1 }}>{rating.rating}</Typography>
+          {group && <Chip size="small" color={cell.light ? LIGHT_COLOR[cell.light] : 'default'} label={group} />}
+        </Stack>
+        <Typography variant="caption" color="text.secondary" component="p" sx={{ mt: 1 }}>{p.scale}</Typography>
+      </Box>
+
+      {rating.detail && <RatingDetail detail={rating.detail} />}
+
+      <Box
+        sx={{
+          mt: 'auto',
+          pt: 1.5,
+          borderTop: '1px solid',
+          borderColor: 'divider',
+          display: 'flex',
+          flexWrap: 'wrap',
+          gap: 1,
+          alignItems: 'flex-end',
+          justifyContent: 'space-between',
+        }}
+      >
+        <Stack spacing={0.25}>
+          {rating.ratedOn !== null ? (
+            <DateLine label={tp.detail.ratedOn} value={rating.ratedOn} />
+          ) : rating.detail?.kind === 'lseg' ? (
+            <DateLine label={tp.detail.fiscalYear} value={interpolate(tp.detail.fiscalYearValue, { year: rating.detail.fiscalYear })} />
+          ) : null}
+          <DateLine label={tp.detail.retrievedOn} value={rating.retrievedOn} />
+        </Stack>
+        <Link href={rating.sourceUrl} target="_blank" rel="noopener noreferrer" variant="caption" sx={{ fontWeight: 600 }}>
+          {/* U+FE0E 讓箭頭照文字畫，不被系統換成表情符號。 */}
+          {tp.detail.source} {'↗︎'}
+        </Link>
+      </Box>
     </Box>
   );
 }
