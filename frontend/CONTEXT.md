@@ -128,7 +128,7 @@ How much greenhouse gas a holding is responsible for per unit of economic activi
 _Avoid_: ESG score, carbon footprint (that names a total, not an intensity), emissions
 
 **Third-party ESG Rating**:
-A rating a named agency (MSCI, S&P Global, CCData × CCRI) has published for an asset, quoted on the ESG page with its source, the agency's rating date and the date it was read. The platform never computes, averages or ranks these, and only colours one when the agency itself defines the groups (MSCI's Leader / Average / Laggard). An asset no agency has published a rating for is Unrated, which says nobody rated it, not that it rated poorly; a rating that exists but is not public is "not public", not Unrated.
+A rating a named agency (MSCI, Morningstar Sustainalytics, LSEG, S&P Global, CCData × CCRI) has published for an asset, quoted on the ESG page with its source, the agency's rating date (or data year, where the agency gives no date) and the date it was read. The platform never computes, averages or ranks these, and only colours one when the agency itself defines the groups (MSCI's Leader / Average / Laggard, Sustainalytics' five risk categories, Morningstar's globes). An asset no agency has published a rating for is Unrated, which says nobody rated it, not that it rated poorly; a rating that exists but is not public is "not public", not Unrated.
 _Avoid_: ESG score, platform ESG rating, composite, ESG grade
 
 **Carbon Tier**:

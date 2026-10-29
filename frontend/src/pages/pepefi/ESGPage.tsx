@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 
 import Box from '@mui/material/Box';
 import Card from '@mui/material/Card';
@@ -15,9 +15,11 @@ import TableBody from '@mui/material/TableBody';
 import TableCell from '@mui/material/TableCell';
 import TableHead from '@mui/material/TableHead';
 import Typography from '@mui/material/Typography';
+import LinearProgress from '@mui/material/LinearProgress';
 import TableContainer from '@mui/material/TableContainer';
 
 import { t, interpolate } from 'src/locales';
+import { fNum } from 'src/lib/pepefi/format';
 import { usePepefiWallet } from 'src/layouts/pepefi';
 import { ASSET_IDS } from 'src/contracts/addresses';
 import { ASSET_META } from 'src/lib/pepefi/assetMeta';
@@ -31,9 +33,12 @@ import CarbonRetirementCard from 'src/components/pepefi/CarbonRetirementCard';
 import { AssetCarbonFact, AssetTransitionFact } from 'src/components/pepefi/AssetProvenance';
 import {
   ESG_PROVIDERS,
+  LSEG_THEMES,
   ratingCell,
   hasThirdPartyRating,
   type EsgLight,
+  type EsgRating,
+  type EsgRatingDetail,
   type RatingCell,
   type EsgProvider,
 } from 'src/lib/pepefi/esgRatings';
@@ -48,12 +53,13 @@ const ASSETS = [
 ];
 
 const LIGHT_COLOR: Record<EsgLight, 'success' | 'warning' | 'error'> = {
-  leader: 'success',
-  average: 'warning',
-  laggard: 'error',
+  good: 'success',
+  middle: 'warning',
+  poor: 'error',
 };
 
 const tp = t.esg.thirdParty;
+const pct = (n: number) => `${fNum(n, { dp: 2 })}%`;
 
 /** 表格裡的一格。四種情況的意思不同，畫法也刻意不同（見 esgRatings.ts 的 RatingCell）。 */
 function RatingCellView({ cell }: { cell: RatingCell }) {
@@ -73,6 +79,135 @@ function RatingCellView({ cell }: { cell: RatingCell }) {
   }
 }
 
+/** 評級機構自己的分組名稱（燈號旁的那個字）。沒有分組的機構回 null。 */
+function groupLabel(r: EsgRating, light: EsgLight | null): string | null {
+  const d = r.detail;
+  if (d?.kind === 'sustainalyticsCompany') return tp.group.sustainalytics[d.category];
+  if (d?.kind === 'morningstarFund') return tp.group.globes[`g${d.globes}`];
+  if (r.provider === 'msci' && light) return tp.group.msci[light];
+  return null;
+}
+
+/** 一列「標題：值」。 */
+function Fact({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <Stack direction="row" spacing={1} justifyContent="space-between" alignItems="baseline">
+      <Typography variant="caption" color="text.secondary">{label}</Typography>
+      <Typography variant="body2" sx={{ fontFamily: MONO, textAlign: 'right' }}>{children}</Typography>
+    </Stack>
+  );
+}
+
+/** 0–max 的分數畫成一條橫條，數字照原樣列在右邊。只是把評級機構的數字畫出來，不換算。 */
+function ScoreBar({ label, value, max }: { label: string; value: number; max: number }) {
+  return (
+    <Box>
+      <Stack direction="row" justifyContent="space-between">
+        <Typography variant="caption" color="text.secondary">{label}</Typography>
+        <Typography variant="caption" sx={{ fontFamily: MONO, fontWeight: 'bold' }}>{value}</Typography>
+      </Stack>
+      <LinearProgress
+        variant="determinate"
+        value={(value / max) * 100}
+        sx={{ height: 5, borderRadius: 1, bgcolor: 'action.hover', '& .MuiLinearProgress-bar': { bgcolor: 'text.secondary' } }}
+      />
+    </Box>
+  );
+}
+
+/** 評級以外的細項，依評級機構分開畫。 */
+function RatingDetail({ detail }: { detail: EsgRatingDetail }) {
+  const d = tp.detail;
+  switch (detail.kind) {
+    case 'msciFund':
+      return (
+        <Stack spacing={0.5}>
+          <Fact label={d.msciQuality}>{detail.qualityScore}</Fact>
+          <Fact label={d.msciPeer}>{interpolate(d.msciPeerValue, { pct: fNum(detail.peerPercentile, { dp: 2 }), count: fNum(detail.peerCount, { dp: 0 }) })}</Fact>
+          <Fact label={d.msciWaci}>{fNum(detail.waci, { dp: 2 })}</Fact>
+          <Fact label={d.msciItr}>{detail.impliedTemperatureRise}</Fact>
+          <Fact label={d.msciCoverage}>{pct(detail.coveragePct)}</Fact>
+        </Stack>
+      );
+    case 'sustainalyticsCompany':
+      return (
+        <Stack spacing={1}>
+          <Fact label={d.controversy}>
+            {detail.controversyLevel} {tp.group.controversy[`c${detail.controversyLevel}`]}
+          </Fact>
+          <Fact label={d.controversyAsOf}>{detail.controversyAsOf}</Fact>
+          <Box>
+            <Typography variant="caption" color="text.secondary">{d.controversyAreas}</Typography>
+            <Stack direction="row" spacing={0.5} flexWrap="wrap" useFlexGap sx={{ mt: 0.5 }}>
+              {detail.controversyAreas.map((a) => <Chip key={a} size="small" variant="outlined" label={tp.area[a]} />)}
+            </Stack>
+          </Box>
+          <Box>
+            <Typography variant="caption" color="text.secondary">{d.topIssues}</Typography>
+            <Stack component="ol" spacing={0.25} sx={{ m: 0, mt: 0.5, pl: 2.5 }}>
+              {detail.topIssues.map((i) => <Typography key={i} component="li" variant="body2">{tp.issue[i]}</Typography>)}
+            </Stack>
+          </Box>
+        </Stack>
+      );
+    case 'morningstarFund':
+      return (
+        <Stack spacing={0.5}>
+          <Typography variant="caption" color="text.secondary">{d.fundRisk}</Typography>
+          <Typography variant="body2" sx={{ fontFamily: MONO }}>
+            {interpolate(d.fundRiskValue, { now: fNum(detail.corporateRiskScore, { dp: 2 }), hist: fNum(detail.corporateRiskScoreHistorical, { dp: 2 }) })}
+          </Typography>
+          <Fact label={d.fundCoverage}>{pct(detail.aumCoveragePct)}</Fact>
+        </Stack>
+      );
+    case 'lseg':
+      return (
+        <Stack spacing={1.5}>
+          <Box>
+            <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 'bold' }}>{d.pillars}</Typography>
+            <Grid container spacing={1.5} sx={{ mt: 0.25 }}>
+              {(['e', 's', 'g'] as const).map((k) => (
+                <Grid key={k} size={{ xs: 12, sm: 4 }}>
+                  <ScoreBar label={tp.pillar[k]} value={detail.pillars[k]} max={5} />
+                </Grid>
+              ))}
+            </Grid>
+          </Box>
+          <Box>
+            <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 'bold' }}>{d.themes}</Typography>
+            <Grid container spacing={1.5} sx={{ mt: 0.25 }}>
+              {(['e', 's', 'g'] as const).map((k) => (
+                <Grid key={k} size={{ xs: 12, sm: 4 }}>
+                  <Typography variant="caption" sx={{ fontWeight: 'bold' }}>{tp.pillar[k]}</Typography>
+                  <Stack spacing={0.75} sx={{ mt: 0.5 }}>
+                    {LSEG_THEMES[k].map((theme) => (
+                      <ScoreBar key={theme} label={tp.theme[theme]} value={detail.themes[theme]} max={5} />
+                    ))}
+                  </Stack>
+                </Grid>
+              ))}
+            </Grid>
+          </Box>
+          <Stack spacing={0.5}>
+            <Fact label={d.industryRank}>{interpolate(d.industryRankValue, { rank: detail.rank, of: detail.rankOf })}</Fact>
+            <Fact label={d.industry}>{detail.industry}</Fact>
+          </Stack>
+        </Stack>
+      );
+    case 'spGlobal':
+      return (
+        <Stack spacing={0.5}>
+          <Fact label={d.spCsa}>{detail.csaScore}</Fact>
+          <Fact label={d.industry}>{detail.industry}</Fact>
+          {detail.underReview && <Typography variant="caption" color="warning.main">{d.spUnderReview}</Typography>}
+          <Typography variant="caption" color="text.secondary">
+            {detail.csaRespondent ? d.spRespondent : d.spPublicInfo}
+          </Typography>
+        </Stack>
+      );
+  }
+}
+
 /** 詳細資訊裡一家評級機構的卡片。這家根本不評這類資產時不畫。 */
 function ProviderCard({ provider, cell }: { provider: EsgProvider; cell: RatingCell }) {
   const p = tp.provider[provider];
@@ -82,24 +217,25 @@ function ProviderCard({ provider, cell }: { provider: EsgProvider; cell: RatingC
     <Box sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 1.5, p: 2, height: '100%' }}>
       <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 'bold' }}>{p.name}</Typography>
       {cell.kind === 'rated' ? (
-        <Stack spacing={0.75} sx={{ mt: 0.5 }}>
+        <Stack spacing={1.25} sx={{ mt: 0.5 }}>
           <Stack direction="row" spacing={1} alignItems="center">
             <Typography variant="h5" sx={{ fontFamily: MONO, fontWeight: 'bold', lineHeight: 1 }}>
               {cell.rating.rating}
             </Typography>
-            {cell.light && <Chip size="small" color={LIGHT_COLOR[cell.light]} label={tp.light[cell.light]} />}
+            {(() => {
+              const g = groupLabel(cell.rating, cell.light);
+              return g && <Chip size="small" color={cell.light ? LIGHT_COLOR[cell.light] : 'default'} label={g} />;
+            })()}
           </Stack>
           <Typography variant="caption" color="text.secondary">{p.scale}</Typography>
-          {cell.rating.spGlobal?.underReview && (
-            <Typography variant="caption" color="warning.main">{tp.detail.spUnderReview}</Typography>
-          )}
-          {cell.rating.spGlobal && (
-            <Typography variant="caption" color="text.secondary">
-              {cell.rating.spGlobal.csaRespondent ? tp.detail.spRespondent : tp.detail.spPublicInfo}
-            </Typography>
-          )}
+          {cell.rating.detail && <RatingDetail detail={cell.rating.detail} />}
+          <Divider />
           <Typography variant="caption" color="text.secondary">
-            {tp.detail.ratedOn}: <Box component="span" sx={{ fontFamily: MONO }}>{cell.rating.ratedOn}</Box>
+            {cell.rating.ratedOn !== null ? (
+              <>{tp.detail.ratedOn}: <Box component="span" sx={{ fontFamily: MONO }}>{cell.rating.ratedOn}</Box></>
+            ) : cell.rating.detail?.kind === 'lseg' ? (
+              <>{tp.detail.fiscalYear}: {interpolate(tp.detail.fiscalYearValue, { year: cell.rating.detail.fiscalYear })}</>
+            ) : null}
             {'  ·  '}
             {tp.detail.retrievedOn}: <Box component="span" sx={{ fontFamily: MONO }}>{cell.rating.retrievedOn}</Box>
           </Typography>
@@ -136,7 +272,7 @@ export default function ESGPage() {
       {/* ── 總覽表 ── */}
       <Card sx={{ p: { xs: 2, md: 3 } }}>
         <Stack direction="row" spacing={1.5} flexWrap="wrap" useFlexGap sx={{ mb: 2 }}>
-          {(['leader', 'average', 'laggard'] as const).map((l) => (
+          {(['good', 'middle', 'poor'] as const).map((l) => (
             <Chip key={l} size="small" color={LIGHT_COLOR[l]} label={tp.light[l]} />
           ))}
           <Chip size="small" variant="outlined" label={tp.cell.unrated} sx={{ borderStyle: 'dashed' }} />
@@ -227,7 +363,8 @@ export default function ESGPage() {
             {ESG_PROVIDERS.map((p) => {
               const cell = ratingCell(selected, p);
               return cell.kind === 'notApplicable' ? null : (
-                <Grid key={p} size={{ xs: 12, sm: 6, md: 4 }}>
+                // LSEG 有 12 個主題分數，給整列；其他每張半列。
+                <Grid key={p} size={{ xs: 12, md: p === 'lseg' ? 12 : 6 }}>
                   <ProviderCard provider={p} cell={cell} />
                 </Grid>
               );
