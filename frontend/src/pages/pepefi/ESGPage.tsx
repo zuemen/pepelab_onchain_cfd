@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react';
+import { useRef, useState, type ReactNode } from 'react';
 
 import Box from '@mui/material/Box';
 import Card from '@mui/material/Card';
@@ -208,16 +208,16 @@ function RatingDetail({ detail }: { detail: EsgRatingDetail }) {
   }
 }
 
-/** 詳細資訊裡一家評級機構的卡片。這家根本不評這類資產時不畫。 */
-function ProviderCard({ provider, cell }: { provider: EsgProvider; cell: RatingCell }) {
+type RatedCell = Extract<RatingCell, { kind: 'rated' }>;
+
+/** 詳細資訊裡一家評級機構的卡片。只畫有評級的；未公開、未評等、不適用在上方表格已經標了。 */
+function ProviderCard({ provider, cell }: { provider: EsgProvider; cell: RatedCell }) {
   const p = tp.provider[provider];
-  if (cell.kind === 'notApplicable') return null;
 
   return (
     <Box sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 1.5, p: 2, height: '100%' }}>
       <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 'bold' }}>{p.name}</Typography>
-      {cell.kind === 'rated' ? (
-        <Stack spacing={1.25} sx={{ mt: 0.5 }}>
+      <Stack spacing={1.25} sx={{ mt: 0.5 }}>
           <Stack direction="row" spacing={1} alignItems="center">
             <Typography variant="h5" sx={{ fontFamily: MONO, fontWeight: 'bold', lineHeight: 1 }}>
               {cell.rating.rating}
@@ -242,14 +242,18 @@ function ProviderCard({ provider, cell }: { provider: EsgProvider; cell: RatingC
           <Link href={cell.rating.sourceUrl} target="_blank" rel="noopener noreferrer" variant="caption">
             {tp.detail.source}
           </Link>
-        </Stack>
-      ) : (
-        <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-          {interpolate(cell.kind === 'notPublic' ? tp.detail.notPublic : tp.detail.unrated, { provider: p.name })}
-        </Typography>
-      )}
+      </Stack>
     </Box>
   );
+}
+
+/** 選中資產有評級的卡片，LSEG（整列寬）排最後，半列的卡片才不會被它隔開。 */
+function ratedCards(assetId: string): Array<{ provider: EsgProvider; cell: RatedCell }> {
+  const cards = ESG_PROVIDERS.flatMap((provider) => {
+    const cell = ratingCell(assetId, provider);
+    return cell.kind === 'rated' ? [{ provider, cell }] : [];
+  });
+  return [...cards.filter((c) => c.provider !== 'lseg'), ...cards.filter((c) => c.provider === 'lseg')];
 }
 
 export default function ESGPage() {
@@ -257,6 +261,14 @@ export default function ESGPage() {
   const v2 = useV2Contracts(wallet.provider, wallet.signer, wallet.chainId);
   const carbonTiers = useCarbonTiers(v2?.esgRegistryV2 ?? null);
   const [selected, setSelected] = useState<string>(ASSETS[0]);
+  const detailRef = useRef<HTMLDivElement>(null);
+
+  /** 點表格的一列：選中它，並捲到下方的詳細資訊。使用者設定減少動態效果時直接跳過去。 */
+  const select = (id: string) => {
+    setSelected(id);
+    const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    requestAnimationFrame(() => detailRef.current?.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'start' }));
+  };
 
   // 讀不到見證登記時碳分級整欄不畫,不留「本網路尚未部署」這類提示（CONTEXT.md 的 The Vault 詞條）。
   const showTier = !carbonTiers.unavailable;
@@ -303,8 +315,8 @@ export default function ESGPage() {
                     key={id}
                     hover
                     selected={id === selected}
-                    onClick={() => setSelected(id)}
-                    onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setSelected(id); } }}
+                    onClick={() => select(id)}
+                    onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); select(id); } }}
                     tabIndex={0}
                     sx={{ cursor: 'pointer' }}
                   >
@@ -347,7 +359,8 @@ export default function ESGPage() {
 
       {/* ── 選中資產的詳細資訊 ── */}
       {selMeta && (
-        <Card sx={{ p: { xs: 2, md: 3 }, display: 'flex', flexDirection: 'column', gap: 2.5 }}>
+        // scrollMarginTop：捲過來時停在頂部導覽列下方，不被它蓋住標題。
+        <Card ref={detailRef} sx={{ p: { xs: 2, md: 3 }, display: 'flex', flexDirection: 'column', gap: 2.5, scrollMarginTop: 88 }}>
           <Stack direction="row" spacing={1.5} alignItems="center">
             <AssetIcon symbol={selMeta.ticker} size={32} />
             <Box>
@@ -360,15 +373,12 @@ export default function ESGPage() {
             <Alert severity="info" variant="outlined">{tp.detail.noRating}</Alert>
           )}
           <Grid container spacing={2}>
-            {ESG_PROVIDERS.map((p) => {
-              const cell = ratingCell(selected, p);
-              return cell.kind === 'notApplicable' ? null : (
-                // LSEG 有 12 個主題分數，給整列；其他每張半列。
-                <Grid key={p} size={{ xs: 12, md: p === 'lseg' ? 12 : 6 }}>
-                  <ProviderCard provider={p} cell={cell} />
-                </Grid>
-              );
-            })}
+            {ratedCards(selected).map(({ provider, cell }) => (
+              // LSEG 有 12 個主題分數，給整列並排在最後；其他每張半列，兩兩並排。
+              <Grid key={provider} size={{ xs: 12, md: provider === 'lseg' ? 12 : 6 }}>
+                <ProviderCard provider={provider} cell={cell} />
+              </Grid>
+            ))}
           </Grid>
 
           <Divider />

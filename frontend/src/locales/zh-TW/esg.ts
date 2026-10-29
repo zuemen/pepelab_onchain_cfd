@@ -212,8 +212,6 @@ export const esg = {
       spUnderReview: 'S&P 標示評分審查中：正在評估一件與這家公司有關的爭議，分數可能調整。',
       spRespondent: '這家公司有回覆 S&P 的永續問卷（CSA）。',
       spPublicInfo: '這家公司沒有回覆 S&P 的永續問卷，分數依公開資訊與模型推估。',
-      notPublic: '{provider} 有評這類資產，但個別評級沒有公開。',
-      unrated: '{provider} 有評這類資產，但沒有評這一檔。',
       noRating: '目前沒有任何一家公開了這檔資產的評級。這不代表它被評為差，只是沒有人評。',
       rawTitle: '原始環境數據',
       rawLead: '只列數據和出處，不換算成分數或燈號。',

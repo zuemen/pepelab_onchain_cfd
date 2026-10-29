@@ -194,8 +194,6 @@ export const esg: Catalog['esg'] = {
       spUnderReview: 'S&P marks this score as under review: it is assessing a controversy linked to the company, and the score may be adjusted.',
       spRespondent: 'This company responds to S&P’s Corporate Sustainability Assessment (CSA).',
       spPublicInfo: 'This company does not respond to S&P’s CSA; the score is modelled from public information.',
-      notPublic: '{provider} rates this kind of asset, but its individual ratings are not public.',
-      unrated: '{provider} rates this kind of asset, but has not rated this one.',
       noRating: 'No agency has published a rating for this asset. That does not mean it was rated poorly — nobody has rated it.',
       rawTitle: 'Raw environmental data',
       rawLead: 'Figures and their sources only — never converted into a score or a colour.',
