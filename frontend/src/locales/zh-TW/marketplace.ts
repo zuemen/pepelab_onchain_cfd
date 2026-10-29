@@ -10,9 +10,14 @@ export const marketplace = {
   subtitle: '瀏覽並跟單鏈上驗證過的策略',
   networkError: '網路錯誤——請檢查錢包連線',
 
-  esgFiltered: '已篩選',
-  esgAll: '全部',
-  esgButton: 'ESG {state}',
+  /** #383：下架的交易者（lib/pepefi/hiddenTraders.ts）。交易者頁與跟單頁共用。 */
+  hiddenTrader: {
+    title: '這位交易者已下架',
+    /** 交易者頁在跟單旗標關閉時也會顯示這段，所以不能用跟單用語（copyWording.test.ts）。 */
+    body: '這位模擬交易者的策略依據已經不再使用，所以不再列出。鏈上的紀錄沒有刪除，仍可在區塊鏈瀏覽器查到；你名下與它有關的部位照樣在投資組合裡，可以自行平倉。',
+    back: '回到交易者排行榜',
+  },
+
 
   sort: {
     score: '排序：TraderScore',
@@ -21,7 +26,6 @@ export const marketplace = {
     volume: '排序：交易量（7 天）',
     pnl: '排序：PnL（7 天）',
     stake: '排序：質押',
-    esg: '排序：ESG 評分',
   },
 
   refreshAria: '重新整理市集資料',
@@ -42,7 +46,6 @@ export const marketplace = {
     reputation: '聲譽',
     strategy: '策略',
     winRate: '勝率',
-    esg: 'ESG',
     actions: '操作',
     /** 平倉少於 5 筆時掛在勝率旁邊的灰標,不是紅色警告——只是不夠準,不是壞消息。 */
     /** 勝率旁的小標籤：這段期間平倉不到 5 筆，勝率參考就好。跟「不列入排名」是兩件事。 */
@@ -68,7 +71,6 @@ export const marketplace = {
       winRate: '最近 {days} 天平倉的部位中，賺錢的比例；括號內是平倉筆數。少於 5 筆時標「樣本少」，參考就好。',
       followers: '目前還在跟單這位交易者的人數，同一人只算一次；已經取消跟單的人不算。',
       stake: '交易者押在 TraderStake 合約裡的 USDC。跟單者的虧損達 30% 時，會罰沒虧損金額的一半（最多質押的一半）；⚠ 表示被罰沒過。',
-      esg: '目前策略中各資產的 ESG 綜合分，依權重加權平均（0–100）。按上方「ESG」只看 60 分以上的交易者。',
     },
   },
 

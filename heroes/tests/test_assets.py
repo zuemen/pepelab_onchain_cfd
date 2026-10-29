@@ -1,4 +1,4 @@
-from herolab.assets import ASSETS, YAHOO_SYMBOL, esg_composite, fee_bps, max_leverage
+from herolab.assets import ASSETS, YAHOO_SYMBOL, fee_bps, max_leverage
 
 
 def test_universe_is_the_eleven_listed_assets():
@@ -17,8 +17,3 @@ def test_leverage_ceiling_follows_carbon_tier():
 def test_fee_follows_carbon_tier():
     assert (fee_bps("sETH"), fee_bps("sESGU"), fee_bps("sBTC")) == (10, 100, 100)
 
-
-def test_esg_composite_rounds_half_up_like_the_frontend():
-    # (15 + 40 + 60) / 3 = 38.33 -> 38；(35 + 55 + 70) / 3 = 53.33 -> 53
-    assert esg_composite("sBTC") == 38
-    assert esg_composite("sETH") == 53

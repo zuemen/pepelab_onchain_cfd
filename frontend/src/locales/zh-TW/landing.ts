@@ -75,7 +75,7 @@ export const landing = {
     one: '安裝 MetaMask，切換到 Base Sepolia testnet',
     two: '前往 Exchange，點擊「Get 1000 USDC」取得測試資金',
     three: '到「資產」頁買進 XAU、BGRN，回 Portfolio 看四類資產的配置與損益',
-    four: '切到專家模式，到 Marketplace 看交易者的鏈上紀錄與 ESG 評分，挑一位跟單；或在 Trader 頁登記成為交易者',
+    four: '切到專家模式，到 Marketplace 看交易者的鏈上紀錄與碳分級組成，挑一位跟單；或在 Trader 頁登記成為交易者',
   },
 
   /** 跟單旗標關閉時（機構租戶）替換掉的字串——不介紹一個看不到的功能。 */
@@ -108,7 +108,7 @@ export const landing = {
 
   /** #36：主視覺介紹與 Paper Trading 說明，各自拆成 `<b>` 前後的片段。 */
   markup: {
-    heroBefore: '挑一位交易者，先看清對方的每一筆部位、每一版策略與 ESG 評分，再決定要不要跟單。',
+    heroBefore: '挑一位交易者，先看清對方的每一筆部位、每一版策略與碳分級組成，再決定要不要跟單。',
     heroBold: '跟單開出的部位在你自己名下',
     heroAfter: '，只有你能取消；股、債、金、幣四大類代幣化資產，全程鏈上可查。',
 

@@ -75,8 +75,10 @@ type TierTuple = {
 /**
  * 讀 11 檔資產的見證碳等級。
  *
- * 結構刻意比照 useESG：0x0 守衛（不發任何 RPC,直接回 unavailable）、並行讀取
- * 加 safeRead 的逾時保護。見 useESG.ts 頂部註解說明為什麼這兩件事都是必要的。
+ * 兩件事是刻意的（沿用已移除的 useESG 學到的教訓，#383）：
+ *  1. 0x0 守衛：登記位址是 0x0 時一次 RPC 都不發，直接回 unavailable。否則每次呼叫都在
+ *     內部被 catch 吃掉，loaded 永遠表達不了「這條鏈沒有見證登記」，畫面就卡在載入中。
+ *  2. 並行 + 逾時：11 次 await 串起來，任何一次慢就整串慢；改成 allSettled + safeRead。
  */
 export function useCarbonTiers(registry: Contract | null): UseCarbonTiersResult {
   const [data, setData] = useState<Record<string, AttestedTier>>({})

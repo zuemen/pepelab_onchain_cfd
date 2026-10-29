@@ -19,10 +19,11 @@ def make_prices(days=240):
 PRICES = make_prices()
 
 
-def test_roster_has_24_traders_on_distinct_wallet_indices():
-    assert len(TRADERS) == 24
-    assert sorted(t.index for t in TRADERS) == list(range(10, 34))
-    assert len({t.name for t in TRADERS}) == 24
+def test_roster_has_23_traders_on_distinct_wallet_indices():
+    # 12 號是 #383 拿掉的 ESG Master，刻意空著不重用：其他人的位址都綁著各自的 index。
+    assert len(TRADERS) == 23
+    assert sorted(t.index for t in TRADERS) == [i for i in range(10, 34) if i != 12]
+    assert len({t.name for t in TRADERS}) == 23
 
 
 def test_day_timestamp_is_2100_utc():
@@ -40,7 +41,7 @@ def test_schedule_has_one_day_per_calendar_day_with_integer_prices():
 
 def test_every_trader_opens_on_the_first_day():
     doc = build_schedule(PRICES, TRADERS, START, END, n_followers=0)
-    assert len(doc["traders"]) == 24
+    assert len(doc["traders"]) == 23
     for trader in doc["traders"]:
         assert trader["rebalances"][0]["date"] == "2024-10-01"
         assert all(START.isoformat() <= r["date"] <= END.isoformat() for r in trader["rebalances"])

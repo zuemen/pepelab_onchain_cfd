@@ -11,7 +11,7 @@ import type { Catalog } from '../zh-TW';
 export const meta: Catalog['meta'] = {
   title: '{brand} · Web3 Social Trading',
   description:
-    '{brand} — Web3 social trading on Base: invest alongside traders whose every move is on-chain. Social copy trading, ESG scores and GameFi (testnet research prototype).',
+    '{brand} — Web3 social trading on Base: invest alongside traders whose every move is on-chain. Social copy trading, third-party ESG ratings with carbon tiers, and GameFi (testnet research prototype).',
   titleNoCopy: '{brand} · Agent-Native Tokenized RWA',
   descriptionNoCopy:
     '{brand} — an agent-native tokenized-asset engine on Base (testnet research prototype). Mint and redeem synthetic equities, bonds, gold and crypto on-chain + x402 paid signals + bounded agent sessions.',

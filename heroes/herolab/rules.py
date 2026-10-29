@@ -10,7 +10,7 @@ from typing import Callable
 
 import pandas as pd
 
-from .assets import ASSETS, esg_composite, max_leverage
+from .assets import ASSETS, max_leverage
 from .model import Leg, Rebalance
 from .weights import to_bps
 
@@ -110,13 +110,6 @@ def risk_parity(prices: pd.DataFrame, params: dict, seed: int) -> list[Rebalance
     return _changed(out)
 
 
-def esg_tilt(prices: pd.DataFrame, params: dict, seed: int) -> list[Rebalance]:
-    k = int(params.get("top_k", 4))
-    picks = sorted(ASSETS, key=lambda a: (-esg_composite(a), a))[:k]
-    weights = {a: float(esg_composite(a)) for a in picks}
-    return [Rebalance(d, _legs(weights)) for d in _dates(prices, params, seed)]
-
-
 def long_short(prices: pd.DataFrame, params: dict, seed: int) -> list[Rebalance]:
     universe = params.get("universe", ASSETS)
     lookback = int(params.get("lookback", 60))
@@ -138,6 +131,5 @@ RULES: dict[str, Rule] = {
     "momentum": momentum,
     "mean_reversion": mean_reversion,
     "risk_parity": risk_parity,
-    "esg_tilt": esg_tilt,
     "long_short": long_short,
 }

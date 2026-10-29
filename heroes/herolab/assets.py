@@ -26,14 +26,6 @@ _TIER_MAX_LEVERAGE = {"low": 5, "mid": 2, "high": 1}
 _TIER_FEE_BPS = {"low": 10, "mid": 40, "high": 100}
 _TIER_BORROW_BPS_PER_HOUR = {"low": 1, "mid": 4, "high": 10}
 
-# (environmental, social, governance)
-ESG = {
-    "sBTC": (15, 40, 60), "sETH": (35, 55, 70), "sAAPL": (72, 78, 85),
-    "sTSLA": (60, 52, 65), "sGOLD": (40, 50, 55), "sBOND": (86, 74, 80),
-    "sNVDA": (55, 60, 75), "sMSFT": (78, 72, 88), "sGOOGL": (68, 65, 80),
-    "sICLN": (90, 75, 78), "sESGU": (88, 80, 82),
-}
-
 
 def max_leverage(asset: str) -> int:
     return _TIER_MAX_LEVERAGE[CARBON_TIER[asset]]
@@ -46,9 +38,3 @@ def fee_bps(asset: str) -> int:
 def borrow_bps_per_hour(asset: str) -> int:
     """槓桿借來的那一部分每小時收的借款費；開倉時凍結。"""
     return _TIER_BORROW_BPS_PER_HOUR[CARBON_TIER[asset]]
-
-
-def esg_composite(asset: str) -> int:
-    """與前端 useESG 相同：Math.round((E + S + G) / 3)，四捨五入而非銀行家捨入。"""
-    e, s, g = ESG[asset]
-    return int((e + s + g) / 3 + 0.5)

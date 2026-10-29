@@ -9,7 +9,7 @@ describe('openPositionColumnsForMode', () => {
 
   it('expert 模式維持現有全部 12 欄、原本的順序不變', () => {
     expect(openPositionColumnsForMode('expert')).toEqual([
-      'asset', 'esg', 'side', 'entry', 'oracle', 'liveMarket',
+      'asset', 'carbonTier', 'side', 'entry', 'oracle', 'liveMarket',
       'margin', 'leverage', 'copiedFrom', 'unrealizedPnl', 'accruedFunding', 'value',
     ])
   })

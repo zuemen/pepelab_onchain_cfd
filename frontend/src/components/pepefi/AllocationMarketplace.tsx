@@ -38,6 +38,7 @@ import { explorerTx } from 'src/lib/pepefi/notify';
 import { prettyError } from 'src/lib/pepefi/errorMessages';
 import { tickerOf } from 'src/lib/pepefi/assetMeta';
 import { parseAllocs } from 'src/lib/pepefi/leaderboardMetrics';
+import { isHiddenTrader } from 'src/lib/pepefi/hiddenTraders';
 import {
   planAdoption,
   runAdoption,
@@ -97,7 +98,9 @@ export default function AllocationMarketplace() {
     setLoading(true);
     setLoadError(null);
     try {
-      const publishers = (await contracts.registry.getAllTraders()) as string[];
+      // #383：下架的交易者（hiddenTraders.ts）不列在市集裡。
+      const publishers = ((await contracts.registry.getAllTraders()) as string[])
+        .filter((p) => !isHiddenTrader(wallet.chainId, p));
       const read = await Promise.all(
         publishers.map(async (publisher) => {
           // 每位發布者各自 safeRead：一個人讀不到，不該讓整個市集變空。
@@ -124,7 +127,7 @@ export default function AllocationMarketplace() {
     } finally {
       setLoading(false);
     }
-  }, [contracts, v2]);
+  }, [contracts, v2, wallet.chainId]);
 
   useEffect(() => {
     void load();

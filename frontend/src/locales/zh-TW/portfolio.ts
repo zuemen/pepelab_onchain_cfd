@@ -143,7 +143,7 @@ export const portfolio = {
    */
   column: {
     asset: '標的',
-    esg: 'ESG',
+    carbonTier: '碳分級',
     side: '方向',
     entry: '進場價',
     oracle: '預言機',
@@ -435,15 +435,10 @@ export const portfolio = {
   },
 
   /**
-   * 配置佔比與分類損益已搬到上面的 allocation（issue #66）。這裡只剩
-   * ESG 分數，cat 仍留著——assetClass.ts 的 ASSET_CLASS_CONFIG 還在用它。
+   * 配置佔比與分類損益已搬到上面的 allocation（issue #66），平台自評的 ESG 分數在 #383
+   * 拿掉。cat 仍留著——assetClass.ts 的 ASSET_CLASS_CONFIG 還在用它。
    */
   analysis: {
-    esgScore: 'ESG 評分（依價值加權）',
-    esgMethodology:
-      '每個持倉的市值當權重，加權平均出這個分數；任一標的缺 ESG 資料，整個分數就不顯示，不用半套資料湊一個看起來正常的數字。',
-    esgIncomplete: '並非所有持倉都有 ESG 資料。',
-    byAsset: '各標的貢獻',
 
     cat: {
       crypto: '加密貨幣',

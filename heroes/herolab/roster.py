@@ -33,7 +33,9 @@ def _equal(assets: list[str]) -> dict[str, float]:
 TRADERS: tuple[TraderSpec, ...] = (
     TraderSpec(10, "Whale Alpha", "buy_hold", {"weights": {"sBTC": 0.5, "sETH": 0.3, "sGOLD": 0.2}}, 10, stake_usd=5000),
     TraderSpec(11, "Gold Bull", "fixed_mix", {"weights": {"sGOLD": 0.5, "sBOND": 0.3, "sETH": 0.2}, "every_days": 90}, 11, stake_usd=900),
-    TraderSpec(12, "ESG Master", "esg_tilt", {"top_k": 4, "every_days": 60}, 12, stake_usd=3000),
+    # 12 號原本是 ESG Master（esg_tilt，依平台自評的 ESG 分數選股）。#383 平台不再自評 ESG，
+    # 規則與交易者一起拿掉；它已在鏈上註冊，前端由 frontend/src/lib/pepefi/hiddenTraders.ts 隱藏。
+    # 12 號不重用：其他人的位址與鏈上紀錄都綁著各自的 index。
     TraderSpec(13, "Crypto Degen", "momentum", {"universe": LOW_CARBON, "top_k": 3, "lookback": 20, "every_days": 7, "leverage": 5}, 13, stake_usd=5000),
     TraderSpec(14, "Bond Steady", "fixed_mix", {"weights": {"sBOND": 0.5, "sGOLD": 0.3, "sAAPL": 0.2}, "every_days": 90}, 14, stake_usd=1200),
     TraderSpec(15, "Tesla Maxi", "buy_hold", {"weights": {"sTSLA": 0.5, "sAAPL": 0.3, "sETH": 0.2}}, 15, stake_usd=600),

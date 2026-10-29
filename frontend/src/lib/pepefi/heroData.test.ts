@@ -25,7 +25,7 @@ const ADDR = '0x00000000000000000000000000000000000000AA'
 const window = { pnlUsd: 0, marginUsd: 0, volumeUsd: 0, wins: 0, trades: 0 }
 const summary: HeroSummary = {
   address: ADDR, name: 'Whale Alpha', rule: 'buy_hold',
-  totalReturnPct: 12.34, maxDrawdownPct: 8.9, sharpe: 1.21, winRatePct: 62.5, closedTrades: 8, esgScore: 49,
+  totalReturnPct: 12.34, maxDrawdownPct: 8.9, sharpe: 1.21, winRatePct: 62.5, closedTrades: 8,
   window7d: window,
   window30d: { pnlUsd: 123.45, marginUsd: 1000, volumeUsd: 2500, wins: 5, trades: 8 },
   sparkline: [10000, 10050.5, 9990],
@@ -95,7 +95,7 @@ describe('parseHeroIndex', () => {
   })
 
   it('keeps null for figures that could not be computed', () => {
-    const parsed = parseHeroIndex({ ...index, traders: [{ ...summary, winRatePct: null, esgScore: null }] }, 31337)
+    const parsed = parseHeroIndex({ ...index, traders: [{ ...summary, winRatePct: null }] }, 31337)
     expect(parsed?.traders[0].winRatePct).toBeNull()
   })
 })

@@ -8,6 +8,7 @@
 // （chainId 不符、未連錢包就當作沒有），沒有就整塊不顯示。
 
 import { heroDataUrl, parseHeroIndex, type HeroSummary } from './heroData'
+import { isHiddenTrader } from './hiddenTraders'
 
 export const LAB_SCHEMA_VERSION = 1
 
@@ -209,7 +210,7 @@ export function similarTraders(
   if (!strategy || strategy.kind !== 'portfolio' || strategy.rule === null) return []
   const heroes = parseHeroIndex(rawHeroIndex, chainId)
   if (!heroes) return []
-  return heroes.traders.filter((h) => h.rule === strategy.rule)
+  return heroes.traders.filter((h) => h.rule === strategy.rule && !isHiddenTrader(chainId, h.address))
 }
 
 /**

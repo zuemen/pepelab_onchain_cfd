@@ -47,7 +47,7 @@ export const traderProfile = {
 
     column: {
       asset: '標的',
-      esg: 'ESG',
+      carbonTier: '碳分級',
       side: '方向',
       leverage: '槓桿',
       weight: '權重',

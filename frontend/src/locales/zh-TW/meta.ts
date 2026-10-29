@@ -10,7 +10,7 @@
 export const meta = {
   title: '{brand} · Web3 社交交易',
   description:
-    '{brand} — Base 鏈上的 Web3 社交交易平台：跟著鏈上透明的交易者投資。社交跟單、ESG 評分、GameFi（測試網研究原型）。',
+    '{brand} — Base 鏈上的 Web3 社交交易平台：跟著鏈上透明的交易者投資。社交跟單、第三方 ESG 評級與碳分級、GameFi（測試網研究原型）。',
   titleNoCopy: '{brand} · Agent 原生代幣化 RWA',
   descriptionNoCopy:
     '{brand} — 基於 Base 鏈的 Agent 原生代幣化資產引擎（測試網研究原型）。鏈上鑄造與贖回合成股債金幣 + x402 付費訊號 + agent session 委任。',

@@ -219,7 +219,7 @@ describe('default tenant is the current production site, unchanged', () => {
     'zh-TW': {
       'meta.title': 'PepeLab · Web3 社交交易',
       'meta.description':
-        'PepeLab — Base 鏈上的 Web3 社交交易平台：跟著鏈上透明的交易者投資。社交跟單、ESG 評分、GameFi（測試網研究原型）。',
+        'PepeLab — Base 鏈上的 Web3 社交交易平台：跟著鏈上透明的交易者投資。社交跟單、第三方 ESG 評級與碳分級、GameFi（測試網研究原型）。',
       'meta.titleNoCopy': 'PepeLab · Agent 原生代幣化 RWA',
       'meta.descriptionNoCopy':
         'PepeLab — 基於 Base 鏈的 Agent 原生代幣化資產引擎（測試網研究原型）。鏈上鑄造與贖回合成股債金幣 + x402 付費訊號 + agent session 委任。',
@@ -235,7 +235,7 @@ describe('default tenant is the current production site, unchanged', () => {
     en: {
       'meta.title': 'PepeLab · Web3 Social Trading',
       'meta.description':
-        'PepeLab — Web3 social trading on Base: invest alongside traders whose every move is on-chain. Social copy trading, ESG scores and GameFi (testnet research prototype).',
+        'PepeLab — Web3 social trading on Base: invest alongside traders whose every move is on-chain. Social copy trading, third-party ESG ratings with carbon tiers, and GameFi (testnet research prototype).',
       'meta.titleNoCopy': 'PepeLab · Agent-Native Tokenized RWA',
       'meta.descriptionNoCopy':
         'PepeLab — an agent-native tokenized-asset engine on Base (testnet research prototype). Mint and redeem synthetic equities, bonds, gold and crypto on-chain + x402 paid signals + bounded agent sessions.',

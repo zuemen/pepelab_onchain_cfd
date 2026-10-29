@@ -124,8 +124,12 @@ Both senses of 永續 exist in this repo the way both senses of RWA do, and for 
 ### Carbon and attestation
 
 **Carbon Intensity**:
-How much greenhouse gas a holding is responsible for per unit of economic activity, sourced from the issuer's own published reporting. The one sustainability measure this platform prices on, chosen because it carries a unit and an auditable source — which an aggregate ESG score does not. Distinct from the E/S/G scores, which are kept for display and never reach pricing.
+How much greenhouse gas a holding is responsible for per unit of economic activity, sourced from the issuer's own published reporting. The one sustainability measure this platform prices on, chosen because it carries a unit and an auditable source — which an aggregate ESG score does not. Distinct from a Third-party ESG Rating, which the platform only quotes and which never reaches pricing.
 _Avoid_: ESG score, carbon footprint (that names a total, not an intensity), emissions
+
+**Third-party ESG Rating**:
+A rating a named agency (MSCI, S&P Global, CCData × CCRI) has published for an asset, quoted on the ESG page with its source, the agency's rating date and the date it was read. The platform never computes, averages or ranks these, and only colours one when the agency itself defines the groups (MSCI's Leader / Average / Laggard). An asset no agency has published a rating for is Unrated, which says nobody rated it, not that it rated poorly; a rating that exists but is not public is "not public", not Unrated.
+_Avoid_: ESG score, platform ESG rating, composite, ESG grade
 
 **Carbon Tier**:
 The band an asset sits in, and the only thing pricing actually reads. What it fixes depends on the path: on the perpetual path, the holding cost and the leverage ceiling; on the spot path, the cost of buying in — a spot holding has no recurring charge, so the Tier prices entry and never tenure ([ADR 0007](./docs/adr/0007-spot-carbon-prices-entry-not-tenure.md)). Redemption is never priced on Tier at all, for the same reason the Reserve Ratio never gates it: the exit stays clear.

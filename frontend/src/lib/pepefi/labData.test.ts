@@ -118,7 +118,7 @@ describe('reading the files', () => {
 const window = { pnlUsd: 0, marginUsd: 0, volumeUsd: 0, wins: 0, trades: 0 }
 const hero = (address: string, name: string, rule: string) => ({
   address, name, rule, totalReturnPct: 1, maxDrawdownPct: 1, sharpe: 1, winRatePct: null, closedTrades: 0,
-  esgScore: null, window7d: window, window30d: window, sparkline: [], activeSince: null,
+  window7d: window, window30d: window, sparkline: [], activeSince: null,
 })
 const heroIndex = {
   schemaVersion: 3,

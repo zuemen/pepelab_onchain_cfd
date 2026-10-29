@@ -323,7 +323,7 @@ export const matchesSearch = (trader: Pick<TraderCard, 'displayName' | 'address'
 
 /** 排行榜排序鍵——跟 TraderLeaderboard 的排序下拉、可點欄頭共用同一組。 */
 export type LeaderboardSortKey =
-  | 'score' | 'pnl' | 'reputation' | 'followers' | 'volume' | 'stake' | 'esg'
+  | 'score' | 'pnl' | 'reputation' | 'followers' | 'volume' | 'stake'
   | 'return' | 'drawdown' | 'sharpe';
 
 /**
@@ -342,12 +342,9 @@ const cmpOptionalNumber = (a: number | undefined, b: number | undefined, directi
  *
  * 平手時一律再比 TraderScore(高分在前)——種子資料裡好幾位交易者的 7 日量、
  * PnL 完全相同,少了 tie-break 順序就落在資料抓回來的先後,看起來像沒排序。
- * ESG 綜合分要另外傳進來:它是把持倉的 ESG 依權重加權算出來的,不在 TraderCard 上。
+ * （#383 拿掉了依平台自評 ESG 綜合分排序的鍵。）
  */
-export const makeTraderComparator = (
-  sortKey: LeaderboardSortKey,
-  esgCompositeOf: (t: TraderCard) => number | null,
-) => (a: TraderCard, b: TraderCard): number => {
+export const makeTraderComparator = (sortKey: LeaderboardSortKey) => (a: TraderCard, b: TraderCard): number => {
   let primary: number;
   switch (sortKey) {
     case 'followers':  primary = cmpNullableBigDesc(a.followerCount, b.followerCount); break;
@@ -355,7 +352,6 @@ export const makeTraderComparator = (
     case 'pnl':        primary = cmpBigDesc(a.pnl7d, b.pnl7d); break;
     case 'stake':      primary = cmpNullableBigDesc(a.stake, b.stake); break;
     case 'reputation': primary = cmpNullableBigDesc(a.reputation, b.reputation); break;
-    case 'esg':        primary = (esgCompositeOf(b) ?? -1) - (esgCompositeOf(a) ?? -1); break;
     case 'return':     primary = cmpOptionalNumber(a.hero?.totalReturnPct, b.hero?.totalReturnPct, 'desc'); break;
     case 'drawdown':   primary = cmpOptionalNumber(a.hero?.maxDrawdownPct, b.hero?.maxDrawdownPct, 'asc'); break;
     case 'sharpe':     primary = cmpOptionalNumber(a.hero?.sharpe, b.hero?.sharpe, 'desc'); break;
