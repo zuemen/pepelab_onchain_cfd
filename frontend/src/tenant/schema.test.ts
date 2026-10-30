@@ -226,6 +226,42 @@ describe('tenant config validation', () => {
     expect(() => parseTenant(readTenantJson('default'), 'demo-bank')).toThrow(TenantConfigError);
   });
 
+  // 一個站出哪些語言（issue #396）。defaultLocale 放在根目錄，其他放 /<locale>/。
+  it('accepts siteLocales that include the default locale', () => {
+    const raw = mutated((c) => {
+      c.siteLocales = ['zh-TW', 'en'];
+    });
+    expect(parseTenant(raw, 'demo-bank').siteLocales).toEqual(['zh-TW', 'en']);
+  });
+
+  it('rejects siteLocales with a language we do not ship', () => {
+    expectRejected(
+      mutated((c) => {
+        c.siteLocales = ['zh-TW', 'fr'];
+      }),
+      'siteLocales'
+    );
+  });
+
+  it('rejects repeated siteLocales', () => {
+    expectRejected(
+      mutated((c) => {
+        c.siteLocales = ['zh-TW', 'en', 'en'];
+      }),
+      'siteLocales'
+    );
+  });
+
+  it('rejects siteLocales that leave out the default locale', () => {
+    // 根目錄放的是 defaultLocale；它不在清單裡，根目錄就沒有東西可放。
+    expectRejected(
+      mutated((c) => {
+        c.siteLocales = ['en'];
+      }),
+      'siteLocales'
+    );
+  });
+
   it('rejects an unknown schema version', () => {
     expectRejected(
       mutated((c) => {

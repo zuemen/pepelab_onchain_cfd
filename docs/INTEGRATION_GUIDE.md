@@ -164,7 +164,7 @@ owner 可設定的參數（費率、逐資產槓桿上限與維持保證金、AD
 |---|---|---|
 | 品牌 | `brand.name`、`brand.mark`、`brand.logo`、`brand.favicon`、`brand.themeColor` | 代入介面上所有指稱平台的字串、logo、終端機標頭、瀏覽器標題；圖片只收站內路徑（CSP） |
 | 色票 | `theme.primary`、`theme.secondary` | 接到 MUI theme；沒給就沿用預設色 |
-| 語系 | `defaultLocale` | `VITE_LOCALE` 沒設時使用 |
+| 語系 | `defaultLocale`、`siteLocales` | `defaultLocale` 放在網站根目錄；`siteLocales` 列出這個站要出的所有語言（必須含 `defaultLocale`），其他語言放在 `/<locale>/`，由 `yarn build` 一次 build 出來。省略 `siteLocales` = 只出 `defaultLocale`。見 [`frontend/docs/adr/0010-locale-by-url-path.md`](../frontend/docs/adr/0010-locale-by-url-path.md) |
 | 資產白名單 | `assets.enabled` | `addresses.ts` 已知資產的代號子集或 `"all"`；設定檔沒有地址欄位。只擋**新開**部位／買進／採用／agent session，**平倉與贖回永遠不受影響** |
 | 揭露 | `compliance.operatorName`、`compliance.additionalDisclosures` | 只能**追加**在平台核心揭露（測試網原型、合成且非足額抵押、非投資建議）之後，不能取代 |
 | 客服與法律 | `support.email`、`support.url`、`legal.links` | 只收 https；顯示在頁尾 |

@@ -33,10 +33,10 @@ The one place display strings live — plain data, grouped by feature, with one 
 _Avoid_: translation file, locale file, lang file, dictionary, i18n resources
 
 **Locale**:
-The single language a build ships in — `zh-TW` or `en`. Chosen when the app is built, so one build is one language and the user cannot change it from inside the app.
+The single language a build ships in — `zh-TW` or `en`. Chosen when the app is built, so one build is one language and the app cannot switch it in place. A site may ship several Locales side by side, one build each, under different URL paths (`/` for the Tenant's default, `/en/` for English); the 中 / EN link in the top bar loads the same page from the other build. See [ADR 0010](./docs/adr/0010-locale-by-url-path.md).
 _Avoid_: language mode, i18n mode, lang, or any name containing "mode" (Mode is the Simple/Expert preference, Theme Mode is light/dark)
 
-Display text is Traditional Chinese, with four categories deliberately left in their original form; the rule and its reasoning are in [ADR 0002](./docs/adr/0002-display-text-language-rule.md).
+Display text is Traditional Chinese, with five categories deliberately left in their original form; the rule and its reasoning are in [ADR 0002](./docs/adr/0002-display-text-language-rule.md).
 
 ### Trading vocabulary, Chinese to English
 

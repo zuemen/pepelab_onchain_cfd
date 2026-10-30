@@ -1,7 +1,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 
 import { buildTraderCard } from './leaderboardMetrics'
 import {
@@ -177,6 +177,19 @@ describe('fetching', () => {
     expect((await fetchHeroIndex(84532, fetchByUrl))?.timeCompressed).toBe(true)
     expect(await fetchHeroIndex(11155111, fetchByUrl)).toBeNull()
     expect(urls).toEqual(['/data/heroes/31337/index.json', '/data/heroes/84532/index.json', '/data/heroes/11155111/index.json'])
+  })
+
+  // 英文站的 base 是 /en/，但 public/ 只放在根目錄一份（issue #396）。/en/data/... 不存在，
+  // Vercel 會回英文站的 index.html，json() 失敗，名人堂就整片空白。
+  it('reads from the site root even in a build served under /en/', async () => {
+    vi.stubEnv('BASE_URL', '/en/')
+    try {
+      const urls: string[] = []
+      await fetchHeroIndex(31337, async (url) => { urls.push(url); return { ok: false, json: async () => ({}) } })
+      expect(urls).toEqual(['/data/heroes/31337/index.json'])
+    } finally {
+      vi.unstubAllEnvs()
+    }
   })
 
   it('reads a detail file only for a trader the index lists', async () => {
