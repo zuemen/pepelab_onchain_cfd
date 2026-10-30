@@ -4,6 +4,8 @@ status: accepted
 
 # Build-time locale selection, not a runtime language switcher
 
+> **Partly superseded by [ADR 0010](./0010-locale-by-url-path.md) (2026-10-30).** Each Locale is still its own build and the app still never swaps language in place, but one site now ships every Locale of its Tenant under different URL paths (`/`, `/en/`), and the top bar has a 中 / EN link that loads the same page from the other build. Read "no in-app switcher" below as "no in-place switch".
+
 The interface was a ruleless mix of Traditional Chinese and English, with ~1,000 lines of display string hardcoded across ~100 files and no way to produce an English build. We centralised display strings into a String Catalog and made the Locale a **build-time** choice: one build ships one language, selected by a build variable, with no in-app switcher and no persisted language preference. Two languages therefore mean two deployments of the same commit, which is enough because the audience is Chinese-speaking and the English build exists to be readable by outside reviewers, not to be toggled by users.
 
 ## Considered options

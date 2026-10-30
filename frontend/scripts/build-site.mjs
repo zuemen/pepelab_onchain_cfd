@@ -45,23 +45,22 @@ if (leftover) {
   );
 }
 
-/** dist/ 底下放這個語言的目錄，例如 '' 或 'en'。 */
-const dirOf = (base) => base.replace(/^\/|\/$/g, '');
-
-for (const locale of locales) {
+/** 每種語言的 base 與輸出目錄（相對於 frontend/，例如 dist、dist/en）。 */
+const targets = locales.map((locale) => {
   const base = localeBase(locale, tenant.config);
-  const isRoot = base === '/';
-  console.log(
-    `\n[build-site] ${tenant.id} / ${locale} → ${path.posix.join(OUT_DIR, dirOf(base))}/`
-  );
+  return { locale, base, outDir: path.posix.join(OUT_DIR, base.replace(/^\/|\/$/g, '')) };
+});
+
+for (const { locale, base, outDir } of targets) {
+  console.log(`\n[build-site] ${tenant.id} / ${locale} → ${outDir}/`);
 
   process.env.VITE_LOCALE = locale;
   await build({
     root: ROOT,
     base,
     // 只有根目錄那份帶 public/；false = 不複製（其他語言共用根目錄的靜態檔）。
-    ...(isRoot ? {} : { publicDir: false }),
-    build: { outDir: path.join(OUT_DIR, dirOf(base)), emptyOutDir: true },
+    ...(base === '/' ? {} : { publicDir: false }),
+    build: { outDir, emptyOutDir: true },
   });
 }
 
@@ -70,11 +69,10 @@ for (const locale of locales) {
 // 不可以帶 public/ 的複本。任何一項不對就讓 build 失敗。
 
 const problems = [];
-for (const locale of locales) {
-  const base = localeBase(locale, tenant.config);
-  const dir = path.join(ROOT, OUT_DIR, dirOf(base));
+for (const { locale, base, outDir } of targets) {
+  const dir = path.join(ROOT, outDir);
   const html = fs.readFileSync(path.join(dir, 'index.html'), 'utf8');
-  const where = path.posix.join(OUT_DIR, dirOf(base), 'index.html');
+  const where = `${outDir}/index.html`;
 
   const lang = LOCALES[locale].htmlLang;
   if (!html.includes(`<html lang="${lang}"`))
@@ -92,8 +90,7 @@ for (const locale of locales) {
 
   if (base !== '/') {
     const extra = fs.readdirSync(dir).filter((f) => f !== 'index.html' && f !== 'assets');
-    if (extra.length)
-      problems.push(`${path.posix.join(OUT_DIR, dirOf(base))}/: unexpected ${extra.join(', ')}`);
+    if (extra.length) problems.push(`${outDir}/: unexpected ${extra.join(', ')}`);
   }
 }
 
@@ -101,6 +98,4 @@ if (problems.length) {
   console.error(`\n[build-site] build output check failed:\n  - ${problems.join('\n  - ')}`);
   process.exit(1);
 }
-console.log(
-  `\n[build-site] OK: ${locales.map((l) => `${l} at ${localeBase(l, tenant.config)}`).join(', ')}`
-);
+console.log(`\n[build-site] OK: ${targets.map((x) => `${x.locale} at ${x.base}`).join(', ')}`);

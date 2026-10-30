@@ -246,14 +246,6 @@ export const tenantSchema = z
   // 過濾的參數，前端也無法在送單前知道之後會鏡射哪些資產——它是白名單管不到的進場路徑。
   // 所以只要租戶有白名單（不是 "all"），就不得授權跟單。見 ADR 0009。
   .superRefine((cfg, ctx) => {
-    // 根目錄放的是 defaultLocale，它不在清單裡就沒有東西可放。
-    if (cfg.siteLocales && !cfg.siteLocales.includes(cfg.defaultLocale)) {
-      ctx.addIssue({
-        code: 'custom',
-        path: ['siteLocales'],
-        message: `siteLocales must include defaultLocale "${cfg.defaultLocale}"`,
-      });
-    }
     if (cfg.assets.enabled !== 'all' && cfg.features.copyTrading.allowed) {
       ctx.addIssue({
         code: 'custom',
@@ -261,6 +253,14 @@ export const tenantSchema = z
         message:
           'copy trading mirrors every asset the trader holds and cannot be filtered on chain; ' +
           'it must not be allowed when assets.enabled is a whitelist',
+      });
+    }
+    // 根目錄放的是 defaultLocale，它不在清單裡就沒有東西可放。
+    if (cfg.siteLocales && !cfg.siteLocales.includes(cfg.defaultLocale)) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['siteLocales'],
+        message: `siteLocales must include defaultLocale "${cfg.defaultLocale}"`,
       });
     }
   });
