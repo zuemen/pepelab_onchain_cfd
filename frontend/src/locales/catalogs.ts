@@ -10,11 +10,18 @@ import zhTW from './zh-TW';
  *
  * `zh-TW` 的文件語言是 `zh-Hant` 而不是 `zh-TW`：前者描述的是書寫系統（繁體），
  * 螢幕閱讀器與瀏覽器翻譯要的是這個。
+ *
+ * `switchLabel`／`nativeName` 是語言切換按鈕上的字（issue #396）。用語言自己的名稱，
+ * 不跟著目前的介面語言翻譯：看不懂目前語言的人，才找得到回到自己語言的按鈕。
+ * 所以它們放在這裡而不是 catalog——en catalog 不能有漢字。
  */
 export const LOCALES = {
-  'zh-TW': { htmlLang: 'zh-Hant', catalog: zhTW },
-  en: { htmlLang: 'en', catalog: en },
-} satisfies Record<string, { htmlLang: string; catalog: Catalog }>;
+  'zh-TW': { htmlLang: 'zh-Hant', switchLabel: '中', nativeName: '中文', catalog: zhTW },
+  en: { htmlLang: 'en', switchLabel: 'EN', nativeName: 'English', catalog: en },
+} satisfies Record<
+  string,
+  { htmlLang: string; switchLabel: string; nativeName: string; catalog: Catalog }
+>;
 
 export type LocaleCode = keyof typeof LOCALES;
 

@@ -32,6 +32,7 @@ import { NavHorizontal } from './nav-horizontal';
 import { Searchbar } from '../components/searchbar';
 import { accountNavData } from '../nav-config-account';
 import { MenuButton } from '../components/menu-button';
+import { LocaleSwitch } from '../components/locale-switch';
 import { AccountDrawer } from '../components/account-drawer';
 import { SettingsButton } from '../components/settings-button';
 import { dashboardLayoutVars, dashboardNavColorVars } from './css-vars';
@@ -193,6 +194,9 @@ export function DashboardLayout({
 
           {/** @slot Settings button */}
           <SettingsButton />
+
+          {/** @slot Locale switch — 中 / EN; hidden for single-language tenants */}
+          <LocaleSwitch />
 
           {/** @slot Mode toggle
            *

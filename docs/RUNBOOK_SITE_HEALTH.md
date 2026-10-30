@@ -8,7 +8,11 @@
 2. **平倉資料滑出 7 天視窗** → `/marketplace` 的領獎台變空，顯示「還沒有交易者平倉滿 5 筆」。
    這是設計上的正確行為（TraderScore 要求視窗內平倉 ≥ 5 筆），不是 bug。
 
-正式站：<https://pepelab-onchain-cfd-djot.vercel.app>　鏈：Base Sepolia (84532)
+正式站：<https://pepelab-onchain-cfd-djot.vercel.app>（中文）、<https://pepelab-onchain-cfd-djot.vercel.app/en/>（英文）　鏈：Base Sepolia (84532)
+
+> 2026-10-30（issue #396）：中英文合成同一個 Vercel 專案。兩種語言都要打開確認；英文版直接重新整理
+> `/en/esg` 這類內頁不可以 404。整站回 `404 DEPLOYMENT_NOT_FOUND` 代表 Vercel 專案或網域綁定出了問題，
+> 不是程式的問題（2026-10-29 就是專案被改名或刪除）。
 交易所：`0xbF3074C98e17d88B4127899C98C81AE94c9fC979`（2026-10-20 #344 cutover；之前的 `0x827e…124D`、`0xEf75…c072` 已退役）
 
 > 2026-10-21 #344 cutover：交易所改讀專用的 MockOracle `0x9Cf4…deEA`，第 1 節查的是它。排行榜的交易紀錄改由公開鏈回放產生

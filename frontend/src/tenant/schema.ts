@@ -174,8 +174,19 @@ export const tenantSchema = z
       secondary: paletteColor.optional(),
     }),
 
-    /** `VITE_LOCALE` 沒設定時用的語系。 */
+    /** `VITE_LOCALE` 沒設定時用的語系；一站多語時放在網站根目錄的那一個。 */
     defaultLocale: z.enum(TENANT_LOCALES),
+
+    /**
+     * 這個站出哪些語言（issue #396）。defaultLocale 放在 `/`，其他語言各自放在
+     * `/<locale>/`，由 scripts/build-site.mjs 一次 build 出來。省略 = 只出 defaultLocale。
+     * 規則見 src/locales/site.ts。
+     */
+    siteLocales: z
+      .array(z.enum(TENANT_LOCALES))
+      .min(1)
+      .refine((a) => new Set(a).size === a.length, { message: 'siteLocales must not repeat' })
+      .optional(),
 
     assets: z.strictObject({
       /**
@@ -235,6 +246,14 @@ export const tenantSchema = z
   // 過濾的參數，前端也無法在送單前知道之後會鏡射哪些資產——它是白名單管不到的進場路徑。
   // 所以只要租戶有白名單（不是 "all"），就不得授權跟單。見 ADR 0009。
   .superRefine((cfg, ctx) => {
+    // 根目錄放的是 defaultLocale，它不在清單裡就沒有東西可放。
+    if (cfg.siteLocales && !cfg.siteLocales.includes(cfg.defaultLocale)) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['siteLocales'],
+        message: `siteLocales must include defaultLocale "${cfg.defaultLocale}"`,
+      });
+    }
     if (cfg.assets.enabled !== 'all' && cfg.features.copyTrading.allowed) {
       ctx.addIssue({
         code: 'custom',

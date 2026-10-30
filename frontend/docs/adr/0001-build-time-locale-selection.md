@@ -14,7 +14,7 @@ The interface was a ruleless mix of Traditional Chinese and English, with ~1,000
 
 ## Consequences
 
-- Serving both languages means a second deployment with one environment variable changed; there is no single URL that offers both.
+- Serving both languages meant a second deployment with one environment variable changed; there was no single URL that offered both. **Superseded by [ADR 0010](./0010-locale-by-url-path.md)** (2026-10-30): one site now builds every language of the tenant in one go and serves them by URL path (`/` and `/en/`). Each language is still its own build, so everything else in this ADR stands.
 - Components read the catalog through a plain module import, deliberately the only access pattern, because a hook cannot be used where the module-scope data tables need it.
 - If a switcher is ever wanted, the path is a mechanical codemod of those imports to a hook plus the module-scope table conversions described above — knowingly deferred, not avoided.
 - The kit's language popover and flag icons stay dead code. Whoever revives them should read this ADR first.
