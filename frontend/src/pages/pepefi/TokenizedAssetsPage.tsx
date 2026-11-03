@@ -1,6 +1,6 @@
 import { MONO, shortAddr } from 'src/components/pepefi/brandKit'
 import { useState, useEffect, useCallback } from 'react'
-import { Contract, parseEther, type ContractTransactionResponse } from 'ethers'
+import { Contract, MaxUint256, parseEther, type ContractTransactionResponse, type EventLog } from 'ethers'
 import { useContracts } from 'src/hooks/useContracts'
 import { useV2Contracts } from 'src/hooks/useV2Contracts'
 import { useCarbonTiers } from 'src/hooks/useCarbonTiers'
@@ -9,6 +9,14 @@ import { usePepefiWallet } from 'src/layouts/pepefi'
 import { prettyError } from 'src/lib/pepefi/errorMessages'
 import { safeRead } from 'src/lib/pepefi/safeRead'
 import { fUsd, fromUnits, f18 } from 'src/lib/pepefi/format'
+import { formatRatio } from 'src/lib/pepefi/solvency'
+import { loadOperatorFunding } from 'src/lib/pepefi/vaultFunding'
+import {
+  belowFloor, formatVaultAmount, reserveRatioLabel, reserveSources, simpleReserveNote, vaultActions,
+  type VaultActionState, type VaultHealth,
+} from 'src/lib/pepefi/vaultHealth'
+import { paths } from 'src/routes/paths'
+import { RouterLink } from 'src/routes/components'
 import { ASSET_IDS, type AssetSymbol } from 'src/contracts/addresses'
 import { getAddresses, getSynthTokens } from 'src/contracts/deployment'
 import { t, interpolate } from 'src/locales'
@@ -92,16 +100,45 @@ const MONO_COLUMNS = new Set<AssetRowColumnKey>([
 
 interface Row {
   price:     bigint // 8-dec oracle price
-  updatedAt: bigint // oracle updatedAt (sec) — #100: feeds the provenance card's freshness
   balance:   bigint // 18-dec token balance
   cap:       bigint // V2 only: per-asset issuance ceiling
   issued:    bigint // V2 only: currently outstanding
 }
 
+const EMPTY_HEALTH: V2Health = {
+  reserve: null, liability: null, ratioBps: null, minRatioBps: null,
+  paused: null, maxDeviationBps: null, stale: false, mintingHalted: false,
+}
+
+const ACTION_CHIP: Record<VaultActionState, { color: 'success' | 'error' | 'default'; label: string }> = {
+  open: { color: 'success', label: t.tokens.health.actionOpen },
+  blocked: { color: 'error', label: t.tokens.health.actionBlocked },
+  unknown: { color: 'default', label: t.tokens.health.actionUnknown },
+}
+
+function HealthFigure({ label, value, emphasis = false, color }: {
+  label: string
+  value: string
+  emphasis?: boolean
+  color?: string
+}) {
+  return (
+    <Stack direction="row" justifyContent="space-between" alignItems="baseline" spacing={1.5} sx={{ py: 0.25 }}>
+      <Typography variant="body2" color="text.secondary" sx={{ whiteSpace: 'nowrap' }}>{label}</Typography>
+      <Typography sx={{ fontFamily: MONO, fontWeight: emphasis ? 'bold' : 'normal', fontSize: emphasis ? '1.05rem' : '0.875rem', textAlign: 'right', color }}>
+        {value}
+      </Typography>
+    </Stack>
+  )
+}
+
 interface V2Health {
-  reserveRatioBps: bigint | null
+  reserve:         bigint | null
+  liability:       bigint | null
+  ratioBps:        bigint | null
+  minRatioBps:     bigint | null
   paused:          boolean | null
-  accruedFees:     bigint | null
+  maxDeviationBps: bigint | null
   /**
    * #99: mirrors `ratioIsStale()` — true when at least one outstanding asset's
    * price could not be priced, which means the liability sum UNDER-counts and
@@ -156,9 +193,8 @@ export default function TokenizedAssetsPage() {
     !!activeVaultAddr && activeVaultAddr !== ZERO_ADDR && symbols.length > 0
 
   const [rows, setRows]       = useState<Record<string, Row>>({})
-  const [health, setHealth]   = useState<V2Health>({
-    reserveRatioBps: null, paused: null, accruedFees: null, stale: false, mintingHalted: false,
-  })
+  const [health, setHealth]   = useState<V2Health>(EMPTY_HEALTH)
+  const [operatorFunded, setOperatorFunded] = useState<bigint | null>(null)
   const [loading, setLoading] = useState(true)
   // #134：詳情層取代了買賣對話框——selected 現在同時是「哪一列被點開」跟
   // 「詳情層裡買進／贖回哪個分頁」，一份狀態，不是兩份各自要對齊的狀態。
@@ -229,7 +265,6 @@ export default function TokenizedAssetsPage() {
         const old = prev[sym]
         next[sym] = {
           price:     f.price?.[0] ?? old?.price ?? 0n,
-          updatedAt: f.price?.[1] ?? old?.updatedAt ?? 0n,
           balance:   f.balance ?? old?.balance ?? 0n,
           cap:       f.cap ?? old?.cap ?? 0n,
           issued:    f.issued ?? old?.issued ?? 0n,
@@ -249,9 +284,10 @@ export default function TokenizedAssetsPage() {
       // read still reports the true halt state instead of silently assuming
       // false — a false "not halted" is the one wrong answer that lets someone
       // submit a buy the chain will actually reject.
-      const [paused, fees, status, ratio, staleFallback, haltedFallback] = await Promise.all([
+      const [paused, minRatio, maxDeviation, status, ratio, staleFallback, haltedFallback] = await Promise.all([
         safeRead(activeVault.paused() as Promise<boolean>, null as unknown as boolean),
-        safeRead(activeVault.accruedFees() as Promise<bigint>, -1n),
+        safeRead(activeVault.minReserveRatioBps() as Promise<bigint>, -1n),
+        safeRead(v2!.oracle.maxDeviationBps() as Promise<bigint>, -1n),
         safeRead(
           activeVault.reserveStatus() as Promise<
             [bigint, bigint, bigint, bigint, boolean, boolean]
@@ -263,22 +299,30 @@ export default function TokenizedAssetsPage() {
         safeRead(activeVault.mintingHalted() as Promise<boolean>, false),
       ])
       const pausedVal = typeof paused === 'boolean' ? paused : null
-      const feesVal   = fees >= 0n ? fees : null
+      const shared = {
+        paused: pausedVal,
+        minRatioBps: minRatio >= 0n ? minRatio : null,
+        maxDeviationBps: maxDeviation >= 0n ? maxDeviation : null,
+      }
 
       if (status) {
-        const [, , ratioBps, , stale, halted] = status
+        const [reserve, liability, ratioBps, , stale, halted] = status
         setHealth({
-          reserveRatioBps: ratioBps, paused: pausedVal, accruedFees: feesVal,
+          ...shared, reserve, liability,
+          // 尚無發行時合約回 uint256 max，那不是一個比率。
+          ratioBps: ratioBps === MaxUint256 ? null : ratioBps,
           stale, mintingHalted: halted,
         })
       } else {
         setHealth({
-          reserveRatioBps: ratio >= 0n ? ratio : null, paused: pausedVal, accruedFees: feesVal,
+          ...shared, reserve: null,
+          liability: ratio === MaxUint256 ? 0n : null,
+          ratioBps: ratio >= 0n && ratio !== MaxUint256 ? ratio : null,
           stale: staleFallback, mintingHalted: haltedFallback,
         })
       }
     } else {
-      setHealth({ reserveRatioBps: null, paused: null, accruedFees: null, stale: false, mintingHalted: false })
+      setHealth(EMPTY_HEALTH)
     }
 
     setLoading(false)
@@ -290,6 +334,24 @@ export default function TokenizedAssetsPage() {
   // 錢包的餘額或別條鏈的價格。
   useEffect(() => { setRows({}) }, [wallet.address, wallet.chainId, isV2])
   useEffect(() => { void refresh() }, [refresh])
+
+  // 注資紀錄獨立讀：不是每次 refresh 都會變，而且要打區塊瀏覽器，讀不到也不該拖住鏈上數值。
+  useEffect(() => {
+    setOperatorFunded(null)
+    if (!v2) return undefined
+    let cancelled = false
+    void loadOperatorFunding({
+      chainId: wallet.chainId,
+      vault: v2.vaultAddr,
+      queryLocal: async () => {
+        const logs = await v2.vault.queryFilter(v2.vault.filters.VaultFunded())
+        return logs.map((log) => (log as EventLog).args[1] as bigint)
+      },
+    }).then((funded) => {
+      if (!cancelled) setOperatorFunded(funded)
+    })
+    return () => { cancelled = true }
+  }, [v2, wallet.chainId])
 
   // Live quote from the contract rather than client-side arithmetic, so the V2
   // fee is the real one. V1 returns a single uint256; V2 returns
@@ -428,10 +490,6 @@ export default function TokenizedAssetsPage() {
     )
   }
 
-  const ratioPct = health.reserveRatioBps !== null
-    ? Number(health.reserveRatioBps) / 100
-    : null
-
   // #133：資產表的每一列由 assetRows 這個純函式算出來——分級解析、費率
   // 推導、排序、買賣可用性全部在那邊測過，這裡只是把鏈上讀回來的原始資料
   // 餵進去。
@@ -439,7 +497,6 @@ export default function TokenizedAssetsPage() {
     symbol: sym,
     meta: ASSET_META[ASSET_IDS[sym]],
     price: rows[sym]?.price ?? 0n,
-    updatedAtSec: rows[sym] ? Number(rows[sym].updatedAt) : 0,
     balance: rows[sym]?.balance ?? 0n,
     cap: rows[sym]?.cap ?? 0n,
     issued: rows[sym]?.issued ?? 0n,
@@ -464,30 +521,11 @@ export default function TokenizedAssetsPage() {
   // 「這個 Mode 看得到哪些欄」，不重新決定欄位長什麼樣。
   const columns = assetRowColumnsForMode(mode)
 
-  // Expert 的三格網格跟 Simple 的一句話都要講同一件事：儲備率現在讀起來
-  // 是多少。算一次、兩邊引用，不要各自重算一次同一個三分支判斷。
-  const reserveRatioText = health.stale
-    ? t.tokens.health.reserveRatioUnknown
-    : ratioPct === null
-    ? '—'
-    : ratioPct > 100000 ? t.tokens.health.reserveRatioInfinite : ratioPct.toFixed(1) + '%'
-
-  // #136 code review：Simple 的一句話版不能只判斷「過不過期」——鑄造暫停、
-  // 儲備率跌破下限都是投資人該知道的事（#93 user story 5、6），Expert 的
-  // 三格網格已經分別處理這三種狀態,Simple 只是換一句話講同一組事實,不能
-  // 漏掉其中兩種。severity 同理跟著真正的健康狀況走,不是固定給 'info'。
-  const simpleReserve: { severity: 'info' | 'warning' | 'error'; message: string } = !isV2
-    ? { severity: 'info', message: t.tokens.health.simpleNotConnected }
-    : health.stale
-      ? { severity: 'warning', message: reserveRatioText }
-      : health.mintingHalted
-        ? { severity: 'error', message: interpolate(t.tokens.health.simpleMintingHalted, { ratio: reserveRatioText }) }
-        : {
-            // 對齊 Expert 網格用同一個門檻判斷顏色（LinearProgress 的
-            // color）：ratioPct < 110 讀成 'error'。
-            severity: ratioPct !== null && ratioPct < 110 ? 'error' : 'info',
-            message: interpolate(t.tokens.health.simpleNote, { ratio: reserveRatioText }),
-          }
+  // 面板與 Simple 的一句話講同一組事實，判斷都在 lib/pepefi/vaultHealth.ts。
+  const vaultHealth: VaultHealth = { ...health, operatorFunded }
+  const sources = reserveSources(vaultHealth)
+  const actions = vaultActions(vaultHealth)
+  const simpleReserve = simpleReserveNote(vaultHealth, isV2)
 
   // #136：一列的每一格由欄位 key 決定內容——表頭跟表身共用同一份 columns
   // 清單，不會有「表頭多一欄、表身忘了補」這種兩邊各寫一次才會出現的漂移
@@ -581,8 +619,6 @@ export default function TokenizedAssetsPage() {
             {f18(assetRow.issued, { dp: 2 })} / {assetRow.cap === 0n ? t.tokens.card.capClosed : f18(assetRow.cap, { dp: 2 })}
           </>
         )
-      case 'priceUpdatedAt':
-        return assetRow.freshness.label
       case 'attestationCount':
         return assetRow.attestationCount === null ? '—' : String(assetRow.attestationCount)
       case 'assetId': {
@@ -702,17 +738,15 @@ export default function TokenizedAssetsPage() {
         <WhoRunsWhat />
       </Card>
 
-      {/* #136：儲備率是給投資人的事實（#93 user story 5、6），不能整塊收進
-          Expert——Simple 收起來的是四格儀表板跟預言機的機制細節,不是這件事
-          本身。不可信時講「無法確認」,不接「，可隨時贖回」那句尾巴,那句
-          在不可信的狀態下講不通。 */}
+      {/* #136：金庫的事實是給投資人的（#93 user story 5、6），不能整塊收進
+          Expert——Simple 收起來的是機制細節,不是這件事本身。 */}
       {mode === 'simple' && (
         <Alert severity={simpleReserve.severity} variant="outlined">
           {simpleReserve.message}
         </Alert>
       )}
 
-      {/* ── V2 hardening panel（Expert 專屬——工程證據，不是 Simple 該看的東西）── */}
+      {/* ── 金庫現況面板（Expert 專屬）：儲備夠不夠、從哪來、現在能做什麼 ── */}
       {mode === 'expert' && (isV2 ? (
         <Card sx={{ p: 2.5 }}>
           <Typography variant="subtitle1" sx={{ fontWeight: 'bold', mb: 2 }}>
@@ -738,78 +772,91 @@ export default function TokenizedAssetsPage() {
               <b>{t.tokens.markup.mintingHaltedBold}</b>{t.tokens.markup.mintingHaltedBody}
             </Alert>
           )}
-          <Grid container spacing={2.5}>
+          <Grid container spacing={3}>
+            {/* 儲備夠不夠：金額比比率誠實，比率要跟下限一起看才有意義。 */}
             <Grid size={{ xs: 12, md: 4 }}>
-              <Typography variant="caption" color="text.secondary" display="block">{t.tokens.health.reserveRatio}</Typography>
-              <Typography sx={{ fontFamily: MONO, fontWeight: 'bold', fontSize: '1.15rem' }}>
-                {reserveRatioText}
-              </Typography>
-              <LinearProgress
-                variant="determinate"
-                value={health.stale || ratioPct === null ? 0 : Math.min(100, ratioPct / 2)}
-                color={health.stale ? 'warning' : ratioPct !== null && ratioPct < 110 ? 'error' : 'success'}
-                sx={{ mt: 0.75, height: 6, borderRadius: 3 }}
-              />
-              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.75 }}>
+              <Typography variant="subtitle2" sx={{ fontWeight: 'bold', mb: 1 }}>{t.tokens.health.enoughTitle}</Typography>
+              <HealthFigure label={t.tokens.health.reserveRatio} value={reserveRatioLabel(vaultHealth)} emphasis color={belowFloor(vaultHealth) ? 'error.main' : undefined} />
+              <HealthFigure label={t.tokens.health.minRatio} value={health.minRatioBps === null ? '—' : formatRatio(health.minRatioBps)} />
+              <HealthFigure label={t.tokens.health.reserve} value={health.reserve === null ? '—' : formatVaultAmount(health.reserve) + ' USDC'} />
+              {!health.stale && (
+                <HealthFigure label={t.tokens.health.liability} value={health.liability === null ? '—' : formatVaultAmount(health.liability) + ' USDC'} />
+              )}
+              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>
                 {health.stale ? t.tokens.health.reserveRatioNoteStale : t.tokens.health.reserveRatioNote}
               </Typography>
             </Grid>
 
+            {/* 儲備從哪來：合約的比率把營運方注資算在內，只看比率看不出金庫多依賴營運方。 */}
             <Grid size={{ xs: 12, md: 4 }}>
-              <Typography variant="caption" color="text.secondary" display="block">{t.tokens.health.status}</Typography>
-              <Stack direction="row" spacing={0.75} flexWrap="wrap" useFlexGap sx={{ mt: 0.5 }}>
-                {health.paused === null ? (
-                  <Typography sx={{ fontFamily: MONO }}>—</Typography>
-                ) : (
-                  <Chip
-                    size="small"
-                    color={health.paused ? 'error' : 'success'}
-                    label={health.paused ? t.tokens.health.paused : t.tokens.health.running}
-                    sx={{ fontWeight: 'bold' }}
+              <Typography variant="subtitle2" sx={{ fontWeight: 'bold', mb: 1 }}>{t.tokens.health.sourcesTitle}</Typography>
+              {sources === null ? (
+                <Typography variant="body2" color="text.secondary">{t.tokens.health.sourcesUnknown}</Typography>
+              ) : (
+                <>
+                  <LinearProgress
+                    variant="determinate"
+                    value={Number(sources.operatorShareBps) / 100}
+                    color="warning"
+                    aria-label={t.tokens.health.operatorFunded}
+                    sx={{ height: 8, borderRadius: 4, mb: 1, bgcolor: 'success.main' }}
                   />
-                )}
-                {health.mintingHalted && (
-                  <Chip
-                    size="small"
-                    color="error"
-                    label={t.tokens.health.mintingHalted}
-                    sx={{ fontWeight: 'bold' }}
+                  <HealthFigure label={t.tokens.health.operatorFunded} value={formatVaultAmount(sources.operatorFunded) + ' USDC'} />
+                  <HealthFigure label={t.tokens.health.operatorShare} value={formatRatio(sources.operatorShareBps)} />
+                  <HealthFigure label={t.tokens.health.userNet} value={formatVaultAmount(sources.userNet) + ' USDC'} />
+                  <HealthFigure
+                    label={t.tokens.health.ownRatio}
+                    value={sources.ownRatioBps === null ? '—' : formatRatio(sources.ownRatioBps)}
+                    emphasis
                   />
-                )}
-              </Stack>
+                </>
+              )}
               <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>
-                {t.tokens.health.pausableNote}
-              </Typography>
-
-              <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 1.5 }}>
-                {t.tokens.health.accruedFees}
-              </Typography>
-              <Typography sx={{ fontFamily: MONO }}>
-                {health.accruedFees === null ? '—' : f18(health.accruedFees, { dp: 2 }) + ' USDC'}
+                {t.tokens.health.sourcesNote}
               </Typography>
             </Grid>
 
+            {/* 現在能做什麼，以及誰能改變答案。 */}
             <Grid size={{ xs: 12, md: 4 }}>
-              <Typography variant="caption" color="text.secondary" display="block">{t.tokens.health.guardedOracle}</Typography>
-              {/* 依 chainId 選瀏覽器（84532 → BaseScan）；以前寫死 Etherscan，在 Base 上點下去是空頁。 */}
-              {explorerAddr(v2!.oracleAddr, wallet.chainId) ? (
-                <Link
-                  href={explorerAddr(v2!.oracleAddr, wallet.chainId)!}
-                  target="_blank" rel="noopener noreferrer"
-                  sx={{ fontFamily: MONO, fontSize: '0.8rem', wordBreak: 'break-all' }}
-                >
-                  {v2!.oracleAddr}
-                </Link>
-              ) : (
-                <Typography sx={{ fontFamily: MONO, fontSize: '0.8rem', wordBreak: 'break-all' }}>
-                  {v2!.oracleAddr}
-                </Typography>
-              )}
-              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.75 }}>
-                {t.tokens.health.guardedOracleNote}
+              <Typography variant="subtitle2" sx={{ fontWeight: 'bold', mb: 1 }}>{t.tokens.health.actionsTitle}</Typography>
+              <Stack spacing={0.75} sx={{ mb: 1 }}>
+                {([[t.tokens.health.buy, actions.buy], [t.tokens.health.redeem, actions.redeem]] as const).map(([label, state]) => (
+                  <Stack key={label} direction="row" justifyContent="space-between" alignItems="center">
+                    <Typography variant="body2" color="text.secondary">{label}</Typography>
+                    <Chip size="small" color={ACTION_CHIP[state].color} label={ACTION_CHIP[state].label} sx={{ fontWeight: 'bold' }} />
+                  </Stack>
+                ))}
+              </Stack>
+              <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+                {t.tokens.health.pauseNote}
+              </Typography>
+
+              <Typography variant="subtitle2" sx={{ fontWeight: 'bold', mt: 2, mb: 1 }}>{t.tokens.health.priceTitle}</Typography>
+              <HealthFigure
+                label={t.tokens.health.maxDeviation}
+                value={health.maxDeviationBps === null ? '—' : formatRatio(health.maxDeviationBps)}
+              />
+              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>
+                {t.tokens.health.priceNote}{' '}
+                {/* 依 chainId 選瀏覽器（84532 → BaseScan）；以前寫死 Etherscan，在 Base 上點下去是空頁。 */}
+                {explorerAddr(v2!.oracleAddr, wallet.chainId) ? (
+                  <Link
+                    href={explorerAddr(v2!.oracleAddr, wallet.chainId)!}
+                    target="_blank" rel="noopener noreferrer"
+                    title={v2!.oracleAddr}
+                    sx={{ fontFamily: MONO }}
+                  >
+                    {shortAddr(v2!.oracleAddr)}
+                  </Link>
+                ) : (
+                  <Box component="span" title={v2!.oracleAddr} sx={{ fontFamily: MONO }}>{shortAddr(v2!.oracleAddr)}</Box>
+                )}
               </Typography>
             </Grid>
           </Grid>
+          <Link component={RouterLink} href={paths.pepefi.solvency} underline="hover" sx={{ display: 'inline-block', mt: 2, fontSize: 13, fontWeight: 600 }}>
+            {t.tokens.health.historyLink} →
+          </Link>
         </Card>
       ) : (
         <Alert severity="warning" variant="outlined">
@@ -848,7 +895,7 @@ export default function TokenizedAssetsPage() {
             <TableRow>
               {columns.map((col) => (
                 // #147：表頭一律不換行。Expert 的 9 欄在桌面寬度下原本會把
-                // 「預言機更新時間」擠成四行、「買入費率」兩行,整條表頭因此變成
+                // 較長的欄名擠成四行、「買入費率」兩行,整條表頭因此變成
                 // 四倍高。欄寬不夠時讓 TableContainer 橫向捲,不要把字折斷。
                 <TableCell key={col} sx={{ ...stickyEdgeSx(col, 'head'), fontWeight: 'bold', whiteSpace: 'nowrap' }}>
                   {assetRowColumnLabelForMode(col, mode)}
@@ -861,7 +908,7 @@ export default function TokenizedAssetsPage() {
               <TableRow key={assetRow.symbol}>
                 {columns.map((col) => (
                   // #147：`asset` 之外的每一格都不換行——原本「0.0000 sETH ≈ $0.00」、
-                  // 「0.04 / 1,000,000.00」、「8.0 天前」、資產 ID、操作欄的三顆按鈕
+                  // 「0.04 / 1,000,000.00」、資產 ID、操作欄的三顆按鈕
                   // 全都會在欄寬不足時折行,每折一次整列就高一截。`asset` 例外是因為
                   // 它自己用 noWrap + maxWidth 做截斷,不需要也不應該被撐開。
                   <TableCell

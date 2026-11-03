@@ -513,7 +513,7 @@ export default function VaultPage() {
                       </Typography>
                     </TableCell>
                     {/* #151: block number is chain-internals detail — Expert only,
-                        same split as /tokens' priceUpdatedAt/assetId columns. */}
+                        same split as /tokens' attestationCount/assetId columns. */}
                     {isExpert && (
                       <TableCell align="right">
                         <Typography variant="caption" color="text.secondary" sx={{ fontFamily: MONO }}>

@@ -54,10 +54,9 @@ export const tokens = {
       { label: '暫停機制', detail: 'Pausable' },
       { label: '權限模型', detail: 'AccessControl（角色分離）' },
       { label: '可升級性', detail: 'UUPS proxy' },
-      { label: '預言機', detail: 'GuardedOracle（多 keeper + 偏差上限）' },
+      { label: '預言機', detail: 'GuardedOracle（keeper 權限 + 偏差上限）' },
       { label: '發行上限', detail: '每資產 cap' },
       { label: '儲備率保護', detail: '低於下限拒絕 mint' },
-      { label: '手續費', detail: 'mint 手續費' },
     ],
   },
 
@@ -65,29 +64,47 @@ export const tokens = {
 
   /** 硬化特性健康度面板。 */
   health: {
-    title: '🛡️ 金庫防護與健康度（鏈上即時數值）',
+    title: '金庫現況（鏈上即時數值）',
+    enoughTitle: '儲備夠不夠',
     reserveRatio: '儲備率',
     reserveRatioInfinite: '∞（尚無發行）',
     /** #99：儲備率過期時顯示這個而不是一個樂觀數字，比照 kyc.ts 的 unknownTitle。 */
     reserveRatioUnknown: '無法確認',
-    reserveRatioNote: '金庫 USDC 儲備 / 已發行代幣總值。低於下限時 mint 會被拒絕。',
-    reserveRatioNoteStale: '至少一項資產的價格已過期，此數字可能被低估負債、讀起來比實際樂觀——視為「未知」而非「健康」，在有新報價之前。',
-    status: '運作狀態',
-    paused: '已暫停',
-    running: '運作中',
-    /** #99：AssetVaultV2_3.mintingHalted() 的鎖存狀態，與 paused（PAUSER_ROLE 手動）是不同的鎖。 */
-    mintingHalted: '鑄造已暫停',
-    pausableNote: 'Pausable：緊急時可由 PAUSER_ROLE 停止買賣。',
-    accruedFees: '累積手續費',
-    guardedOracle: 'GuardedOracle',
-    guardedOracleNote: '多 keeper 預言機，單次更新偏差超過上限會被拒絕。',
+    minRatio: '買進下限',
+    reserve: '金庫儲備',
+    liability: '已發行資產現值',
+    reserveRatioNote: '儲備 ÷ 已發行資產現值，營運方注資也算在內。低於下限時新的買進會被拒絕，贖回不受影響。',
+    reserveRatioNoteStale: '至少一項資產的價格已過期，負債可能被低估、比率讀起來比實際樂觀——視為「未知」而非「健康」，在有新報價之前。',
+    sourcesTitle: '儲備從哪來',
+    sourcesUnknown: '暫時讀不到營運方的注資紀錄，無法拆分。',
+    operatorFunded: '營運方注資',
+    operatorShare: '注資占儲備',
+    userNet: '使用者買進淨額',
+    ownRatio: '不含注資的儲備率',
+    sourcesNote: '金庫不是足額抵押：已發行資產跟著價格漲，差額要靠營運方的資金支付。注資金額加總自鏈上 VaultFunded 事件。',
+    actionsTitle: '現在能做什麼',
+    buy: '買進',
+    redeem: '贖回',
+    actionOpen: '可用',
+    actionBlocked: '已停止',
+    actionUnknown: '無法確認',
+    pauseNote: '持有 PAUSER_ROLE 的營運方可在緊急時同時停止買進與贖回。',
+    priceTitle: '報價規則',
+    maxDeviation: '單次變動上限',
+    priceNote: '任一 keeper 可單獨報價，不需多方共識；上限由管理員設定，可以調整。合約：',
+    historyLink: '完整儲備紀錄',
     /** 這條鏈上跑的是尚未加上這些防護的原始實作，不點名版本編號。 */
     notHardened:
       '這條鏈上的金庫尚未包含 SafeERC20、儲備率保護與暫停機制。已部署合約的 bytecode 無法修改；這些防護已經在其他部署上線，此網路何時跟上由營運方決定。',
-    // #136：Simple Mode 的一句話版——收起來的是四格儀表板跟預言機的機制
-    // 細節，不是「儲備率」這個事實本身（#93 user story 5、6）。不可信時要
-    // 講「無法確認」，直接沿用 reserveRatioUnknown，不要另造一個「無法確認」。
-    simpleNote: '儲備 {ratio}，可隨時贖回',
+    // #136：Simple Mode 的一句話版——收起來的是機制細節，不是金庫的事實本身
+    // （#93 user story 5、6）。比率裡有營運方注資，所以講金額與占比，不講比率。
+    simpleNote: '目前可以買進與贖回。金庫有 {reserve} USDC，已發行資產現值 {liability} USDC。',
+    simpleNoteFunded: '目前可以買進與贖回。金庫有 {reserve} USDC，已發行資產現值 {liability} USDC；金庫的錢有 {share} 是營運方注資。',
+    simpleOpen: '目前可以買進與贖回。',
+    simplePaused: '金庫暫停中，目前不能買進，也不能贖回。',
+    simpleUnknown: '有資產暫時無法估值，金庫儲備狀況無法確認，新的買進已暫停。',
+    simpleStatusUnknown: '暫時讀不到金庫狀態，無法確認現在能不能買賣。',
+    simpleBelowFloor: '金庫儲備（{ratio}）低於下限，新的買進會被拒絕；贖回不受影響。',
     simpleNotConnected: '這條鏈的金庫儲備尚未接上自動驗證機制。',
     // #136 code review：一句話版不能只講「過不過期」，鑄造暫停也是投資人
     // 該知道的事（#93 user story 5、6）——跟 Expert 的三格網格是同一組事實，
@@ -118,7 +135,6 @@ export const tokens = {
       actions: '操作',
       // #136：Expert 專屬欄位。
       issuedOverCap: '發行量 / 上限',
-      priceUpdatedAt: '預言機更新時間',
       attestationCount: '見證筆數',
       assetId: '資產 ID',
     },
@@ -300,7 +316,7 @@ export const tokens = {
     title: '誰負責什麼',
     intro: 'RWA 的價值在於知道誰在線上。匿名是加密的價值，不是 RWA 的。',
     priceRole: '價格',
-    priceWho: 'keeper 從 CoinGecko／Yahoo Finance 取價，寫進 GuardedOracle（多 keeper、單次偏差上限）。過期報價不寫上鏈。',
+    priceWho: 'keeper 從 CoinGecko／Yahoo Finance 取價，寫進 GuardedOracle（單次偏差上限）。過期報價不寫上鏈。',
     carbonRole: '碳資料見證',
     carbonWho: '碳強度取自發行方的公開申報（永續報告、10-K），來源網址與擷取日期記錄於 docs/data/carbon-intensity.md。',
     reserveRole: '儲備營運',
