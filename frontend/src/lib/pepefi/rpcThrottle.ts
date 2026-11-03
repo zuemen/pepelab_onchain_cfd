@@ -71,6 +71,9 @@ export const READ_FAILOVER_RPCS: Readonly<Record<number, readonly string[]>> = {
 
 const failoverReads = createRateGate(READS_PER_SECOND)
 
+/** 單一備援節點等多久：卡住的節點不能擋住下一個節點，也不能讓頁面一直轉圈。 */
+export const FAILOVER_TIMEOUT_MS = 8000
+
 const TRANSIENT_CODES = new Set([-32002, -32005, -32007, -32603, 429, 413])
 const TRANSIENT_TEXT = /\b429\b|\b413\b|rate.?limit|too many|payload too large|request limit|failed to fetch|networkerror|load failed|timeout|timed out/i
 
@@ -79,12 +82,21 @@ const TRANSIENT_TEXT = /\b429\b|\b413\b|rate.?limit|too many|payload too large|r
  * 還可能把真正的錯誤訊息蓋掉；使用者拒絕（4001）等錢包層錯誤也不能換。
  */
 export function isTransientNodeFailure(err: unknown): boolean {
-  const e = err as { code?: unknown; message?: unknown; data?: unknown } | null | undefined
+  const e = err as
+    | { code?: unknown; message?: unknown; data?: unknown; error?: unknown; info?: { error?: unknown } }
+    | null
+    | undefined
   if (!e) return false
+  // ethers 把節點錯誤包成 CALL_EXCEPTION，原始錯誤在 info.error；要看裡面才知道是不是限流。
+  const inner = e.info?.error ?? e.error
+  if (inner && isTransientNodeFailure(inner)) return true
   const data = e.data as { data?: unknown } | string | undefined
   const nested = typeof data === 'object' && data !== null ? data.data : data
   if (typeof nested === 'string' && nested.startsWith('0x') && nested.length > 2) return false
-  const message = typeof e.message === 'string' ? e.message : String(err)
+  // ethers 的訊息一律帶 `revert=null`，「missing revert data」也不代表合約真的 revert。
+  const message = (typeof e.message === 'string' ? e.message : String(err))
+    .replace(/revert=null/g, '')
+    .replace(/missing revert data/gi, '')
   if (e.code === 3 || /revert/i.test(message)) return false
   if (typeof e.code === 'number' && TRANSIENT_CODES.has(e.code)) return true
   return TRANSIENT_TEXT.test(message)
@@ -110,13 +122,15 @@ export function createRpcFailover(
           method: 'POST',
           headers: { 'content-type': 'application/json' },
           body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params: params ?? [] }),
+          signal: AbortSignal.timeout(FAILOVER_TIMEOUT_MS),
         })
         if (res.ok) {
           // eslint-disable-next-line no-await-in-loop
           const body = (await res.json()) as { result?: unknown; error?: RpcError }
           if (body.error) {
             if (!isTransientNodeFailure(body.error)) return { rpcError: body.error }
-          } else if ('result' in body) {
+          } else if ('result' in body && !(method === 'eth_call' && body.result === null)) {
+            // eth_call 一定有回傳值；null 代表這個節點沒給答案，換下一個。
             return { result: body.result }
           }
         }

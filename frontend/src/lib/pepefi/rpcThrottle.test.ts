@@ -111,6 +111,35 @@ describe('讀取備援', () => {
     expect(fetchImpl).toHaveBeenCalledTimes(2)
   })
 
+  it('備援節點的 eth_call 回 null 就換下一個', async () => {
+    const fetchImpl = vi.fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ result: null }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ result: '0x12' }) })
+    await expect(createRpcFailover(fetchImpl as unknown as typeof fetch, noGate)(84532, { method: 'eth_call' })).resolves.toEqual({ result: '0x12' })
+  })
+
+  it('其他方法的 null 是合法答案（例如還沒上鏈的收據）', async () => {
+    const fetchImpl = vi.fn().mockResolvedValueOnce({ ok: true, json: async () => ({ result: null }) })
+    await expect(createRpcFailover(fetchImpl as unknown as typeof fetch, noGate)(84532, { method: 'eth_getTransactionReceipt' })).resolves.toEqual({ result: null })
+  })
+
+  it('每個備援請求都帶逾時訊號；卡住的節點會換下一個', async () => {
+    const fetchImpl = vi.fn()
+      .mockRejectedValueOnce(new DOMException('timed out', 'TimeoutError'))
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ result: '0x1' }) })
+    await expect(createRpcFailover(fetchImpl as unknown as typeof fetch, noGate)(84532, { method: 'eth_call' })).resolves.toEqual({ result: '0x1' })
+    expect(fetchImpl.mock.calls[0][1].signal).toBeInstanceOf(AbortSignal)
+  })
+
+  it('ethers 包裝過的限流錯誤仍判定為節點故障', () => {
+    const wrapped = {
+      code: 'CALL_EXCEPTION',
+      message: 'missing revert data (action="call", data=null, reason=null, revert=null, code=CALL_EXCEPTION, version=6.17.0)',
+      info: { error: { code: -32007, message: '25/second request limit reached' } },
+    }
+    expect(isTransientNodeFailure(wrapped)).toBe(true)
+  })
+
   it('分得出節點故障與合約 revert', () => {
     expect(isTransientNodeFailure({ code: -32603, message: 'Internal JSON-RPC error.' })).toBe(true)
     expect(isTransientNodeFailure(new Error('Failed to fetch'))).toBe(true)

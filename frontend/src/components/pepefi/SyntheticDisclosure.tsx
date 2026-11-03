@@ -1,6 +1,6 @@
 import type { SxProps, Theme } from '@mui/material/styles';
 
-import { useState, useEffect } from 'react';
+import { useRef, useState, useEffect } from 'react';
 
 import Box from '@mui/material/Box';
 import Alert from '@mui/material/Alert';
@@ -28,13 +28,37 @@ function initialCollapsed(): boolean {
   }
 }
 
-/** 掛載後才記下「看過了」：渲染期間不寫儲存空間（StrictMode 會把初始值函式呼叫兩次）。 */
 function markSeen() {
   try {
     if (localStorage.getItem(STORAGE_KEY) === null) localStorage.setItem(STORAGE_KEY, '1');
   } catch {
     /* 無痕模式等：下次仍然展開 */
   }
+}
+
+/**
+ * 真的進到畫面才記下「看過了」：有些頁面把揭露放在長頁底部，掛載不等於看過。
+ * 不在渲染期間寫儲存空間（StrictMode 會把初始值函式呼叫兩次）。瀏覽器沒有
+ * IntersectionObserver 時不記，下次仍然展開。
+ */
+function useMarkSeenWhenVisible() {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || typeof IntersectionObserver === 'undefined') return undefined;
+    const io = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) {
+          markSeen();
+          io.disconnect();
+        }
+      },
+      { threshold: 0.25 }
+    );
+    io.observe(el);
+    return () => io.disconnect();
+  }, []);
+  return ref;
 }
 
 /**
@@ -45,7 +69,7 @@ function markSeen() {
  */
 export function SyntheticDisclosure({ sx }: { sx?: SxProps<Theme> }) {
   const [collapsed, setCollapsed] = useState(initialCollapsed);
-  useEffect(markSeen, []);
+  const seenRef = useMarkSeenWhenVisible();
   const d = t.common.disclosure;
   // 白標租戶的追加揭露（只能追加在核心三條之後），見 src/tenant/disclosure.ts。
   const extra = tenantDisclosureAdditions(tenant.compliance, locale, d.operatedBy);
@@ -62,6 +86,7 @@ export function SyntheticDisclosure({ sx }: { sx?: SxProps<Theme> }) {
 
   return (
     <Alert
+      ref={seenRef}
       severity="warning"
       variant="outlined"
       role="note"

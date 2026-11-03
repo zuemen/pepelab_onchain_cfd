@@ -57,6 +57,8 @@ export function prettyError(err: unknown, context?: 'read' | 'mining' | 'tier' |
   const msgLower = `${revertName ?? ''} ${msg}`.toLowerCase()
   
   for (const [keyword, friendly] of Object.entries(ERROR_MAP)) {
+    // 讀取不是交易：通用的 execution reverted 不能翻成「交易執行失敗」，交給下面的讀取情境處理。
+    if (context === 'read' && keyword === 'execution reverted') continue
     if (msgLower.includes(keyword.toLowerCase())) return friendly
   }
 
@@ -67,8 +69,9 @@ export function prettyError(err: unknown, context?: 'read' | 'mining' | 'tier' |
   // 3. Fallback for generic reverts using context
   if (msgLower.includes('missing revert data') || msgLower.includes('execution reverted') || msgLower.includes('3: execution reverted')) {
     // 讀鏈失敗：沒有送出任何交易，不能套用交易失敗的說法。
+    // 合約明確拒絕時重試不會好，不能叫人「稍後再試」；沒有 revert 資料才可能是節點的問題。
     if (context === 'read') {
-      return t.errors.nodeUnavailable;
+      return msgLower.includes('missing revert data') ? t.errors.nodeUnavailable : t.errors.readReverted;
     }
     if (context === 'copy') {
       return t.errors.reverted.copy;

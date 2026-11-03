@@ -184,6 +184,9 @@ export const errors: Catalog['errors'] = {
   /** The node is rate limiting or unreachable: nothing was rejected, and this does not mean there is no data. */
   nodeUnavailable: 'The blockchain node is not responding right now (possibly rate limited), so this data has not loaded. It does not mean there is no data or that a transaction failed. Please try again shortly.',
 
+  /** The contract refused the read: no transaction failed, but retrying will not change it. */
+  readReverted: 'This on-chain data cannot be read: the contract refused the request, and retrying will not change that. It does not mean a transaction failed.',
+
   unrecognised:
     'The transaction failed and the error could not be identified. Check your network and balance and try again — if it keeps happening, open the browser console for the raw error to report.',
 };
