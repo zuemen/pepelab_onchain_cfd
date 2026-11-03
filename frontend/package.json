@@ -63,7 +63,7 @@
     "recharts": "^3.10.1",
     "simplebar-react": "^3.3.2",
     "stylis": "^4.4.0",
-    "zod": "^4.6.5"
+    "zod": "^4.6.6"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
