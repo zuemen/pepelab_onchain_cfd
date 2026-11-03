@@ -23,6 +23,10 @@ import { build, loadEnv, runnerImport } from 'vite';
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const OUT_DIR = 'dist';
 
+// 一定要在下面第一個 runnerImport 之前設定。runnerImport 用 "serve" 模式解析設定，NODE_ENV
+// 沒設時 Vite 會把它設成 development，而且留在 process.env 裡；之後的 build() 就都變成開發模式。
+process.env.NODE_ENV = 'production';
+
 async function importTs(file) {
   const { module } = await runnerImport(path.join(ROOT, file), { root: ROOT, logLevel: 'error' });
   return module;
@@ -91,6 +95,18 @@ for (const { locale, base, outDir } of targets) {
   if (base !== '/') {
     const extra = fs.readdirSync(dir).filter((f) => f !== 'index.html' && f !== 'assets');
     if (extra.length) problems.push(`${outDir}/: unexpected ${extra.join(', ')}`);
+  }
+
+  // jsxDEV 只出現在開發模式的 bundle。開發模式的 build 一樣能跑，但模擬錢包入口會出現在
+  // 正式站（featureFlags.ts 的 MOCK_WALLET_ENABLED），對照指數也會打 localhost。
+  const assets = path.join(dir, 'assets');
+  const devChunks = fs
+    .readdirSync(assets)
+    .filter(
+      (f) => f.endsWith('.js') && fs.readFileSync(path.join(assets, f), 'utf8').includes('jsxDEV')
+    );
+  if (devChunks.length) {
+    problems.push(`${outDir}/assets/: development build (jsxDEV in ${devChunks.join(', ')})`);
   }
 }
 
