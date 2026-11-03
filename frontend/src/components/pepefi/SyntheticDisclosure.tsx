@@ -1,6 +1,6 @@
 import type { SxProps, Theme } from '@mui/material/styles';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 
 import Box from '@mui/material/Box';
 import Alert from '@mui/material/Alert';
@@ -17,19 +17,23 @@ import { tenantDisclosureAdditions } from 'src/tenant/disclosure';
 const STORAGE_KEY = 'pepefi:disclosure:collapsed';
 
 /**
- * 這個瀏覽器第一次看到揭露：展開，並記下已看過；之後預設收合，除非使用者選擇展開。
+ * 這個瀏覽器第一次看到揭露：展開；之後預設收合，除非使用者選擇展開。
  * 讀不到儲存空間（無痕模式等）一律展開——寧可多看，不可漏看。
  */
 function initialCollapsed(): boolean {
   try {
-    const saved = localStorage.getItem(STORAGE_KEY);
-    if (saved === null) {
-      localStorage.setItem(STORAGE_KEY, '1');
-      return false;
-    }
-    return saved === '1';
+    return localStorage.getItem(STORAGE_KEY) === '1';
   } catch {
     return false;
+  }
+}
+
+/** 掛載後才記下「看過了」：渲染期間不寫儲存空間（StrictMode 會把初始值函式呼叫兩次）。 */
+function markSeen() {
+  try {
+    if (localStorage.getItem(STORAGE_KEY) === null) localStorage.setItem(STORAGE_KEY, '1');
+  } catch {
+    /* 無痕模式等：下次仍然展開 */
   }
 }
 
@@ -41,6 +45,7 @@ function initialCollapsed(): boolean {
  */
 export function SyntheticDisclosure({ sx }: { sx?: SxProps<Theme> }) {
   const [collapsed, setCollapsed] = useState(initialCollapsed);
+  useEffect(markSeen, []);
   const d = t.common.disclosure;
   // 白標租戶的追加揭露（只能追加在核心三條之後），見 src/tenant/disclosure.ts。
   const extra = tenantDisclosureAdditions(tenant.compliance, locale, d.operatedBy);

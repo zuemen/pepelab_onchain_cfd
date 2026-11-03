@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest'
 
+import { t } from 'src/locales'
+
 import { prettyError } from './errorMessages'
 
 /** ethers v6 在 ABI 認得 custom error 時的形狀。 */
@@ -149,3 +151,25 @@ describe('CopyTracker 自動同步（ADR-024）的 revert', () => {
     expect(prettyError(revertLike('InvalidRecipient'))).toContain('收款地址')
   })
 })
+
+describe('prettyError · 節點故障與真正的錯誤', () => {
+  it('節點限流講成節點沒回應，不講成交易失敗', () => {
+    expect(prettyError({ code: -32005, message: 'rate limit exceeded' })).toBe(t.errors.nodeUnavailable)
+    expect(prettyError(new Error('Failed to fetch'))).toBe(t.errors.nodeUnavailable)
+  })
+
+  it('-32603 包著的餘額不足仍然講餘額不足', () => {
+    const msg = prettyError({ code: -32603, message: 'insufficient funds for gas * price + value' })
+    expect(msg).not.toBe(t.errors.nodeUnavailable)
+  })
+
+  it('使用者拒絕不會變成節點故障', () => {
+    expect(prettyError({ code: 4001, message: 'User rejected the request.' })).not.toBe(t.errors.nodeUnavailable)
+  })
+
+  it('讀取情境下 revert 與認不出的錯誤都不講成交易失敗', () => {
+    expect(prettyError({ message: 'missing revert data' }, 'read')).toBe(t.errors.nodeUnavailable)
+    expect(prettyError({ message: 'weird' }, 'read')).toBe(t.errors.nodeUnavailable)
+  })
+})
+

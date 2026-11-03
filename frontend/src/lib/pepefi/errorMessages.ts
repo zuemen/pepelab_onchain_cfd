@@ -34,9 +34,6 @@ export function prettyError(err: unknown, context?: 'read' | 'mining' | 'tier' |
     info?: { error?: { data?: string; message?: string } } | null
   }
 
-  // 0. 節點限流、連線失敗：不是交易被合約拒絕，不能講成「買進失敗」或「交易失敗」。
-  if (isTransientNodeFailure(err)) return t.errors.nodeUnavailable
-
   // 1. custom error selector
   const data = e.data
     ?? (typeof e.error?.data === 'string' ? e.error.data : undefined)
@@ -62,6 +59,10 @@ export function prettyError(err: unknown, context?: 'read' | 'mining' | 'tier' |
   for (const [keyword, friendly] of Object.entries(ERROR_MAP)) {
     if (msgLower.includes(keyword.toLowerCase())) return friendly
   }
+
+  // 2b. 節點限流、連線失敗：不是交易被合約拒絕，不能講成「買進失敗」或「交易失敗」。
+  // 放在關鍵字掃描之後：錢包常把餘額不足包成 -32603，那要照餘額不足說。
+  if (isTransientNodeFailure(err)) return t.errors.nodeUnavailable
 
   // 3. Fallback for generic reverts using context
   if (msgLower.includes('missing revert data') || msgLower.includes('execution reverted') || msgLower.includes('3: execution reverted')) {
