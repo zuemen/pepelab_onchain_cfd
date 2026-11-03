@@ -159,8 +159,11 @@ export function parseHeroDetail(raw: unknown, address: string): HeroDetail | nul
 
 type FetchLike = (url: string) => Promise<{ ok: boolean; json: () => Promise<unknown> }>
 
-/** 一條鏈的一個資料檔。每條鏈一個目錄：本機展示與公開站各讀各的。 */
-export const heroDataUrl = (chainId: number, name: string) => `${import.meta.env.BASE_URL}data/heroes/${chainId}/${name}`
+/**
+ * 一條鏈的一個資料檔。每條鏈一個目錄：本機展示與公開站各讀各的。
+ * 固定從根目錄讀、不加 BASE_URL：英文站的 base 是 /en/，但 public/ 只放在根目錄一份（issue #396）。
+ */
+export const heroDataUrl = (chainId: number, name: string) => `/data/heroes/${chainId}/${name}`
 
 /** 讀不到（404、不是 JSON、離線）一律是 null。SPA 的 fallback 會對不存在的檔回 index.html，所以 json() 失敗是常態。 */
 async function readJson(url: string, fetchImpl: FetchLike): Promise<unknown | null> {

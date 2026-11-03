@@ -129,6 +129,8 @@ export const common: Catalog['common'] = {
     expert: 'Expert',
     toExpertAria: 'Switch to Expert Mode',
     toSimpleAria: 'Switch to Simple Mode',
+    /** 頂部列的「中 / EN」按鈕群組（issue #396）。按鈕上的字是各語言自己的名稱，在 catalogs.ts。 */
+    localeSwitchAria: 'Switch language',
 
     /** #36：網路不符的橫幅，句中夾了兩段 `<b>`。 */
     networkMismatch: {

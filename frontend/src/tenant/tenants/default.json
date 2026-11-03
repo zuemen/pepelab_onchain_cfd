@@ -13,6 +13,7 @@
   },
   "theme": {},
   "defaultLocale": "zh-TW",
+  "siteLocales": ["zh-TW", "en"],
   "assets": {
     "enabled": "all"
   },

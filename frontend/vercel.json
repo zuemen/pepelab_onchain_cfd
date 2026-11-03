@@ -1,8 +1,11 @@
 {
   "ignoreCommand": "bash ../scripts/vercel-ignore-build.sh . ../scripts/vercel-ignore-build.sh",
   "git": { "deploymentEnabled": { "**": false, "master": true, "preview/**": true } },
+  "buildCommand": "yarn build",
   "rewrites": [
-    { "source": "/((?!assets/).*)", "destination": "/index.html" }
+    { "source": "/en", "destination": "/en/index.html" },
+    { "source": "/en/((?!assets/).*)", "destination": "/en/index.html" },
+    { "source": "/((?!assets/|en/assets/).*)", "destination": "/index.html" }
   ],
   "headers": [
     {

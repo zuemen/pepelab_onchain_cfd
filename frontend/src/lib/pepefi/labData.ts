@@ -165,7 +165,8 @@ export function parseLabResult(raw: unknown, strategy: string, target: string): 
 
 type FetchLike = (url: string) => Promise<{ ok: boolean; json: () => Promise<unknown> }>
 
-const fileUrl = (name: string) => `${import.meta.env.BASE_URL}data/lab/${name}`
+// 固定從根目錄讀，理由同 heroDataUrl。
+const fileUrl = (name: string) => `/data/lab/${name}`
 
 /** 結果檔名：與 heroes/herolab/labdata.py 的 result_name 相同（參數值用 String() 串起來）。 */
 export const labResultFile = (strategy: string, target: string, values: number[]): string =>

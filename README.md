@@ -21,7 +21,8 @@
 > （chainId 84532）**。沒有真實資產、沒有第三方安全稽核、沒有任何監理許可，**不是生產系統**。
 
 - 名稱：產品名為 **PepeFi**。PepeLab 是早期名稱，也是 demo 主題（因此 repo、網址與部分舊文件仍使用 PepeLab）。
-- 正式展示站（測試網）：<https://pepelab-onchain-cfd-djot.vercel.app>
+- 正式展示站（測試網）：<https://pepelab-onchain-cfd-djot.vercel.app>（中文）；英文版 <https://pepelab-onchain-cfd-djot.vercel.app/en/>
+  （同一個 Vercel 專案、一次 build，見 [`frontend/docs/adr/0010-locale-by-url-path.md`](frontend/docs/adr/0010-locale-by-url-path.md)）
 - 事實基準日：2026-10-26（位址與部署狀態以 #344 cutover 之後的唯讀讀回為準，見
   [`docs/CUTOVER_LOG_2026-10-20.md`](docs/CUTOVER_LOG_2026-10-20.md)）。本文所有位址與參數以程式碼與鏈上唯讀查詢為準。
 

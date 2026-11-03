@@ -3,6 +3,7 @@ import { usePepefiWallet } from 'src/layouts/pepefi';
 import { t, interpolate } from 'src/locales';
 import { tenant, TENANT_SHOWS_MASCOT } from 'src/tenant';
 import WalletButton from 'src/components/pepefi/WalletButton';
+import { LocaleSwitch } from 'src/layouts/components/locale-switch';
 import HeroKpiStrip from 'src/components/pepefi/HeroKpiStrip';
 import { SHOW_PERPETUALS, FEATURE_GAMEFI, FEATURE_COPY_TRADING } from 'src/lib/pepefi/featureFlags';
 import { landingFeatureKeys, type LandingFeatureKey } from 'src/lib/pepefi/landingFeatures';
@@ -104,8 +105,12 @@ export default function LandingPage() {
         background: `radial-gradient(120% 80% at 80% -10%, rgba(var(--palette-primary-mainChannel) / 0.10) 0%, transparent 55%), linear-gradient(165deg, ${tenant.brand.themeColor} 0%, ${HERO_MID_COLOR} 55%, ${tenant.brand.themeColor} 100%)`,
         pt: 8,
         pb: 8,
+        position: 'relative',
       }}
     >
+      {/* Landing 沒有頂部列；沒連錢包的訪客也要能換語言（issue #396）。 */}
+      <LocaleSwitch sx={{ position: 'absolute', top: 16, right: 16 }} />
+
       <Container maxWidth="md">
         <SyntheticDisclosure sx={{ mb: 4 }} />
 
