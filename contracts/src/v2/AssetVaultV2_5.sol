@@ -20,6 +20,11 @@ import { IAssetOracleV2 } from "./AssetVaultV2.sol";
 // redeclared, so V2.4 and V2.5 can be compiled into the same upgrade script.
 import { IEsgRegistryForVault } from "./AssetVaultV2_4.sol";
 
+/// @dev The slice of `CarbonRetirement` checked by `setCarbonRetirement`.
+interface ICarbonRetirementToken {
+    function usdc() external view returns (address);
+}
+
 
 /// @notice Upgradeable mint/redeem vault for tokenized synthetic assets.
 ///
@@ -82,7 +87,10 @@ import { IEsgRegistryForVault } from "./AssetVaultV2_4.sol";
 ///         mark is admitted, a missing price is not. Redeem is never gated.
 ///         A closed market with a dead feed can be taken out of that mint
 ///         gate by RISK_ROLE (`setUnpricedExemption`), never out of the book.
-///         Storage: two fields appended from the front of __gap (43 -> 41).
+///         V2.5 also routes a fixed share of each buy fee to CarbonRetirement
+///         inside mint() (ADR-022), so a higher carbon tier retires more. The
+///         share never counts as a fee the operator can withdraw.
+///         Storage: three fields appended from the front of __gap (43 -> 40).
 contract AssetVaultV2_5 is
     Initializable,
     UUPSUpgradeable,
@@ -187,7 +195,17 @@ contract AssetVaultV2_5 is
     /// @dev Consumed from the front of __gap (42 -> 41 slots).
     mapping(bytes32 => bool) private _unpricedExempt;
 
-    uint256[41] private __gap;
+    /// @notice V2.5: where the carbon share of each buy fee goes.
+    ///         `address(0)` means routing is off and the whole fee stays here.
+    /// @dev Consumed from the front of __gap (41 -> 40 slots).
+    address public carbonRetirement;
+
+    uint256[40] private __gap;
+
+    /// @notice V2.5: the share of each buy fee sent to `carbonRetirement`.
+    /// @dev A constant, not a parameter: the same non-discretionary stance as
+    ///      the tier fees themselves (ADR-003, ADR-022).
+    uint256 public constant CARBON_FEE_SHARE_BPS = 2_500;
 
     /// @notice V2.5: a last-good price older than this is not used - the asset
     ///         counts as `unpriced` (V2.4 behaviour).
@@ -236,6 +254,12 @@ contract AssetVaultV2_5 is
     ///         tier (see `mintFeeBpsForAsset`).
     event EsgRegistrySet(address indexed oldRegistry, address indexed newRegistry);
 
+    /// @notice The retirement contract was set; happens at most once.
+    event CarbonRetirementSet(address indexed carbonRetirement);
+
+    /// @notice The carbon share of one buy fee left for `carbonRetirement`.
+    event CarbonFeeRouted(bytes32 indexed assetId, uint256 amount);
+
     /// @notice V2.4's replacement for `IAssetVaultV2.RiskParamsUpdated`. The
     ///         mint fee is no longer an operator parameter (ADR-006), so the
     ///         old event's first field would have been a permanent, misleading
@@ -267,6 +291,7 @@ contract AssetVaultV2_5 is
     ///      observation latched it". Anyone can clear it by observing a healthy,
     ///      fully-priced ratio — see observeReserve().
     error MintingHalted();
+    error CarbonRetirementAlreadySet();
     /// @notice V2.5: `unpriced` outstanding assets have neither a live quote
     ///         nor a last-good mark <= 6h, so the reserve ratio is unknown.
     ///         Blocks new mints only; redeem is never gated on it.
@@ -530,6 +555,18 @@ contract AssetVaultV2_5 is
     function setEsgRegistry(address newRegistry) external onlyRole(DEFAULT_ADMIN_ROLE) {
         emit EsgRegistrySet(_esgRegistry, newRegistry);
         _esgRegistry = newRegistry;
+    }
+
+    /// @notice Points the buy fee's carbon share at a retirement contract.
+    /// @dev One shot, like `PlatformFeeSplitter.bindFeeRouter`: moving the money
+    ///      elsewhere afterwards takes a new, visible implementation. Refuses a
+    ///      contract priced in another token, which would strand the budget.
+    function setCarbonRetirement(address retirement) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        if (carbonRetirement != address(0)) revert CarbonRetirementAlreadySet();
+        if (retirement == address(0)) revert InvalidParam();
+        if (ICarbonRetirementToken(retirement).usdc() != _usdc) revert InvalidParam();
+        carbonRetirement = retirement;
+        emit CarbonRetirementSet(retirement);
     }
 
     /// @notice Operator risk knobs. Separate RISK_ROLE from upgrade authority so
@@ -846,10 +883,21 @@ contract AssetVaultV2_5 is
             revert CapExceeded(assetId, newOutstanding, assetCap[assetId]);
         }
 
+        address retirement = carbonRetirement;
+        uint256 carbonShare = retirement == address(0) ? 0 : feePaid * CARBON_FEE_SHARE_BPS / BPS_DENOM;
+
         _outstanding[assetId] = newOutstanding;
-        accruedFees += feePaid;
+        accruedFees += feePaid - carbonShare;
 
         IERC20(_usdc).safeTransferFrom(msg.sender, address(this), usdcAmount);
+
+        // Leaves here rather than waiting in accruedFees, so no withdrawFees call
+        // can get ahead of it. reserve() is unchanged: the balance and accruedFees
+        // both come out lower by the same amount.
+        if (carbonShare > 0) {
+            IERC20(_usdc).safeTransfer(retirement, carbonShare);
+            emit CarbonFeeRouted(assetId, carbonShare);
+        }
 
         // VULNERABILITY #2 FIX: refuse the mint if it would leave the book below
         // the operator's minimum coverage. Checked after the transfer so the

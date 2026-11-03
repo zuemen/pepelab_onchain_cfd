@@ -53,8 +53,10 @@ contract VaultV2_5ForkTest is Test {
         deal(USDC, user, 1_000e18);
         vm.startPrank(user);
         IERC20(USDC).approve(VAULT, type(uint256).max);
+        uint256 budgetBefore = IERC20(USDC).balanceOf(v.carbonRetirement());
         uint256 out = v.mint(eth, 100e18);
         assertGt(out, 0);
+        assertGt(IERC20(USDC).balanceOf(v.carbonRetirement()), budgetBefore, "carbon share routed");
         v.redeem(eth, out / 2);
         vm.stopPrank();
 

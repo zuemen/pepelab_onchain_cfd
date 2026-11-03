@@ -1595,5 +1595,18 @@
     "type": "error",
     "name": "ZeroAmount",
     "inputs": []
+  },
+  {
+    "type": "function",
+    "name": "carbonRetirement",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "view"
   }
 ]

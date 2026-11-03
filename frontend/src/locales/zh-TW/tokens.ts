@@ -45,71 +45,42 @@ export const tokens = {
   titleSimple: '資產',
   subtitle: 'ERC-20 代幣化資產',
 
-  /** 這個金庫有哪些防護——單欄清單，只在硬化版金庫真的部署時才顯示（見元件）。 */
-  protections: {
-    title: '這個金庫有哪些防護',
-    items: [
-      { label: 'ERC-20 轉帳', detail: 'SafeERC20' },
-      { label: '重入保護', detail: 'ReentrancyGuard' },
-      { label: '暫停機制', detail: 'Pausable' },
-      { label: '權限模型', detail: 'AccessControl（角色分離）' },
-      { label: '可升級性', detail: 'UUPS proxy' },
-      { label: '預言機', detail: 'GuardedOracle（keeper 權限 + 偏差上限）' },
-      { label: '發行上限', detail: '每資產 cap' },
-      { label: '儲備率保護', detail: '低於下限拒絕 mint' },
-    ],
-  },
-
   notDeployed: '代幣化資產尚未在此網路啟用（AssetVault 未部署）。',
 
-  /** 硬化特性健康度面板。 */
+  /** /tokens 的金庫提醒：平常不顯示，只有影響買賣時才出現。 */
   health: {
-    title: '金庫現況（鏈上即時數值）',
-    enoughTitle: '儲備夠不夠',
-    reserveRatio: '儲備率',
-    reserveRatioInfinite: '∞（尚無發行）',
-    /** #99：儲備率過期時顯示這個而不是一個樂觀數字，比照 kyc.ts 的 unknownTitle。 */
-    reserveRatioUnknown: '無法確認',
-    minRatio: '買進下限',
-    reserve: '金庫儲備',
-    liability: '已發行資產現值',
-    reserveRatioNote: '儲備 ÷ 已發行資產現值，營運方注資也算在內。低於下限時新的買進會被拒絕，贖回不受影響。',
-    reserveRatioNoteStale: '至少一項資產的價格已過期，負債可能被低估、比率讀起來比實際樂觀——視為「未知」而非「健康」，在有新報價之前。',
-    sourcesTitle: '儲備從哪來',
-    sourcesUnknown: '暫時讀不到營運方的注資紀錄，無法拆分。',
-    operatorFunded: '營運方注資',
-    operatorShare: '注資占儲備',
-    userNet: '使用者買進淨額',
-    ownRatio: '不含注資的儲備率',
-    sourcesNote: '金庫不是足額抵押：已發行資產跟著價格漲，差額要靠營運方的資金支付。注資金額加總自鏈上 VaultFunded 事件。',
-    actionsTitle: '現在能做什麼',
-    buy: '買進',
-    redeem: '贖回',
-    actionOpen: '可用',
-    actionBlocked: '已停止',
-    actionUnknown: '無法確認',
-    pauseNote: '持有 PAUSER_ROLE 的營運方可在緊急時同時停止買進與贖回。',
-    priceTitle: '報價規則',
-    maxDeviation: '單次變動上限',
-    priceNote: '任一 keeper 可單獨報價，不需多方共識；上限由管理員設定，可以調整。合約：',
-    historyLink: '完整儲備紀錄',
+    paused: '金庫暫停中，目前不能買進，也不能贖回。',
+    unknown: '有資產暫時無法估值，金庫儲備狀況無法確認，新的買進已暫停。',
+    buyStopped: '金庫儲備低於下限，新的買進已暫停，贖回不受影響。',
     /** 這條鏈上跑的是尚未加上這些防護的原始實作，不點名版本編號。 */
     notHardened:
       '這條鏈上的金庫尚未包含 SafeERC20、儲備率保護與暫停機制。已部署合約的 bytecode 無法修改；這些防護已經在其他部署上線，此網路何時跟上由營運方決定。',
-    // #136：Simple Mode 的一句話版——收起來的是機制細節，不是金庫的事實本身
-    // （#93 user story 5、6）。比率裡有營運方注資，所以講金額與占比，不講比率。
-    simpleNote: '目前可以買進與贖回。金庫有 {reserve} USDC，已發行資產現值 {liability} USDC。',
-    simpleNoteFunded: '目前可以買進與贖回。金庫有 {reserve} USDC，已發行資產現值 {liability} USDC；金庫的錢有 {share} 是營運方注資。',
-    simpleOpen: '目前可以買進與贖回。',
-    simplePaused: '金庫暫停中，目前不能買進，也不能贖回。',
-    simpleUnknown: '有資產暫時無法估值，金庫儲備狀況無法確認，新的買進已暫停。',
-    simpleStatusUnknown: '暫時讀不到金庫狀態，無法確認現在能不能買賣。',
-    simpleBelowFloor: '金庫儲備（{ratio}）低於下限，新的買進會被拒絕；贖回不受影響。',
     simpleNotConnected: '這條鏈的金庫儲備尚未接上自動驗證機制。',
-    // #136 code review：一句話版不能只講「過不過期」，鑄造暫停也是投資人
-    // 該知道的事（#93 user story 5、6）——跟 Expert 的三格網格是同一組事實，
-    // 只是換一句話講。
-    simpleMintingHalted: '新的買進已暫停（儲備 {ratio}）——贖回不受影響。',
+  },
+
+  /** 買進流程的圖文介紹。退役那段照 ADR-022 一定要講模擬碳權。 */
+  buyFlow: {
+    title: '買進是怎麼運作的',
+    steps: [
+      { title: '準備 USDC', body: '買賣都用 USDC 結算。這裡是測試網，用的是測試幣，不是真錢。' },
+      { title: '看碳分級', body: '每檔資產都有碳分級，碳分級決定買入費率。' },
+      { title: '買進', body: '手續費先扣，其餘依當下價格換成代幣，直接進你的錢包。' },
+      { title: '贖回', body: '想退出時由你發起，依當下價格換回 USDC，費率不看碳分級。金庫 USDC 不足時會暫時無法完成。' },
+    ],
+    highOrUnrated: '高碳／未評等',
+    carbonTitle: '手續費與碳權退役',
+    simulatedChip: '模擬碳權',
+    chainRest: ['買入碳權', '當場銷毀'],
+    linked: {
+      chainStart: '買入手續費的 {share}',
+      body: '碳分級越高，買入費率越高，撥去退役的金額也越多。同樣買 100 USDC，低碳撥 {low} USDC，高碳撥 {high} USDC。比例寫死在合約裡，每一筆都查得到。',
+      note: '退役的是測試網模擬碳權，不對應任何真實減碳。',
+    },
+    unlinked: {
+      chainStart: '平台手續費的 5%',
+      body: '合約寫死的比例，沒有人能改去向，每一筆退役都查得到。',
+      note: '目前退役資金來自平台其他手續費，這裡的買入手續費留在金庫，還沒有接上退役。退役的是測試網模擬碳權，不對應任何真實減碳。',
+    },
   },
 
   card: {
@@ -161,7 +132,7 @@ export const tokens = {
     // #134：按鈕停用時要說明原因，不能只是變灰。贖回唯一會被擋的原因就是
     // 金庫暫停，可以直接講死；買進的原因（暫停／鑄造停止／比率不可信）已經
     // 在上面「金庫防護與健康度」區塊逐一解釋過，這裡指回去而不是重講一次。
-    buyDisabledNotice: '目前無法買進——原因見上方「金庫防護與健康度」。',
+    buyDisabledNotice: '目前無法買進——原因見資產表上方的提醒。',
     sellDisabledNotice: '目前無法贖回——這個金庫已暫停。',
     // #134：canSell 是「金庫暫停」跟「餘額為零」的 OR，兩者要分開講，
     // 不然沒有餘額的人會被誤導成「金庫壞了」。
@@ -329,10 +300,6 @@ export const tokens = {
 
   /** #36：四段句中夾標記的說明，各自拆成標記前後的片段。 */
   markup: {
-    protectionsNoteBefore: '詳見 ',
-    protectionsNoteMid: ' 與',
-    protectionsNoteAfter: '。',
-
     introBefore: '本頁展示',
     introBold1: '代幣化資產（ERC-20）',
     introMid1: '。與交易頁的合成持倉不同，這裡買入的資產會以 ERC-20 token 形式',
@@ -345,20 +312,6 @@ export const tokens = {
     introBold2: '出現在你的錢包中',
     introMid2: '，可加入 MetaMask 檢視、可轉帳給他人。 買賣以 ',
     introAfter: ' 結算，價格取自鏈上 oracle（無滑價）。',
-
-    /** #99：ratioIsStale() 的讀者。買入因此暫停——過期的資產會被
-     *  outstandingValueDetailed() 排除在負債之外，讓儲備率（連帶 mintingHalted
-     *  的觸發條件）比實際樂觀，所以擋的是「整個金庫」的買入，不只是那一項過期
-     *  的資產。賣出不受影響：個別資產若自己的價格過期，redeem 送出時會被合約
-     *  以 StalePrice 擋下，走的是另一條路徑，與這裡的儲備率無關。 */
-    staleRatioBold: '儲備率無法確認',
-    staleRatioBody:
-      '——至少一項已發行資產的價格已過期，儲備率的計算會低估負債、讀起來比實際樂觀。上方數字在有新報價之前不代表金庫是否足額——買入已暫停以策安全。贖回不受影響：無關資產的過期價格不該擋住你賣出。',
-
-    /** #99：AssetVaultV2_3 observeReserve() 鎖存的破線狀態，只擋新的 mint。 */
-    mintingHaltedBold: '鑄造已暫停',
-    mintingHaltedBody:
-      '——鏈上觀測到儲備率跌破門檻（市場價格波動即可觸發，不代表有人操作）。新的買入已暫停，直到下一次觀測顯示已恢復。贖回不受影響，任何時候都可以賣出。',
 
     vaultDryBefore: '提示：賣出由金庫的 USDC 儲備支付。若儲備不足會顯示「vault dry」， 需由管理者呼叫 ',
     vaultDryAfter: ' 補充。',

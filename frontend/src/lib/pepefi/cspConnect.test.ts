@@ -4,7 +4,6 @@ import { fileURLToPath } from 'node:url';
 import { it, expect, describe } from 'vitest';
 
 import { DEFAULT_SIGNAL_API_URL } from './signalApi';
-import { EXPLORER_API_BY_CHAIN } from './vaultFunding';
 import { connectSrcOf, isConnectAllowed, checkSignalApiUrl } from './cspConnect';
 
 const FRONTEND = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
@@ -14,12 +13,6 @@ describe('build-time CSP check for VITE_SIGNAL_API_URL', () => {
   it('reads connect-src from the real vercel.json', () => {
     expect(connectSrcOf(vercel)).toContain("'self'");
     expect(connectSrcOf(vercel).length).toBeGreaterThan(2);
-  });
-
-  it('every explorer the vault funding read calls is allowed', () => {
-    for (const api of Object.values(EXPLORER_API_BY_CHAIN)) {
-      expect(isConnectAllowed(api, connectSrcOf(vercel)), api).toBe(true);
-    }
   });
 
   it('the built-in default signal-api URL is allowed', () => {

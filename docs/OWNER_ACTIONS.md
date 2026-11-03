@@ -422,18 +422,20 @@ PepeAMM 的修正都只存在於原始碼；平台 FeeRouter 的 `platformTreasu
         （`DEPLOY_130_CUTOVER.md` §10）。
 3. **AssetVaultV2 升級到 V2_5**（`DEPLOY_130_CUTOVER.md` §8；**要在治理 phase 2 之前做**，phase 2 之後只能走 timelock）。
    這次升級帶的是安全修正（審查 C12–C16、M1）：即時報價有效期上限 `min(maxPriceAge, 6h)`、任何資產 unpriced 時 mint revert、
-   feed 永久失效時的豁免流程。漏做時金庫照常運作、接線也都對，只有版本號與 bytecode 比對看得出來（第 7 步會抓）。
+   feed 永久失效時的豁免流程；另外把買入手續費的 25% 接上碳權退役（ADR-022，腳本在同一次廣播裡呼叫 `setCarbonRetirement`）。漏做時金庫照常運作、接線也都對，只有版本號與 bytecode 比對看得出來（第 7 步會抓）。
    - 前提：所有有未償額的資產報價都不到 6 小時（先照上面 dispatch keeper），否則腳本拒絕執行。
    - `cd contracts && bash script/check-vault-storage-layout.sh`（只允許尾端追加：`_lastGood` slot 12、`_unpricedExempt` slot 13、
-     `__gap` 從 slot 14 起 41 格、結尾仍是 slot 55）。
+     `carbonRetirement` slot 14、`__gap` 從 slot 15 起 40 格、結尾仍是 slot 55）。
    - fork 模擬：`forge script script/UpgradeVaultToV2_5.s.sol:UpgradeVaultToV2_5 --fork-url $RPC --sender $DEPLOYER`
    - **2026-10-05 已預先驗證（未廣播）：** storage layout 檢查通過（V2_5 = V2_4 尾端追加 `_lastGood` slot 12、`_unpricedExempt`
      slot 13，`__gap` 43→41，結尾 slot 55 不變）；對 Base Sepolia 實況做 fork 模擬成功——升級前 11 個資產、負債
      1357.19、unpriced 0，升級後 `version()` = 2.5.0、負債不變、腳本自我核對「每個欄位與每個資產都一致」，預估 gas 約 357 萬。
+     2026-11-03 起合約多了碳權分流，上面的驗證不再涵蓋現行程式碼，廣播前必須重跑 storage layout 檢查與 fork 模擬。
      廣播時仍要先 dispatch keeper（前提是價格都不到 6 小時），並在廣播當下重跑一次 fork 模擬。
    - broadcast：同一行改成 `--rpc-url $RPC --account $ACCOUNT --sender $DEPLOYER --broadcast --slow`。環境變數 `VAULT_PROXY`
      （預設現行金庫）、`VAULT_MAX_PRICE_AGE`（預設 21600）。
    - 驗證：`cast call 0x916D7Fc399d9afd23BAa113E2c2Cc601341ff10a "version()(string)" --rpc-url $RPC` 必須是 `"2.5.0"`；
+     `carbonRetirement()(address)` 必須是 `0x93B72Dd20913107aC9eEe4e9420D9C8aB802Fd28`；
      更新前端 ABI（§8 第 4 點）。
 4. **InsuranceVault＋平台 FeeRouter＋CopyTracker（同一批）——部署腳本已寫好：`contracts/script/RedeployInsuranceStack.s.sol`
    （測試 `test/RedeployInsuranceStack.t.sol`）。不要用 cast 自己湊。**
