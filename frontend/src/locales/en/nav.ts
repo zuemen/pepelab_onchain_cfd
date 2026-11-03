@@ -16,6 +16,8 @@ export const nav: Catalog['nav'] = {
     terminal: 'Pro Terminal (advanced)',
     x402: 'x402 Signal API',
     marketplace: 'Marketplace',
+    /** With copy trading off, /marketplace is the allocation marketplace; the sidebar must match the page title. */
+    allocationMarketplace: 'Allocations',
     lab: 'Strategy Lab',
     feed: 'Feed',
     vault: 'Vault',

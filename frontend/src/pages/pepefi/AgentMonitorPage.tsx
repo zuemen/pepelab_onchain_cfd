@@ -127,8 +127,8 @@ export default function AgentMonitorPage() {
   )
 
   const [sessions, setSessions] = useState<SessionRisk[]>([])
-  // ADL / 組合保證金開關：讀鏈上，揭露框不寫死狀態（見 lib/pepefi/solvencyFlags.ts）。
-  const [solvency, setSolvency] = useState<SolvencyFlags>({ adl: undefined, portfolioMargin: undefined })
+  // ADL 開關：讀鏈上，揭露框不寫死狀態（見 lib/pepefi/solvencyFlags.ts）。
+  const [solvency, setSolvency] = useState<SolvencyFlags>({ adl: undefined })
   const [oracle,   setOracle]   = useState<OracleRow[]>([])
   const [vault,    setVault]    = useState<{ assets: bigint; sharePrice: bigint } | null>(null)
   const [revenue,  setRevenue]  = useState<Revenue | null>(null)
@@ -235,7 +235,7 @@ export default function AgentMonitorPage() {
   useEffect(() => { void fetchSessions() }, [fetchSessions])
   useEffect(() => {
     let cancelled = false
-    setSolvency({ adl: undefined, portfolioMargin: undefined })
+    setSolvency({ adl: undefined })
     void readSolvencyFlags(contracts?.exchange).then((f) => { if (!cancelled) setSolvency(f) })
     return () => { cancelled = true }
   }, [contracts])

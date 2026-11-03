@@ -1,6 +1,6 @@
 import type { SxProps, Theme } from '@mui/material/styles';
 
-import { useState } from 'react';
+import { useRef, useState, useEffect } from 'react';
 
 import Box from '@mui/material/Box';
 import Alert from '@mui/material/Alert';
@@ -16,23 +16,60 @@ import { tenantDisclosureAdditions } from 'src/tenant/disclosure';
 
 const STORAGE_KEY = 'pepefi:disclosure:collapsed';
 
-function readCollapsed(): boolean {
+/**
+ * 這個瀏覽器第一次看到揭露：展開；之後預設收合，除非使用者選擇展開。
+ * 讀不到儲存空間（無痕模式等）一律展開——寧可多看，不可漏看。
+ */
+function initialCollapsed(): boolean {
   try {
-    return sessionStorage.getItem(STORAGE_KEY) === '1';
+    return localStorage.getItem(STORAGE_KEY) === '1';
   } catch {
     return false;
   }
+}
+
+function markSeen() {
+  try {
+    if (localStorage.getItem(STORAGE_KEY) === null) localStorage.setItem(STORAGE_KEY, '1');
+  } catch {
+    /* 無痕模式等：下次仍然展開 */
+  }
+}
+
+/**
+ * 真的進到畫面才記下「看過了」：有些頁面把揭露放在長頁底部，掛載不等於看過。
+ * 不在渲染期間寫儲存空間（StrictMode 會把初始值函式呼叫兩次）。瀏覽器沒有
+ * IntersectionObserver 時不記，下次仍然展開。
+ */
+function useMarkSeenWhenVisible() {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || typeof IntersectionObserver === 'undefined') return undefined;
+    const io = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) {
+          markSeen();
+          io.disconnect();
+        }
+      },
+      { threshold: 0.25 }
+    );
+    io.observe(el);
+    return () => io.disconnect();
+  }, []);
+  return ref;
 }
 
 /**
  * 合成資產揭露。
  *
  * 「不可忽略、可收合」：沒有關閉按鈕，標題與一句摘要永遠顯示；收合只收起條列細節。
- * 收合狀態存在 sessionStorage（同一個分頁內換頁不必反覆收合），新分頁一律展開——
- * 第一次看到的人一定看得到完整內容。
+ * 第一次看到的人一定看得到完整內容；看過之後預設收合，不再佔掉交易頁的首屏。
  */
 export function SyntheticDisclosure({ sx }: { sx?: SxProps<Theme> }) {
-  const [collapsed, setCollapsed] = useState(readCollapsed);
+  const [collapsed, setCollapsed] = useState(initialCollapsed);
+  const seenRef = useMarkSeenWhenVisible();
   const d = t.common.disclosure;
   // 白標租戶的追加揭露（只能追加在核心三條之後），見 src/tenant/disclosure.ts。
   const extra = tenantDisclosureAdditions(tenant.compliance, locale, d.operatedBy);
@@ -41,7 +78,7 @@ export function SyntheticDisclosure({ sx }: { sx?: SxProps<Theme> }) {
     const next = !collapsed;
     setCollapsed(next);
     try {
-      sessionStorage.setItem(STORAGE_KEY, next ? '1' : '0');
+      localStorage.setItem(STORAGE_KEY, next ? '1' : '0');
     } catch {
       /* 無痕模式等：只影響記憶，不影響顯示 */
     }
@@ -49,6 +86,7 @@ export function SyntheticDisclosure({ sx }: { sx?: SxProps<Theme> }) {
 
   return (
     <Alert
+      ref={seenRef}
       severity="warning"
       variant="outlined"
       role="note"

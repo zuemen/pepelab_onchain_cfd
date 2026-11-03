@@ -92,7 +92,7 @@ export function PositionsPanel({
               aria-pressed={on}
               sx={{
                 ...labelCss,
-                fontSize: 10.5,
+                fontSize: 11,
                 minHeight: 32,
                 px: 1.2,
                 borderRadius: '7px',

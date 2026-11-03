@@ -81,7 +81,7 @@ export function MarketActivity({
           px: 1.2,
           pb: 0.6,
           ...labelCss,
-          fontSize: 9.5,
+          fontSize: 11,
         }}
       >
         <Box>{t.terminal.activity.column.side}</Box>
@@ -138,7 +138,7 @@ export function MarketActivity({
             >
               {pnl === null ? `— ${why?.label ?? ''}` : `${p.isOpen ? '(' : ''}${fNum(pnl, { dp: 2, signed: true })}${p.isOpen ? ')' : ''}`}
               {p.isOpen && (
-                <Box component="span" sx={{ color: C.mut, fontSize: 9, ml: 0.4 }}>
+                <Box component="span" sx={{ color: C.mut, fontSize: 11, ml: 0.4 }}>
                   {t.terminal.activity.openMarker}
                 </Box>
               )}
@@ -148,13 +148,13 @@ export function MarketActivity({
       })}
 
       {truncated && (
-        <Box sx={{ px: 1.2, pt: 0.8, ...monoCss, fontSize: 10, color: C.mut }}>
+        <Box sx={{ px: 1.2, pt: 0.8, ...monoCss, fontSize: 11, color: C.mut }}>
           {t.terminal.activity.truncated}
         </Box>
       )}
       {/* 讀不到的筆數要講出來。靜默跳過會讓不完整的列表看起來像完整的。 */}
       {missed > 0 && (
-        <Box sx={{ px: 1.2, pt: 0.8, ...monoCss, fontSize: 10, color: C.lime }}>
+        <Box sx={{ px: 1.2, pt: 0.8, ...monoCss, fontSize: 11, color: C.lime }}>
           {interpolate(t.terminal.activity.missed, { count: missed })}
         </Box>
       )}

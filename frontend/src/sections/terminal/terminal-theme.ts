@@ -12,7 +12,7 @@ export const C = {
   line: 'rgba(255,255,255,.07)',
   line2: 'rgba(199,249,78,.16)',
   ink: '#e9f0e4',
-  mut: '#7e8c7b',
+  mut: '#98a695',
   green: '#3fd98a',
   greenDim: 'rgba(63,217,138,.14)',
   red: '#ff5d5d',

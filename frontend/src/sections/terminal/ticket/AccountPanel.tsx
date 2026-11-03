@@ -104,12 +104,12 @@ export function AccountPanel({
         color={pnl === null || dim ? C.mut : pnl >= 0 ? C.green : C.red}
       />
       {unreadCount > 0 && (
-        <Box sx={{ fontSize: 10.5, color: C.red, lineHeight: 1.4 }}>
+        <Box sx={{ fontSize: 11, color: C.red, lineHeight: 1.4 }}>
           {interpolate(t.terminal.account.positionsUnread, { count: unreadCount })}
         </Box>
       )}
       {unreadCount === 0 && (dim || pnl === null) && (
-        <Box sx={{ fontSize: 10.5, color: C.red, lineHeight: 1.4 }}>
+        <Box sx={{ fontSize: 11, color: C.red, lineHeight: 1.4 }}>
           {pnl === null && !dim ? t.terminal.account.pnlPartial : freshnessLabel}
         </Box>
       )}
@@ -148,7 +148,7 @@ export function AccountPanel({
         k={interpolate(t.terminal.account.wallet, { token: stable })}
         v={fNum(fromUnits(stable === 'USDC' ? usdcBal : usdtBal, 18))}
       />
-      <Box sx={{ ...monoCss, fontSize: 10, color: C.mut, lineHeight: 1.4 }}>
+      <Box sx={{ ...monoCss, fontSize: 11, color: C.mut, lineHeight: 1.4 }}>
         {t.terminal.account.marginNote}
       </Box>
 

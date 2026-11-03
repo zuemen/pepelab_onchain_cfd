@@ -1,8 +1,10 @@
 import { t } from 'src/locales'
 
+import { isTransientNodeFailure } from './rpcThrottle'
+
 // ----------------------------------------------------------------------
 
-export function prettyError(err: unknown, context?: 'mining' | 'tier' | 'copy' | 'checkin' | 'checkinPoints' | 'checkinUnknown' | 'adopt'): string {
+export function prettyError(err: unknown, context?: 'read' | 'mining' | 'tier' | 'copy' | 'checkin' | 'checkinPoints' | 'checkinUnknown' | 'adopt'): string {
   if (!err) return t.errors.unknown
 
   // 合約錯誤 → 使用者看得懂的說法。訊息本身住在 catalog。
@@ -55,11 +57,22 @@ export function prettyError(err: unknown, context?: 'mining' | 'tier' | 'copy' |
   const msgLower = `${revertName ?? ''} ${msg}`.toLowerCase()
   
   for (const [keyword, friendly] of Object.entries(ERROR_MAP)) {
+    // 讀取不是交易：通用的 execution reverted 不能翻成「交易執行失敗」，交給下面的讀取情境處理。
+    if (context === 'read' && keyword === 'execution reverted') continue
     if (msgLower.includes(keyword.toLowerCase())) return friendly
   }
 
+  // 2b. 節點限流、連線失敗：不是交易被合約拒絕，不能講成「買進失敗」或「交易失敗」。
+  // 放在關鍵字掃描之後：錢包常把餘額不足包成 -32603，那要照餘額不足說。
+  if (isTransientNodeFailure(err)) return t.errors.nodeUnavailable
+
   // 3. Fallback for generic reverts using context
   if (msgLower.includes('missing revert data') || msgLower.includes('execution reverted') || msgLower.includes('3: execution reverted')) {
+    // 讀鏈失敗：沒有送出任何交易，不能套用交易失敗的說法。
+    // 合約明確拒絕時重試不會好，不能叫人「稍後再試」；沒有 revert 資料才可能是節點的問題。
+    if (context === 'read') {
+      return msgLower.includes('missing revert data') ? t.errors.nodeUnavailable : t.errors.readReverted;
+    }
     if (context === 'copy') {
       return t.errors.reverted.copy;
     }
@@ -94,5 +107,6 @@ export function prettyError(err: unknown, context?: 'mining' | 'tier' | 'copy' |
   // 這種東西：看不懂、沒有可行動的資訊，還會把 RPC 端點與內部欄位漏到畫面上。
   // 這裡只給一句能行動的話，原文留給 console 供開發者查。
   console.warn('[prettyError] unmapped error:', err)
+  if (context === 'read') return t.errors.nodeUnavailable
   return t.errors.unrecognised
 }

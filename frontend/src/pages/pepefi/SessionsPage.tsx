@@ -664,7 +664,7 @@ export default function SessionsPage() {
                           <TableCell sx={{ fontFamily: MONO }}>{s.id}</TableCell>
                           <TableCell sx={{ fontFamily: MONO }}>
                             {short(s.agent)}
-                            <Box component="span" sx={{ display: 'block', fontSize: 10, color: 'text.disabled', maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis' }} title={agentDid(s.agent)}>
+                            <Box component="span" sx={{ display: 'block', fontSize: 11, color: 'text.disabled', maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis' }} title={agentDid(s.agent)}>
                               {shortDid(s.agent)}
                             </Box>
                           </TableCell>

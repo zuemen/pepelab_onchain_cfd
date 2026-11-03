@@ -60,8 +60,8 @@ export function BookPanel({
           borderBottom: `1px solid ${C.line}`,
         }}
       >
-        <Box sx={{ ...labelCss, fontSize: 10, color: C.mut }}>{t.terminal.activity.title}</Box>
-        <Box sx={{ ml: 'auto', ...monoCss, fontSize: 9.5, color: C.mut, whiteSpace: 'nowrap' }}>
+        <Box sx={{ ...labelCss, fontSize: 11, color: C.mut }}>{t.terminal.activity.title}</Box>
+        <Box sx={{ ml: 'auto', ...monoCss, fontSize: 11, color: C.mut, whiteSpace: 'nowrap' }}>
           {t.terminal.activity.onChainBadge}
         </Box>
       </Box>

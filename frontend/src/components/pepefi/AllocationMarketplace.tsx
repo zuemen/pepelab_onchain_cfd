@@ -123,7 +123,7 @@ export default function AllocationMarketplace() {
       setHiddenCount(published.filter((p) => !p.spot.ok).length);
     } catch (e) {
       console.error('[allocations] load failed', e);
-      setLoadError(prettyError(e, 'adopt'));
+      setLoadError(prettyError(e, 'read'));
     } finally {
       setLoading(false);
     }

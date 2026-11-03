@@ -78,7 +78,7 @@ function HashOrPlain({ value, plain }: { value: string; plain?: string }) {
     <Tooltip title={value}>
       <Box component="span" sx={{ fontFamily: MONO, fontSize: '0.75rem', whiteSpace: 'nowrap' }}>
         {`${value.slice(0, 10)}…${value.slice(-6)}`}{' '}
-        <Chip size="small" variant="outlined" label={t.admin.kyc.queue.hashedLabel} sx={{ height: 18, fontSize: 10 }} />
+        <Chip size="small" variant="outlined" label={t.admin.kyc.queue.hashedLabel} sx={{ height: 18, fontSize: 11 }} />
       </Box>
     </Tooltip>
   )

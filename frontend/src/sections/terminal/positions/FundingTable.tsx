@@ -99,7 +99,7 @@ export function FundingTable({
           )
         })}
 
-        <Box sx={{ px: 2, py: 1.2, ...monoCss, fontSize: 10.5, color: C.mut, lineHeight: 1.5 }}>
+        <Box sx={{ px: 2, py: 1.2, ...monoCss, fontSize: 11, color: C.mut, lineHeight: 1.5 }}>
           {t.terminal.funding.note}
         </Box>
       </Box>

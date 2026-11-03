@@ -5,6 +5,8 @@ import type { Catalog } from '../zh-TW';
  */
 export const status: Catalog['status'] = {
   market: {
+    /** Below the market tabs: explains a row of Reduce-only badges, which otherwise looks like the whole site is locked. */
+    reduceOnlyHint: 'Reduce-only means the market is closed or not accepting new positions: you can still close existing positions, and new ones open when the market does. US stocks and ETFs trade Mon-Fri 09:30-16:00 ET. 🔒 means opening a position requires passing an eligibility check.',
     badge: {
       always: 'Trades 24/7',
       open: 'Market open',

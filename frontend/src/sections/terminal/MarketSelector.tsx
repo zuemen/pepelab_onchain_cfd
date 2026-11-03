@@ -3,6 +3,7 @@ import type { MarketStatus } from 'src/lib/pepefi/marketStatus'
 
 import Box from '@mui/material/Box'
 
+import { t } from 'src/locales'
 import { assetPolicy } from 'src/tenant'
 import { ASSETS_LIST } from 'src/lib/pepefi/assetMeta'
 
@@ -30,7 +31,9 @@ export function MarketSelector({
   onSelect: (id: AssetId) => void
   statusFor?: (id: AssetId) => MarketStatus
 }) {
+  const anyReduceOnly = statusFor ? SELECTABLE.some((a) => statusFor(a.id as AssetId).kind === 'reduceOnly') : false
   return (
+    <>
     <Box
       sx={{
         display: 'flex',
@@ -38,7 +41,9 @@ export function MarketSelector({
         overflowX: 'auto',
         pb: 1,
         mb: 1.5,
-        '&::-webkit-scrollbar': { height: 0 },
+        // 標的放不下時要看得出來還能捲，不把捲軸藏掉。
+        '&::-webkit-scrollbar': { height: 6 },
+        '&::-webkit-scrollbar-thumb': { bgcolor: C.line2, borderRadius: 3 },
       }}
     >
       {SELECTABLE.map((a) => {
@@ -78,5 +83,12 @@ export function MarketSelector({
         <RwaInfoLink dense />
       </Box>
     </Box>
+    {/* 只掛「只能減倉」看不出原因，整排鎖住會像網站壞了。 */}
+    {anyReduceOnly && (
+      <Box data-testid="market-reduce-only-hint" sx={{ mb: 1.5, mt: -0.5, fontSize: 12.5, lineHeight: 1.5, color: C.mut }}>
+        {t.status.market.reduceOnlyHint}
+      </Box>
+    )}
+    </>
   )
 }

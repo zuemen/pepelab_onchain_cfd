@@ -47,7 +47,7 @@ export function MarketStatusBadge({
         bgcolor: onAccent ? C.bg : c.bg,
         color: c.fg,
         ...monoCss,
-        fontSize: variant === 'full' ? 11.5 : 10,
+        fontSize: variant === 'full' ? 11.5 : 11,
         fontWeight: 700,
         lineHeight: 1.35,
         whiteSpace: variant === 'full' ? 'normal' : 'nowrap',

@@ -18,6 +18,8 @@ export const nav = {
     terminal: '專業終端（進階）',
     x402: 'x402 訊號 API',
     marketplace: '交易市集',
+    /** 跟單旗標關閉時 /marketplace 是配置市集，側欄要跟頁面標題一致。 */
+    allocationMarketplace: '配置市集',
     lab: '策略實驗室',
     feed: '動態',
     vault: '保險金庫',

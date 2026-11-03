@@ -5,7 +5,7 @@ import { paths } from 'src/routes/paths';
 
 import { t } from 'src/locales';
 import { CONFIG } from 'src/global-config';
-import { isPathEnabled, SHOW_PERPETUALS } from 'src/lib/pepefi/featureFlags';
+import { isPathEnabled, SHOW_PERPETUALS, FEATURE_COPY_TRADING } from 'src/lib/pepefi/featureFlags';
 
 import { SvgColor } from 'src/components/svg-color';
 
@@ -69,7 +69,7 @@ export const navData: NavSectionProps['data'] = byFeatureFlags([
       { title: t.nav.item.portfolio, path: paths.pepefi.portfolio, icon: ICONS.analytics },
       { title: t.nav.item.tokens, path: paths.pepefi.tokens, icon: ICONS.product },
       { title: t.nav.item.exchange, path: paths.pepefi.exchange, icon: ICONS.ecommerce },
-      { title: t.nav.item.marketplace, path: paths.pepefi.marketplace, icon: ICONS.invoice },
+      { title: FEATURE_COPY_TRADING ? t.nav.item.marketplace : t.nav.item.allocationMarketplace, path: paths.pepefi.marketplace, icon: ICONS.invoice },
       { title: t.nav.item.lab, path: paths.pepefi.lab, icon: ICONS.params },
       { title: t.nav.item.feed, path: paths.pepefi.feed, icon: ICONS.chat },
       { title: t.nav.item.history, path: paths.pepefi.history, icon: ICONS.order },

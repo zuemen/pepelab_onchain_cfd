@@ -37,7 +37,7 @@ function DateCell({ date, chainTime, compressed }: { date: string | null; chainT
     <>
       <Box sx={{ fontSize: '0.6875rem', color: 'text.secondary' }}>{date ?? '—'}</Box>
       {compressed && chainTime !== null && (
-        <Box sx={{ fontSize: '0.625rem', color: 'text.disabled' }}>{interpolate(L.chainTime, { time: fChainTime(chainTime) })}</Box>
+        <Box sx={{ fontSize: '0.6875rem', color: 'text.disabled' }}>{interpolate(L.chainTime, { time: fChainTime(chainTime) })}</Box>
       )}
     </>
   );
@@ -57,7 +57,7 @@ function PnlCell({ trade }: { trade: HeroTrade }) {
         ({trade.grossPnlUsd !== null && trade.grossPnlUsd >= 0 ? '+' : ''}{fUsd(trade.grossPnlUsd)})
       </Box>
       {trade.liquidated && (
-        <Chip size="small" color="error" variant="outlined" label={L.liquidated} sx={{ height: 18, fontSize: '0.625rem' }} />
+        <Chip size="small" color="error" variant="outlined" label={L.liquidated} sx={{ height: 18, fontSize: '0.6875rem' }} />
       )}
     </Stack>
   );

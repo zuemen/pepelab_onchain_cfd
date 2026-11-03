@@ -47,7 +47,7 @@ export function DataSourceBadge({
         display: 'inline-flex',
         alignItems: 'center',
         gap: 0.6,
-        fontSize: 10.5,
+        fontSize: 11,
         color,
         border: `1px solid ${simulated ? C.redDim : C.line}`,
         borderRadius: '6px',
