@@ -10,8 +10,8 @@ interface IUpgradeable25 {
 }
 
 /// @notice Upgrades the AssetVault proxy from V2.4 to V2.5 (bounded M-7
-///         last-good price fallback). Storage: two appended fields
-///         (`_lastGood`, `_unpricedExempt`) taken from the front of __gap (43 -> 41) — check it
+///         last-good price fallback, buy fee's carbon share). Storage: three appended fields
+///         (`_lastGood`, `_unpricedExempt`, `carbonRetirement`) taken from the front of __gap (43 -> 40) — check it
 ///         BEFORE broadcasting with `script/check-vault-storage-layout.sh`.
 ///
 ///         No initializer: `_lastGood` starts empty, so the vault behaves
@@ -32,15 +32,19 @@ interface IUpgradeable25 {
 ///         proxy ran at 30 days; V2.5 caps live quotes at 6h anyway
 ///         (`effectiveMaxPriceAge`), this makes the stored parameter say so.
 ///         Redeem fee and min reserve ratio are re-written unchanged.
+///         Third call: `setCarbonRetirement` starts routing the buy fee's carbon
+///         share; the keeper's existing crank retires whatever arrives.
 ///
 ///         Precondition: every outstanding asset has a quote younger than 6h
 ///         (dispatch the keeper first) — otherwise the upgrade would turn
 ///         them unpriced and block mints; the script refuses.
 ///
 ///         Env: VAULT_PROXY (default Base Sepolia 0x916D…f10a),
-///              VAULT_MAX_PRICE_AGE (default 21600, must be 1..21600).
+///              VAULT_MAX_PRICE_AGE (default 21600, must be 1..21600),
+///              CARBON_RETIREMENT (default Base Sepolia 0x93B7…Fd28).
 contract UpgradeVaultToV2_5 is Script {
     address internal constant BASE_SEPOLIA_VAULT = 0x916D7Fc399d9afd23BAa113E2c2Cc601341ff10a;
+    address internal constant BASE_SEPOLIA_CARBON_RETIREMENT = 0x93B72Dd20913107aC9eEe4e9420D9C8aB802Fd28;
 
     error StatePreservationFailed(string field);
 
@@ -57,6 +61,7 @@ contract UpgradeVaultToV2_5 is Script {
         require(v.hasRole(v.RISK_ROLE(), deployer), "broadcaster lacks RISK_ROLE (needed to lower maxPriceAge in the same run)");
         uint256 newMaxAge = vm.envOr("VAULT_MAX_PRICE_AGE", uint256(21_600));
         require(newMaxAge > 0 && newMaxAge <= 21_600, "VAULT_MAX_PRICE_AGE must be 1..21600");
+        address retirement = vm.envOr("CARBON_RETIREMENT", BASE_SEPOLIA_CARBON_RETIREMENT);
 
         // Snapshot, so the upgrade is checked rather than trusted.
         uint256 feesBefore      = v.accruedFees();
@@ -91,6 +96,7 @@ contract UpgradeVaultToV2_5 is Script {
         AssetVaultV2_5 impl = new AssetVaultV2_5();
         IUpgradeable25(proxy).upgradeToAndCall(address(impl), "");
         AssetVaultV2_5(proxy).setRiskParams(redeemFeeBefore, minRatioBefore, newMaxAge);
+        AssetVaultV2_5(proxy).setCarbonRetirement(retirement);
         vm.stopBroadcast();
         console.log("new implementation:", address(impl));
 
@@ -103,6 +109,7 @@ contract UpgradeVaultToV2_5 is Script {
         if (n.redeemFeeBps()       != redeemFeeBefore) revert StatePreservationFailed("redeemFeeBps");
         if (n.minReserveRatioBps() != minRatioBefore)  revert StatePreservationFailed("minReserveRatioBps");
         if (n.maxPriceAge()        != newMaxAge)       revert StatePreservationFailed("maxPriceAge (lowered)");
+        if (n.carbonRetirement()   != retirement)      revert StatePreservationFailed("carbonRetirement");
         maxAgeBefore;
         if (n.mintingHalted()      != haltedBefore)    revert StatePreservationFailed("mintingHalted");
         if (n.paused()             != pausedBefore)    revert StatePreservationFailed("paused");

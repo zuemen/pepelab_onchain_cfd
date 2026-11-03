@@ -30,49 +30,41 @@ export const tokens: Catalog['tokens'] = {
   titleSimple: 'Assets',
   subtitle: 'ERC-20 Tokenized Assets',
 
-  /** Which protections this vault has — a single-column list, shown only when the hardened vault is actually deployed (see the component). */
-  protections: {
-    title: 'What this vault protects against',
-    items: [
-      { label: 'ERC-20 transfer', detail: 'SafeERC20' },
-      { label: 'Reentrancy protection', detail: 'ReentrancyGuard' },
-      { label: 'Pause mechanism', detail: 'Pausable' },
-      { label: 'Access model', detail: 'AccessControl (role separation)' },
-      { label: 'Upgradeability', detail: 'UUPS proxy' },
-      { label: 'Oracle', detail: 'GuardedOracle (multiple keepers + deviation cap)' },
-      { label: 'Issuance cap', detail: 'Per-asset cap' },
-      { label: 'Reserve-ratio protection', detail: 'Rejects mint below the floor' },
-      { label: 'Fee', detail: 'Mint fee' },
-    ],
-  },
-
   notDeployed: 'Tokenized assets are not enabled on this network (AssetVault not deployed).',
 
   /** Hardened-features health panel. */
   health: {
-    title: '🛡️ Vault protections & health (live on-chain values)',
-    reserveRatio: 'Reserve ratio',
-    reserveRatioInfinite: '∞ (nothing issued yet)',
-    reserveRatioUnknown: 'Cannot confirm',
-    reserveRatioNote:
-      "The vault's USDC reserve divided by the total value of issued tokens. Mint is rejected below the floor.",
-    reserveRatioNoteStale:
-      "At least one asset's price is stale, so this number may understate the liability and read more optimistic than reality — treat it as unknown, not healthy, until a fresh price arrives.",
-    status: 'Status',
-    paused: 'Paused',
-    running: 'Running',
-    mintingHalted: 'Minting halted',
-    pausableNote: 'Pausable: PAUSER_ROLE can halt buying and selling in an emergency.',
-    accruedFees: 'Accrued fees',
-    guardedOracle: 'GuardedOracle',
-    guardedOracleNote:
-      'A multi-keeper oracle — any single update that deviates past the cap is rejected.',
+    paused: 'The vault is paused: you can neither buy nor redeem right now.',
+    unknown: "An asset can't be priced right now, so the vault's reserve can't be confirmed. New buying is paused.",
+    buyStopped: 'The vault reserve is below the floor. New buying is paused; redemption is unaffected.',
     /** This chain runs the original implementation, without these protections — no version number named. */
     notHardened:
       "The vault on this network has no SafeERC20, reserve-ratio protection, or pause mechanism yet. A deployed contract's bytecode can't be changed; these protections are already live on other deployments, and when this network catches up is the operator's call.",
-    simpleNote: 'Reserve {ratio} — redeem any time.',
     simpleNotConnected: "This chain's vault reserve isn't hooked up to automated verification yet.",
-    simpleMintingHalted: 'New buying is paused (reserve {ratio}) — redemption is unaffected.',
+  },
+
+  buyFlow: {
+    title: 'How buying works',
+    steps: [
+      { title: 'Have USDC ready', body: 'Everything settles in USDC. This is a testnet, so it is test money, not real money.' },
+      { title: 'Check the carbon tier', body: "Every asset has a carbon tier, and the tier sets its buy fee." },
+      { title: 'Buy', body: 'The fee comes off first; the rest converts to tokens at the current price and lands in your wallet.' },
+      { title: 'Redeem', body: "When you want out, you start the redemption and get USDC back at the current price. The fee ignores carbon tier. If the vault runs short of USDC, it can't complete for a while." },
+    ],
+    highOrUnrated: 'High / Unrated',
+    carbonTitle: 'Fees and carbon retirement',
+    simulatedChip: 'Simulated credits',
+    chainRest: ['Buys carbon credits', 'Burned on the spot'],
+    linked: {
+      chainStart: '{share} of the buy fee',
+      body: 'A higher carbon tier means a higher buy fee and more sent to retirement. On the same 100 USDC buy, Low sends {low} USDC and High sends {high} USDC. The share is fixed in the contract, and every retirement is publicly verifiable.',
+      note: 'The credits are simulated testnet tokens and represent no real emission reduction.',
+    },
+    unlinked: {
+      chainStart: '5% of platform fees',
+      body: 'The share is fixed in the contracts, nobody can redirect it, and every retirement is publicly verifiable.',
+      note: "Retirement is currently funded by the platform's other fees; the buy fee here stays in the vault and isn't connected to retirement yet. The credits are simulated testnet tokens and represent no real emission reduction.",
+    },
   },
 
   card: {
@@ -96,7 +88,6 @@ export const tokens: Catalog['tokens'] = {
       actions: 'Actions',
       // #136: Expert-only columns.
       issuedOverCap: 'Issued / Cap',
-      priceUpdatedAt: 'Oracle Updated',
       attestationCount: 'Attestations',
       assetId: 'Asset ID',
     },
@@ -120,7 +111,7 @@ export const tokens: Catalog['tokens'] = {
     cancel: 'Cancel',
     confirm: 'Confirm',
     working: 'Processing…',
-    buyDisabledNotice: "Can't buy right now — see “Vault protections & health” above.",
+    buyDisabledNotice: "Can't buy right now — see the notice above the asset table.",
     sellDisabledNotice: "Can't redeem right now — this vault is paused.",
     noBalanceNotice: "You don't hold any of this asset — there's nothing to redeem.",
   },
@@ -276,7 +267,7 @@ export const tokens: Catalog['tokens'] = {
     intro: "An RWA platform's value is knowing who is on the line. Anonymity is crypto's value, not an RWA's.",
     priceRole: 'Price',
     priceWho:
-      'A keeper pulls quotes from CoinGecko / Yahoo Finance and writes them to GuardedOracle (multiple keepers, per-update deviation cap). Stale quotes are not written on-chain.',
+      'A keeper pulls quotes from CoinGecko / Yahoo Finance and writes them to GuardedOracle (per-update deviation cap). Stale quotes are not written on-chain.',
     carbonRole: 'Carbon attestation',
     carbonWho:
       "Carbon intensity is taken from each issuer's own public filings (sustainability reports, 10-Ks); source URLs and retrieval dates are recorded in docs/data/carbon-intensity.md.",
@@ -293,10 +284,6 @@ export const tokens: Catalog['tokens'] = {
 
   /** #36：四段句中夾標記的說明，各自拆成標記前後的片段。 */
   markup: {
-    protectionsNoteBefore: 'See ',
-    protectionsNoteMid: ' and',
-    protectionsNoteAfter: '.',
-
     introBefore: 'This page showcases ',
     introBold1: 'tokenized assets (ERC-20)',
     introMid1:
@@ -305,14 +292,6 @@ export const tokens: Catalog['tokens'] = {
     introBold2: 'right in your wallet',
     introMid2: ', where you can add it to MetaMask or send it to someone else. Trading settles in ',
     introAfter: ', with pricing pulled from the on-chain oracle (no slippage).',
-
-    staleRatioBold: 'Reserve ratio cannot be confirmed',
-    staleRatioBody:
-      " — at least one issued asset's price is stale, so the reserve ratio understates the liability and reads more optimistic than reality. The number above doesn't reflect whether the reserve covers what's owed until a fresh price arrives — buying is paused as a precaution. Redemption is unaffected: a stale price on an unrelated asset should never stop you from selling.",
-
-    mintingHaltedBold: 'Minting paused',
-    mintingHaltedBody:
-      " — an on-chain observation found the reserve ratio below the floor (a market move alone can trigger this; nobody has to be transacting). New buys are paused until a later observation shows it has recovered. Redemption is unaffected — you can sell at any time.",
 
     vaultDryBefore:
       'Note: sells are paid from the vault\'s USDC reserve. If the reserve runs low, you\'ll see "vault dry" — an admin needs to call ',

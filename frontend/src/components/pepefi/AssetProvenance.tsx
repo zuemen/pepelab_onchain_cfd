@@ -64,7 +64,7 @@ export interface AssetProvenanceSummaryProps {
 
 /**
  * 表格列與詳情層標題共用的摘要 chip：碳分級。價格新鮮度不在這裡顯示——過期時
- * 買進鈕本身會停用，Expert 另有「預言機更新時間」欄。
+ * 買進鈕本身會停用。
  */
 export function AssetProvenanceSummary({ tier, nowrap = false }: AssetProvenanceSummaryProps) {
   const tp = t.tokens.provenance

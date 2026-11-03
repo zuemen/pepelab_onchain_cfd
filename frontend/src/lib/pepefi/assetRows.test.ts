@@ -51,7 +51,6 @@ function chainRow(over: Partial<AssetRowChainData> = {}): AssetRowChainData {
     symbol: 'sTEST',
     meta: meta(),
     price: 100_00000000n, // 8-dec
-    updatedAtSec: Math.floor(NOW_MS / 1000) - 60, // 1 分鐘前
     balance: 0n,
     cap: 0n,
     issued: 0n,
@@ -161,30 +160,6 @@ describe('buildAssetRows · 贖回可用性', () => {
   })
 })
 
-describe('buildAssetRows · 價格新鮮度', () => {
-  it('剛更新的價格分級為 live', () => {
-    const [row] = buildAssetRows([chainRow({ updatedAtSec: Math.floor(NOW_MS / 1000) - 60 })], OPEN_GATE, {
-      nowMs: NOW_MS,
-      maxPriceAgeSec: 21600,
-    })
-    expect(row.freshness.level).toBe('live')
-  })
-
-  it('超過 maxPriceAgeSec 的價格分級為 stale', () => {
-    const [row] = buildAssetRows(
-      [chainRow({ updatedAtSec: Math.floor(NOW_MS / 1000) - 999999 })],
-      OPEN_GATE,
-      { nowMs: NOW_MS, maxPriceAgeSec: 21600 },
-    )
-    expect(row.freshness.level).toBe('stale')
-  })
-
-  it('updatedAtSec 為 0（從未讀到）分級為 unknown', () => {
-    const [row] = buildAssetRows([chainRow({ updatedAtSec: 0 })], OPEN_GATE, { nowMs: NOW_MS })
-    expect(row.freshness.level).toBe('unknown')
-  })
-})
-
 describe('buildAssetRows · 缺失資料時 fail-closed', () => {
   it('meta 是 undefined 時仍然回一列，name 退回 symbol、分級為未評等', () => {
     const [row] = buildAssetRows([chainRow({ meta: undefined })], OPEN_GATE, { nowMs: NOW_MS })
@@ -259,15 +234,14 @@ describe('sortAssetRows · 預設排序（依碳分級）', () => {
 })
 
 describe('buildAssetRows · 逐字傳遞給 Expert 專屬欄位用的原始資料', () => {
-  it('cap / issued / updatedAtSec 原樣帶到 AssetRow 上，不重新計算', () => {
+  it('cap / issued 原樣帶到 AssetRow 上，不重新計算', () => {
     const [row] = buildAssetRows(
-      [chainRow({ cap: 500_000000000000000000n, issued: 120_000000000000000000n, updatedAtSec: 12345 })],
+      [chainRow({ cap: 500_000000000000000000n, issued: 120_000000000000000000n })],
       OPEN_GATE,
       { nowMs: NOW_MS },
     )
     expect(row.cap).toBe(500_000000000000000000n)
     expect(row.issued).toBe(120_000000000000000000n)
-    expect(row.updatedAtSec).toBe(12345)
   })
 
   it('見證筆數原樣帶過去；讀不到是 null，不是 0（0 筆＝確實沒有見證）', () => {
@@ -293,16 +267,16 @@ describe('assetRowColumnsForMode · issue #136 Mode 分流', () => {
     ])
   })
 
-  it('Expert 在 Simple 的基礎上多發行量／上限、預言機更新時間、見證筆數、資產 id 四欄', () => {
+  it('Expert 在 Simple 的基礎上多發行量／上限、見證筆數、資產 id 三欄', () => {
     const expert = assetRowColumnsForMode('expert')
     const simple = assetRowColumnsForMode('simple')
     for (const key of simple) expect(expert).toContain(key)
     expect(expert).toEqual(
-      expect.arrayContaining(['issuedOverCap', 'priceUpdatedAt', 'attestationCount', 'assetId'])
+      expect.arrayContaining(['issuedOverCap', 'attestationCount', 'assetId'])
     )
-    expect(expert.length).toBe(simple.length + 4)
-    // 順序照 #136 驗收條件：發行量／上限、預言機更新時間、見證筆數、資產 id。
-    expect(expert.indexOf('attestationCount')).toBe(expert.indexOf('priceUpdatedAt') + 1)
+    expect(expert.length).toBe(simple.length + 3)
+    // 順序：發行量／上限、見證筆數、資產 id。
+    expect(expert.indexOf('attestationCount')).toBe(expert.indexOf('issuedOverCap') + 1)
     expect(expert.indexOf('assetId')).toBe(expert.indexOf('attestationCount') + 1)
   })
 

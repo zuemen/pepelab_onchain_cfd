@@ -3,11 +3,14 @@ import type { RwaSnapshot } from 'src/lib/pepefi/rwaCards'
 import type { AssetSymbol } from 'src/contracts/addresses'
 
 import Box from '@mui/material/Box'
+import Card from '@mui/material/Card'
 import Alert from '@mui/material/Alert'
 import Button from '@mui/material/Button'
 import Typography from '@mui/material/Typography'
 
 import { t } from 'src/locales'
+
+import { WhoRunsWhat } from '../AssetProvenance'
 
 import { RwaAssetCard } from './RwaAssetCard'
 import { RwaPagesNav } from './RwaPagesNav'
@@ -83,6 +86,10 @@ export function RwaCardsView({ symbols, snapshot, loading, chainId, source, nowS
           />
         ))}
       </Box>
+
+      <Card sx={{ p: 2.5 }}>
+        <WhoRunsWhat />
+      </Card>
     </Box>
   )
 }

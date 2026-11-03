@@ -123,6 +123,21 @@ issue: "#105（#93 的可犧牲項）、#333"
 - **受益人規則**：同一噸只能被一方宣稱。畫面寫「促成平台退役 X 噸」，不寫「你抵銷了 X 噸」，也不寫「碳中和」
   （比照真實碳權市場的受益人規則與歐盟指令 2024/825）。`frontend/src/locales/carbonWording.test.ts` 釘住退役相關字串。
 
+## 2026-11-03 更新：買入手續費也接上退役
+
+原本退役的資金只來自 `FeeRouter` 的平台份額（跟單手續費、績效費、x402 收入）。現貨買進的手續費留在 `AssetVaultV2` 的
+`accruedFees`，碳分級決定費率，卻碰不到退役。這讓「買得越高碳、退役越多」這句話不成立。
+
+`AssetVaultV2_5.mint` 現在把手續費的 `CARBON_FEE_SHARE_BPS`（2500，常數）直接轉給 `carbonRetirement`，其餘才進
+`accruedFees`。同樣買 100 USDC：低碳撥 0.025 USDC，高碳撥 0.25 USDC。
+
+- **直接轉出，不經 `PlatformFeeSplitter`。** 分流合約會再切一次比例，而且 `withdrawFees` 只要先動手就能繞過一個「之後才掃」
+  的設計；留在 `mint` 裡，營運方沒有先提走的路徑。
+- **`reserve()` 不變。** 餘額與 `accruedFees` 同時少同一筆，儲備率的計算不受影響。贖回費不分流：出場不看碳分級。
+- **`setCarbonRetirement` 只能設一次，且會檢查結算幣相同。** 比照 `bindFeeRouter`。沒有設定的金庫（例如租戶部署）行為不變。
+- **keeper 不用改。** `crankCarbon` 本來就把退役合約的整筆預算花掉。
+- **這段只對還沒廣播的 V2_5 生效。** 前端讀 `carbonRetirement()`，鏈上還沒接上時，畫面照實說買入手續費尚未接上。
+
 ## 需要人做的事
 
 1. 決定 `carbonShareBps`、模擬價格與模擬賣方地址。

@@ -8,6 +8,7 @@ import "../../src/v2/AssetVaultV2_5.sol";
 import "../../src/v2/SyntheticAssetV2.sol";
 import "../../src/MockUSDC.sol";
 import "../../src/MockOracle.sol";
+import "../../src/CarbonRetirement.sol";
 import "../../script/UpgradeVaultToV2_5.s.sol";
 
 /// @notice V2.5: UUPS upgrade of a live V2.4 proxy + the bounded M-7
@@ -90,6 +91,8 @@ contract AssetVaultV2_5UpgradeTest is Test {
 
     function test_upgradeScriptChecksAndPreservesState() public {
         vm.setEnv("VAULT_PROXY", vm.toString(address(vault)));
+        CarbonRetirement retirement = new CarbonRetirement(address(usdc), address(1), address(2), 1);
+        vm.setEnv("CARBON_RETIREMENT", vm.toString(address(retirement)));
         UpgradeVaultToV2_5 s = new UpgradeVaultToV2_5();
         s.setBroadcasterOverride(admin);
         s.run();
@@ -97,6 +100,7 @@ contract AssetVaultV2_5UpgradeTest is Test {
         assertEq(AssetVaultV2_5(address(vault)).maxPriceAge(), 21_600, "lowered in the same run");
         assertEq(AssetVaultV2_5(address(vault)).redeemFeeBps(), 25, "other risk params untouched");
         assertEq(AssetVaultV2_5(address(vault)).minReserveRatioBps(), 12_000);
+        assertEq(AssetVaultV2_5(address(vault)).carbonRetirement(), address(retirement), "routing on in the same run");
     }
 
     function test_lastGoodLivesInTheOldGapFrontSlot() public {

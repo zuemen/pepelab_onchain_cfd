@@ -40,6 +40,14 @@ const PARAMS: Record<Exclude<Tier, 'unrated'>, CarbonTierParams> = {
   high: { tradingFeeBps: 100, borrowFeeBpsPerHour: 10, maxLeverage: 1 },
 }
 
+/** AssetVaultV2_5.CARBON_FEE_SHARE_BPS：買入手續費撥去碳權退役的比例。 */
+export const CARBON_FEE_SHARE_BPS = 2500
+
+/** 買 100 USDC 時撥去退役的 USDC（手續費 bps × 比例 bps ÷ 1e6）。 */
+export function carbonSharePer100Usdc(tier: Tier): number {
+  return (paramsFor(tier).tradingFeeBps * CARBON_FEE_SHARE_BPS) / 1_000_000
+}
+
 /**
  * 把一個營收基準的碳強度對應到級距。
  *

@@ -9,10 +9,6 @@ import { t } from 'src/locales'
 import type { AssetMeta } from './assetMeta'
 import { holdingValue } from './assetClass'
 import { attestationExpired, paramsFor, type Tier } from './carbon'
-import { classifyFreshness, type Freshness } from './priceFreshness'
-
-/** 合約的 maxPriceAge；預設 Base Sepolia 的 6 小時，對齊 AssetProvenanceBody。 */
-export const DEFAULT_MAX_PRICE_AGE_SEC = 21600
 
 /** 一顆資產從鏈上讀回來的原始資料——這個模組唯一需要的輸入。 */
 export interface AssetRowChainData {
@@ -20,8 +16,6 @@ export interface AssetRowChainData {
   meta: AssetMeta | undefined
   /** 8-dec oracle 價格，0n 代表尚未讀到。 */
   price: bigint
-  /** oracle updatedAt（秒），0 代表尚未讀到。 */
-  updatedAtSec: number
   /** 18-dec 代幣餘額。 */
   balance: bigint
   /**
@@ -72,13 +66,11 @@ export interface AssetRow {
    * 一步才轉成 Number。
    */
   usdValue: bigint
-  freshness: Freshness
   canBuy: boolean
   canSell: boolean
   /** #136：Expert 專屬欄位的原始資料，逐字帶過來，見 AssetRowChainData。 */
   cap: bigint
   issued: bigint
-  updatedAtSec: number
   /** null＝讀不到或本鏈沒有見證登記，見 AssetRowChainData.attestationCount。 */
   attestationCount: number | null
 }
@@ -99,11 +91,8 @@ export function tierForAsset(meta: AssetMeta | undefined, nowMs: number): Tier {
 export function buildAssetRows(
   inputs: readonly AssetRowChainData[],
   gate: VaultGateState,
-  opts: { nowMs: number; maxPriceAgeSec?: number },
+  opts: { nowMs: number },
 ): AssetRow[] {
-  const nowSec = Math.floor(opts.nowMs / 1000)
-  const maxPriceAgeSec = opts.maxPriceAgeSec ?? DEFAULT_MAX_PRICE_AGE_SEC
-
   // #99：stale 之所以也擋買進，不是因為它跟這一項資產本身有關，而是因為
   // 一項資產的價格過期會讓 reserveRatioBps() 低估整個金庫的負債（那項資產
   // 從負債總和裡掉出去），使儲備率——以及 mintingHalted 的觸發條件本身——
@@ -117,11 +106,6 @@ export function buildAssetRows(
   return inputs.map((input) => {
     const tier = tierForAsset(input.meta, opts.nowMs)
     const { tradingFeeBps } = paramsFor(tier)
-    const freshness = classifyFreshness({
-      updatedAtSec: input.updatedAtSec,
-      nowSec,
-      maxPriceAgeSec,
-    })
 
     return {
       symbol: input.symbol,
@@ -132,12 +116,10 @@ export function buildAssetRows(
       price: input.price,
       balance: input.balance,
       usdValue: holdingValue({ asset: input.symbol, balance: input.balance, price: input.price }),
-      freshness,
       canBuy: !buyBlocked,
       canSell: !sellBlockedByVault && input.balance > 0n,
       cap: input.cap,
       issued: input.issued,
-      updatedAtSec: input.updatedAtSec,
       attestationCount: input.attestationCount ?? null,
     }
   })
@@ -183,15 +165,14 @@ export function sortAssetRows(rows: readonly AssetRow[], sortKey: AssetSortKey):
 // openPositionColumnsForMode 作法——欄位是什麼、標籤在哪、哪個模式看得到,
 // 判斷全部擠進這裡,元件不必自己決定表格長什麼樣。
 //
-// Expert 多出來的四欄是工程證據（發行量／上限、預言機更新時間、見證筆數、
-// 資產 id）,Simple 不需要知道這些機制細節就能決定要不要買。見證筆數的資料
+// Expert 多出來的三欄是工程證據（發行量／上限、見證筆數、資產 id）,Simple 不需要知道這些機制細節就能決定要不要買。見證筆數的資料
 // 來源與詳情層的見證區塊（AttestedTierBlock）同一份：ESGRegistryV2 的
 // medianCarbonTier(...).count，由 /tokens 為整張表讀一次（useCarbonTiers）。
 // 離散度留在詳情層——表格欄只放一個數字，離散度需要一句話解釋才讀得懂。
 
 export type AssetRowColumnKey =
   | 'asset' | 'provenance' | 'tradingFee' | 'price' | 'balance' | 'actions'
-  | 'issuedOverCap' | 'priceUpdatedAt' | 'attestationCount' | 'assetId'
+  | 'issuedOverCap' | 'attestationCount' | 'assetId'
 
 /** 資產／身世／買入費率三欄相鄰且順序固定——碳分級決定買入費率這件事,
  *  版面上必須是看得出來的因果,不是兩個各自獨立的欄位。操作欄固定排最後。 */
@@ -201,7 +182,7 @@ const SIMPLE_COLUMNS: AssetRowColumnKey[] = [
 
 const EXPERT_COLUMNS: AssetRowColumnKey[] = [
   'asset', 'provenance', 'tradingFee', 'price', 'balance',
-  'issuedOverCap', 'priceUpdatedAt', 'attestationCount', 'assetId', 'actions',
+  'issuedOverCap', 'attestationCount', 'assetId', 'actions',
 ]
 
 export function assetRowColumnsForMode(mode: Mode): AssetRowColumnKey[] {
