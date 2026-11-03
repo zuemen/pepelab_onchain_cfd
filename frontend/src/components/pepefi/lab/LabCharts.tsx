@@ -1,6 +1,7 @@
+import type { ReactNode } from 'react';
+
 import Box from '@mui/material/Box';
 import Card from '@mui/material/Card';
-import Stack from '@mui/material/Stack';
 import Typography from '@mui/material/Typography';
 import { useTheme } from '@mui/material/styles';
 import { Area, Line, XAxis, YAxis, Legend, Tooltip, ComposedChart, CartesianGrid, ReferenceLine, ResponsiveContainer } from 'recharts';
@@ -16,9 +17,20 @@ import { lineCursor, tooltipProps } from '../hero/chartTooltip';
 
 const L = t.lab;
 
+// embedded：放進結果區的分頁裡時不再包一層 Card、也不畫標題（分頁標籤就是標題）。
+function Frame({ embedded, title, children }: { embedded?: boolean; title: ReactNode; children: ReactNode }) {
+  if (embedded) return <Box>{children}</Box>;
+  return (
+    <Card sx={{ p: 3, pb: 2 }}>
+      <Typography variant="subtitle2" sx={{ fontWeight: 'bold', mb: 2 }}>{title}</Typography>
+      {children}
+    </Card>
+  );
+}
+
 type EquityRow = { date: string; equity: number; benchmark: number } & Partial<Record<LabAction, number>>;
 
-export function LabEquityChart({ result }: { result: LabResult }) {
+export function LabEquityChart({ result, embedded }: { result: LabResult; embedded?: boolean }) {
   const theme = useTheme();
   const rows: EquityRow[] = result.equity.map((equity, day) => ({
     date: dayToDate(result.start, day),
@@ -37,8 +49,7 @@ export function LabEquityChart({ result }: { result: LabResult }) {
     ({ equity: L.chart.strategy, benchmark: L.chart.benchmark, ...Object.fromEntries(markers.map((m) => [m.key, m.label])) })[name] ?? name;
 
   return (
-    <Card sx={{ p: 3, pb: 2 }}>
-      <Typography variant="subtitle2" sx={{ fontWeight: 'bold', mb: 2 }}>{L.chart.title}</Typography>
+    <Frame embedded={embedded} title={L.chart.title}>
       <Box sx={{ height: 320 }}>
         <ResponsiveContainer width="100%" height="100%">
           <ComposedChart data={rows} margin={{ top: 4, right: 8, bottom: 0, left: 8 }}>
@@ -70,11 +81,11 @@ export function LabEquityChart({ result }: { result: LabResult }) {
         </ResponsiveContainer>
       </Box>
       <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>{L.chart.note}</Typography>
-    </Card>
+    </Frame>
   );
 }
 
-export function LabForecastChart({ result, capital }: { result: LabResult; capital: number }) {
+export function LabForecastChart({ result, capital, embedded }: { result: LabResult; capital: number; embedded?: boolean }) {
   const theme = useTheme();
   const p = result.forecast.percentiles;
   const rows = p.p50.map((median, day) => ({
@@ -88,12 +99,7 @@ export function LabForecastChart({ result, capital }: { result: LabResult; capit
     Array.isArray(value) ? `${fUsd(Number(value[0]))} – ${fUsd(Number(value[1]))}` : fUsd(Number(value));
 
   return (
-    <Card sx={{ p: 3, pb: 2 }}>
-      <Stack direction="row" alignItems="baseline" spacing={1.5} flexWrap="wrap" sx={{ mb: 2 }}>
-        <Typography variant="subtitle2" sx={{ fontWeight: 'bold' }}>
-          {interpolate(L.forecast.title, { days: p.p50.length - 1 })}
-        </Typography>
-      </Stack>
+    <Frame embedded={embedded} title={interpolate(L.forecast.title, { days: p.p50.length - 1 })}>
       <Box sx={{ height: 280 }}>
         <ResponsiveContainer width="100%" height="100%">
           <ComposedChart data={rows} margin={{ top: 4, right: 8, bottom: 0, left: 8 }}>
@@ -113,6 +119,6 @@ export function LabForecastChart({ result, capital }: { result: LabResult; capit
           </ComposedChart>
         </ResponsiveContainer>
       </Box>
-    </Card>
+    </Frame>
   );
 }
