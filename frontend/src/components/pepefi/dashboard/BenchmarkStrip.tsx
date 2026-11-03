@@ -73,7 +73,7 @@ function BenchmarkChart({ series }: { series: SeriesPoint[] }) {
             tickFormatter={formatAxisDate}
             tickCount={3}
             stroke="#454F5B"
-            tick={{ fill: '#637381', fontSize: 10 }}
+            tick={{ fill: '#637381', fontSize: 11 }}
             tickLine={false}
           />
           <YAxis
@@ -81,7 +81,7 @@ function BenchmarkChart({ series }: { series: SeriesPoint[] }) {
             tickFormatter={formatAxisPrice}
             tickCount={3}
             stroke="#454F5B"
-            tick={{ fill: '#637381', fontSize: 10 }}
+            tick={{ fill: '#637381', fontSize: 11 }}
             tickLine={false}
             width={40}
           />

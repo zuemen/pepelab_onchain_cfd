@@ -135,7 +135,7 @@ export function PositionsTable({
                     // 沒有數字就不給數字：顯示「—」與原因，不補 0（見 lib/pepefi/positionPnl.ts）。
                     <Box title={why?.hint} sx={{ color: C.mut, cursor: 'help' }}>
                       —{' '}
-                      <Box component="span" sx={{ fontSize: 10.5 }}>
+                      <Box component="span" sx={{ fontSize: 11 }}>
                         {why?.label}
                       </Box>
                     </Box>

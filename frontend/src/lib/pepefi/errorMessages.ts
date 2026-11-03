@@ -1,8 +1,10 @@
 import { t } from 'src/locales'
 
+import { isTransientNodeFailure } from './rpcThrottle'
+
 // ----------------------------------------------------------------------
 
-export function prettyError(err: unknown, context?: 'mining' | 'tier' | 'copy' | 'checkin' | 'checkinPoints' | 'checkinUnknown' | 'adopt'): string {
+export function prettyError(err: unknown, context?: 'read' | 'mining' | 'tier' | 'copy' | 'checkin' | 'checkinPoints' | 'checkinUnknown' | 'adopt'): string {
   if (!err) return t.errors.unknown
 
   // 合約錯誤 → 使用者看得懂的說法。訊息本身住在 catalog。
@@ -32,6 +34,9 @@ export function prettyError(err: unknown, context?: 'mining' | 'tier' | 'copy' |
     info?: { error?: { data?: string; message?: string } } | null
   }
 
+  // 0. 節點限流、連線失敗：不是交易被合約拒絕，不能講成「買進失敗」或「交易失敗」。
+  if (isTransientNodeFailure(err)) return t.errors.nodeUnavailable
+
   // 1. custom error selector
   const data = e.data
     ?? (typeof e.error?.data === 'string' ? e.error.data : undefined)
@@ -60,6 +65,10 @@ export function prettyError(err: unknown, context?: 'mining' | 'tier' | 'copy' |
 
   // 3. Fallback for generic reverts using context
   if (msgLower.includes('missing revert data') || msgLower.includes('execution reverted') || msgLower.includes('3: execution reverted')) {
+    // 讀鏈失敗：沒有送出任何交易，不能套用交易失敗的說法。
+    if (context === 'read') {
+      return t.errors.nodeUnavailable;
+    }
     if (context === 'copy') {
       return t.errors.reverted.copy;
     }
@@ -94,5 +103,6 @@ export function prettyError(err: unknown, context?: 'mining' | 'tier' | 'copy' |
   // 這種東西：看不懂、沒有可行動的資訊，還會把 RPC 端點與內部欄位漏到畫面上。
   // 這裡只給一句能行動的話，原文留給 console 供開發者查。
   console.warn('[prettyError] unmapped error:', err)
+  if (context === 'read') return t.errors.nodeUnavailable
   return t.errors.unrecognised
 }

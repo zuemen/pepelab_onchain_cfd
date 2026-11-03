@@ -181,6 +181,9 @@ export const errors: Catalog['errors'] = {
       'Buy failed (Reverted). Common causes: not enough ETH for gas, not enough USDC, or a stale on-chain price. Check your balance and try again.',
   },
 
+  /** The node is rate limiting or unreachable: nothing was rejected, and this does not mean there is no data. */
+  nodeUnavailable: 'The blockchain node is not responding right now (possibly rate limited), so this data has not loaded. It does not mean there is no data or that a transaction failed. Please try again shortly.',
+
   unrecognised:
     'The transaction failed and the error could not be identified. Check your network and balance and try again — if it keeps happening, open the browser console for the raw error to report.',
 };

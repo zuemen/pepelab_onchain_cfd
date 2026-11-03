@@ -30,7 +30,7 @@ export function PepeIdentity({ address, size = 56, vertical = false }: Props) {
         <Typography fontWeight={800} fontSize={size > 40 ? 15 : 12} noWrap sx={{ maxWidth: 140 }}>
           {name}
         </Typography>
-        <Typography variant="caption" color="text.secondary" noWrap sx={{ fontFamily: 'monospace', fontSize: 10 }}>
+        <Typography variant="caption" color="text.secondary" noWrap sx={{ fontFamily: 'monospace', fontSize: 11 }}>
           {address ? `${address.slice(0, 6)}…${address.slice(-4)}` : ''}
         </Typography>
       </Box>

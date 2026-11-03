@@ -501,7 +501,7 @@ export default function PortfolioPage() {
     setFreeMarginOk(freeMarginResult.ok);
 
     const failures = [copyRecsResult, positionsResult, freeMarginResult].filter(r => !r.ok);
-    if (failures.length > 0) notify(prettyError(failures[0].error), false);
+    if (failures.length > 0) notify(prettyError(failures[0].error, 'read'), false);
     setIsLoaded(true);
   }, [contracts, wallet.address, notify, autoSync.supported, autoSync.executorLock, refreshExecFee]);
 
@@ -1791,11 +1791,11 @@ export default function PortfolioPage() {
                   <XAxis
                     dataKey="name"
                     stroke="#454F5B"
-                    tick={{ fill: '#637381', fontSize: 10, fontWeight: 500 }}
+                    tick={{ fill: '#637381', fontSize: 11, fontWeight: 500 }}
                   />
                   <YAxis
                     stroke="#454F5B"
-                    tick={{ fill: '#637381', fontSize: 10, fontWeight: 500 }}
+                    tick={{ fill: '#637381', fontSize: 11, fontWeight: 500 }}
                     tickFormatter={(v: number) => `$${v.toFixed(0)}`}
                     width={48}
                   />
@@ -1819,7 +1819,7 @@ export default function PortfolioPage() {
                       y={initVal}
                       stroke="#ffab00"
                       strokeDasharray="4 4"
-                      label={{ value: t.portfolio.page.chart.initial, fill: '#ffab00', fontSize: 9, position: 'insideTopRight' }}
+                      label={{ value: t.portfolio.page.chart.initial, fill: '#ffab00', fontSize: 11, position: 'insideTopRight' }}
                     />
                   )}
                   <Line

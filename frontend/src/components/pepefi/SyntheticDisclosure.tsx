@@ -16,9 +16,18 @@ import { tenantDisclosureAdditions } from 'src/tenant/disclosure';
 
 const STORAGE_KEY = 'pepefi:disclosure:collapsed';
 
-function readCollapsed(): boolean {
+/**
+ * 這個瀏覽器第一次看到揭露：展開，並記下已看過；之後預設收合，除非使用者選擇展開。
+ * 讀不到儲存空間（無痕模式等）一律展開——寧可多看，不可漏看。
+ */
+function initialCollapsed(): boolean {
   try {
-    return sessionStorage.getItem(STORAGE_KEY) === '1';
+    const saved = localStorage.getItem(STORAGE_KEY);
+    if (saved === null) {
+      localStorage.setItem(STORAGE_KEY, '1');
+      return false;
+    }
+    return saved === '1';
   } catch {
     return false;
   }
@@ -28,11 +37,10 @@ function readCollapsed(): boolean {
  * 合成資產揭露。
  *
  * 「不可忽略、可收合」：沒有關閉按鈕，標題與一句摘要永遠顯示；收合只收起條列細節。
- * 收合狀態存在 sessionStorage（同一個分頁內換頁不必反覆收合），新分頁一律展開——
- * 第一次看到的人一定看得到完整內容。
+ * 第一次看到的人一定看得到完整內容；看過之後預設收合，不再佔掉交易頁的首屏。
  */
 export function SyntheticDisclosure({ sx }: { sx?: SxProps<Theme> }) {
-  const [collapsed, setCollapsed] = useState(readCollapsed);
+  const [collapsed, setCollapsed] = useState(initialCollapsed);
   const d = t.common.disclosure;
   // 白標租戶的追加揭露（只能追加在核心三條之後），見 src/tenant/disclosure.ts。
   const extra = tenantDisclosureAdditions(tenant.compliance, locale, d.operatedBy);
@@ -41,7 +49,7 @@ export function SyntheticDisclosure({ sx }: { sx?: SxProps<Theme> }) {
     const next = !collapsed;
     setCollapsed(next);
     try {
-      sessionStorage.setItem(STORAGE_KEY, next ? '1' : '0');
+      localStorage.setItem(STORAGE_KEY, next ? '1' : '0');
     } catch {
       /* 無痕模式等：只影響記憶，不影響顯示 */
     }

@@ -600,7 +600,7 @@ export default function TraderLeaderboard() {
                   >
                     {headerLabel(t.marketplace.table.rank, tip(tips.rank))}
                     {scanFailedChunks > 0 && (
-                      <Box component="span" sx={{ display: 'block', fontSize: 10, color: 'warning.main' }}>
+                      <Box component="span" sx={{ display: 'block', fontSize: 11, color: 'warning.main' }}>
                         {t.marketplace.table.provisional}
                       </Box>
                     )}

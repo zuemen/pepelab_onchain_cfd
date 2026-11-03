@@ -100,7 +100,7 @@ export function MarketStatsBar({
             </Box>
           )}
         </Box>
-        <Box sx={{ ...labelCss, mt: 0.2, fontSize: 9.5 }}>{t.terminal.stats.displayPrice}</Box>
+        <Box sx={{ ...labelCss, mt: 0.2, fontSize: 11 }}>{t.terminal.stats.displayPrice}</Box>
       </Box>
 
       {/* 指數價（鏈上 oracle）最後一次寫入距今多久，以鏈上時鐘算；超過合約的 maxPriceAge

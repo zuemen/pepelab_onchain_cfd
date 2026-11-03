@@ -50,7 +50,7 @@ function RiskMeter({ score }: { score: number | null }) {
             display: { xs: 'none', sm: 'block' },
             textAlign: 'center',
             fontFamily: MONO,
-            fontSize: '0.625rem',
+            fontSize: '0.6875rem',
             color: score === i + 1 ? 'text.primary' : 'text.disabled',
             fontWeight: score === i + 1 ? 'bold' : 'normal',
             whiteSpace: 'nowrap',

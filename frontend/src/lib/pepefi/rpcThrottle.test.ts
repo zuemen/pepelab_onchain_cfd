@@ -1,6 +1,6 @@
 import { it, vi, expect, describe, afterEach, beforeEach } from 'vitest'
 
-import { throttleReads, createRateGate } from './rpcThrottle'
+import { throttleReads, createRateGate, createRpcFailover, isTransientNodeFailure } from './rpcThrottle'
 
 describe('createRateGate', () => {
   beforeEach(() => { vi.useFakeTimers() })
@@ -51,5 +51,70 @@ describe('throttleReads', () => {
       expect(await p.request({ method })).toBe(method)
     }
     expect(gate).not.toHaveBeenCalled()
+  })
+})
+
+describe('讀取備援', () => {
+  const noGate = async () => {}
+  const wallet = (fail: unknown) => ({
+    request: vi.fn(async ({ method }: { method: string }) => {
+      if (method === 'eth_chainId') return '0x14a34'
+      throw fail
+    }),
+  })
+
+  it('節點限流時改問公開節點', async () => {
+    const failover = vi.fn(async () => ({ result: '0xabc' }))
+    const w = wallet({ code: -32005, message: 'rate limit exceeded' })
+    await expect(throttleReads(w, noGate, failover).request({ method: 'eth_call', params: [] })).resolves.toBe('0xabc')
+    expect(failover).toHaveBeenCalledWith(84532, { method: 'eth_call', params: [] })
+  })
+
+  it('eth_call 回空值也改問公開節點', async () => {
+    const failover = vi.fn(async () => ({ result: '0xabc' }))
+    const w = { request: vi.fn(async ({ method }: { method: string }) => (method === 'eth_chainId' ? '0x14a34' : null)) }
+    await expect(throttleReads(w, noGate, failover).request({ method: 'eth_call', params: [] })).resolves.toBe('0xabc')
+  })
+
+  it('合約 revert 不換節點，原樣丟回', async () => {
+    const failover = vi.fn(async () => ({ result: '0x' }))
+    const revert = { code: 3, message: 'execution reverted', data: '0x4f402872' }
+    await expect(throttleReads(wallet(revert), noGate, failover).request({ method: 'eth_call', params: [] })).rejects.toBe(revert)
+    expect(failover).not.toHaveBeenCalled()
+  })
+
+  it('簽名與送交易不走備援', async () => {
+    const failover = vi.fn(async () => ({ result: '0x1' }))
+    const fail = { code: 429, message: 'too many' }
+    await expect(throttleReads(wallet(fail), noGate, failover).request({ method: 'eth_sendTransaction', params: [] })).rejects.toBe(fail)
+    expect(failover).not.toHaveBeenCalled()
+  })
+
+  it('備援也沒有答案時丟原本的錯誤', async () => {
+    const fail = { code: 429, message: 'too many' }
+    await expect(throttleReads(wallet(fail), noGate, async () => undefined).request({ method: 'eth_call', params: [] })).rejects.toBe(fail)
+  })
+
+  it('沒有設定備援節點的鏈不送任何請求', async () => {
+    const fetchImpl = vi.fn()
+    await expect(createRpcFailover(fetchImpl as unknown as typeof fetch, noGate)(31337, { method: 'eth_call' })).resolves.toBeUndefined()
+    expect(fetchImpl).not.toHaveBeenCalled()
+  })
+
+  it('第一個節點失敗換下一個；節點回 revert 視為答案', async () => {
+    const fetchImpl = vi.fn()
+      .mockResolvedValueOnce({ ok: false, status: 429 })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ error: { code: 3, message: 'execution reverted', data: '0x11' } }) })
+    await expect(createRpcFailover(fetchImpl as unknown as typeof fetch, noGate)(84532, { method: 'eth_call' })).resolves.toEqual({
+      rpcError: { code: 3, message: 'execution reverted', data: '0x11' },
+    })
+    expect(fetchImpl).toHaveBeenCalledTimes(2)
+  })
+
+  it('分得出節點故障與合約 revert', () => {
+    expect(isTransientNodeFailure({ code: -32603, message: 'Internal JSON-RPC error.' })).toBe(true)
+    expect(isTransientNodeFailure(new Error('Failed to fetch'))).toBe(true)
+    expect(isTransientNodeFailure({ code: -32603, message: 'x', data: { data: '0x4f402872' } })).toBe(false)
+    expect(isTransientNodeFailure({ code: 4001, message: 'User rejected' })).toBe(false)
   })
 })

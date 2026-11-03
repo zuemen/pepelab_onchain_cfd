@@ -324,7 +324,7 @@ export function TerminalView() {
             onClick={layout.toggleBook}
             sx={{
               ...labelCss,
-              fontSize: 10,
+              fontSize: 11,
               minHeight: 32,
               px: 1.2,
               borderRadius: '7px',

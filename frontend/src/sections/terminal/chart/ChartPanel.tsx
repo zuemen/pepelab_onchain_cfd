@@ -62,7 +62,7 @@ export function ChartPanel({
             兩者有小幅價差是正常的——所以標清楚它屬於這張圖。 */}
         {feed.last !== undefined && (
           <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 0.7 }}>
-            <Box sx={{ ...labelCss, fontSize: 9.5 }}>{t.terminal.chart.last}</Box>
+            <Box sx={{ ...labelCss, fontSize: 11 }}>{t.terminal.chart.last}</Box>
             <Box sx={{ ...monoCss, fontSize: 15, fontWeight: 700, color: C.ink }}>
               {fUsd(feed.last)}
             </Box>
@@ -72,19 +72,19 @@ export function ChartPanel({
         {/* 往回捲時的狀態。沒有這個的話，抓資料的那一兩秒圖表是靜止的，使用者
             分不出「正在載入」跟「沒有更早的資料了」——會一直往回拉。 */}
         {feed.loadingOlder && (
-          <Box sx={{ ...monoCss, fontSize: 10.5, color: C.mut }}>{t.terminal.chart.loadingOlder}</Box>
+          <Box sx={{ ...monoCss, fontSize: 11, color: C.mut }}>{t.terminal.chart.loadingOlder}</Box>
         )}
         {!feed.loadingOlder && feed.exhausted && (
-          <Box sx={{ ...monoCss, fontSize: 10.5, color: C.mut }}>{t.terminal.chart.exhausted}</Box>
+          <Box sx={{ ...monoCss, fontSize: 11, color: C.mut }}>{t.terminal.chart.exhausted}</Box>
         )}
         {/* 跟「已到最早資料」要分開講：這是我們自己的顯示上限，不是來源沒東西了。 */}
         {!feed.loadingOlder && !feed.exhausted && feed.atCapacity && (
-          <Box sx={{ ...monoCss, fontSize: 10.5, color: C.mut }}>{t.terminal.chart.atCapacity}</Box>
+          <Box sx={{ ...monoCss, fontSize: 11, color: C.mut }}>{t.terminal.chart.atCapacity}</Box>
         )}
 
         <Box sx={{ ml: 'auto', display: 'flex', alignItems: 'center', gap: 1 }}>
           {feed.underlying && (
-            <Box sx={{ ...labelCss, fontSize: 10 }}>{underlyingLabel(feed.underlying)}</Box>
+            <Box sx={{ ...labelCss, fontSize: 11 }}>{underlyingLabel(feed.underlying)}</Box>
           )}
           <DataSourceBadge
             source={feed.source}
