@@ -5,7 +5,8 @@ import type { Catalog } from '../zh-TW';
  */
 export const lab: Catalog['lab'] = {
   title: 'Strategy Lab',
-  subtitle: 'Pick a strategy, a set of parameters and a target to see how it would have done on real historical prices, and the range it could land in over the next 90 days.',
+  subtitle: 'Try an investing approach on real historical prices: see whether it makes money, how deep it can fall, and where it could land over the next 90 days.',
+  steps: { pick: 'Pick a strategy', tune: 'Tune it', read: 'Read the result' },
   disclosure:
     'Backtests and forecasts do not indicate future performance. Backtests use real historical daily closes, fill at the close, and charge the same fees as this platform: opening and closing fees by carbon tier, an hourly borrow fee on the leveraged part, and liquidation below maintenance margin. Funding rates and slippage are not simulated. The forecast is a simulation based on historical volatility, not a predictive model.',
   range: 'Backtest {from} to {to} · capital {capital} USDC',
@@ -21,24 +22,25 @@ export const lab: Catalog['lab'] = {
   },
 
   picker: {
-    strategy: 'Strategy',
-    params: 'Parameters',
-    asset: 'Asset',
-    basket: 'Basket',
+    strategy: 'Pick a strategy',
+    params: 'Tune it',
+    asset: 'Pick an asset',
+    basket: 'Pick a basket',
     single: 'Per-trade (single asset)',
     portfolio: 'Portfolio (basket)',
   },
 
   strategies: {
-    dca: { name: 'Dollar-cost averaging', description: 'Buys every fixed number of days, splitting the capital evenly across the whole period.' },
+    dca: { name: 'Dollar-cost averaging', tagline: 'Buy on a schedule, no timing', description: 'Buys every fixed number of days, splitting the capital evenly across the whole period.' },
     martingale: {
       name: 'Martingale',
+      tagline: 'Add more on every drop, exit on the bounce',
       description: 'Each round opens with {base}% of the capital; every further drop adds a position a multiple of the last one; once the round reaches its take-profit, everything is closed and a new round starts.',
     },
-    grid: { name: 'Grid', description: 'Sets levels below the starting price; buys a level when the price reaches it and sells it one level up. Each level holds at most one position.' },
-    momentum: { name: 'Momentum', description: 'Periodically rotates into the 3 assets that rose the most over the lookback, long and equally weighted.' },
-    mean_reversion: { name: 'Mean reversion', description: 'Periodically rotates into the 3 assets that fell the most over the lookback, betting on a rebound.' },
-    trend: { name: 'Moving-average trend', description: 'Holds every asset: long above its moving average, short below it.' },
+    grid: { name: 'Grid', tagline: 'Buy low, sell high, harvest the swings', description: 'Sets levels below the starting price; buys a level when the price reaches it and sells it one level up. Each level holds at most one position.' },
+    momentum: { name: 'Momentum', tagline: 'Ride what rose the most', description: 'Periodically rotates into the 3 assets that rose the most over the lookback, long and equally weighted.' },
+    mean_reversion: { name: 'Mean reversion', tagline: 'Pick up what fell the most', description: 'Periodically rotates into the 3 assets that fell the most over the lookback, betting on a rebound.' },
+    trend: { name: 'Moving-average trend', tagline: 'Long above the average, short below', description: 'Holds every asset: long above its moving average, short below it.' },
   },
 
   params: {
@@ -74,6 +76,33 @@ export const lab: Catalog['lab'] = {
     portfolioLeverage: 'Each asset’s leverage is capped by its carbon tier.',
   },
   tiers: { low: 'low', mid: 'mid', high: 'high' },
+
+  summary: {
+    title: 'Backtest result',
+    sentence: 'Starting {from} with {capital} USDC, running "{strategy}" on {target} would have reached, by {to},',
+    benchmark: 'Buy-and-hold over the same period: {final} USDC ({pct})',
+    beat: 'Beat buy-and-hold by {pts} points',
+    lose: 'Trailed buy-and-hold by {pts} points',
+    tie: 'Matched buy-and-hold',
+    maxDrawdown: 'Max drawdown',
+    riskScore: 'Risk score',
+    trades: 'Trades',
+    lossProb: 'Chance of a loss in {days} days',
+  },
+  tabs: {
+    backtest: 'Backtest: past equity',
+    forecast: 'Forecast: next {days} days',
+  },
+  details: {
+    metrics: 'All metrics (vs buy-and-hold)',
+    trades: 'Every trade ({count})',
+  },
+  next: {
+    title: 'Want to trade this way?',
+    marketplace: 'See the trader leaderboard',
+    share: 'Copy a link to these settings',
+    copied: 'Link copied — anyone who opens it sees the same result',
+  },
 
   metrics: {
     title: 'Performance',

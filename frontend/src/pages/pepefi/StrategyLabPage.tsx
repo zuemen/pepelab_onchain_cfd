@@ -1,10 +1,12 @@
 import { useRef, useMemo, useState, useEffect } from 'react';
-import { Link as RouterLink, useSearchParams } from 'react-router';
+import { useSearchParams, Link as RouterLink } from 'react-router';
 
 import Box from '@mui/material/Box';
+import Tab from '@mui/material/Tab';
 import Card from '@mui/material/Card';
 import Grid from '@mui/material/Grid';
 import Chip from '@mui/material/Chip';
+import Tabs from '@mui/material/Tabs';
 import Alert from '@mui/material/Alert';
 import Stack from '@mui/material/Stack';
 import Table from '@mui/material/Table';
@@ -16,30 +18,35 @@ import TableBody from '@mui/material/TableBody';
 import TableCell from '@mui/material/TableCell';
 import TableHead from '@mui/material/TableHead';
 import TextField from '@mui/material/TextField';
+import Accordion from '@mui/material/Accordion';
 import Typography from '@mui/material/Typography';
+import ButtonBase from '@mui/material/ButtonBase';
 import ToggleButton from '@mui/material/ToggleButton';
+import AccordionSummary from '@mui/material/AccordionSummary';
+import AccordionDetails from '@mui/material/AccordionDetails';
 import ToggleButtonGroup from '@mui/material/ToggleButtonGroup';
 
-import { usePepefiWallet } from 'src/layouts/pepefi';
 import { t, interpolate } from 'src/locales';
 import { useMode } from 'src/contexts/mode-context';
+import { usePepefiWallet } from 'src/layouts/pepefi';
+import { heroDisclosure } from 'src/lib/pepefi/heroDisclosure';
 import { FEATURE_COPY_TRADING } from 'src/lib/pepefi/featureFlags';
 import { fUsd, fRatio, fDrawdown, fSignedPct, type HeroSummary } from 'src/lib/pepefi/heroData';
-import { heroDisclosure } from 'src/lib/pepefi/heroDisclosure';
 import {
   dayToDate,
   snapParams,
   fetchLabIndex,
-  fetchLabResult,
-  fetchSimilarTraders,
   type LabIndex,
+  fetchLabResult,
   type LabResult,
   type LabMetrics,
   type LabStrategy,
+  fetchSimilarTraders,
 } from 'src/lib/pepefi/labData';
 
 import StatCard from 'src/components/pepefi/StatCard';
 import { MONO } from 'src/components/pepefi/brandKit';
+import { useToast } from 'src/components/pepefi/ToastProvider';
 import { LabEquityChart, LabForecastChart } from 'src/components/pepefi/lab/LabCharts';
 
 // ----------------------------------------------------------------------
@@ -53,9 +60,9 @@ import { LabEquityChart, LabForecastChart } from 'src/components/pepefi/lab/LabC
 
 const L = t.lab;
 
-type StrategyText = { name: string; description: string };
+type StrategyText = { name: string; tagline: string; description: string };
 const strategyText = (id: string): StrategyText =>
-  (L.strategies as Record<string, StrategyText>)[id] ?? { name: id, description: '' };
+  (L.strategies as Record<string, StrategyText>)[id] ?? { name: id, tagline: '', description: '' };
 
 const paramLabel = (key: string) => (L.params as Record<string, string>)[key] ?? key;
 
@@ -68,6 +75,9 @@ function paramValue(key: string, value: number): string {
   if (key.endsWith('_pct')) return interpolate(L.values.pct, { n });
   return n;
 }
+
+// 本金是整數金額，寫成「10,000」而不是「10,000.00」。
+const capitalText = (index: LabIndex) => index.capitalUsd.toLocaleString('en-US');
 
 const basketLabel = (id: string) => (L.baskets as Record<string, string>)[id] ?? id;
 
@@ -173,56 +183,52 @@ function StrategyLab() {
       <Stack spacing={3}>
         <Box>
           <Typography variant="h4" sx={{ fontWeight: 'bold' }}>{L.title}</Typography>
-          <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>{L.subtitle}</Typography>
+          <Typography variant="body1" color="text.secondary" sx={{ mt: 0.75, maxWidth: 760 }}>{L.subtitle}</Typography>
+          <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap sx={{ mt: 1.5 }}>
+            {[L.steps.pick, L.steps.tune, L.steps.read].map((step, i) => (
+              <Chip key={step} size="small" variant="outlined" label={`${i + 1}. ${step}`} />
+            ))}
+          </Stack>
         </Box>
 
         {/* 揭露固定顯示、不可收合 */}
-        <Alert severity="warning" variant="outlined">{L.disclosure}</Alert>
+        <Alert severity="warning" variant="outlined" sx={{ '& .MuiAlert-message': { typography: 'caption' } }}>
+          {L.disclosure}
+        </Alert>
 
         {index === undefined && <Typography color="text.secondary">{L.loading}</Typography>}
         {index === null && <Alert severity="error">{L.indexMissing}</Alert>}
 
         {index && strategy && target && (
-          <>
-            <Picker
-              index={index}
-              strategy={strategy}
-              target={target}
-              targets={targets}
-              values={values}
-              onStrategy={chooseStrategy}
-              onChoose={choose}
-            />
+          <Grid container spacing={3} alignItems="flex-start">
+            {/* 左：設定。桌機上捲動時固定在畫面上，改參數時右邊的結果就在旁邊變。 */}
+            <Grid size={{ xs: 12, md: 5, lg: 4 }} sx={{ position: { md: 'sticky' }, top: { md: 88 } }}>
+              <Picker
+                index={index}
+                strategy={strategy}
+                target={target}
+                targets={targets}
+                values={values}
+                onStrategy={chooseStrategy}
+                onChoose={choose}
+              />
+            </Grid>
 
-            <FeeNote index={index} strategy={strategy} target={target} result={result ?? null} />
+            {/* 右：結果。先結論、再圖，明細預設收起，最後是下一步。 */}
+            <Grid size={{ xs: 12, md: 7, lg: 8 }}>
+              <Stack spacing={3}>
+                {result === null && <Alert severity="info">{L.resultMissing}</Alert>}
 
-            {result === null && <Alert severity="info">{L.resultMissing}</Alert>}
+                <SummaryCard index={index} strategy={strategy} target={target} result={result ?? null} />
 
-            <MetricsCard result={result ?? null} />
+                <ResultTabs index={index} result={result ?? null} />
 
-            {result && <LabEquityChart result={result} />}
+                <Details result={result ?? null} />
 
-            <ForecastSection index={index} result={result ?? null} />
-
-            {result && <TradesCard result={result} />}
-
-            {similar.length > 0 && <SimilarTraders traders={similar} compressed={similarCompressed} />}
-
-            <Card variant="outlined" sx={{ p: 3 }}>
-              <Typography variant="subtitle2" sx={{ fontWeight: 'bold', mb: 1 }}>{L.noOrder.title}</Typography>
-              <Typography variant="body2" color="text.secondary">
-                {L.noOrder.body}
-                {FEATURE_COPY_TRADING && ` ${L.noOrder.copy}`}
-              </Typography>
-              {strategy.kind === 'single' && (
-                <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>{L.noOrder.single}</Typography>
-              )}
-            </Card>
-
-            <Typography variant="caption" color="text.secondary" sx={{ fontFamily: MONO }}>
-              {interpolate(L.range, { from: index.range.from, to: index.range.to, capital: fUsd(index.capitalUsd) })}
-            </Typography>
-          </>
+                <NextStep strategy={strategy} similar={similar} compressed={similarCompressed} />
+              </Stack>
+            </Grid>
+          </Grid>
         )}
       </Stack>
     </Container>
@@ -246,38 +252,60 @@ function Picker(props: {
     { kind: 'portfolio', label: L.picker.portfolio },
   ];
   const basket = index.baskets.find((b) => b.id === target);
+  const step = (n: number, label: string) => (
+    <Typography variant="subtitle2" sx={{ fontWeight: 'bold' }}>{`${n}. ${label}`}</Typography>
+  );
 
   return (
-    <Card sx={{ p: 3 }}>
+    <Card sx={{ p: 2.5 }}>
       <Stack spacing={2.5}>
         <Box>
-          <Typography variant="overline" color="text.secondary">{L.picker.strategy}</Typography>
-          <Stack spacing={1.5} sx={{ mt: 0.5 }}>
+          {step(1, L.picker.strategy)}
+          <Stack spacing={1.5} sx={{ mt: 1 }}>
             {groups.map((g) => (
-              <Stack key={g.kind} direction={{ xs: 'column', sm: 'row' }} spacing={1} alignItems={{ sm: 'center' }}>
-                <Typography variant="caption" color="text.secondary" sx={{ minWidth: 150 }}>{g.label}</Typography>
-                <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
-                  {index.strategies.filter((s) => s.kind === g.kind).map((s) => (
-                    <Chip
-                      key={s.id}
-                      label={strategyText(s.id).name}
-                      color={s.id === strategy.id ? 'primary' : 'default'}
-                      variant={s.id === strategy.id ? 'filled' : 'outlined'}
-                      onClick={() => onStrategy(s.id)}
-                    />
-                  ))}
-                </Stack>
-              </Stack>
+              <Box key={g.kind}>
+                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.75 }}>{g.label}</Typography>
+                <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr 1fr', sm: 'repeat(3, 1fr)' }, gap: 1 }}>
+                  {index.strategies.filter((s) => s.kind === g.kind).map((s) => {
+                    const selected = s.id === strategy.id;
+                    const text = strategyText(s.id);
+                    return (
+                      <ButtonBase
+                        key={s.id}
+                        onClick={() => onStrategy(s.id)}
+                        aria-pressed={selected}
+                        sx={{
+                          display: 'block',
+                          textAlign: 'left',
+                          p: 1,
+                          borderRadius: 1.5,
+                          border: '1px solid',
+                          borderColor: selected ? 'primary.main' : 'divider',
+                          bgcolor: selected ? 'action.selected' : 'transparent',
+                          '&:hover': { borderColor: 'primary.main' },
+                        }}
+                      >
+                        <Typography variant="body2" sx={{ fontWeight: 700, color: selected ? 'primary.main' : 'text.primary' }}>
+                          {text.name}
+                        </Typography>
+                        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', lineHeight: 1.4 }}>
+                          {text.tagline}
+                        </Typography>
+                      </ButtonBase>
+                    );
+                  })}
+                </Box>
+              </Box>
             ))}
           </Stack>
-          <Typography variant="body2" sx={{ mt: 1.5 }}>
+          <Typography variant="body2" color="text.secondary" sx={{ mt: 1.5 }}>
             {interpolate(strategyText(strategy.id).description, { base: index.martingaleBasePct })}
           </Typography>
         </Box>
 
         <Box>
-          <Typography variant="overline" color="text.secondary">{L.picker.params}</Typography>
-          <Stack direction="row" spacing={3} flexWrap="wrap" useFlexGap sx={{ mt: 0.5 }}>
+          {step(2, L.picker.params)}
+          <Stack spacing={1.5} sx={{ mt: 1 }}>
             {strategy.params.map((p, i) => (
               <Box key={p.key}>
                 <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>
@@ -288,6 +316,7 @@ function Picker(props: {
                   exclusive
                   value={values[i]}
                   onChange={(_, v: number | null) => v !== null && onChoose({ [p.key]: v })}
+                  sx={{ flexWrap: 'wrap' }}
                 >
                   {p.values.map((v) => (
                     <ToggleButton key={v} value={v} sx={{ px: 1.5 }}>{paramValue(p.key, v)}</ToggleButton>
@@ -299,18 +328,10 @@ function Picker(props: {
         </Box>
 
         <Box>
-          <Typography variant="overline" color="text.secondary">
-            {strategy.kind === 'single' ? L.picker.asset : L.picker.basket}
-          </Typography>
-          <Box sx={{ mt: 0.5 }}>
+          {step(3, strategy.kind === 'single' ? L.picker.asset : L.picker.basket)}
+          <Box sx={{ mt: 1 }}>
             {strategy.kind === 'single' ? (
-              <TextField
-                select
-                size="small"
-                value={target}
-                onChange={(e) => onChoose({ t: e.target.value })}
-                sx={{ minWidth: 160 }}
-              >
+              <TextField select size="small" fullWidth value={target} onChange={(e) => onChoose({ t: e.target.value })}>
                 {targets.map((id) => (
                   <MenuItem key={id} value={id}>{id}</MenuItem>
                 ))}
@@ -337,6 +358,10 @@ function Picker(props: {
             )}
           </Box>
         </Box>
+
+        <Typography variant="caption" color="text.secondary" sx={{ fontFamily: MONO }}>
+          {interpolate(L.range, { from: index.range.from, to: index.range.to, capital: capitalText(index) })}
+        </Typography>
       </Stack>
     </Card>
   );
@@ -361,6 +386,178 @@ function FeeNote({ index, strategy, target, result }: { index: LabIndex; strateg
   );
 }
 
+// ── 結論 ─────────────────────────────────────────────────────────────────────
+
+const lastOf = (xs: number[] | undefined) => (xs && xs.length > 0 ? xs[xs.length - 1] : undefined);
+
+function SummaryCard({ index, strategy, target, result }: { index: LabIndex; strategy: LabStrategy; target: string; result: LabResult | null }) {
+  const m = result?.metrics;
+  const b = result?.benchmarkMetrics;
+  const final = lastOf(result?.equity);
+  const holdFinal = lastOf(result?.benchmark);
+  // 「贏／輸」只比累積報酬；差距四捨五入到 0.1 個百分點，0 就是打平。
+  const gap = m && b ? Math.round((m.totalReturnPct - b.totalReturnPct) * 10) / 10 : undefined;
+  const verdict =
+    gap === undefined
+      ? null
+      : gap > 0
+        ? { label: interpolate(L.summary.beat, { pts: gap.toFixed(1) }), color: 'success' as const }
+        : gap < 0
+          ? { label: interpolate(L.summary.lose, { pts: Math.abs(gap).toFixed(1) }), color: 'error' as const }
+          : { label: L.summary.tie, color: 'default' as const };
+  const targetLabel = strategy.kind === 'single' ? target : basketLabel(target);
+  const up = (m?.totalReturnPct ?? 0) >= 0;
+  const stats = [
+    { label: L.summary.maxDrawdown, value: fDrawdown(m?.maxDrawdownPct) },
+    { label: L.summary.riskScore, value: m?.riskScore === null || m?.riskScore === undefined ? '—' : `${m.riskScore} / 10` },
+    { label: L.summary.trades, value: m ? String(m.trades) : '—' },
+    {
+      label: interpolate(L.summary.lossProb, { days: index.forecast.horizonDays }),
+      value: result ? `${result.forecast.lossProbPct.toFixed(1)}%` : '—',
+    },
+  ];
+
+  return (
+    <Card sx={{ p: 3 }}>
+      <Stack direction="row" alignItems="center" justifyContent="space-between" spacing={1} flexWrap="wrap" useFlexGap>
+        <Typography variant="overline" color="text.secondary">{L.summary.title}</Typography>
+        {verdict && <Chip size="small" color={verdict.color} label={verdict.label} sx={{ fontWeight: 700 }} />}
+      </Stack>
+      <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+        {interpolate(L.summary.sentence, {
+          from: result?.start ?? index.range.from,
+          to: index.range.to,
+          capital: capitalText(index),
+          strategy: strategyText(strategy.id).name,
+          target: targetLabel,
+        })}
+      </Typography>
+      <Stack direction="row" alignItems="baseline" spacing={1.5} flexWrap="wrap" useFlexGap sx={{ mt: 0.5 }}>
+        <Typography variant="h3" sx={{ fontFamily: MONO, fontWeight: 800 }}>
+          {final === undefined ? '—' : `${fUsd(final)} USDC`}
+        </Typography>
+        <Typography variant="h5" sx={{ fontFamily: MONO, fontWeight: 700, color: m ? (up ? 'success.main' : 'error.main') : 'text.secondary' }}>
+          {fSignedPct(m?.totalReturnPct)}
+        </Typography>
+      </Stack>
+      <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+        {interpolate(L.summary.benchmark, {
+          final: holdFinal === undefined ? '—' : fUsd(holdFinal),
+          pct: fSignedPct(b?.totalReturnPct),
+        })}
+      </Typography>
+
+      <Box sx={{ mt: 2.5, display: 'grid', gridTemplateColumns: { xs: '1fr 1fr', sm: 'repeat(4, 1fr)' }, gap: 2 }}>
+        {stats.map((st) => (
+          <Box key={st.label}>
+            <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>{st.label}</Typography>
+            <Typography variant="subtitle1" sx={{ fontFamily: MONO, fontWeight: 700 }}>{st.value}</Typography>
+          </Box>
+        ))}
+      </Box>
+
+      <Box sx={{ mt: 2 }}>
+        <FeeNote index={index} strategy={strategy} target={target} result={result} />
+      </Box>
+    </Card>
+  );
+}
+
+// ── 圖：回測／預測 ─────────────────────────────────────────────────────────────
+
+function ResultTabs({ index, result }: { index: LabIndex; result: LabResult | null }) {
+  const [tab, setTab] = useState<'backtest' | 'forecast'>('backtest');
+  return (
+    <Stack spacing={2}>
+      <Card sx={{ px: 3, pb: 2 }}>
+        <Tabs
+          value={tab}
+          onChange={(_, v: 'backtest' | 'forecast') => setTab(v)}
+          variant="fullWidth"
+          sx={{ mb: 2, '& .MuiTab-root': { whiteSpace: 'normal', minWidth: 0 } }}
+        >
+          <Tab value="backtest" label={L.tabs.backtest} />
+          <Tab value="forecast" label={interpolate(L.tabs.forecast, { days: index.forecast.horizonDays })} />
+        </Tabs>
+        {tab === 'backtest' && result && <LabEquityChart result={result} embedded />}
+        {tab === 'forecast' && <ForecastSection index={index} result={result} />}
+      </Card>
+      {/* 預測方法的假設固定顯示：不論停在哪個分頁都看得到 */}
+      <Alert severity="info" variant="outlined" sx={{ '& .MuiAlert-message': { typography: 'caption' } }}>
+        {interpolate(L.forecast.method, {
+          from: result?.forecast.from ?? index.range.to,
+          capital: capitalText(index),
+          block: index.forecast.blockDays,
+          paths: index.forecast.paths.toLocaleString('en-US'),
+          days: index.forecast.horizonDays,
+        })}
+      </Alert>
+    </Stack>
+  );
+}
+
+// ── 明細（預設收起）────────────────────────────────────────────────────────────
+
+const ACCORDION_SUMMARY_SX = { '& .MuiAccordionSummary-content': { my: 1.25 } };
+
+function Details({ result }: { result: LabResult | null }) {
+  return (
+    <Box>
+      <Accordion disableGutters>
+        <AccordionSummary expandIcon={<Typography variant="caption">▼</Typography>} sx={ACCORDION_SUMMARY_SX}>
+          <Typography variant="subtitle2" sx={{ fontWeight: 'bold' }}>{L.details.metrics}</Typography>
+        </AccordionSummary>
+        <AccordionDetails>
+          <MetricsTable result={result} />
+        </AccordionDetails>
+      </Accordion>
+      <Accordion disableGutters>
+        <AccordionSummary expandIcon={<Typography variant="caption">▼</Typography>} sx={ACCORDION_SUMMARY_SX}>
+          <Typography variant="subtitle2" sx={{ fontWeight: 'bold' }}>
+            {interpolate(L.details.trades, { count: result ? result.trades.length : '—' })}
+          </Typography>
+        </AccordionSummary>
+        <AccordionDetails>{result && <TradesTable result={result} />}</AccordionDetails>
+      </Accordion>
+    </Box>
+  );
+}
+
+// ── 下一步 ───────────────────────────────────────────────────────────────────
+
+function NextStep({ strategy, similar, compressed }: { strategy: LabStrategy; similar: HeroSummary[]; compressed: boolean }) {
+  const { notify } = useToast();
+  const share = async () => {
+    try {
+      await navigator.clipboard.writeText(window.location.href);
+      notify(L.next.copied, true);
+    } catch {
+      /* 剪貼簿被瀏覽器擋下時不做任何事：網址列上本來就是這組設定 */
+    }
+  };
+  return (
+    <Card sx={{ p: 3 }}>
+      <Typography variant="h6" sx={{ fontWeight: 'bold' }}>{L.next.title}</Typography>
+
+      {similar.length > 0 && <SimilarTraders traders={similar} compressed={compressed} />}
+
+      <Stack direction="row" spacing={1.5} flexWrap="wrap" useFlexGap sx={{ mt: 2 }}>
+        <Button variant="contained" component={RouterLink} to="/marketplace">{L.next.marketplace}</Button>
+        <Button variant="outlined" onClick={() => void share()}>{L.next.share}</Button>
+      </Stack>
+
+      <Box sx={{ mt: 2.5 }}>
+        <Typography variant="caption" sx={{ fontWeight: 'bold', display: 'block' }}>{L.noOrder.title}</Typography>
+        <Typography variant="caption" color="text.secondary" component="p" sx={{ mt: 0.25 }}>
+          {L.noOrder.body}
+          {FEATURE_COPY_TRADING && ` ${L.noOrder.copy}`}
+          {strategy.kind === 'single' && ` ${L.noOrder.single}`}
+        </Typography>
+      </Box>
+    </Card>
+  );
+}
+
 // ── 指標 ─────────────────────────────────────────────────────────────────────
 
 function metricRows(m: LabMetrics | null) {
@@ -374,12 +571,11 @@ function metricRows(m: LabMetrics | null) {
   ];
 }
 
-function MetricsCard({ result }: { result: LabResult | null }) {
+function MetricsTable({ result }: { result: LabResult | null }) {
   const mine = metricRows(result?.metrics ?? null);
   const hold = metricRows(result?.benchmarkMetrics ?? null);
   return (
-    <Card sx={{ p: 3 }}>
-      <Typography variant="subtitle2" sx={{ fontWeight: 'bold', mb: 1 }}>{L.metrics.title}</Typography>
+    <Box>
       <Box sx={{ overflowX: 'auto' }}>
         <Table size="small">
           <TableHead>
@@ -401,7 +597,7 @@ function MetricsCard({ result }: { result: LabResult | null }) {
         </Table>
       </Box>
       <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>{L.metrics.winRateNote}</Typography>
-    </Card>
+    </Box>
   );
 }
 
@@ -411,20 +607,20 @@ const STAT = { xs: 12, sm: 6, md: 4 };
 
 function ForecastSection({ index, result }: { index: LabIndex; result: LabResult | null }) {
   const f = result?.forecast ?? null;
-  const last = (band: number[] | undefined) => (band && band.length > 0 ? `${fUsd(band[band.length - 1])} USDC` : '—');
+  const end = (band: number[] | undefined) => (band && band.length > 0 ? `${fUsd(band[band.length - 1])} USDC` : '—');
   const pct = (v: number | undefined) => (v === undefined ? '—' : `${v.toFixed(1)}%`);
   return (
     <Stack spacing={2}>
-      {result && <LabForecastChart result={result} capital={index.capitalUsd} />}
+      {result && <LabForecastChart result={result} capital={index.capitalUsd} embedded />}
       <Grid container spacing={2}>
         <Grid size={STAT}>
-          <StatCard title={L.forecast.p5} value={last(f?.percentiles.p5)} />
+          <StatCard title={L.forecast.p5} value={end(f?.percentiles.p5)} />
         </Grid>
         <Grid size={STAT}>
-          <StatCard title={L.forecast.p50} value={last(f?.percentiles.p50)} />
+          <StatCard title={L.forecast.p50} value={end(f?.percentiles.p50)} />
         </Grid>
         <Grid size={STAT}>
-          <StatCard title={L.forecast.p95} value={last(f?.percentiles.p95)} />
+          <StatCard title={L.forecast.p95} value={end(f?.percentiles.p95)} />
         </Grid>
         <Grid size={{ xs: 12, sm: 6 }}>
           <StatCard title={L.forecast.lossProb} value={pct(f?.lossProbPct)} valueColor="warning.main" />
@@ -433,31 +629,17 @@ function ForecastSection({ index, result }: { index: LabIndex; result: LabResult
           <StatCard title={L.forecast.halfLossProb} value={pct(f?.halfLossProbPct)} valueColor="error.main" />
         </Grid>
       </Grid>
-      {/* 預測方法的假設固定顯示 */}
-      <Alert severity="info" variant="outlined">
-        {interpolate(L.forecast.method, {
-          from: f?.from ?? index.range.to,
-          capital: fUsd(index.capitalUsd),
-          block: index.forecast.blockDays,
-          paths: index.forecast.paths.toLocaleString('en-US'),
-          days: index.forecast.horizonDays,
-        })}
-      </Alert>
     </Stack>
   );
 }
 
 // ── 交易 ─────────────────────────────────────────────────────────────────────
 
-function TradesCard({ result }: { result: LabResult }) {
+function TradesTable({ result }: { result: LabResult }) {
   const actionLabel = { open: L.chart.open, close: L.chart.close, liquidated: L.chart.liquidated };
   const rows = [...result.trades].reverse();
   return (
-    <Card sx={{ p: 3 }}>
-      <Stack direction="row" alignItems="baseline" spacing={1.5} sx={{ mb: 1 }}>
-        <Typography variant="subtitle2" sx={{ fontWeight: 'bold' }}>{L.trades.title}</Typography>
-        <Typography variant="caption" color="text.secondary">{interpolate(L.trades.count, { count: rows.length })}</Typography>
-      </Stack>
+    <Box>
       {rows.length === 0 ? (
         <Typography variant="body2" color="text.secondary">{L.trades.empty}</Typography>
       ) : (
@@ -495,7 +677,7 @@ function TradesCard({ result }: { result: LabResult }) {
           </Table>
         </Box>
       )}
-    </Card>
+    </Box>
   );
 }
 
@@ -503,7 +685,7 @@ function TradesCard({ result }: { result: LabResult }) {
 
 function SimilarTraders({ traders, compressed }: { traders: HeroSummary[]; compressed: boolean }) {
   return (
-    <Card sx={{ p: 3 }}>
+    <Box sx={{ mt: 1.5 }}>
       <Typography variant="subtitle2" sx={{ fontWeight: 'bold' }}>{L.similar.title}</Typography>
       <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5, mb: 1.5 }}>{L.similar.body}</Typography>
       <Alert severity="info" variant="outlined" sx={{ mb: 1.5 }}>{heroDisclosure(compressed)}</Alert>
@@ -519,6 +701,6 @@ function SimilarTraders({ traders, compressed }: { traders: HeroSummary[]; compr
           </Stack>
         ))}
       </Stack>
-    </Card>
+    </Box>
   );
 }
