@@ -685,8 +685,8 @@ export default function TraderLeaderboard() {
                           <Avatar
                             src={traderAvatarSrc(trader.reputation, trader.address, trader.displayName)}
                             sx={{
-                              width: 32,
-                              height: 32,
+                              width: 44,
+                              height: 44,
                               flexShrink: 0,
                               border: '1px solid',
                               borderColor: trader.reputation && trader.reputation >= 80n ? 'warning.main' : 'rgba(255,255,255,0.1)',

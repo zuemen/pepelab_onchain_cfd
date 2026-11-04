@@ -97,7 +97,7 @@ export default function Podium({
         '&:has(.podium-profile-link:focus-visible)': { outline: '2px solid', outlineColor: 'primary.main', outlineOffset: 2 },
       }}
     >
-      {/* 身分列——頭貼與名稱是通往個人頁的連結，它的 ::after 蓋住整張卡片（stretched link），
+      {/* 身分列——獎牌與名稱是通往個人頁的連結，它的 ::after 蓋住整張卡片（stretched link），
           所以點卡片任何地方都進個人頁，而且仍是真的連結（可以 Ctrl+點開新分頁、用 Tab 聚焦）。
           卡片裡自己能點的東西（策略圖示、TraderScore、跟單按鈕）用 position: relative 疊在它上面。 */}
       <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1 }}>
@@ -116,18 +116,10 @@ export default function Podium({
             '&::after': { content: '""', position: 'absolute', inset: 0 },
           }}
         >
-          <Avatar
-            src={traderAvatarSrc(trader.reputation, trader.address, trader.displayName)}
-            sx={{
-              width: 36,
-              height: 36,
-              flexShrink: 0,
-              border: '1px solid',
-              borderColor: MEDAL_BORDER[rank - 1],
-              bgcolor: 'rgba(255, 255, 255, 0.05)',
-              '& .MuiAvatar-img': traderAvatarImgSx(trader.displayName, '2px'),
-            }}
-          />
+          {/* 獎牌在名字前面：一眼分出名次，又不跟頭貼搶右上角。 */}
+          <Typography sx={{ fontSize: '2rem', lineHeight: 1, flexShrink: 0 }} title={`#${rank}`}>
+            {MEDALS[rank - 1]}
+          </Typography>
           <Box sx={{ minWidth: 0 }}>
             <Typography className="podium-trader-name" noWrap sx={{ fontWeight: 'bold', fontSize: '0.8125rem' }}>
               {trader.displayName || t.marketplace.card.noName}
@@ -137,10 +129,19 @@ export default function Podium({
             </Typography>
           </Box>
         </Box>
-        {/* 獎牌是一眼分出名次的唯一記號，要比頭貼還大。 */}
-        <Typography sx={{ fontSize: '2.5rem', lineHeight: 1, flexShrink: 0 }} title={`#${rank}`}>
-          {MEDALS[rank - 1]}
-        </Typography>
+        {/* 頭貼放右上角原本獎牌的位置：這裡空間最大，照片才看得清楚。 */}
+        <Avatar
+          src={traderAvatarSrc(trader.reputation, trader.address, trader.displayName)}
+          sx={{
+            width: 64,
+            height: 64,
+            flexShrink: 0,
+            border: '2px solid',
+            borderColor: MEDAL_BORDER[rank - 1],
+            bgcolor: 'rgba(255, 255, 255, 0.05)',
+            '& .MuiAvatar-img': traderAvatarImgSx(trader.displayName, '2px'),
+          }}
+        />
       </Box>
 
       {/* 策略配置:這個人押什麼、做多還做空——卡片的主角。 */}
