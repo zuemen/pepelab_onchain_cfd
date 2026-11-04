@@ -117,7 +117,7 @@ export default function Podium({
           }}
         >
           <Avatar
-            src={traderAvatarSrc(trader.reputation, trader.address)}
+            src={traderAvatarSrc(trader.reputation, trader.address, trader.displayName)}
             sx={{
               width: 36,
               height: 36,

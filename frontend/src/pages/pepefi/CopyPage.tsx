@@ -508,7 +508,7 @@ function CopyPageView() {
       <Card sx={{ p: 3 }}>
         <Stack direction="row" spacing={3} alignItems="center">
           <Avatar
-            src={traderAvatarSrc(stakeData ? stakeData.reputation : null, traderAddress)}
+            src={traderAvatarSrc(stakeData ? stakeData.reputation : null, traderAddress, traderName)}
             sx={{
               width: 80,
               height: 80,

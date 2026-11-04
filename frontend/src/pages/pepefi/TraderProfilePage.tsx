@@ -362,7 +362,7 @@ function TraderProfileView() {
           <Card sx={{ p: 3, display: 'flex', flexDirection: 'column', gap: 3 }}>
             <Stack direction="row" spacing={3} alignItems="center">
               <Avatar
-                src={traderAvatarSrc(repScore, traderAddr)}
+                src={traderAvatarSrc(repScore, traderAddr, name)}
                 sx={{
                   width: 80,
                   height: 80,

@@ -683,7 +683,7 @@ export default function TraderLeaderboard() {
                       >
                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                           <Avatar
-                            src={traderAvatarSrc(trader.reputation, trader.address)}
+                            src={traderAvatarSrc(trader.reputation, trader.address, trader.displayName)}
                             sx={{
                               width: 32,
                               height: 32,
