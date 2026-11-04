@@ -63,14 +63,14 @@ export const getPepeAvatar = (reputation: number | bigint | null, address: strin
 
 /**
  * 用真人照片當頭貼的模擬交易者（#309 的英雄榜），鍵是交易者名稱，也就是鏈上的 displayName。
- * 照片是團隊成員本人、經同意使用（2026-11-04）。用名稱而不是位址：同一位模擬交易者在本機鏈與
+ * 照片是團隊成員本人、經同意使用（2026-11-04），給的是當時公開站 TraderScore 排行前四名。用名稱而不是位址：同一位模擬交易者在本機鏈與
  * Base Sepolia 上的位址不同，名稱相同。績效仍是模擬的，頁面上的模擬標示不因照片而拿掉。
  */
 export const HERO_PHOTOS: Readonly<Record<string, string>> = {
   'carbon zero': '/avatars/heroes/carbon-zero.jpg',
-  'index tracker': '/avatars/heroes/index-tracker.jpg',
-  'steady eddie': '/avatars/heroes/steady-eddie.jpg',
-  'trend rider': '/avatars/heroes/trend-rider.jpg',
+  'risk parity pro': '/avatars/heroes/risk-parity-pro.jpg',
+  'quant bot': '/avatars/heroes/quant-bot.jpg',
+  'crypto degen': '/avatars/heroes/crypto-degen.jpg',
 };
 
 export const heroPhotoFor = (name: string | null | undefined): string | undefined =>

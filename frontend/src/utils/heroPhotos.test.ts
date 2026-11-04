@@ -27,15 +27,15 @@ describe('英雄榜真人照片', () => {
 
   it('名稱比對不分大小寫、忽略前後空白；不在表上的交易者照舊用 Pepe 圖', () => {
     expect(heroPhotoFor('Carbon Zero')).toBe('/avatars/heroes/carbon-zero.jpg');
-    expect(heroPhotoFor('  STEADY EDDIE ')).toBe('/avatars/heroes/steady-eddie.jpg');
-    expect(heroPhotoFor('Crypto Degen')).toBeUndefined();
+    expect(heroPhotoFor('  QUANT BOT ')).toBe('/avatars/heroes/quant-bot.jpg');
+    expect(heroPhotoFor('Steady Eddie')).toBeUndefined();
     expect(heroPhotoFor(undefined)).toBeUndefined();
-    expect(traderAvatarSrc(80, '0xabc', 'Crypto Degen')).toBe(traderAvatarSrc(80, '0xabc'));
+    expect(traderAvatarSrc(80, '0xabc', 'Steady Eddie')).toBe(traderAvatarSrc(80, '0xabc'));
   });
 
   it('照片填滿圓框、不留內距；Pepe 插圖照舊整張放進去並留內距', () => {
-    expect(traderAvatarImgSx('Trend Rider', '4px')).toEqual({ objectFit: 'cover', padding: 0 });
-    expect(traderAvatarImgSx('Crypto Degen', '4px')).toEqual({ objectFit: 'contain', padding: '4px' });
+    expect(traderAvatarImgSx('Crypto Degen', '4px')).toEqual({ objectFit: 'cover', padding: 0 });
+    expect(traderAvatarImgSx('Steady Eddie', '4px')).toEqual({ objectFit: 'contain', padding: '4px' });
     expect(traderAvatarImgSx(undefined, '2px')).toEqual({ objectFit: 'contain', padding: '2px' });
   });
 });
