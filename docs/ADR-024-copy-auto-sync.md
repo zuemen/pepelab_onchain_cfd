@@ -1,5 +1,5 @@
 ---
-status: accepted（原始碼；Base Sepolia 尚未部署，部署步驟見 OWNER_ACTIONS 第 8 步）
+status: accepted（2026-10-26 已部署到 Base Sepolia，見 CUTOVER_LOG_2026-10-26）
 date: 2026-10-26
 supersedes: "ADR-023 決定第 5 點的「不做持續跟單」（自動停損仍維持不做）"
 ---

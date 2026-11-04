@@ -927,7 +927,7 @@ export default function PortfolioPage() {
   const syncStatusText = (st: SyncStatus, syncOn: boolean): string => {
     const S = t.portfolio.autoSync.status;
     switch (st.kind) {
-      case 'cooldown':    return interpolate(S.cooldown, { time: fDate(BigInt(st.readyAt)) });
+      case 'cooldown':    return interpolate(mode === 'simple' ? S.cooldownSimple : S.cooldown, { time: fDate(BigInt(st.readyAt)) });
       case 'needsGas':    return interpolate(S.needsGas, { eth: formatEth(st.shortfall) });
       // Simple 模式沒有「開啟自動同步」、「設定」與「立即同步」的入口（設定含槓桿上限），狀態文字不叫人去按它們；
       // 跟單頁在 Simple 模式也一樣只說明、不給勾選框（autoSyncEntry）
@@ -935,6 +935,8 @@ export default function PortfolioPage() {
       case 'feeAboveCap': return mode === 'simple' ? S.feeAboveCapSimple : S.feeAboveCap;
       case 'consentStale': return mode === 'simple' ? S.consentStaleSimple : S.consentStale;
       case 'upToDate':    return mode === 'simple' && !syncOn ? S.upToDateSimpleOff : S.upToDate;
+      case 'waiting':     return mode === 'simple' ? S.waitingSimple : S.waiting;
+      case 'waitingExecutor': return mode === 'simple' ? S.waitingExecutorSimple : S.waitingExecutor;
       default:            return S[st.kind];
     }
   };

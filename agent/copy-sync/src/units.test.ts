@@ -1,8 +1,9 @@
 // copy-sync 的純函式：參數解析、錯誤分類、簽章白名單、日誌遮蔽、通知。完全離線。
 //   cd agent && npx tsx copy-sync/src/units.test.ts
 import assert from "node:assert";
+import { readFileSync } from "node:fs";
 import { ethers } from "ethers";
-import { parseCli } from "./args.ts";
+import { BLOCKS_PER_HOUR, parseCli } from "./args.ts";
 import { CATEGORY_LABEL, classifyRevert, isRevert, MAX_RETRY_SEC, nextRetryAt, revertDataOf } from "./errors.ts";
 import { assertResyncTransaction, ExecutorGuardError, ExecutorWallet, RESYNC_FOR_SELECTOR } from "./guard.ts";
 import { errText, makeRedactor, urlSecretParts } from "./log.ts";
@@ -31,6 +32,19 @@ const ENV = { COPY_SYNC_RPC_URL: RPC };
   assert.equal(c.dryRun, false);
   assert.equal(c.once, false);
   ok("預設：public 模式、RPC 取自 COPY_SYNC_RPC_URL");
+
+  // 回看範圍以區塊數給，換算錯就會漏掉同步（曾把 86,400 塊當成 48 小時，實際只有 4.8 小時）。
+  assert.equal(BLOCKS_PER_HOUR, 18_000, "Base Sepolia 實測約每秒 5 塊");
+  assert.equal(c.lookbackBlocks, 24 * BLOCKS_PER_HOUR, "預設回看要真的是 24 小時");
+  ok("預設回看範圍是 24 小時");
+
+  // GitHub Actions 的執行者不保存狀態：回看要蓋住「最長的冷卻（前端選項 24 小時）＋排程延遲（實測最長約 9 小時）」，
+  // 否則冷卻中被擋下的同步，等冷卻結束時已經掃不到發版事件，就再也不會自動同步。
+  const workflow = readFileSync(new URL("../../../.github/workflows/copy-sync-executor.yml", import.meta.url), "utf8");
+  const flag = /--lookback-blocks ([0-9]+)/.exec(workflow);
+  assert.ok(flag, "workflow 要明確給 --lookback-blocks");
+  assert.ok(Number(flag[1]) >= (24 + 9) * BLOCKS_PER_HOUR, `workflow 回看 ${flag[1]} 塊不足以蓋住冷卻＋排程延遲`);
+  ok("workflow 的回看範圍蓋得住最長冷卻＋排程延遲");
 
   const p = parseCli(["--followers", `${A},${A.toLowerCase()} ${B}`, "--once", "--dry-run", "--max-gas-gwei=1.5"], ENV);
   assert.equal(p.mode, "personal");

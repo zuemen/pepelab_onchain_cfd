@@ -40,8 +40,9 @@ cd contracts && forge script script/DemoE2E.s.sol:DemoE2E --broadcast --rpc-url 
 ## 自動同步跟單（2026-10-26 新增，ADR-024，本機 Anvil）
 
 > 這一段是新寫的，對應現行原始碼，不屬於上方的歷史快照。設計見
-> [`ADR-024-copy-auto-sync.md`](ADR-024-copy-auto-sync.md)。Base Sepolia 上的 CopyTracker 還是快照版
-> （部署步驟見 `OWNER_ACTIONS.md` 第 8 步），所以這段只在本機鏈展示。
+> [`ADR-024-copy-auto-sync.md`](ADR-024-copy-auto-sync.md)。Base Sepolia 已於 2026-10-26 部署自動同步版
+> （`CUTOVER_LOG_2026-10-26.md`）；這段用本機鏈是因為可以快轉冷卻。公開站上的同步要等執行者，見
+> `KNOWN_LIMITATIONS.md` #40。
 
 **要講的一句話**：跟隨者在鏈上同意一次之後，任何人都能、也只能把他的部位調成交易者鏈上最新版；
 沒有人拿到跟隨者的私鑰，執行者也不能選資產、方向或槓桿。

@@ -150,7 +150,7 @@ export const GUARD_SHA256 = {
 export const PINNED_WORKFLOWS = {
   "admin-base-sepolia.yml": "8df9986b12144f64b0e7df584f0b96270880a3cf32bea537bdeb5aafefb09130",
   "base-sepolia-keeper.yml": "27c61c6cc8ca0782c4d7c956b1a61ecb6ffeeebfe537282b58b829a01767c54f",
-  "copy-sync-executor.yml": "7491e911440f46230b48ae47980af4e3eacc7278ec882847361f86b5d668c71e",
+  "copy-sync-executor.yml": "5630f2ce38361c58ba84bccc97d21fdcb1cf0ed449345bb2f589c5d554a3a10e",
   "price-keeper.yml": "5048608805fa691f7249ee5a24b21bc1d008b01517c969395a7e2efaf42808c9",
   "x402-settlement-worker.yml": "c8558cd02626ff245bc26aa17102e7c24009305f2bd4c8f01e9d5138ce53dce1",
 };

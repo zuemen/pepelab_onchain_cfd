@@ -1521,8 +1521,8 @@ ADR-013 is the plan to make the keeper relay signed updates.
 
 ## 跟單自動同步（added 2026-10-26）
 
-設計與權限模型見 [`ADR-024-copy-auto-sync.md`](ADR-024-copy-auto-sync.md)。以下各項在**原始碼**成立；Base Sepolia 上的
-CopyTracker 仍是快照版，部署前只有本機鏈能展示（見 #44）。
+設計與權限模型見 [`ADR-024-copy-auto-sync.md`](ADR-024-copy-auto-sync.md)。自動同步版 CopyTracker 已於 2026-10-26
+部署到 Base Sepolia（見 #44）。
 
 ## 39. 同步成本跟著 owner 可調的 `executionFee`（已以跟隨者簽名帶入的上限封住）
 
@@ -1559,7 +1559,9 @@ owner 調高費率後以第三方身分同步一次，0.3 ETH 的油箱只剩 1 
 ## 40. 即時性取決於有沒有人執行
 
 合約不會自己動：交易者發布新版之後，要有人送出 `resyncFor` 才會同步。平台可以跑公開的執行者（`agent/copy-sync`，賺小費），
-跟隨者也可以跑自己的（personal 模式），任何第三方都能執行；但沒有人執行時，部位會一直停在舊版。跟隨者若用 `setSyncExecutor`
+跟隨者也可以跑自己的（personal 模式），任何第三方都能執行；但沒有人執行時，部位會一直停在舊版。
+平台的 public 執行者目前跑在 GitHub 排程上（`copy-sync-executor.yml`）：名目每 15 分鐘，2026-11-04 實測近 39 個間隔平均約
+5.3 小時、最長約 8.8 小時，補觸發的 keeper-trigger 也沒有在觸發，所以冷卻結束後常要再等幾小時。跟隨者若用 `setSyncExecutor`
 指定只有自己的 agent 能執行，那個 agent 停了就沒有人能代為同步（這是跟隨者自己選的取捨）。Portfolio 顯示
 「已同步到 vN／最新 vM」，本人可以隨時按「立即同步」（先看過新版內容，不付小費；Simple Mode 不提供，要切到專家模式）。
 personal 模式的執行者在交易者發布新版時會通知本人（`new-version`，含沒開自動同步的跟單）。webhook 設在執行者那支程式上：
@@ -1622,10 +1624,10 @@ personal 模式的執行者在交易者發布新版時會通知本人（`new-ver
 `getFollowerCount` 會偏高。執行者 agent 讀這份清單時先去重，再逐一讀 `getCopyRecords` 找出交易者相符、仍在跟隨、開啟自動同步、
 版本落後的紀錄。合約沒有修（改成集合需要新的狀態與遷移，且不影響資金安全）；畫面上的跟隨人數若要精確，應以事件或去重後的清單計算。
 
-## 44. 部署前公開站沒有此功能；舊跟單不能遷移
+## 44. 舊跟單不能遷移
 
-- Base Sepolia 上的 CopyTracker（`0x15A9…347C`）是快照版。要由擁有者部署新 tracker 並改接 exchange、TraderStake、FeeRouter
-  （[`OWNER_ACTIONS.md`](OWNER_ACTIONS.md) 第 8 步）。
+- Base Sepolia 上的舊 CopyTracker（`0x15A9…347C`）是快照版。2026-10-26 已部署自動同步版（`0x3129…64A9`）並改接 exchange、
+  TraderStake、FeeRouter（[`CUTOVER_LOG_2026-10-26.md`](CUTOVER_LOG_2026-10-26.md)）。
 - 交易所的 `positionAgent` 綁定開倉的那顆 tracker，新 tracker 平不掉舊 tracker 開的腿：舊跟單不能轉成自動同步。
   換 tracker 之後舊 tracker 失去授權，舊跟單的取消會 revert `PositionStillOpen`，出路是 `deactivateWithoutScoring` 後在交易所自行平倉。
 - `PepeIncentives.copyTracker` 是 immutable：換 tracker 之後，新跟單的「跟單獎勵」（`claimCopyReward`）讀的是舊 tracker，
