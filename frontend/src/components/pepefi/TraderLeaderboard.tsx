@@ -19,7 +19,7 @@ import { isHiddenTrader } from 'src/lib/pepefi/hiddenTraders';
 import AllocationRow from 'src/components/pepefi/AllocationRow';
 import Podium from 'src/components/pepefi/Podium';
 import ScoreBreakdownPopover from 'src/components/pepefi/ScoreBreakdownPopover';
-import { traderAvatarSrc } from 'src/utils/pepefi-assets';
+import { traderAvatarSrc, traderAvatarImgSx } from 'src/utils/pepefi-assets';
 import { t, interpolate } from 'src/locales';
 import { heroDisclosure } from 'src/lib/pepefi/heroDisclosure';
 import {
@@ -683,15 +683,15 @@ export default function TraderLeaderboard() {
                       >
                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                           <Avatar
-                            src={traderAvatarSrc(trader.reputation, trader.address)}
+                            src={traderAvatarSrc(trader.reputation, trader.address, trader.displayName)}
                             sx={{
-                              width: 32,
-                              height: 32,
+                              width: 44,
+                              height: 44,
                               flexShrink: 0,
                               border: '1px solid',
                               borderColor: trader.reputation && trader.reputation >= 80n ? 'warning.main' : 'rgba(255,255,255,0.1)',
                               bgcolor: 'rgba(255, 255, 255, 0.05)',
-                              '& .MuiAvatar-img': { objectFit: 'contain', padding: '2px' },
+                              '& .MuiAvatar-img': traderAvatarImgSx(trader.displayName, '2px'),
                             }}
                           />
                           {/* 名稱、地址各自獨立一行。聲譽徽章拿掉了：TraderScore 欄已經把聲譽算進去，

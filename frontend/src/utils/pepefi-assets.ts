@@ -62,11 +62,38 @@ export const getPepeAvatar = (reputation: number | bigint | null, address: strin
 };
 
 /**
- * 交易者頭像的圖片來源。機構租戶（brand.mascot = false）不顯示 Pepe 圖：回 undefined，
- * MUI Avatar 會退回中性的人像圖示。頁面一律用這個，不要直接呼叫 getPepeAvatar。
+ * 用真人照片當頭貼的模擬交易者（#309 的英雄榜），鍵是交易者名稱，也就是鏈上的 displayName。
+ * 照片是團隊成員本人、經同意使用（2026-11-04），給的是當時公開站 TraderScore 排行前四名。用名稱而不是位址：同一位模擬交易者在本機鏈與
+ * Base Sepolia 上的位址不同，名稱相同。績效仍是模擬的，頁面上的模擬標示不因照片而拿掉。
  */
-export const traderAvatarSrc = (reputation: number | bigint | null, address: string): string | undefined =>
-  TENANT_SHOWS_MASCOT ? getPepeAvatar(reputation, address) : undefined;
+export const HERO_PHOTOS: Readonly<Record<string, string>> = {
+  'carbon zero': '/avatars/heroes/carbon-zero.jpg',
+  'risk parity pro': '/avatars/heroes/risk-parity-pro.jpg',
+  'quant bot': '/avatars/heroes/quant-bot.jpg',
+  'crypto degen': '/avatars/heroes/crypto-degen.jpg',
+};
+
+export const heroPhotoFor = (name: string | null | undefined): string | undefined =>
+  name ? HERO_PHOTOS[name.trim().toLowerCase()] : undefined;
+
+/**
+ * 交易者頭像的圖片來源。機構租戶（brand.mascot = false）不顯示 Pepe 圖、也不顯示英雄榜照片：
+ * 回 undefined，MUI Avatar 會退回中性的人像圖示。頁面一律用這個，不要直接呼叫 getPepeAvatar。
+ * 有 `name` 而且是 HERO_PHOTOS 裡的模擬交易者時用照片，其餘照舊依位址與信譽挑 Pepe 圖。
+ */
+/**
+ * 頭貼圖片在圓框裡怎麼擺。Pepe 插圖是去背的全身圖：整張放進去（contain）再留一點內距，
+ * 才不會切到帽子或腳。照片相反：填滿圓框（cover）、不留內距，否則四周會露出一圈底色、臉變小。
+ */
+export const traderAvatarImgSx = (name: string | null | undefined, padding: string) =>
+  heroPhotoFor(name) ? { objectFit: 'cover' as const, padding: 0 } : { objectFit: 'contain' as const, padding };
+
+export const traderAvatarSrc = (
+  reputation: number | bigint | null,
+  address: string,
+  name?: string | null
+): string | undefined =>
+  TENANT_SHOWS_MASCOT ? (heroPhotoFor(name) ?? getPepeAvatar(reputation, address)) : undefined;
 
 /**
  * Returns rank metadata including styled metallic gradients and colors.

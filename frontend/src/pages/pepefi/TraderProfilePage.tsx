@@ -7,7 +7,7 @@ import { usePepefiWallet } from 'src/layouts/pepefi'
 import { TableSkeleton, CardSkeleton } from 'src/components/pepefi/Skeleton'
 import { ASSET_LABEL } from 'src/lib/pepefi/assetMeta'
 import StatCard from 'src/components/pepefi/StatCard'
-import { traderAvatarSrc } from 'src/utils/pepefi-assets'
+import { traderAvatarSrc, traderAvatarImgSx } from 'src/utils/pepefi-assets'
 import TraderRankBadge from 'src/components/pepefi/TraderRankBadge'
 import { TraderActivityLive } from 'src/components/pepefi/TraderActivity'
 import DeferredSection from 'src/components/pepefi/DeferredSection'
@@ -362,18 +362,16 @@ function TraderProfileView() {
           <Card sx={{ p: 3, display: 'flex', flexDirection: 'column', gap: 3 }}>
             <Stack direction="row" spacing={3} alignItems="center">
               <Avatar
-                src={traderAvatarSrc(repScore, traderAddr)}
+                src={traderAvatarSrc(repScore, traderAddr, name)}
                 sx={{
-                  width: 80,
-                  height: 80,
+                  width: { xs: 96, md: 120 },
+                  height: { xs: 96, md: 120 },
+                  flexShrink: 0,
                   border: '3px solid',
                   borderColor: repScore && repScore >= 80n ? 'warning.main' : 'rgba(255,255,255,0.1)',
                   boxShadow: '0 0 16px rgba(0,0,0,0.5)',
                   bgcolor: 'rgba(255, 255, 255, 0.05)',
-                  '& .MuiAvatar-img': {
-                    objectFit: 'contain',
-                    padding: '4px',
-                  }
+                  '& .MuiAvatar-img': traderAvatarImgSx(name, '4px'),
                 }}
               />
               <Box sx={{ flexGrow: 1 }}>
