@@ -81,6 +81,13 @@ export const heroPhotoFor = (name: string | null | undefined): string | undefine
  * 回 undefined，MUI Avatar 會退回中性的人像圖示。頁面一律用這個，不要直接呼叫 getPepeAvatar。
  * 有 `name` 而且是 HERO_PHOTOS 裡的模擬交易者時用照片，其餘照舊依位址與信譽挑 Pepe 圖。
  */
+/**
+ * 頭貼圖片在圓框裡怎麼擺。Pepe 插圖是去背的全身圖：整張放進去（contain）再留一點內距，
+ * 才不會切到帽子或腳。照片相反：填滿圓框（cover）、不留內距，否則四周會露出一圈底色、臉變小。
+ */
+export const traderAvatarImgSx = (name: string | null | undefined, padding: string) =>
+  heroPhotoFor(name) ? { objectFit: 'cover' as const, padding: 0 } : { objectFit: 'contain' as const, padding };
+
 export const traderAvatarSrc = (
   reputation: number | bigint | null,
   address: string,

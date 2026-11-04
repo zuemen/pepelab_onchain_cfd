@@ -11,7 +11,7 @@ import Typography from '@mui/material/Typography';
 
 import { t } from 'src/locales';
 import { MONO, shortAddr } from 'src/components/pepefi/brandKit';
-import { traderAvatarSrc } from 'src/utils/pepefi-assets';
+import { traderAvatarSrc, traderAvatarImgSx } from 'src/utils/pepefi-assets';
 import AllocationRow from 'src/components/pepefi/AllocationRow';
 import { scoreChipColor, fPnL, fWinRate, fReturnPct, type TraderCard } from 'src/lib/pepefi/leaderboardMetrics';
 
@@ -125,7 +125,7 @@ export default function Podium({
               border: '1px solid',
               borderColor: MEDAL_BORDER[rank - 1],
               bgcolor: 'rgba(255, 255, 255, 0.05)',
-              '& .MuiAvatar-img': { objectFit: 'contain', padding: '2px' },
+              '& .MuiAvatar-img': traderAvatarImgSx(trader.displayName, '2px'),
             }}
           />
           <Box sx={{ minWidth: 0 }}>

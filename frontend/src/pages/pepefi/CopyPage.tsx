@@ -20,7 +20,7 @@ import { firstBlocking, stalenessNotice } from 'src/lib/pepefi/priceFreshness'
 import CarbonTierMixCard from 'src/components/pepefi/CarbonTierMixCard'
 import HiddenTraderNotice from 'src/components/pepefi/HiddenTraderNotice'
 import KYCModal from 'src/components/pepefi/KYCModal'
-import { traderAvatarSrc } from 'src/utils/pepefi-assets'
+import { traderAvatarSrc, traderAvatarImgSx } from 'src/utils/pepefi-assets'
 import TraderRankBadge from 'src/components/pepefi/TraderRankBadge'
 import { useToast } from 'src/components/pepefi/ToastProvider'
 import { belowMinimum, minimumCopyAmount } from 'src/lib/pepefi/copyGuards'
@@ -510,16 +510,14 @@ function CopyPageView() {
           <Avatar
             src={traderAvatarSrc(stakeData ? stakeData.reputation : null, traderAddress, traderName)}
             sx={{
-              width: 80,
-              height: 80,
+              width: { xs: 96, md: 120 },
+              height: { xs: 96, md: 120 },
+              flexShrink: 0,
               border: '3px solid',
               borderColor: stakeData && stakeData.reputation >= 80n ? 'warning.main' : 'rgba(255,255,255,0.1)',
               boxShadow: '0 0 16px rgba(0,0,0,0.5)',
               bgcolor: 'rgba(255, 255, 255, 0.05)',
-              '& .MuiAvatar-img': {
-                objectFit: 'contain',
-                padding: '4px',
-              }
+              '& .MuiAvatar-img': traderAvatarImgSx(traderName, '4px'),
             }}
           />
           <Box sx={{ flexGrow: 1 }}>
