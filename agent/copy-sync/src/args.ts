@@ -31,6 +31,10 @@ export interface CliConfig {
   help: boolean;
 }
 
+/** Base Sepolia 每小時的區塊數（實測約每秒 5 塊，2026-11-04）。回看範圍以區塊數給，用這個換算，不要憑印象估。 */
+export const BLOCKS_PER_HOUR = 18_000;
+const DEFAULT_LOOKBACK_BLOCKS = 24 * BLOCKS_PER_HOUR;
+
 export const USAGE = `用法：npm run copy-sync -- [選項]
 
 模式
@@ -47,7 +51,7 @@ export const USAGE = `用法：npm run copy-sync -- [選項]
 
 掃描與排程
   --from-block N              第一次執行（沒有狀態檔）時從哪一塊開始掃
-  --lookback-blocks N         沒給 --from-block 時往回掃幾塊（預設 43200 ≈ Base 上 24 小時）
+  --lookback-blocks N         沒給 --from-block 時往回掃幾塊（預設 ${DEFAULT_LOOKBACK_BLOCKS} ≈ Base Sepolia 上 24 小時）
   --confirmations N           只掃到 head−N（預設：Anvil 0、其他 2）
   --interval-sec N            常駐模式每輪間隔（預設 30）
   --rescan-sec N              多久全面重掃一次追蹤中的 record（預設 600）
@@ -201,7 +205,7 @@ export function parseCli(argv: readonly string[], env: Record<string, string | u
     tracker: trackerRaw === undefined ? null : address("--tracker", trackerRaw),
     registry: registryRaw === undefined ? null : address("--registry", registryRaw),
     fromBlock: fromRaw === undefined ? null : intIn("--from-block", fromRaw, 0, 2 ** 48),
-    lookbackBlocks: intIn("--lookback-blocks", pick("--lookback-blocks") ?? "43200", 1, 10_000_000),
+    lookbackBlocks: intIn("--lookback-blocks", pick("--lookback-blocks") ?? String(DEFAULT_LOOKBACK_BLOCKS), 1, 10_000_000),
     confirmations: confRaw === undefined ? null : intIn("--confirmations", confRaw, 0, 1000),
     intervalSec: intIn("--interval-sec", pick("--interval-sec", "COPY_SYNC_INTERVAL_SEC") ?? "30", 1, 86_400),
     rescanSec: intIn("--rescan-sec", pick("--rescan-sec") ?? "600", 10, 7 * 86_400),

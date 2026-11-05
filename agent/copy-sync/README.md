@@ -253,7 +253,8 @@ npm run copy-sync -- --from-block 0                      # 常駐；交易者發
 ## 掛 cron／GitHub Actions
 
 `--once` 跑一輪就結束，適合排程。狀態檔要放在持久的位置（cron 用本機路徑；GitHub Actions 用 cache 或 artifact 保存，
-沒保存也能跑——每次從 `--lookback-blocks` 往回掃，只是比較慢）。
+沒保存也能跑——每次從 `--lookback-blocks` 往回掃，只是比較慢）。Base Sepolia 約每秒 5 塊（每小時 18,000 塊）；沒保存狀態時，
+回看要蓋住「最長的冷卻＋排程延遲」，否則冷卻中被擋下的同步會在冷卻結束時掃不到發版事件。本 repo 的 workflow 用 864000（48 小時）。
 
 crontab（每 5 分鐘，keystore 密碼放在只有自己讀得到的檔案）：
 
