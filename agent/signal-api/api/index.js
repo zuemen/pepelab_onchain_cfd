@@ -67595,7 +67595,13 @@ function positiveIntEnv(name, fallback) {
 var KYA_FAIL_WINDOW_MS = positiveIntEnv("KYA_FAIL_WINDOW_MS", 6e4);
 var KYA_FAIL_MAX = positiveIntEnv("KYA_FAIL_MAX", 20);
 var kyaFailLimiter = windowLimiter(KYA_FAIL_MAX, KYA_FAIL_WINDOW_MS);
-var CORS_ALLOWED_ORIGINS = (process.env.CORS_ALLOWED_ORIGINS ?? "http://localhost:5173,http://localhost:4173,https://pepelab-onchain-cfd-djot.vercel.app").split(",").map((s) => s.trim().replace(/\/$/, "")).filter(Boolean);
+var DEFAULT_CORS_ALLOWED_ORIGINS = [
+  "http://localhost:5173",
+  "http://localhost:4173",
+  "https://pepelab-onchain-cfd-djot.vercel.app",
+  "https://pepelab-onchain-cfd.vercel.app"
+];
+var CORS_ALLOWED_ORIGINS = (process.env.CORS_ALLOWED_ORIGINS ?? DEFAULT_CORS_ALLOWED_ORIGINS.join(",")).split(",").map((s) => s.trim().replace(/\/$/, "")).filter(Boolean);
 var FACILITATOR_RETRY_AFTER_SEC = 5;
 function classifyFacilitatorFailure(message) {
   if (!message) return null;
