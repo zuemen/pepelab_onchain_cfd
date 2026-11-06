@@ -318,9 +318,18 @@ const kyaFailLimiter = windowLimiter(KYA_FAIL_MAX, KYA_FAIL_WINDOW_MS);
 
 // CORS：GET 的公開資料維持全開（agent/瀏覽器都要用），但**寫入型**的
 // POST /demo/buy-signal 只允許白名單 origin（預設只有本機與正式前端）。
+//
+// 正式前端有兩個網址，兩個 Vercel 專案都部署 master（2026-11-06 確認兩邊是同一個 commit）：
+// README 列的 -djot，以及 pepelab-onchain-cfd。原本只列 -djot，從另一個網址打開時
+// x402 頁的「免費試看」與 /oracle 的參考價都被 403。corsDefaults.test.ts 釘住這兩個網址。
+export const DEFAULT_CORS_ALLOWED_ORIGINS: readonly string[] = [
+  "http://localhost:5173",
+  "http://localhost:4173",
+  "https://pepelab-onchain-cfd-djot.vercel.app",
+  "https://pepelab-onchain-cfd.vercel.app",
+];
 const CORS_ALLOWED_ORIGINS = (
-  process.env.CORS_ALLOWED_ORIGINS ??
-  "http://localhost:5173,http://localhost:4173,https://pepelab-onchain-cfd-djot.vercel.app"
+  process.env.CORS_ALLOWED_ORIGINS ?? DEFAULT_CORS_ALLOWED_ORIGINS.join(",")
 )
   .split(",")
   .map((s) => s.trim().replace(/\/$/, ""))
