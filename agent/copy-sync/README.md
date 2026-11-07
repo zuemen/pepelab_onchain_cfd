@@ -68,6 +68,12 @@ COPY_SYNC_RPC_URL=<RPC> COPY_SYNC_NOTIFY_WEBHOOK=https://example.com/hooks/me np
 - 沒有跑任何 agent 的人，網頁也會在任何內頁頂端提醒「交易者發布了新版、你有紀錄還停在舊版」，並指出哪些要本人處理（沒開自動同步、
   油箱不足、執行費被調高）。
 
+### 付費確認後才同步（`agent/examples/x402-copy-agent.ts`）
+
+把上面的 `new-version` 通知接到本機 agent：用 x402 買 `/signals/:trader`，確認 `data.strategyVersion` 等於通知的 `toVersion`，
+模擬通過才送 `resyncFor`。模擬與錯誤分類沿用這裡的 `chain.ts`、`errors.ts`，規則不變：跟隨者沒開自動同步、冷卻中或被合約擋下就不送交易。
+跑法與前提見 [`examples/x402-copy-agent.md`](../examples/x402-copy-agent.md)。
+
 ## 金鑰模型（自託管的重點）
 
 - **跟隨者的私鑰永遠不離開自己的錢包**。跟隨者只用自己的錢包簽兩類交易：跟單（`followTraderAtVersionWithAutoSync`

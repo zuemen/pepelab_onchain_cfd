@@ -38,9 +38,10 @@ export const x402: Catalog['x402'] = {
       heading: 'What you can buy',
       perCall: '/ call',
       signalsName: 'Trader signal',
-      signals: 'Pick a trader and get their next move: direction, asset and confidence.',
+      signals: 'Pick a trader and get their latest strategy version and allocation (asset, direction, weight, leverage), performance, and a funding-aware position reference.',
       oracleName: 'Live market snapshot',
       oracle: 'An asset’s current index price, mark price and funding rate.',
+      copyFlow: 'An agent can use it like this: on a notice that a trader published a new version, buy the trader signal, confirm the version matches the notice, then sync the follower’s positions. The sync only happens if the follower turned on auto-sync beforehand, the cooldown has passed and the contract simulation succeeds; otherwise no transaction is sent and the follower handles it themselves.',
     },
 
     split: {

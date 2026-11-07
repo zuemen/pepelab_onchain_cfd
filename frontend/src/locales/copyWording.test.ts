@@ -121,6 +121,8 @@ const ALLOWED: ReadonlyArray<{ key: string; why: string }> = [
   { key: 'feed.sentence.autoSyncOn', why: '同上' },
   { key: 'feed.sentence.autoSyncOff', why: '同上' },
 
+  { key: 'x402.docs.product.copyFlow', why: 'X402DocsPage 在旗標關閉時不渲染這一句' },
+
   // ── 非使用者畫面 ──
   { key: 'admin.treasury.claim.note', why: '管理員頁（營運方自己看，描述實際的費用分潤模型）' },
   { key: 'admin.treasury.incentives.description', why: '同上' },

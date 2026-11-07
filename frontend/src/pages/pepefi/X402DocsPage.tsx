@@ -15,6 +15,7 @@ import AccordionDetails from '@mui/material/AccordionDetails'
 
 import { t, interpolate } from 'src/locales'
 import { x402FeeRouter } from 'src/contracts/deployment'
+import { FEATURE_COPY_TRADING } from 'src/lib/pepefi/featureFlags'
 import { SIGNAL_API_URL, demoBuySignal } from 'src/lib/pepefi/signalApi'
 import { explorerTx, X402_SETTLEMENT_CHAIN_ID } from 'src/lib/pepefi/explorer'
 import { Mono as Num, LiveDot, PEPE, MONO, hexA } from 'src/components/pepefi/brandKit'
@@ -255,6 +256,9 @@ export default function X402DocsPage() {
             </Grid>
           ))}
         </Grid>
+        {FEATURE_COPY_TRADING && (
+          <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>{docs.product.copyFlow}</Typography>
+        )}
         <Box sx={{ mt: 2 }}>
           <SplitBar rev={rev} />
         </Box>
