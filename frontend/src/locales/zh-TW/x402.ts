@@ -31,7 +31,7 @@ export const x402 = {
 
     how: {
       heading: '一次購買是怎麼進行的',
-      ask: { title: '助理提出要求', body: '助理向 {brand} 要一筆資料，例如某位交易者的下一步。' },
+      ask: { title: '助理提出要求', body: '助理向 {brand} 要一筆資料，例如某位交易者的績效與最新策略。' },
       quote: { title: '{brand} 報價', body: '系統回覆：「這筆 $0.01，請用 Circle USDC 付款。」' },
       pay: {
         title: '付款、拿到資料',

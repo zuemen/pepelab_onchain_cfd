@@ -225,7 +225,7 @@ describe('default tenant is the current production site, unchanged', () => {
         'PepeFi — 基於 Base 鏈的 Agent 原生代幣化資產引擎（測試網研究原型）。鏈上鑄造與贖回合成股債金幣 + x402 付費訊號 + agent session 委任。',
       'common.wallet.intro': '選擇您的登入通道以進入 PepeFi 鏈上 RWA 平台。',
       'exchange.guide.spotTitle': '在 PepeFi 上買賣代幣化資產',
-      'x402.docs.how.ask.body': '助理向 PepeFi 要一筆資料，例如某位交易者的下一步。',
+      'x402.docs.how.ask.body': '助理向 PepeFi 要一筆資料，例如某位交易者的績效與最新策略。',
       'x402.docs.how.quote.title': 'PepeFi 報價',
       'nav.section.pepelab': 'PepeFi',
       'rewards.title': '🎁 PepeFi 獎勵',
@@ -245,7 +245,7 @@ describe('default tenant is the current production site, unchanged', () => {
         'Choose your sign-in channel to enter the PepeFi on-chain RWA platform.',
       'exchange.guide.spotTitle': 'How to buy and sell tokenized assets on PepeFi',
       'x402.docs.how.ask.body':
-        'Your assistant asks PepeFi for a piece of data, such as a trader’s next move.',
+        'Your assistant asks PepeFi for a piece of data, such as a trader’s record and latest strategy.',
       'x402.docs.how.quote.title': 'PepeFi quotes a price',
       'nav.section.pepelab': 'PepeFi',
       'rewards.title': '🎁 PepeFi Rewards',
