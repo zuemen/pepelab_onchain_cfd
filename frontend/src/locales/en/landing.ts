@@ -71,7 +71,7 @@ export const landing: Catalog['landing'] = {
   steps: {
     heading: 'How to Get Started',
     one: 'Install MetaMask, switch to the Base Sepolia testnet, and claim a little test ETH from a public faucet for gas',
-    two: 'On the Exchange page, click "Get USDC" for test funds',
+    two: 'On the Exchange page, click "Claim USDC" for test funds',
     three: 'Go to Assets, buy XAU and BGRN, then check Portfolio for the allocation and value across all four classes',
     four: "Check traders' on-chain records and carbon tier mix on Marketplace, and copy one — or register as a trader on the Trader page",
   },

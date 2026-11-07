@@ -36,6 +36,26 @@ export const guide: Catalog['guide'] = {
     simNote: 'Testnet demo: most traders and allocation publishers listed here are simulated accounts run by a program, not real people, and their results are not real investment returns.',
   },
 
+  twin: {
+    heading: 'Are these tokenized securities? Not today. Digital twins are the next step',
+    short: 'Today the tokens and perpetuals are synthetic exposure on a testnet and only track prices. The route to real securities is a digital twin built with licensed partners: an off-chain custodian holds the official record, and the on-chain token is its twin.',
+    roadmap: [
+      { title: 'Now: synthetic track (testnet)', text: 'Shows the product and technology: spot tokens, perpetuals, copy trading and AI authorization.' },
+      { title: 'Next: licensed partner pilot', text: 'A licensed institution issues twin tokens, with no leverage, for credentialed wallets only.' },
+      { title: 'Later: align with regulatory specs', text: 'Add closed-market price bands, standardized reporting data and on-chain handling of corporate actions.' },
+    ],
+    notice: 'PepeFi is not a venue under the SEC exemption and has no regulatory approval. This table only compares gaps and is not a compliance statement. The digital twin column is a plan and has not been built.',
+    columns: ['Item', 'Now (synthetic track)', 'Next (digital twin, planned)', 'SEC exemption condition'],
+    rows: [
+      { item: 'What the token is', now: 'A synthetic token that only tracks price', twin: 'An on-chain representation of the same security held by a custodian', sec: 'Must represent the same security; synthetic exposure is out of scope' },
+      { item: 'Holder rights', now: 'No shareholder, creditor or beneficiary rights', twin: 'Provided by the issuer or custodian; mapping dividends and votes on-chain is unresolved', sec: 'Must carry the same rights as traditional shares' },
+      { item: 'Leverage', now: 'Perpetuals up to 5x, by asset', twin: 'None', sec: 'No financing or extension of credit' },
+      { item: 'Who can trade', now: 'Any connected wallet; testnet KYC passes on submission', twin: 'A verifiable-credential allowlist binding wallets to legal entities', sec: 'Public chain, but permissioned access' },
+      { item: 'Closed markets', now: 'The keeper switches equities to reduce-only', twin: 'Add closed-market price bands and a pre-open pause', sec: 'Trading halts when the listing exchange halts the stock' },
+    ],
+    source: 'Source: US SEC Release No. 34-106402 (File No. 4-927, 2026-09-17). This is the team\'s summary; the regulator\'s interpretation governs.',
+  },
+
   copyFlow: {
     heading: 'How copy trading works, in five steps',
     sub: 'No blockchain knowledge needed. Everything here uses test tokens, not real money.',
