@@ -23,6 +23,7 @@ import { status } from './status';
 import { custody } from './custody';
 import { history } from './history';
 import { pepelab } from './pepelab';
+import { guide } from './guide';
 import { landing } from './landing';
 import { rewards } from './rewards';
 import { sessions } from './sessions';
@@ -68,6 +69,7 @@ const en: Catalog = {
   vault,
   sessions,
   tokens,
+  guide,
   landing,
   common,
   kyc,

@@ -24,6 +24,7 @@ const EN =
 const ROUTE_PREFIXES: ReadonlyArray<{ prefix: string; why: string }> = [
   { prefix: 'copy.', why: '/copy/:addr 整條路由由 FeatureGate 收起' },
   { prefix: 'rewards.', why: '/rewards 整條路由由 PEPE 獎勵旗標收起' },
+  { prefix: 'guide.', why: '引導元件（GuideFlow）只在跟單旗標開啟時渲染' },
 ];
 
 const ALLOWED: ReadonlyArray<{ key: string; why: string }> = [

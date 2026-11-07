@@ -163,7 +163,7 @@ export const admin = {
     },
 
     incentives: {
-      title: '🎁 PepeLab 獎勵池充值',
+      title: '🎁 {brand} 獎勵池充值',
       description:
         '跟單獎勵、每日簽到、等級晉級與交易挖礦均由 PEPE 代幣激勵。為防止用戶領取時發生 revert InsufficientPool 錯誤，請確保此激勵合約中有足夠的 PEPE 儲備。',
       /** 還不知道合約版本時（探測讀不到 bytecode）：不斷言簽到發不發 PEPE。 */

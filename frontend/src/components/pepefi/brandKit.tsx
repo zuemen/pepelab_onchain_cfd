@@ -1,4 +1,4 @@
-// PepeLab brand kit — shared design tokens + tiny presentational primitives.
+// PepeFi brand kit — shared design tokens + tiny presentational primitives.
 // Concept: "on-chain lab terminal" — green-tinted near-black, neon pepe-green
 // data, JetBrains Mono numerals, kept playful with the 🐸 mascot energy.
 // Reused by Landing hero, Trade Terminal and the x402 marketplace surfaces.

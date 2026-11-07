@@ -13,6 +13,7 @@ import PaperTradingBadge from 'src/components/pepefi/PaperTradingBadge';
 import { SyntheticDisclosure } from 'src/components/pepefi/SyntheticDisclosure';
 import { MONO } from 'src/components/pepefi/brandKit';
 import { Iconify } from 'src/components/iconify';
+import { CopyFlow, SloganPillars } from 'src/components/pepefi/GuideFlow';
 
 import Box from '@mui/material/Box';
 import Container from '@mui/material/Container';
@@ -318,6 +319,14 @@ export default function LandingPage() {
             {t.landing.connectHint}
           </Typography>
         </Stack>
+
+        {/* 標語與跟單流程：給第一次來、不懂區塊鏈的人。跟單關閉的機構租戶不講這些。 */}
+        {FEATURE_COPY_TRADING && (
+          <>
+            <SloganPillars />
+            <CopyFlow />
+          </>
+        )}
 
         {/* ── What is Paper Trading? ── */}
         <Box sx={{ py: 5, textAlign: 'center' }}>

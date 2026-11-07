@@ -42,6 +42,7 @@ import { STABLE_LABEL } from 'src/lib/pepefi/tokenLabel';
 import { firstBlocking, stalenessNotice } from 'src/lib/pepefi/priceFreshness';
 
 import { useMode } from 'src/contexts/mode-context';
+import { ModeGuideCard } from 'src/components/pepefi/GuideFlow';
 import { useAccountBalances } from 'src/hooks/useAccountBalances';
 import { useLegacyAssets } from 'src/hooks/useLegacyAssets';
 import { LegacyAssetsBanner } from 'src/components/pepefi/LegacyAssetsBanner';
@@ -1125,6 +1126,7 @@ export default function PortfolioPage() {
           {t.portfolio.page.refresh}
         </Button>
       </Box>
+      {FEATURE_COPY_TRADING && <ModeGuideCard />}
 
       <LegacyAssetsBanner state={legacyAssets} />
 

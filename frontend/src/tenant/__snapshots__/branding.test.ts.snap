@@ -9,7 +9,7 @@ exports[`default tenant is the current production site, unchanged > matches the 
       "src": "/avatars/pepe-01.png",
     },
     "mark": "🐸",
-    "name": "PepeLab",
+    "name": "PepeFi",
     "themeColor": "#0A0F0B",
   },
   "defaultLocale": "zh-TW",
