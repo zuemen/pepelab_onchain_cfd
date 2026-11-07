@@ -14,7 +14,7 @@ export const guide: Catalog['guide'] = {
       title: 'Trust',
       short: 'You keep your private key, your margin is recorded under your address and can only be withdrawn to you, and every trade is on-chain for anyone to check.',
       detail:
-        'PepeFi never holds your private keys, and the contracts have no function that lets the platform directly withdraw user funds. Positions opened by copying are in your name, and every position and strategy version a trader publishes is recorded on-chain and cannot be deleted later. This is a testnet prototype: the operator can still change parameters, pause and upgrade, using a single key that is visible on-chain; a timelock handover script is ready but has not been run. Synthetic assets are not fully collateralized, and risks are disclosed on the Reserves & Solvency page.',
+        'PepeFi never holds your private keys, and the contracts have no function that lets the platform directly withdraw user funds. Positions opened by copying are in your name, and every position and strategy version a trader publishes is recorded on-chain and cannot be deleted later. This is a testnet prototype: the operator can still change parameters, authorize contracts, pause and upgrade, using a single key that is visible on-chain, which can indirectly affect your funds, so you still have to trust the operator; a timelock handover script is ready but has not been run. Synthetic assets are not fully collateralized, and risks are disclosed on the Reserves & Solvency page.',
     },
     intelligence: {
       title: 'Intelligence',
@@ -26,7 +26,7 @@ export const guide: Catalog['guide'] = {
       title: 'Sustainability',
       short: 'Carbon is built into the fee: the more carbon-intensive the asset, the higher the fee.',
       detail:
-        'Each asset has a sourced carbon-intensity tier that sets its fee, so it is more than a green label. Part of the platform fee buys simulated carbon credits and burns them on the spot, and every retirement can be checked. This is a testnet: the credits are simulated and do not represent real emission cuts.',
+        'Each asset has a carbon tier that sets its buy fee and leverage cap, so it is more than a green label. Tiers are currently attested by the team. 5% of copy and performance fees regularly buys simulated carbon credits, which are burned, and every retirement can be checked. This is a testnet: the credits are simulated and do not represent real emission cuts.',
     },
   },
 
@@ -64,12 +64,12 @@ export const guide: Catalog['guide'] = {
       { title: 'Get test tokens', text: 'Claim free USDC on the Exchange page.', to: '/exchange' },
       { title: 'Pick a trader', text: 'Compare on-chain records in the Marketplace.', to: '/marketplace' },
       { title: 'Press copy', text: 'Choose an amount and confirm once in your wallet.', to: '/marketplace' },
-      { title: 'Stay in sync', text: 'When they change strategy, your positions follow.', to: '/portfolio' },
+      { title: 'Optional sync', text: 'To follow their updates, turn on auto-sync (off by default).', to: '/portfolio' },
     ],
     detail: [
       'Positions opened by copying are in your own name. Only you can cancel them, and the trader cannot touch your funds.',
-      'You choose how often to sync and the leverage cap, or turn auto-sync off and sync by hand.',
-      'Copying costs a 0.3% copy fee, and profitable copied positions pay a 10% performance fee on close. Traders must stake before publishing, and can be slashed if followers lose too much.',
+      'Auto-sync is off by default and is turned on in Expert mode. You set the cooldown and leverage cap, and can turn it off later.',
+      'Copying costs a 0.3% copy fee, and profitable copied positions pay a 10% performance fee on close. Traders must stake before publishing. If followers lose too much the stake can be slashed, but that money does not go to followers.',
     ],
   },
 
