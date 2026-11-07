@@ -9,7 +9,7 @@ export const sessions: Catalog['sessions'] = {
 
   prereq: {
     title: 'Three things to prepare before the agent can trade',
-    margin: 'Deposit USDC into your trading account in the Pro Terminal. A session never touches the USDC in your wallet.',
+    margin: 'Switch to Expert mode and deposit USDC into your trading account in the Pro Terminal. A session never touches the USDC in your wallet.',
     eth: 'The agent address needs a little test ETH for network fees and each execution fee.',
     kyc: 'To trade stock or bond markets, your wallet must complete KYC first.',
   },

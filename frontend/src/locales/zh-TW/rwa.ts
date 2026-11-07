@@ -194,7 +194,7 @@ export const rwa = {
   solvency: {
     title: '儲備與償付能力',
     subtitle:
-      '交易所的資金池、保險金庫與代幣化金庫的準備率，全部是鏈上即時讀值。這一頁證明的是「對手方償付能力是否可查」，不是標的資產的儲備證明。',
+      '平台有沒有足夠的錢支付大家？這頁公開資金池的即時數字，目前不保證任何情況下都能全額支付。交易所的資金池、保險金庫與代幣化金庫的準備率，全部是鏈上即時讀值。這一頁證明的是「對手方償付能力是否可查」，不是標的資產的儲備證明。',
     notPoR: '本平台不持有標的資產，所以沒有、也不需要標的的儲備證明（Proof of Reserve）。這裡的儲備是測試幣 MockUSDC，不是標的資產的儲備證明。',
     exchangeTitle: '永續交易所',
     exchangeBalance: '交易所 USDC 餘額（資金池）',
@@ -215,7 +215,7 @@ export const rwa = {
     liability: '負債（outstandingValue）',
     ratio: '準備率',
     ratioNoLiability: '沒有負債（比率無意義）',
-    ratioMin: '最低準備率 {pct}（低於時停止鑄造，贖回不受限）',
+    ratioMin: '最低準備率 {pct}（低於時停止鑄造；準備率不會擋贖回，但金庫暫停或 USDC 不足時無法贖回）',
     ratioStale: '有 {n} 檔資產無法計價，負債被低估，準備率「無法確認」。',
     ratioOk: '所有資產都有計價。',
     mintingHalted: '鑄造已停止（準備率曾跌破門檻）',

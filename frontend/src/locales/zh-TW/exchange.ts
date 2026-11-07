@@ -137,7 +137,7 @@ export const exchange = {
     smallPoolNote: '測試網兌換池很小，單筆金額太大會被價格護欄退回，請先用小額試。',
     oracleFixedNote:
       '這個兌換池依預言機報價定價（扣 0.3% 手續費、無滑點），不是恆定乘積池。儲備量只代表可兌出的庫存，不決定價格。',
-    noOracleRefNote: '這一版合約沒有 oraclePrice()，因此不顯示 Oracle 參考價。',
+    noOracleRefNote: '這個兌換池不另外顯示預言機參考價。',
     unknownVersionNote:
       '無法確認線上合約版本，暫不顯示價格與價格衝擊；實際兌換數量仍以合約即時報價為準。',
     /** 版本探測還沒回來時的說明——不可以先說「無法確認」。 */
@@ -183,6 +183,7 @@ export const exchange = {
    * 這樣拆過幾句，實測畫面上少了空格，才改成現在這個規則。
    */
   markup: {
+    lead: '這裡領免費測試幣，沒有真實價值。領完到「資產」買進。沒有測試 ETH 就付不了手續費，請先到 Base Sepolia 水龍頭領一點。',
     stepBuyLabel: '買入資產：',
     stepBuyBody: '到「資產」頁，用 {token} 買進代幣化的股、債、金、幣——代幣會直接進到你的錢包。',
     stepPortfolioLabel: '看配置：',

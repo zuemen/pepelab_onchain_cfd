@@ -39,8 +39,8 @@ export const pepelab: Catalog['pepelab'] = {
   },
 
   header: {
-    title: 'Pepe GameFi & MemeFi Lab 🧪',
-    subtitle: 'DeFi · SocialFi · GameFi · MemeFi, all in one growth hub',
+    title: 'Pepe Growth Hub',
+    subtitle: 'Spend PEPE on potions and skin draws to raise your Pepe. This is the game area: test tokens only, separate from investing.',
     balance: '💰 Balance: {amount} PEPE',
     /** Next to the balance: PEPE is earned on /rewards by using the platform. */
     earn: 'Earn PEPE →',
@@ -107,7 +107,7 @@ export const pepelab: Catalog['pepelab'] = {
 
     wallTitle: '🎨 {stage} Skin Wall ({unlocked}/{total})',
     wallHint:
-      'Only shows skins for your current evolution stage. Click an unlocked one to wear it — your character on the left updates instantly. Locked ones can be bought directly with PEPE.',
+      'Only shows skins for your current evolution stage. Click an unlocked one to wear it — your character above updates instantly. Locked ones can be bought directly with PEPE.',
     unequip: 'Remove Skin',
   },
 
@@ -119,7 +119,7 @@ export const pepelab: Catalog['pepelab'] = {
   questsTab: {
     done: '✓ Done',
     checkedIn: '🔥 {days}-day check-in streak — come back tomorrow.',
-    notCheckedIn: "🐸 You haven't checked in today — claim your daily PEPE on the Rewards page.",
+    notCheckedIn: "🐸 You haven't checked in today. Check in on the Rewards page to add achievement points.",
     goToRewards: 'Go to Rewards 🎁',
   },
 
@@ -135,7 +135,7 @@ export const pepelab: Catalog['pepelab'] = {
     subtitle: "You've successfully hatched a brand-new rare Pepe skin!",
     rarity: 'Rarity: {rarity}',
     unlockedHint:
-      'Unlocked a skin exclusive to the {stage} stage. Wear it now and your character on the left will change instantly.',
+      'Unlocked a skin exclusive to the {stage} stage. Wear it now and your character above will change instantly.',
     equipNow: '👕 Wear It Now',
     keepInCloset: 'Keep in Closet',
   },

@@ -36,6 +36,6 @@ export const nav: Catalog['nav'] = {
     mounts: 'My Mounts',
     skins: 'Pepe Skins & Gacha',
     staking: 'Trader reputation stake',
-    rewards: '{brand} Rewards 🎁',
+    rewards: 'Rewards 🎁',
   },
 };

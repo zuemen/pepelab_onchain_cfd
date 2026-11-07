@@ -7,7 +7,7 @@ export const x402: Catalog['x402'] = {
   docs: {
     title: 'x402: let your AI assistant pay for trading data on its own',
     testnetChip: 'Testnet · no real money',
-    lead: 'When your AI trading assistant needs data, there is no account to sign up for and no monthly subscription — each time it wants one piece, it pays a few cents from its own wallet (from $0.01) and gets the data on the spot.',
+    lead: 'When your AI trading assistant needs data, there is no account to sign up for and no monthly subscription — each time it wants one piece, it pays a small fee from its own wallet (from $0.005) and gets the data on the spot.',
 
     benefits: {
       payPerUse: {

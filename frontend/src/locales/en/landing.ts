@@ -85,7 +85,7 @@ export const landing: Catalog['landing'] = {
       'One wallet, four asset classes: tokenized equities, bonds, gold, and crypto. On-chain mint and redeem, an allocation marketplace, benchmark comparison, plus ',
     heroBold: 'x402 paid signals',
     heroAfter: ' — letting AI agents bring their own wallet, pay, and trade autonomously. Fully transparent on-chain.',
-    paperMid: ' for simulated trading, so users can try RWA investing and AI agent trading without risk. ',
+    paperMid: ' for simulated trading, so users can try RWA investing and AI agent trading without spending real money. ',
   },
 
   oracleDisclosure: 'Prices reference real markets and are written on-chain by the operator (oracle); during market closures they stay at the last price',
@@ -113,7 +113,7 @@ export const landing: Catalog['landing'] = {
     paperBefore: 'This platform uses ',
     paperBold1: 'testnet tokens',
     paperMid:
-      ' for simulated trading, letting users try social copy trading, RWA investing, and AI agent trading risk-free. ',
+      ' for simulated trading, letting users try social copy trading, RWA investing, and AI agent trading without spending real money. ',
     paperBold2: 'Prices reference real markets',
     paperAfter:
       ", and the operator writes them on-chain. The funds are simulated assets and no real money is involved, much like Paper Trading.",

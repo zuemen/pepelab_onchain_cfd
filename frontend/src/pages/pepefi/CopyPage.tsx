@@ -971,6 +971,8 @@ function CopyPageView() {
           </Alert>
         )}
 
+        <Typography variant="body2" color="text.secondary">{t.copy.confirm.lead}</Typography>
+
         {notEnoughUsdc && walletUsdc !== null && (
           <Alert
             severity="warning"

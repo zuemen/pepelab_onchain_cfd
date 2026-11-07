@@ -67,7 +67,10 @@ export const common: Catalog['common'] = {
     accountAvatarAria: 'Account avatar',
     accountButtonAria: 'Account button',
     signOut: 'Logout',
-    needHelp: 'Need help?',
+    errorTitle: 'Something went wrong',
+    errorBody: 'Please refresh the page. If that does not help, go back to the home page.',
+    errorReload: 'Refresh',
+    errorHome: 'Home',
 
     settings: {
       title: 'Settings',

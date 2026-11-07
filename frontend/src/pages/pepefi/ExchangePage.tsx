@@ -657,6 +657,7 @@ export default function ExchangePage() {
         <Typography variant="subtitle2" sx={{ fontWeight: 'bold', mb: 1 }}>
           {t.exchange.guide.spotTitle}
         </Typography>
+        <Typography variant="body2" sx={{ mb: 1 }}>{t.exchange.markup.lead}</Typography>
         <Typography variant="body2" component="ol" sx={{ pl: 2, m: 0, '& li': { mb: 0.5 } }}>
           <li><strong>{t.exchange.markup.stepGetTokensLabel}</strong> {interpolate(t.exchange.markup.stepGetTokensBody, { token: STABLE_LABEL })}</li>
           <li><strong>{t.exchange.markup.stepBuyLabel}</strong> {interpolate(t.exchange.markup.stepBuyBody, { token: STABLE_LABEL })}</li>

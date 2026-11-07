@@ -191,8 +191,8 @@ export const pepe = {
   /** 每日任務。獎勵金額會變的那一條用具名佔位符。 */
   quest: {
     q_checkin: { title: '每日簽到', reward: '+{amount} 成就點數' },
-    q_trade: { title: '開一筆新倉', reward: '+25 成就點數' },
-    q_balance: { title: '持有 100 PEPE', reward: '達成成就' },
-    q_streak3: { title: '連簽 3 天', reward: '解鎖成就' },
+    q_trade: { title: '開一筆新倉', reward: '只記進度' },
+    q_balance: { title: '持有 100 PEPE', reward: '只記進度' },
+    q_streak3: { title: '連簽 3 天', reward: '只記進度' },
   },
 };

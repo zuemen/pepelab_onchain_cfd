@@ -28,7 +28,7 @@ export const tokens: Catalog['tokens'] = {
 
   title: 'Tokenized Assets',
   titleSimple: 'Assets',
-  subtitle: 'ERC-20 Tokenized Assets',
+  subtitle: 'Use test money to buy synthetic tokens and practice allocating across stocks, gold and crypto. The tokens only track prices; you never own the real asset. Higher-carbon assets cost more to buy: check the carbon tier, then press Buy.',
 
   notDeployed: 'Tokenized assets are not enabled on this network (AssetVault not deployed).',
 
@@ -81,7 +81,7 @@ export const tokens: Catalog['tokens'] = {
   table: {
     column: {
       asset: 'Asset',
-      provenance: 'Provenance',
+      provenance: 'Carbon tier',
       tradingFee: 'Buy Fee',
       price: 'Oracle Price',
       balance: 'My Balance',
@@ -111,6 +111,8 @@ export const tokens: Catalog['tokens'] = {
     cancel: 'Cancel',
     confirm: 'Confirm',
     working: 'Processing…',
+    currentPrice: 'Current price',
+    syntheticLine: 'Synthetic token: it only tracks the price of {ticker}. It is not real {ticker}.',
     buyDisabledNotice: "Can't buy right now — see the notice above the asset table.",
     sellDisabledNotice: "Can't redeem right now — this vault is paused.",
     noBalanceNotice: "You don't hold any of this asset — there's nothing to redeem.",
@@ -195,7 +197,7 @@ export const tokens: Catalog['tokens'] = {
         carbonCaveat: 'Scope 1+2 (market-based), excludes Scope 3.',
       },
       sGOLD: {
-        underlying: 'Spot gold (XAU/USD), settled against the COMEX front-month gold future.',
+        underlying: 'The COMEX front-month gold future (GC=F), which differs from spot by the basis.',
         carbonSource: 'S&P Global Market Intelligence — Greenhouse gas and gold mines',
         carbonCaveat:
           '0.85 tCO2e/oz (2019 global average mining emissions), sector-wide >100 Mt CO2e/yr; per-ounce basis, not on the revenue scale used for equities.',
@@ -229,7 +231,7 @@ export const tokens: Catalog['tokens'] = {
           'iShares Global Clean Energy ETF, holding clean-energy companies worldwide: renewable generation, electric utilities, electrical equipment and semiconductors.',
         carbonSource: 'iShares ICLN product page (MSCI ESG Fund Ratings, 2026-09-18)',
         carbonCaveat:
-          "MSCI weighted average carbon intensity over 92.81% of holdings. It measures the constituents' own operating emissions (Scope 1+2), not the emissions they help others avoid; about 45% of the fund is power generation, which emits a lot per dollar of revenue even when much of it is renewable. Computed by MSCI, a different source from the company-reported figures on the single-stock rows.",
+          "MSCI weighted average carbon intensity (2026-09-18 snapshot, a different date from the rating card above) over 92.81% of holdings. It measures the constituents' own operating emissions (Scope 1+2), not the emissions they help others avoid; about 45% of the fund is power generation, which emits a lot per dollar of revenue even when much of it is renewable. Computed by MSCI, a different source from the company-reported figures on the single-stock rows.",
       },
       sESGU: {
         underlying:
@@ -285,13 +287,13 @@ export const tokens: Catalog['tokens'] = {
   /** #36：四段句中夾標記的說明，各自拆成標記前後的片段。 */
   markup: {
     introBefore: 'This page showcases ',
-    introBold1: 'tokenized assets (ERC-20)',
+    introBold1: 'tokenized assets',
     introMid1:
       '. These are synthetic tokens that only track prices; you never own the real stock, bond or gold. They arrive as ERC-20 tokens ',
     introMid1Spot: '. Assets bought here arrive as ERC-20 tokens ',
     introBold2: 'right in your wallet',
     introMid2: ', where you can add it to MetaMask or send it to someone else. Trading settles in ',
-    introAfter: ', with pricing pulled from the on-chain oracle (no slippage).',
+    introAfter: ', with prices from the on-chain oracle (no slippage).',
 
     vaultDryBefore:
       'Note: sells are paid from the vault\'s USDC reserve. If the reserve runs low, you\'ll see "vault dry" — an admin needs to call ',

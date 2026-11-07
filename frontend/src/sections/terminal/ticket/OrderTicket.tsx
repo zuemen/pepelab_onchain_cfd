@@ -133,7 +133,7 @@ export function OrderTicket({
   // 清算價和 /exchange 共用 lib/pepefi/liquidation.ts。原本這裡少算了 5.1% 的
   // 維持保證金 + 平倉費 buffer，同一個倉位在兩頁會看到兩個清算價，而且這邊的
   // 比實際更寬鬆——正好是會害人的那個方向。
-  const feeBps = BigInt(tradingParams.tradingFeeBps)
+  const feeBps = BigInt(Math.ceil(tradingParams.tradingFeeBps))
   const liq = estimateLiquidationPrice({ entryPrice: curPrice, isLong, leverage: BigInt(effLev), tradingFeeBps: feeBps })
   // 合約要求 freeMargin >= 保證金 + 名目 × 費率，只比保證金的話全押必定 revert。
   const overFree = marginBig !== null && marginBig + (marginBig * BigInt(effLev) * feeBps) / 10000n > freeMgn

@@ -5,16 +5,16 @@
 export const pepelab = {
   /** 藥水商店的三瓶藥水。 */
   potion: {
-    green: { name: '綠色蛙汁', desc: '讓你的 Pepe 眼睛發光，經驗值 +50 XP！' },
-    gold: { name: '黃金仙露', desc: '解鎖奢華黃金配飾，經驗值 +150 XP！' },
-    moon: { name: '登月藥水', desc: '獲得登月火箭背包，直接獲得 +500 XP！' },
+    green: { name: '綠色蛙汁', desc: '經驗值 +50 XP！' },
+    gold: { name: '黃金仙露', desc: '經驗值 +150 XP！' },
+    moon: { name: '登月藥水', desc: '經驗值 +500 XP！' },
   },
 
   toast: {
-    insufficientPepe: 'PEPE 餘額不足。可到 Rewards 頁面簽到，或用交易挖礦、等級獎勵等平台獎勵取得更多。',
+    insufficientPepe: 'PEPE 餘額不足。可到「獎勵」頁用交易挖礦、等級獎勵等平台獎勵取得更多。',
     /** 還不知道簽到發不發 PEPE 時：只指向交易挖礦。 */
-    insufficientPepeUnknown: 'PEPE 餘額不足。可到 Rewards 頁面用交易挖礦、等級獎勵等平台獎勵取得更多。',
-    insufficientPepeNoCheckIn: 'PEPE 餘額不足。可到 Rewards 頁面用交易挖礦、等級獎勵等平台獎勵取得更多（每日簽到改記成就點數，不發 PEPE）。',
+    insufficientPepeUnknown: 'PEPE 餘額不足。可到「獎勵」頁用交易挖礦、等級獎勵等平台獎勵取得更多。',
+    insufficientPepeNoCheckIn: 'PEPE 餘額不足。可到「獎勵」頁用交易挖礦、等級獎勵等平台獎勵取得更多（每日簽到改記成就點數，不發 PEPE）。',
     txCancelled: '鏈上交易已取消或扣款失敗，未扣除任何 PEPE。',
     mountLocked: '此坐騎需 Pepe 等級 Lv.{level} 解鎖，目前 Lv.{current}。',
     gachaInsufficientPepe: 'PEPE 餘額不足，抽取一次需要 {cost} PEPE。',
@@ -37,8 +37,8 @@ export const pepelab = {
   },
 
   header: {
-    title: 'Pepe GameFi & MemeFi 實驗室 🧪',
-    subtitle: 'DeFi · SocialFi · GameFi · MemeFi 一體化升級中心',
+    title: 'Pepe 養成中心',
+    subtitle: '用 PEPE 幣喝藥水、抽造型，養成你的 Pepe。這是遊戲區，只用測試幣，和投資主線分開。',
     balance: '💰 餘額: {amount} PEPE',
     /** 餘額旁的入口：PEPE 是在 /rewards 用平台功能賺的。 */
     earn: '賺 PEPE →',
@@ -105,7 +105,7 @@ export const pepelab = {
 
     wallTitle: '🎨 {stage}造型牆 ({unlocked}/{total})',
     wallHint:
-      '只會顯示目前進化階段的造型。點擊已解鎖的即可穿戴，左側主角會立刻換成該造型；未解鎖的可直接花 PEPE 買下。',
+      '只會顯示目前進化階段的造型。點擊已解鎖的即可穿戴，上方主角會立刻換成該造型；未解鎖的可直接花 PEPE 買下。',
     unequip: '脫下造型',
   },
 
@@ -117,8 +117,8 @@ export const pepelab = {
   questsTab: {
     done: '✓ 完成',
     checkedIn: '🔥 已連續簽到 {days} 天，明天再來。',
-    notCheckedIn: '🐸 今天還沒簽到，到 Rewards 頁面領取每日 PEPE。',
-    goToRewards: '前往 Rewards 🎁',
+    notCheckedIn: '🐸 今天還沒簽到，到「獎勵」頁簽到累積成就點數。',
+    goToRewards: '前往獎勵頁 🎁',
   },
 
   evolveDialog: {
@@ -132,7 +132,7 @@ export const pepelab = {
     title: '恭喜獲得！🎉',
     subtitle: '您已成功破殼孵化出全新佩佩蛙稀有造型！',
     rarity: '稀有度: {rarity}',
-    unlockedHint: '解鎖了 {stage} 階段的專屬造型。立即穿戴，左側的主角就會換成牠。',
+    unlockedHint: '解鎖了 {stage} 階段的專屬造型。立即穿戴，上方的主角就會換成牠。',
     equipNow: '👕 立即穿戴造型',
     keepInCloset: '收進衣櫃',
   },

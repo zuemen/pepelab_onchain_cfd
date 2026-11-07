@@ -7,6 +7,7 @@ import type { Mode } from 'src/contexts/mode-context'
 import { t } from 'src/locales'
 
 import type { AssetMeta } from './assetMeta'
+import { assetDisplayName } from './assetName'
 import { holdingValue } from './assetClass'
 import { attestationExpired, paramsFor, type Tier } from './carbon'
 
@@ -110,7 +111,7 @@ export function buildAssetRows(
     return {
       symbol: input.symbol,
       ticker: input.meta?.ticker ?? input.symbol,
-      name: input.meta?.name ?? input.symbol,
+      name: assetDisplayName(input.meta) || input.symbol,
       tier,
       tradingFeeBps,
       price: input.price,

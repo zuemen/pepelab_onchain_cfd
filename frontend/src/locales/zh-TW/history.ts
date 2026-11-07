@@ -7,7 +7,7 @@
  */
 export const history = {
   title: '交易歷史',
-  subtitle: '鏈上可稽核性——直接透過 ethers.js 從 Base Sepolia 解碼',
+  subtitle: '你在平台上的每一筆操作，都直接讀自 Base Sepolia 測試網，可以點連結自己核對。',
   loading: '載入中…',
   /** 部位已顯示、背景還在掃較新的日誌（交易雜湊、入金、手續費等事件）。 */
   scanningLogs: '同步鏈上日誌…',
@@ -48,8 +48,8 @@ export const history = {
 
   empty: {
     title: '尚無活動',
-    windowOnly: '過去 {blocks} 個區塊內找不到事件。',
-    windowFiltered: '過去 {blocks} 個區塊內找不到符合篩選「{filter}」的事件。',
+    windowOnly: '最近約 5 小時（{blocks} 個區塊）內找不到活動。更早的活動可以往下載入較舊的區塊。',
+    windowFiltered: '最近約 5 小時（{blocks} 個區塊）內找不到符合篩選「{filter}」的活動。更早的活動可以往下載入較舊的區塊。',
   },
 
   column: {

@@ -99,7 +99,7 @@ export const terminal: Catalog['terminal'] = {
       '🔒 {asset} is an RWA market — opening a position requires a valid qualified-investor credential registered on-chain',
 
     riskNotice:
-      '⚠️ Testnet: this platform is an oracle-priced perpetual — PnL settles at mark price (including OI imbalance); in extreme one-sided markets, paper profit may be adjusted by ADL auto-deleveraging; margin is a test token.',
+      '⚠️ Advanced: trade rises or falls, with optional leverage. Leverage magnifies losses and your position can be force-closed. Test tokens only. Start with 1x. This platform is an oracle-priced perpetual — PnL settles at mark price (including OI imbalance); in extreme one-sided markets, paper profit may be adjusted by ADL auto-deleveraging; margin is a test token.',
     showRiskNotice: '⚠️ Show risk notice',
 
     submitting: 'Opening…',

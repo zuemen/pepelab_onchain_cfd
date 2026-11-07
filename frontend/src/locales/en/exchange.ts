@@ -110,7 +110,7 @@ export const exchange: Catalog['exchange'] = {
     smallPoolNote: 'This testnet pool is small, so large swaps get rejected by the price guard. Start with a small amount.',
     oracleFixedNote:
       'This swap pool uses the oracle price (minus a 0.3% fee, no slippage), not a constant-product curve. Reserves are only the inventory available to swap and do not set the price.',
-    noOracleRefNote: 'This contract version has no oraclePrice(), so no oracle reference price is shown.',
+    noOracleRefNote: 'This pool does not show a separate oracle reference price.',
     unknownVersionNote:
       'Could not identify the live contract version, so prices and price impact are hidden; the amount you receive still follows the live contract quote.',
     checkingVersionNote: 'Checking the live contract version…',
@@ -152,6 +152,7 @@ export const exchange: Catalog['exchange'] = {
    * 組出來的句子會黏成一個字。
    */
   markup: {
+    lead: 'Claim free test tokens here. They have no real value. Then buy on the Assets page. Without test ETH you cannot pay network fees, so get a little from a Base Sepolia faucet first.',
     stepBuyLabel: 'Buy assets:',
     stepBuyBody: 'Go to the Assets page and buy tokenized equities, bonds, gold, and crypto with {token} — the tokens land directly in your wallet.',
     stepPortfolioLabel: 'Check your allocation:',

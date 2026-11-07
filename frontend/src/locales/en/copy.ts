@@ -86,6 +86,7 @@ export const copy: Catalog['copy'] = {
     title: 'Confirm Copy',
     approveStep: 'Approve {token} to CopyTracker',
     followStep: 'Follow Trader',
+    lead: 'Enter an amount, then confirm twice: first allow the contract to use this USDC, then start copying. Your positions appear in your portfolio, and you can cancel at any time.',
     notEnoughUsdc: 'Your wallet holds {balance} {token}, which is less than this amount. Lower the amount or claim test tokens first. Opening positions also needs a little test ETH for the execution fee.',
     notEnoughUsdcCta: 'Claim test tokens',
 

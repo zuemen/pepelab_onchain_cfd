@@ -187,8 +187,8 @@ export const pepe: Catalog['pepe'] = {
   /** 每日任務。獎勵金額會變的那一條用具名佔位符。 */
   quest: {
     q_checkin: { title: 'Daily Check-in', reward: '+{amount} achievement points' },
-    q_trade: { title: 'Open a New Position', reward: '+25 achievement points' },
-    q_balance: { title: 'Hold 100 PEPE', reward: 'Unlocks achievement' },
-    q_streak3: { title: '3-Day Check-in Streak', reward: 'Unlocks achievement' },
+    q_trade: { title: 'Open a New Position', reward: 'Progress only' },
+    q_balance: { title: 'Hold 100 PEPE', reward: 'Progress only' },
+    q_streak3: { title: '3-Day Check-in Streak', reward: 'Progress only' },
   },
 };

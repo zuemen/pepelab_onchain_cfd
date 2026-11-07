@@ -137,7 +137,7 @@ export const admin: Catalog['admin'] = {
         'Router only has {amount} ETH available. Fund it using the Treasury Tools below before swapping.',
       approving: 'Approving…',
       approve: '① Approve USDC',
-      approved: 'USDT approved ✓',
+      approved: 'USDC approved ✓',
       swapping: 'Swapping…',
       swap: '② Swap to ETH',
       done: 'Swapped {amount} USDC → {eth} ETH ✓',

@@ -10,6 +10,7 @@ import Box from '@mui/material/Box'
 import Typography from '@mui/material/Typography'
 
 import { t } from 'src/locales'
+import { DataSourceBadge } from 'src/sections/terminal/chart/DataSourceBadge'
 import { useCandles } from 'src/hooks/useCandles'
 import { CandleChart } from 'src/sections/terminal/chart/CandleChart'
 import type { Interval } from 'src/lib/pepefi/candles'
@@ -42,7 +43,16 @@ export function AssetCandleChart({ symbol, height = 260 }: { symbol: string; hei
   }
 
   return (
-    <Box sx={{ height, display: 'flex', flexDirection: 'column' }}>
+    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+      {/* 模擬資料必須一眼看得出來：上游失敗時蠟燭是合成的。 */}
+      <Box sx={{ alignSelf: 'flex-end' }}>
+        <DataSourceBadge
+          source={feed.source}
+          degraded={feed.degraded}
+          sourceError={feed.sourceError}
+          disclaimer={t.terminal.chart.disclaimer}
+        />
+      </Box>
       <CandleChart candles={feed.candles} height={height} onNeedOlder={feed.loadOlder} />
     </Box>
   )

@@ -9,6 +9,7 @@ import { useRouter } from 'src/routes/hooks';
 import { t } from 'src/locales';
 
 import { useAuthContext } from 'src/auth/hooks';
+import { useWalletContext } from 'src/contexts/wallet-context';
 import { signOut } from 'src/auth/context/jwt/action';
 
 // ----------------------------------------------------------------------
@@ -21,9 +22,12 @@ export function SignOutButton({ onClose, sx, ...other }: Props) {
   const router = useRouter();
 
   const { checkUserSession } = useAuthContext();
+  const { disconnect } = useWalletContext();
 
   const handleLogout = useCallback(async () => {
     try {
+      // 這個產品的登入狀態是錢包：只清範本 JWT 的話，按登出等於沒登出。
+      disconnect();
       await signOut();
       await checkUserSession?.();
 
@@ -32,7 +36,7 @@ export function SignOutButton({ onClose, sx, ...other }: Props) {
     } catch (error) {
       console.error(error);
     }
-  }, [checkUserSession, onClose, router]);
+  }, [checkUserSession, disconnect, onClose, router]);
 
   return (
     <Button

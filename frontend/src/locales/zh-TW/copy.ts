@@ -84,6 +84,7 @@ export const copy = {
     title: '確認跟單',
     approveStep: '批准 {token} 給 CopyTracker',
     followStep: '跟隨交易者',
+    lead: '輸入金額，再按兩次確認：第一次同意合約動用這筆 USDC，第二次才真正跟單。完成後部位會出現在投資組合，可隨時取消。',
     notEnoughUsdc: '錢包只有 {balance} {token}，不夠這次跟單的金額。請調低金額，或先領測試幣；開倉另需少量測試 ETH 付執行費。',
     notEnoughUsdcCta: '去領測試幣',
 

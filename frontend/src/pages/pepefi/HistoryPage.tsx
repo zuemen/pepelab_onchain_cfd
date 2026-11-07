@@ -882,6 +882,8 @@ export default function HistoryPage() {
 
       const { evs, failedChunks, contiguousLow } = await scanRange(windowStart, currentBlock)
       await hashing
+      // 掃描期間換了分頁或重新整理：舊結果不能寫進新的快取。
+      if (isCancelled()) return
       // 只把「從最新塊往下連續成功」的那一段算進覆蓋；與舊覆蓋不相接（隔天回訪的
       // 缺口、失敗段）就以新的一段為準，「載入較舊」會從它的下緣往下補。
       commit(
@@ -1045,7 +1047,7 @@ export default function HistoryPage() {
                 filterKey !== 'all'
                   ? interpolate(t.history.empty.windowFiltered, {
                       blocks: FETCH_BLOCKS.toLocaleString(),
-                      filter: filterKey,
+                      filter: FILTERS.find((f) => f.key === filterKey)?.label ?? filterKey,
                     })
                   : interpolate(t.history.empty.windowOnly, { blocks: FETCH_BLOCKS.toLocaleString() })
               }

@@ -23,7 +23,7 @@ import { useToast } from 'src/components/pepefi/ToastProvider';
 import { t, interpolate } from 'src/locales';
 import { prettyError } from 'src/lib/pepefi/errorMessages';
 import { toStrictlyIncreasingIds } from 'src/lib/pepefi/positionIds';
-import { checkInCopy, checkInErrorContext, dailyRewardFor, probeCheckInUnit, TODAY_INDEX, type CheckInUnit } from 'src/lib/pepefi/achievements';
+import { checkInCopy, checkInErrorContext, dailyRewardFor, effectiveStreak, todayRewardFor, probeCheckInUnit, TODAY_INDEX, type CheckInUnit } from 'src/lib/pepefi/achievements';
 import { bpsToPercent, formatWholeTokens, tradeMiningReward, readIncentiveParams, type IncentiveParams, type IncentiveParamsReader } from 'src/lib/pepefi/incentiveParams';
 
 // ── Constants ──────────────────────────────────────────────────────────────────
@@ -327,7 +327,8 @@ export default function RewardsPage() {
 
   // ── Daily state ─────────────────────────────────────────────────────────────
   const checkedInToday = lastDay === TODAY_INDEX();
-  const dailyReward = dailyRewardFor(myStreak);
+  const dailyReward = todayRewardFor(myStreak, lastDay, TODAY_INDEX());
+  const shownStreak = effectiveStreak(myStreak, lastDay, TODAY_INDEX());
   // 同一組四句話,兩種單位各一份；選哪一份看合約,不看旗標。
   const checkInText = checkInCopy(checkInUnit);
 
@@ -585,8 +586,8 @@ export default function RewardsPage() {
               <Box sx={{ flex: 1, minWidth: 200 }}>
                 <Stack direction="row" spacing={1} alignItems="center">
                   <Chip
-                    label={interpolate(t.rewards.checkIn.streak, { days: myStreak })}
-                    color={myStreak >= 7 ? 'warning' : 'default'}
+                    label={interpolate(t.rewards.checkIn.streak, { days: shownStreak })}
+                    color={shownStreak >= 7 ? 'warning' : 'default'}
                     size="small"
                   />
                   <Chip

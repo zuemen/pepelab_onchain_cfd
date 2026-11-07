@@ -87,7 +87,7 @@ export const landing = {
     heroBefore: '一個錢包，配置股、債、金、幣四大類代幣化資產。鏈上鑄造與贖回、配置市集、大盤對照，外加 ',
     heroBold: 'x402 付費訊號',
     heroAfter: '——讓 AI agent 自帶錢包、付費、自主下單。全程透明上鏈。',
-    paperMid: '進行模擬交易，讓使用者無風險體驗 RWA 投資與 AI 代理交易。',
+    paperMid: '進行模擬交易，讓使用者不花真錢體驗 RWA 投資與 AI 代理交易。',
   },
 
   oracleDisclosure: '價格參考真實市場，由營運方程式寫入鏈上（預言機），休市時停在最後一筆',
@@ -114,7 +114,7 @@ export const landing = {
 
     paperBefore: '本平台使用',
     paperBold1: '測試網代幣',
-    paperMid: '進行模擬交易，讓使用者無風險體驗社交跟單、RWA 投資與 AI 代理交易。',
+    paperMid: '進行模擬交易，讓使用者不花真錢體驗社交跟單、RWA 投資與 AI 代理交易。',
     paperBold2: '價格參考真實市場',
     paperAfter: '，由營運方程式寫入鏈上；資金為模擬資產，不涉及真實金錢，類似 Paper Trading 模式。',
   },

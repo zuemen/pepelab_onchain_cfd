@@ -206,7 +206,7 @@ export const rwa: Catalog['rwa'] = {
   solvency: {
     title: 'Reserves & solvency',
     subtitle:
-      "The exchange's pool, the insurance vault and the tokenized vault's reserve ratio, all live on-chain reads. This page shows whether counterparty solvency can be checked; it is not a proof of reserve for the underlying assets.",
+      "Does the platform have enough money to pay everyone? Live pool numbers are shown here, and full payment is not guaranteed in every situation. The exchange's pool, the insurance vault and the tokenized vault's reserve ratio, all live on-chain reads. This page shows whether counterparty solvency can be checked; it is not a proof of reserve for the underlying assets.",
     notPoR:
       'The platform holds no underlying assets, so there is no — and no need for a — proof of reserve for them. The reserves here are MockUSDC test tokens, not a proof of reserve for the underlying.',
     exchangeTitle: 'Perpetual exchange',
@@ -228,7 +228,7 @@ export const rwa: Catalog['rwa'] = {
     liability: 'Liability (outstandingValue)',
     ratio: 'Reserve ratio',
     ratioNoLiability: 'No liability (ratio is meaningless)',
-    ratioMin: 'Minimum ratio {pct} (below it minting stops; redemptions are never blocked)',
+    ratioMin: 'Minimum ratio {pct} (below it minting stops. The ratio does not block redemptions, but they fail while the vault is paused or short of USDC)',
     ratioStale: '{n} asset(s) could not be priced, so the liability is understated and the ratio "cannot be confirmed".',
     ratioOk: 'Every asset is priced.',
     mintingHalted: 'Minting halted (the ratio crossed below the minimum)',

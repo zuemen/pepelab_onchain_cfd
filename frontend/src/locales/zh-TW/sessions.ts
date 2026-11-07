@@ -10,7 +10,7 @@ export const sessions = {
 
   prereq: {
     title: 'Agent 下單前要先準備三件事',
-    margin: '到專業終端把 USDC 存進交易帳戶，session 不會動用你錢包裡的 USDC。',
+    margin: '切到專家模式，到「專業終端」把 USDC 存進交易帳戶；session 不會動用你錢包裡的 USDC。',
     eth: 'Agent 地址要有少量測試 ETH，付手續費與每次開倉的執行費。',
     kyc: '要交易股票、債券類標的，你的錢包要先完成 KYC。',
   },
@@ -86,15 +86,15 @@ export const sessions = {
       active: '進行中',
     },
 
-    issued: '已核發 ✓',
+    issued: '已簽發 ✓',
     export: '匯出 ⤓',
-    issueVc: '核發 VC',
+    issueVc: '簽發 VC',
     signing: '簽署中…',
     issueVcHint: 'MetaMask 簽發授權 VC',
     issueVcNeedsWallet: '需真實錢包簽署（mock 模式不支援）',
     revoke: '撤銷',
     revoked: 'Session 已撤銷 ✓',
-    credentialIssued: '憑證已核發 ✓',
+    credentialIssued: '憑證已簽發 ✓',
     needsRealWallet: '需連接真實錢包以簽署 VC（mock 模式不支援簽章）',
     vcExpires: 'VC 到期 {date}',
     vcExpired: 'VC 已過期，請重新簽發',
