@@ -8,6 +8,7 @@ import { kycActionMode, useVcKycRegistry } from 'src/hooks/useVcKycRegistry'
 import { useOnchainRwaFlags, kycGateApplies } from 'src/hooks/useOnchainRwa'
 import { usePepefiWallet } from 'src/layouts/pepefi'
 import { prettyError } from 'src/lib/pepefi/errorMessages'
+import { isTransientNodeFailure } from 'src/lib/pepefi/rpcThrottle'
 import { ASSET_LABEL, ASSET_META } from 'src/lib/pepefi/assetMeta'
 import { useKYC } from 'src/hooks/useKYC'
 import { usePricingCarbonTiers } from 'src/hooks/usePricingCarbonTiers'
@@ -154,7 +155,7 @@ function CopyPageView() {
   // 選填：只讓這個地址（跟隨者自己的 agent 熱錢包）代為同步；空字串＝任何人。跟單後另送 setSyncExecutor。
   const [executorInput,    setExecutorInput]    = useState('')
 
-  const { isVerified: isKYCVerified, isPending: kycPending, refetch: refetchKYC } = useKYC(
+  const { isVerified: isKYCVerified, isPending: kycPending, isUnknown: kycUnknown, refetch: refetchKYC } = useKYC(
     contracts?.kycRegistry ?? null,
     wallet.address ?? null,
   )
@@ -187,6 +188,8 @@ function CopyPageView() {
       } catch (e) {
         console.warn('[CopyPage] no strategy for', traderAddress, e)
         stratRaw = null;
+        // 節點限流不是「對方沒發布策略」，兩者要分開講。
+        if (isTransientNodeFailure(e)) setLoadError(prettyError(e, 'read'));
       }
 
       if (stratRaw === null) {
@@ -213,9 +216,11 @@ function CopyPageView() {
           )
           setStratAllocs(withPrices)
           setHasStrategy(true)
-        } catch {
+        } catch (e) {
+          // 策略讀到了、是報價讀不到：不能講成「尚未發布策略」。
           setStratAllocs([])
           setHasStrategy(false)
+          setLoadError(prettyError(e, 'read'))
         }
       }
 
@@ -232,6 +237,13 @@ function CopyPageView() {
   }, [contracts, traderAddress])
 
   useEffect(() => { setApproved(false) }, [totalMargin])
+
+  // 批准不檢查餘額，沒先擋的話要到第二步才 revert。讀不到（null）就不擋，交給合約。
+  const [walletUsdc, setWalletUsdc] = useState<bigint | null>(null)
+  useEffect(() => {
+    if (!contracts || !wallet.address) return
+    void (contracts.usdc.balanceOf(wallet.address) as Promise<bigint>).then(setWalletUsdc).catch(() => setWalletUsdc(null))
+  }, [contracts, wallet.address])
 
   // 槓桿上限的預設：這一版策略最高的槓桿（交易者之後調高不會帶著跟隨者一起調高）。
   useEffect(() => {
@@ -283,6 +295,7 @@ function CopyPageView() {
 
   const COPY_FEE_BPS = 30n
   const totalBig  = tryParse(totalMargin) ?? 0n
+  const notEnoughUsdc = walletUsdc !== null && totalBig > walletUsdc
   const feeBig    = totalBig * COPY_FEE_BPS / 10_000n
   const netBig    = totalBig - feeBig
   const retirement = carbon && carbon.copyFeeBps !== null && totalBig > 0n
@@ -915,7 +928,21 @@ function CopyPageView() {
           </Alert>
         )}
 
-        {kycBlocked && !kycPending && (
+        {/* 讀不到不等於沒通過：不能叫人重送。 */}
+        {kycBlocked && kycUnknown && (
+          <Alert
+            severity="info"
+            action={
+              <Button color="inherit" size="small" onClick={() => void refetchKYC()} sx={{ fontWeight: 'bold' }}>
+                {t.investorVc.unknownRetry}
+              </Button>
+            }
+          >
+            {t.kyc.status.unknownBody}
+          </Alert>
+        )}
+
+        {kycBlocked && !kycPending && !kycUnknown && (
           <Alert severity="warning" action={
             kycAction === 'unknown' ? (
               <Button color="inherit" size="small" onClick={vcKyc.retry} sx={{ fontWeight: 'bold' }}>
@@ -944,12 +971,25 @@ function CopyPageView() {
           </Alert>
         )}
 
+        {notEnoughUsdc && walletUsdc !== null && (
+          <Alert
+            severity="warning"
+            action={
+              <Button color="inherit" size="small" component={RouterLink} to={paths.pepefi.exchange} sx={{ fontWeight: 'bold' }}>
+                {t.copy.confirm.notEnoughUsdcCta}
+              </Button>
+            }
+          >
+            {interpolate(t.copy.confirm.notEnoughUsdc, { balance: f18(walletUsdc), token: STABLE_LABEL })}
+          </Alert>
+        )}
+
         <Box sx={{ display: 'flex', gap: 2 }}>
           <Button
             variant={approved ? 'contained' : 'outlined'}
             color={approved ? 'success' : 'inherit'}
             onClick={() => void doApprove()}
-            disabled={approved || busy['approve'] || !totalMargin || !hasStrategy || kycBlocked || tooSmall}
+            disabled={approved || busy['approve'] || !totalMargin || !hasStrategy || kycBlocked || tooSmall || notEnoughUsdc}
             sx={{ flexGrow: 1 }}
           >
             {busy['approve'] ? t.copy.confirm.approving : approved ? t.copy.confirm.approved : t.copy.confirm.approveCta}
@@ -978,7 +1018,7 @@ function CopyPageView() {
           </Button>
         </Box>
 
-        {!hasStrategy && (
+        {!hasStrategy && !loadError && (
           <Typography variant="caption" color="warning.main" sx={{ textAlign: 'center', fontWeight: 'bold', display: 'block' }}>
             {t.copy.confirm.noStrategy}
           </Typography>

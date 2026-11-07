@@ -7,6 +7,7 @@ import { LocaleSwitch } from 'src/layouts/components/locale-switch';
 import HeroKpiStrip from 'src/components/pepefi/HeroKpiStrip';
 import { SHOW_PERPETUALS, FEATURE_GAMEFI, FEATURE_COPY_TRADING } from 'src/lib/pepefi/featureFlags';
 import { landingFeatureKeys, type LandingFeatureKey } from 'src/lib/pepefi/landingFeatures';
+import { isPublicPath } from 'src/layouts/pepefi/publicPaths';
 import { CustodyExplainer } from 'src/components/pepefi/CustodyExplainer';
 import BenchmarkStrip from 'src/components/pepefi/dashboard/BenchmarkStrip';
 import PaperTradingBadge from 'src/components/pepefi/PaperTradingBadge';
@@ -502,7 +503,10 @@ export default function LandingPage() {
                 { label: t.nav.item.exchange,    icon: 'solar:transfer-horizontal-bold-duotone', to: '/exchange' },
                 { label: t.nav.item.marketplace, icon: 'solar:cart-3-bold',                      to: '/marketplace' },
                 { label: t.nav.item.vault,       icon: 'solar:shield-keyhole-bold-duotone',      to: '/vault' },
-              ] as const).map((link) => (
+              ] as const)
+                // /exchange、/vault 要連錢包，未連錢包按下去會被 wallet gate 彈回首頁，看起來像按鈕壞掉。
+                .filter((link) => wallet.isConnected || isPublicPath(link.to))
+                .map((link) => (
                 <Button
                   key={link.label}
                   component={RouterLink}

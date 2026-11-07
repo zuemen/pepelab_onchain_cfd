@@ -14,7 +14,7 @@ export const traderProfile = {
     followerPlural: '位跟隨者',
     registered: '已註冊',
     staked: '◆ 已質押',
-    notStaked: '✗ 未質押',
+    notStaked: '✗ 未達質押資格',
     noStrategy: '尚無可跟單的策略 🔒',
     copyThisTrader: '跟單此交易者 →',
   },

@@ -290,6 +290,20 @@ export default function KYCModal({ isOpen, onClose, onSuccess, kycRegistry, isPe
         ? await safeRead<boolean | null>(kycRegistry.isVerified(loc.user) as Promise<boolean>, null)
         : null;
       setVerifiedNow(kycOutcomeAfterSubmit(verifiedRead) === 'verified');
+      // 節點可能還沒跟上剛上鏈的交易：沒讀到通過就再試幾次，不要停在「等待審核」。
+      if (loc && verifiedRead !== true) {
+        void (async () => {
+          for (let i = 0; i < 3; i += 1) {
+            await new Promise((resolve) => setTimeout(resolve, 2000));
+            const again = await safeRead<boolean | null>(kycRegistry.isVerified(loc.user) as Promise<boolean>, null);
+            if (again === true) {
+              setVerifiedNow(true);
+              onSuccess();
+              return;
+            }
+          }
+        })();
+      }
       // submitKYC 現在只 emit KYCSubmitted——使用者「還沒」通過。舊版在這裡直接
       // onClose()，畫面看起來就像驗證完成了，然後他回去下單被合約 revert
       // NotKycVerified，完全不知道發生什麼事。改成留在原地明確告知「待審核」。

@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { Outlet, useNavigate, useOutletContext } from 'react-router';
+import { Outlet, useLocation, useNavigate, useOutletContext } from 'react-router';
 
 import Box from '@mui/material/Box';
 
@@ -32,16 +32,19 @@ export function PepefiLayout() {
   const wallet = useWalletContext();
   const pathname = usePathname();
   const navigate = useNavigate();
+  const location = useLocation();
 
   useEffect(() => {
     if (wallet.initializing) return;
     const isPublic = isPublicPath(pathname);
     if (!wallet.isConnected && !isPublic) {
-      navigate('/', { replace: true });
+      // 記下原本要去的頁面，連上錢包後帶回去（例如別人傳來的 /trader/0x… 連結）。
+      navigate('/', { replace: true, state: { returnTo: `${pathname}${location.search}` } });
     } else if (wallet.isConnected && pathname === '/') {
-      navigate(AFTER_CONNECT_PATH, { replace: true });
+      const returnTo = (location.state as { returnTo?: string } | null)?.returnTo;
+      navigate(returnTo ?? AFTER_CONNECT_PATH, { replace: true });
     }
-  }, [wallet.initializing, wallet.isConnected, pathname, navigate]);
+  }, [wallet.initializing, wallet.isConnected, pathname, location.search, location.state, navigate]);
 
   if (wallet.initializing) return <LoadingScreen />;
 

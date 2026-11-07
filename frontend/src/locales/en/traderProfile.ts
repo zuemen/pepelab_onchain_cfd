@@ -16,7 +16,7 @@ export const traderProfile: Catalog['traderProfile'] = {
     followerPlural: 'followers',
     registered: 'Registered',
     staked: '◆ Staked',
-    notStaked: '✗ Not staked',
+    notStaked: '✗ Stake requirement not met',
     noStrategy: 'No Strategy to Copy 🔒',
     copyThisTrader: 'Copy This Trader →',
   },

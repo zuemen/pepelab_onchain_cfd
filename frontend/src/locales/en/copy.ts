@@ -62,7 +62,7 @@ export const copy: Catalog['copy'] = {
   feePreview: {
     title: 'Fee Preview',
     copyFee: 'Copy fee (0.3%)',
-    netMargin: 'Net margin deposited',
+    netMargin: 'After copy fee (trading fees still apply)',
     executionFee: 'Execution Fee (ETH)',
     split:
       'Copy fee is split 70% → trader · 20% → platform · 10% → insurance vault. Execution fee pays Keeper bots.',
@@ -77,7 +77,7 @@ export const copy: Catalog['copy'] = {
     slashedWarning:
       '⚠ This trader has had {amount} {token} slashed for causing excessive losses to followers. Proceed with caution.',
     noStakeWarning:
-      '⚠ This trader has no stake — they have no skin-in-the-game. You cannot trigger slashing if they cause losses.',
+      '⚠ This trader has no stake right now, so the contract will not accept new copy funds. You can copy them once they stake.',
     slashRule:
       "⚠ When you unfollow, if this copy's price loss reaches 30% (before trading fees, borrow fees and funding), this trader's stake is slashed (50% of the loss, capped at 50% of the stake). The slashed amount goes into the platform reserve, not to you. If you close any of the copied positions yourself, this copy is not scored for slashing.",
   },
@@ -86,6 +86,8 @@ export const copy: Catalog['copy'] = {
     title: 'Confirm Copy',
     approveStep: 'Approve {token} to CopyTracker',
     followStep: 'Follow Trader',
+    notEnoughUsdc: 'Your wallet holds {balance} {token}, which is less than this amount. Lower the amount or claim test tokens first. Opening positions also needs a little test ETH for the execution fee.',
+    notEnoughUsdcCta: 'Claim test tokens',
 
     staleTitle: 'Price stale — copying paused',
     staleExplain:

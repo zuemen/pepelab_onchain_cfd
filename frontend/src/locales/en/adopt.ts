@@ -31,6 +31,7 @@ export const adopt: Catalog['adopt'] = {
     noName: 'Unnamed Allocation Publisher',
     assetCount: '{count} assets',
     adopt: 'Adopt',
+    details: "See this publisher's record",
   },
 
   dialog: {

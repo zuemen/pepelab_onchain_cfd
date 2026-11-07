@@ -33,6 +33,8 @@ interface Props {
   onScoreClick: (el: HTMLElement, trader: TraderCard) => void;
   /** 報酬率那格的標籤。有績效資料時它是 30 天的數字，要跟表格的「累積報酬」分清楚。 */
   returnLabel?: string;
+  /** 損益的統計期間：有績效資料時是 30 日，否則 7 日。 */
+  pnlLabel?: string;
 }
 
 /** 小標籤 + mono 數值的一格統計,三格並排。 */
@@ -71,6 +73,7 @@ export default function Podium({
   podium,
   onScoreClick,
   returnLabel = t.marketplace.scoreBreakdown.returnLabel,
+  pnlLabel = t.marketplace.card.pnlLabel,
 }: Props) {
   if (podium.length === 0) return null;
 
@@ -127,6 +130,14 @@ export default function Podium({
             <Typography variant="caption" sx={{ fontFamily: MONO, color: 'text.secondary' }}>
               {shortAddr(trader.address)}
             </Typography>
+            {trader.hero && (
+              <Chip
+                size="small"
+                variant="outlined"
+                label={t.marketplace.hero.simulatedTag}
+                sx={{ ml: 0.5, height: 18, fontSize: '0.625rem' }}
+              />
+            )}
           </Box>
         </Box>
         {/* 頭貼放右上角原本獎牌的位置：這裡空間最大，照片才看得清楚。 */}
@@ -196,17 +207,22 @@ export default function Podium({
             sx={{ fontWeight: 'bold', fontFamily: MONO, cursor: 'pointer', position: 'relative', zIndex: 1 }}
           />
         </Box>
-        <Typography
-          noWrap
-          sx={{
-            fontFamily: MONO,
-            fontWeight: 'bold',
-            fontSize: '0.875rem',
-            color: trader.pnl7d > 0n ? 'success.main' : trader.pnl7d < 0n ? 'error.main' : 'text.primary',
-          }}
-        >
-          {trader.pnl7d !== 0n ? `${fPnL(trader.pnl7d)} USDC` : '—'}
-        </Typography>
+        <Box sx={{ textAlign: 'right', minWidth: 0 }}>
+          <Typography variant="caption" noWrap sx={{ display: 'block', color: 'text.secondary', fontSize: '0.6875rem' }}>
+            {pnlLabel}
+          </Typography>
+          <Typography
+            noWrap
+            sx={{
+              fontFamily: MONO,
+              fontWeight: 'bold',
+              fontSize: '0.875rem',
+              color: trader.pnl7d > 0n ? 'success.main' : trader.pnl7d < 0n ? 'error.main' : 'text.primary',
+            }}
+          >
+            {trader.pnl7d !== 0n ? `${fPnL(trader.pnl7d)} USDC` : '—'}
+          </Typography>
+        </Box>
       </Box>
 
       {/* mt: auto 把按鈕推到卡片底部：三張卡片等高，按鈕也排在同一條線上。 */}

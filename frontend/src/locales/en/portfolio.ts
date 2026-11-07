@@ -9,7 +9,7 @@ export const portfolio: Catalog['portfolio'] = {
     titleTooltip: 'Each part valued at current prices and added up — not an amount you can withdraw all at once. The parts differ in liquidity and risk; hover each heading below for details.',
     liquid: 'Available now',
     liquidTooltip: 'Wallet USDC + free margin in your trading account: usable without closing a position, unstaking or redeeming. Excludes margin locked in positions, stake, the LP vault and tokenized assets.',
-    unrealisedPnl: 'Unrealised PnL',
+    unrealisedPnl: 'Unrealised gain/loss',
     unrealisedPnlTooltip: 'What your open positions would net if closed now: mark-price PnL after fees and funding, the same figure as the trading terminal. Excludes the 10% performance fee some positions pay on profit; funding as of the last settlement; excludes the bankruptcy bailout. Shows — when any position cannot be read',
 
     /**
@@ -25,7 +25,7 @@ export const portfolio: Catalog['portfolio'] = {
       wallet: 'Wallet',
       trading: 'Trading',
       staked: 'Staked',
-      lpVault: 'LP Vault',
+      lpVault: 'Insurance vault deposit',
     },
 
     risk: {
@@ -53,7 +53,7 @@ export const portfolio: Catalog['portfolio'] = {
    * 用同一個 title 或同一組詞會讓讀者以為算法一樣。
    */
   allocation: {
-    title: 'RWA Allocation',
+    title: 'My allocation',
     subtitle: 'Tokenized asset holdings at mark plus margin in open positions — excludes wallet cash, staking, and the LP vault. Not a breakdown of Net Worth.',
     subtitleSpot: 'Tokenized asset holdings at mark (plus margin, if the account still holds trading positions) — excludes wallet cash, staking, and the LP vault. Not a breakdown of Net Worth.',
     noPositions: 'Nothing held yet',
@@ -177,7 +177,7 @@ export const portfolio: Catalog['portfolio'] = {
 
     emptyTitle: 'Your portfolio is empty',
     emptyDescription:
-      'Start by getting test {token}, then copy a trader or open positions yourself.',
+      'Start by claiming test {token}, then buy gold, stock and other tokenized assets on the Assets page. To copy a trader, go to the Marketplace.',
     emptyDescriptionNoCopy:
       'Start by getting test {token}, then buy tokenized assets on the Assets page or browse published allocations on the marketplace.',
     emptyCta: 'Get {token}',

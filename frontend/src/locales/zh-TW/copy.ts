@@ -61,7 +61,7 @@ export const copy = {
   feePreview: {
     title: '手續費預覽',
     copyFee: '跟單手續費（0.3%）',
-    netMargin: '實際存入保證金',
+    netMargin: '扣跟單費後金額（還要再扣交易手續費）',
     executionFee: '執行費（ETH）',
     split: '跟單手續費依 70% → 交易者 · 20% → 平台 · 10% → 保險金庫 分潤。執行費用於支付 Keeper 機器人。',
   },
@@ -75,7 +75,7 @@ export const copy = {
     slashedWarning:
       '⚠ 此交易者曾因造成跟隨者過度虧損而被罰沒 {amount} {token}。請謹慎評估。',
     noStakeWarning:
-      '⚠ 此交易者尚未質押——沒有風險共擔。若其造成虧損，你無法觸發罰沒機制。',
+      '⚠ 此交易者目前沒有質押，合約不接受新的跟單資金，要等對方質押後才能跟單。',
     slashRule:
       '⚠ 取消跟單時，若這筆跟單的價差虧損達 30%（不含手續費、借貸費與資金費），此交易者的質押會被罰沒（虧損的 50%，上限為質押的 50%）。罰沒款存入平台準備金，不會轉給你；你自行平掉其中任一部位的話，這筆跟單不列入罰沒評分。',
   },
@@ -84,6 +84,8 @@ export const copy = {
     title: '確認跟單',
     approveStep: '批准 {token} 給 CopyTracker',
     followStep: '跟隨交易者',
+    notEnoughUsdc: '錢包只有 {balance} {token}，不夠這次跟單的金額。請調低金額，或先領測試幣；開倉另需少量測試 ETH 付執行費。',
+    notEnoughUsdcCta: '去領測試幣',
 
     staleTitle: '價格過期 — 暫停跟單',
     staleExplain:

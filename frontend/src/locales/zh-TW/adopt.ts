@@ -34,6 +34,7 @@ export const adopt = {
     noName: '未命名的配置發布者',
     assetCount: '{count} 檔資產',
     adopt: '採用',
+    details: '看這位發布者的紀錄',
   },
 
   dialog: {

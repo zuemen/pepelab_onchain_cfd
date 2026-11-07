@@ -24,6 +24,7 @@ export const stake: Catalog['stake'] = {
     formula: 'Formula: stake × 100 ÷ (stake + totalSlashed × 5)',
     eligible: '✓ Eligible to publish strategies',
     notEligible: '✗ Need 100 {token} stake',
+    notEligibleUnstaking: '✗ Unstake requested, so you cannot publish for now. Cancel the request to regain eligibility.',
     minimum: 'Minimum stake: {amount} {token} · Skin-in-the-game for your followers',
   },
 
@@ -35,6 +36,7 @@ export const stake: Catalog['stake'] = {
     staking: 'Staking…',
     cta: 'Approve + Stake',
     enterAmount: 'Enter a valid amount',
+    belowMinimum: 'Your total stake must be at least {amount} {token}. Raise the amount.',
     done: 'Staked successfully ✓',
   },
 

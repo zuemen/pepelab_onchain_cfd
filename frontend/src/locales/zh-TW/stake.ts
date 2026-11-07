@@ -21,6 +21,7 @@ export const stake = {
     formula: '公式：質押量 × 100 ÷（質押量 + 累計罰沒 × 5）',
     eligible: '✓ 符合發布策略資格',
     notEligible: '✗ 需質押 100 {token}',
+    notEligibleUnstaking: '✗ 解除質押申請中，暫時不能發布；取消申請可恢復資格',
     minimum: '最低質押金額：{amount} {token} · 向跟隨者展現你的風險共擔',
   },
 
@@ -32,6 +33,7 @@ export const stake = {
     staking: '質押中…',
     cta: '批准並質押',
     enterAmount: '請輸入有效金額',
+    belowMinimum: '質押後總額至少要 {amount} {token}，請提高金額',
     done: '質押成功 ✓',
   },
 

@@ -32,6 +32,7 @@ const ALLOWED: ReadonlyArray<{ key: string; why: string }> = [
   { key: 'marketplace.subtitle', why: '交易者排行榜，只在 Expert + 跟單旗標開啟時渲染' },
   { key: 'marketplace.sort.followers', why: '同上（排行榜）' },
   { key: 'marketplace.card.copy', why: '同上（排行榜）' },
+  { key: 'marketplace.card.starHint', why: '同上（排行榜星號的說明）' },
   { key: 'marketplace.card.followersLabel', why: '同上（排行榜）' },
   { key: 'marketplace.card.legacyFollowersTip', why: '同上（排行榜跟隨人數欄的說明：舊版合約上的跟隨者）' },
   { key: 'marketplace.footer.followersTotal', why: '同上（排行榜）' },

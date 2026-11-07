@@ -93,7 +93,7 @@ function SplitBar({ rev }: { rev: RevenueTotals | null }) {
         </Typography>
         <Typography variant="caption" color="text.secondary" sx={{ ml: 'auto' }}>
           {docs.split.accrued}{' '}
-          <Num tone="green">${(rev?.feeUsd ?? 0).toFixed(3)}</Num>{' · '}
+          <Num tone="green">{rev ? `$${rev.feeUsd.toFixed(3)}` : '—'}</Num>{' · '}
           <Num tone="muted">
             {rev == null
               ? '—'
@@ -116,7 +116,7 @@ function SplitBar({ rev }: { rev: RevenueTotals | null }) {
               {interpolate(docs.split.share, { label: s.label, pct: s.pct })}
             </Typography>
             <Num tone="muted" sx={{ fontSize: 12 }}>
-              ${(s.val ?? 0).toFixed(4)}
+              {s.val == null ? '—' : `$${s.val.toFixed(4)}`}
             </Num>
           </Stack>
         ))}

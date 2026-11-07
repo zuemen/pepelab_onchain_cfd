@@ -15,7 +15,7 @@ export const portfolio = {
     titleTooltip: '各項依目前價格估算後加總，不是現在就能全部領出的金額。各項的流動性與風險不同，滑到下方各欄的標題可以看說明。',
     liquid: '可立即動用',
     liquidTooltip: '錢包的 USDC ＋ 交易帳戶的可用保證金：不必平倉、解除質押或贖回就能動用。不含部位鎖住的保證金、質押、LP 保險金庫與代幣化資產。',
-    unrealisedPnl: '未實現 PnL',
+    unrealisedPnl: '未實現損益',
     unrealisedPnlTooltip: '未平倉部位現在平倉的淨損益：依合約標記價計算，已扣手續費與資金費，與交易終端機的持倉表同一個算法。不含部分部位獲利時另收的 10% 績效費；資金費以最後一次結算為準；不含穿倉補貼。有部位讀不到數字時，這裡顯示「—」並標成總額不完整',
 
     /**
@@ -31,7 +31,7 @@ export const portfolio = {
       wallet: '錢包',
       trading: '交易帳戶',
       staked: '已質押',
-      lpVault: 'LP 保險金庫',
+      lpVault: '保險金庫存款',
     },
 
     /** 每一欄的流動性與風險說明，滑過欄位標題時出現。 */
@@ -61,7 +61,7 @@ export const portfolio = {
    * 用同一個 title 或同一組詞會讓讀者以為算法一樣。
    */
   allocation: {
-    title: 'RWA 資產配置',
+    title: '我的資產配置',
     subtitle: '持有的代幣化資產市值 ＋ 未平倉部位保證金；不含錢包現金、質押與 LP 金庫——不是淨資產的配置。',
     /**
      * SHOW_PERPETUALS 關閉時的版本。仍然要提到部位保證金——帳戶裡可能還有旗標
@@ -218,7 +218,7 @@ export const portfolio = {
       '你目前在展示導覽模式，沒有連接錢包，因此無法讀取真實餘額或部位。請連接真實錢包以查看你的實際投資組合。',
 
     emptyTitle: '你的投資組合是空的',
-    emptyDescription: '先取得測試用 {token}，接著可以跟單交易者或自行開倉。',
+    emptyDescription: '先領測試用 {token}，再到「資產」頁買進黃金、股票等代幣化資產；想跟單，到「交易市集」挑交易者。',
     /** 跟單旗標關閉時。 */
     emptyDescriptionNoCopy: '先取得測試用 {token}，接著到「資產」頁買進代幣化資產，或到配置市集參考他人發布的配置。',
     emptyCta: '取得 {token}',
@@ -255,9 +255,9 @@ export const portfolio = {
       stopLoss: '停損提醒',
       actions: '操作',
     },
-    unfollow: '取消跟隨',
+    unfollow: '取消跟單',
     unfollowStale: '價格過期',
-    unfollowedOk: '已取消跟隨並平倉所有部位 ✓',
+    unfollowedOk: '已取消跟單並平倉所有部位 ✓',
 
     openPositions: '未平倉部位',
     openCount: '{count} 筆未平倉 · 手動 + 跟單',
