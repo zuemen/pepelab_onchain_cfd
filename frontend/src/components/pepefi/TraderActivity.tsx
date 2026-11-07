@@ -160,7 +160,7 @@ export function TraderActivityLive({ contracts, provider, chainId, address, mode
 }
 
 export default function TraderActivity({ activity, chainId, mode }: Props) {
-  const { events, positions, scanRange, progress, missing, loading, error, failedChunks } = activity
+  const { events, positions, positionsFailed, scanRange, progress, missing, loading, error, failedChunks } = activity
   const [expanded, setExpanded] = useState(false)
   // 讀取失敗（整體錯誤或有段落讀不到）時，空的時間軸不能說成「尚無動態」。
   const timelineReadFailed = Boolean(error) || failedChunks > 0
@@ -186,7 +186,7 @@ export default function TraderActivity({ activity, chainId, mode }: Props) {
           <TableSkeleton rows={3} cols={5} />
         ) : positions.length === 0 ? (
           <Typography color="text.secondary" sx={{ p: 4, textAlign: 'center' }}>
-            {t.traderProfile.activity.openPositions.empty}
+            {positionsFailed ? t.traderProfile.activity.openPositions.readFailed : t.traderProfile.activity.openPositions.empty}
           </Typography>
         ) : (
           <TableContainer sx={{ overflowX: 'auto' }}>

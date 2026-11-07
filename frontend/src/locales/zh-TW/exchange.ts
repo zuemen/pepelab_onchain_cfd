@@ -109,7 +109,7 @@ export const exchange = {
     title: '兌換',
     poolBadge: '● 恆定乘積池 · 有滑點',
     /** #165：線上舊版 PepeAMM 依 oracle 報價成交，掛恆定乘積徽章是錯的。 */
-    oracleFixedBadge: '● Oracle 定價 · 無滑點（舊版合約）',
+    oracleFixedBadge: '● 預言機定價 · 無滑點',
     notDeployed: '本網路未部署兌換池（PepeAMM）。請切換到 Base Sepolia。',
 
     youPay: '你支付',
@@ -134,8 +134,9 @@ export const exchange = {
     unavailable: '無法取得',
     /** 還沒讀完的那一格。和「無法取得」分開：前者再等一下就有，後者是讀失敗了。 */
     loadingValue: '讀取中…',
+    smallPoolNote: '測試網兌換池很小，單筆金額太大會被價格護欄退回，請先用小額試。',
     oracleFixedNote:
-      '線上 PepeAMM 是舊版合約：依 Oracle 報價固定定價（扣 0.3% 手續費、無滑點），不是恆定乘積池。此版沒有 oraclePrice()，也沒有池價偏離保護，所以不另列 Oracle 參考價；儲備量只代表可兌出的庫存，不決定價格。',
+      '這個兌換池依預言機報價定價（扣 0.3% 手續費、無滑點），不是恆定乘積池。儲備量只代表可兌出的庫存，不決定價格。',
     noOracleRefNote: '這一版合約沒有 oraclePrice()，因此不顯示 Oracle 參考價。',
     unknownVersionNote:
       '無法確認線上合約版本，暫不顯示價格與價格衝擊；實際兌換數量仍以合約即時報價為準。',
@@ -183,9 +184,9 @@ export const exchange = {
    */
   markup: {
     stepBuyLabel: '買入資產：',
-    stepBuyBody: '到「資產」頁,用 {token} 買進代幣化的股、債、金、幣——代幣會直接進到你的錢包。',
+    stepBuyBody: '到「資產」頁，用 {token} 買進代幣化的股、債、金、幣——代幣會直接進到你的錢包。',
     stepPortfolioLabel: '看配置：',
-    stepPortfolioBody: '回「投資組合」頁,四大類的佔比、市值與損益都在那裡。',
+    stepPortfolioBody: '回「投資組合」頁，四大類的佔比與市值都在那裡；現貨沒有鏈上買入成本，不計算損益。',
 
     stepGetTokensLabel: '取得代幣：',
     stepGetTokensBody: '從水龍頭領取測試用 {token}（以及 PEPE）——不需要兌換。',
@@ -197,17 +198,11 @@ export const exchange = {
 
     ethBalanceBefore: 'ETH 餘額：',
     /** 這一頁沒有開倉,ETH 只用來付 gas。 */
-    ethBalanceAfterSpot: '（鏈上交易需少量 ETH 付 gas）',
+    ethBalanceAfterSpot: '（鏈上交易需少量 ETH 付手續費）',
+    noEth: '你的錢包沒有測試 ETH，領幣和買進都付不了網路手續費。請先到 Base Sepolia 水龍頭領一點。',
+    noEthCta: '查看水龍頭 ↗',
 
-    faucetEoaLine1: '🔑 水龍頭只開放',
-    faucetEoaBold1: '一般錢包（EOA）',
-    faucetEoaLine1After: '領取：合約防機器人濫領的條件是',
-    faucetEoaCode1: ' msg.sender == tx.origin',
-    faucetEoaLine2Mid: '，所以用 ',
-    faucetEoaBold2: 'Safe / ERC-4337 智能合約錢包',
-    faucetEoaLine3: '（或任何 batch / multicall 代呼叫）點下去會被合約以 ',
-    faucetEoaCode2: 'FaucetCallerMustBeEOA',
-    faucetEoaLine3After: ' 拒絕。 請改用一般 EOA 錢包領取後再轉過去。每個地址 24 小時可領一次。',
+    faucetLimit: '🔑 每個錢包 24 小時可領一次。智慧合約錢包（Safe 等）不能領，請用一般錢包。',
 
     priceImpactBefore: '⚠ 這筆兌換的價格衝擊高達 ',
     priceImpactAfter: '，等於用遠差於市價的價格成交。 建議分批換小額；金額太大時合約還會以 ',

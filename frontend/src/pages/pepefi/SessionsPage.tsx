@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react'
 import { MONO } from 'src/components/pepefi/brandKit'
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
-import { parseUnits, formatUnits, Wallet, getAddress } from 'ethers'
+import { parseUnits, formatUnits, Wallet, getAddress, isAddress } from 'ethers'
 
 import Box from '@mui/material/Box'
 import Card from '@mui/material/Card'
@@ -108,6 +108,23 @@ const STICKY_ACTION_CELL = {
   zIndex: 1,
   boxShadow: '-8px 0 8px -8px rgba(0,0,0,0.4)',
 } as const
+
+/** 這個站有沒有設定憑證狀態清單；沒有就走不完「撤銷憑證」。 */
+const VC_STATUS_CONFIGURED = !!(import.meta.env.VITE_VC_STATUS_URL as string | undefined)?.trim()
+
+/** 建立 session 前的欄位檢查，回傳第一個問題的說明；沒問題回 null。 */
+function sessionFormProblem(f: { agent: string; perTrade: string; budget: string; maxLev: string; hours: string }): string | null {
+  const c = t.sessions.create
+  if (!isAddress(f.agent.trim())) return c.invalidAgent
+  const perTrade = Number(f.perTrade)
+  const budget = Number(f.budget)
+  if (!(perTrade > 0) || !(budget > 0)) return c.invalidAmounts
+  if (perTrade > budget) return c.perTradeOverBudget
+  const lev = Number(f.maxLev)
+  if (!Number.isInteger(lev) || lev < 1 || lev > 5) return c.invalidLeverage
+  if (!(Number(f.hours) > 0)) return c.invalidHours
+  return null
+}
 
 export default function SessionsPage() {
   const wallet = usePepefiWallet()
@@ -345,6 +362,9 @@ export default function SessionsPage() {
     // 絕不讓白名單過濾把一個受限 session 變成無限制的 session。
     const tenantAssets = allowedAssets.filter(a => assetPolicy.canOpen(a))
     if (tenantAssets.length === 0) { notify(t.sessions.create.noAssetSelected, false); return }
+    // 送出前逐欄檢查：空白或亂填不該變成錢包跳窗後的「交易失敗」。
+    const fieldProblem = sessionFormProblem({ agent, perTrade, budget, maxLev, hours })
+    if (fieldProblem) { notify(fieldProblem, false); return }
     try {
       const expiry = Math.floor(Date.now() / 1000) + Math.round(parseFloat(hours) * 3600)
       setBusy(p => ({ ...p, create: true }))
@@ -396,20 +416,32 @@ export default function SessionsPage() {
       const tx = asTx(await manager.revokeSession(id))
       await tx.wait()
       notify(t.sessions.list.revoked, true, tx.hash)
-      await fetchSessions()
+      // 節點可能還沒跟上：讀到 revoked 才算數（最多約 20 秒），否則列表仍顯示進行中。
+      const gen = pollGen.current
+      const res = await pollUntil(async () => {
+        const rows = await fetchSessions({ silent: true })
+        return !!rows?.some(r => r.id === id && r.revoked)
+      }, { cancelled: () => pollGen.current !== gen })
+      if (res === 'timeout') await fetchSessions()
       // Revoking the session also revokes its v3 credential in the ADR-016 status list
       // (the chain already makes isAnchored false; the list covers verifiers that cache).
+      // 這個站沒設定狀態清單時不問：鏈上撤銷已生效，後面那段走不完。
       const d = delegations[id]
-      if (d && !d.revoked && wallet.signer && wallet.address && window.confirm(t.sessions.delegation.revokeWithSession)) {
-        const r = await revokeDelegationCredential({
-          signer: wallet.signer, user: wallet.address,
-          sessionManager: getSessionManagerAddress(wallet.chainId), credential: d.credential,
-        })
-        storeDelegation(id, afterRevocation(d, r))
-        notify(
-          interpolate(r.published ? t.sessions.delegation.revokedPublished : t.sessions.delegation.revokedDownloaded, { seq: String(r.list.sequence) }),
-          true,
-        )
+      if (VC_STATUS_CONFIGURED && d && !d.revoked && wallet.signer && wallet.address && window.confirm(t.sessions.delegation.revokeWithSession)) {
+        try {
+          const r = await revokeDelegationCredential({
+            signer: wallet.signer, user: wallet.address,
+            sessionManager: getSessionManagerAddress(wallet.chainId), credential: d.credential,
+          })
+          storeDelegation(id, afterRevocation(d, r))
+          notify(
+            interpolate(r.published ? t.sessions.delegation.revokedPublished : t.sessions.delegation.revokedDownloaded, { seq: String(r.list.sequence) }),
+            true,
+          )
+        } catch {
+          // Session 已經撤銷成功，不能接一個紅色的「交易失敗」。
+          notify(t.sessions.delegation.revokeListSkipped, false)
+        }
       }
     } catch (e) {
       notify(prettyError(e), false)
@@ -443,12 +475,31 @@ export default function SessionsPage() {
       <Box>
         <Typography variant="h4" sx={{ fontWeight: 'bold' }}>{t.sessions.title}</Typography>
         <Typography variant="body2" color="text.secondary">
-          {t.sessions.markup.introBefore}<b>did:pkh</b>{t.sessions.markup.introMid}<b>W3C VC</b>{t.sessions.markup.introAfter}
+          {t.sessions.markup.introBefore}
         </Typography>
       </Box>
 
-      {/* SSI 角色說明 — 一眼看懂三角 */}
+      {/* 建完 session 就下單會失敗的三個前提，要在建立前講清楚。 */}
+      <Alert severity="info">
+        <Typography variant="subtitle2" sx={{ fontWeight: 'bold', mb: 0.5 }}>
+          {t.sessions.prereq.title}
+        </Typography>
+        <Typography variant="body2" component="ol" sx={{ pl: 2, m: 0 }}>
+          <li>{t.sessions.prereq.margin}</li>
+          <li>{t.sessions.prereq.eth}</li>
+          <li>{t.sessions.prereq.kyc}</li>
+        </Typography>
+      </Alert>
+
+      {/* SSI 角色說明 — 收進技術細節，頁首先講白話 */}
+      <Box component="details">
+        <Box component="summary" sx={{ cursor: 'pointer', typography: 'caption', color: 'text.secondary', mb: 1 }}>
+          {t.sessions.ssi.detailsToggle}
+        </Box>
       <Alert severity="info" variant="outlined" icon={false}>
+        <Typography variant="caption" sx={{ display: 'block', mb: 1 }}>
+          {t.sessions.markup.introTech}<b>did:pkh</b>{t.sessions.markup.introMid}<b>W3C VC</b>{t.sessions.markup.introAfter}
+        </Typography>
         <Typography variant="subtitle2" sx={{ fontWeight: 'bold', mb: 0.5 }}>
           {t.sessions.ssi.title}
         </Typography>
@@ -461,6 +512,7 @@ export default function SessionsPage() {
           {t.sessions.ssi.flow}
         </Typography>
       </Alert>
+      </Box>
 
       {!deployed ? (
         <Alert severity="warning">

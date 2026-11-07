@@ -103,6 +103,7 @@ export const traderProfile = {
       title: '目前未平倉部位',
       subtitle: '即時讀取交易所資料 · 亦包含早於掃描視窗的部位',
       empty: '無未平倉部位。',
+      readFailed: '未平倉部位讀取失敗，請稍後重新整理。這不代表沒有部位。',
       columnSimple: { market: '市場', side: '方向', notional: '名義價值', pnl: 'PnL' },
       columnExpert: {
         market: '市場',

@@ -454,13 +454,15 @@ export function DelegationCredentialPanel({
                 {busy === 'confirm' ? d.confirmingPublished : d.confirmPublished}
               </Button>
             )}
-            {!stored.revoked && (
+            {/* 這個站沒設定狀態清單時走不完撤銷憑證；已開始的撤銷流程仍要能接著做。 */}
+            {!stored.revoked && (statusUrl() || stored.revocationPending) && (
               <Button variant="outlined" color="error" onClick={() => void revoke()} disabled={busy !== '' || !signer} sx={{ textTransform: 'none' }}>
                 {busy === 'revoke' ? d.revoking : stored.revocationPending ? d.revokeAgain : d.revoke}
               </Button>
             )}
           </Stack>
           {stored.revocationPending && <Alert severity="warning">{d.revokePendingNote}</Alert>}
+          {!stored.revoked && !stored.revocationPending && !statusUrl() && <Alert severity="info">{d.revokeUnavailable}</Alert>}
           {needImport && !stored.revoked && (
             <Alert severity="info">
               {d.importHint}{' '}

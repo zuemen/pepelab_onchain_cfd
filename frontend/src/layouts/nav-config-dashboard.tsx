@@ -125,20 +125,20 @@ export const navData: NavSectionProps['data'] = byFeatureFlags([
 // 頁直接打網址仍然到得了。商業版旗標（featureFlags.ts 的 FEATURE_*）不同：那些是連
 // 路由一起收，已在上面的 byFeatureFlags 過濾掉。
 //
-// 照使用順序排：先看自己的資產配置（Portfolio），再逛別人發布的配置
-// （Marketplace），去買賣代幣化資產（Tokens），看碳強度與見證歧見（ESG），
-// 翻自己的歷史（History），管理 agent session（Sessions），現金／水龍頭
-// （Exchange），養成中心（PepeLab）放最後——遊戲化元素只出現在它自己的頁。
+// 照使用順序排：先看自己的資產配置（Portfolio），領測試幣（Exchange）——新錢包的
+// 第一步，去買賣代幣化資產（Tokens），再逛別人發布的配置與交易者（Marketplace），
+// 看碳強度與見證歧見（ESG），翻自己的歷史（History），管理 agent session（Sessions），
+// 養成中心（PepeLab）放最後——遊戲化元素只出現在它自己的頁。
 //
 // terminal 不在這裡，而且是刻意的：simple 模式就是「沒有槓桿的那一版」。
 const SIMPLE_NAV_PATHS: readonly string[] = [
   paths.pepefi.portfolio,
-  paths.pepefi.marketplace,
+  paths.pepefi.exchange,
   paths.pepefi.tokens,
+  paths.pepefi.marketplace,
   paths.pepefi.esg,
   paths.pepefi.history,
   paths.pepefi.sessions,
-  paths.pepefi.exchange,
   paths.pepefi.pepe,
 ];
 

@@ -102,6 +102,7 @@ export const traderProfile: Catalog['traderProfile'] = {
       title: 'Current Open Positions',
       subtitle: 'read live from the exchange · includes positions older than the scan window',
       empty: 'No open positions.',
+      readFailed: 'Could not read open positions. Refresh in a moment. This does not mean there are none.',
       columnSimple: { market: 'Market', side: 'Side', notional: 'Notional', pnl: 'PnL' },
       columnExpert: {
         market: 'Market',
@@ -139,7 +140,7 @@ export const traderProfile: Catalog['traderProfile'] = {
       detail: {
         openedTail: '{asset} {leverage}× @ {price} · margin {margin}',
         closedTail: ' · received {received}',
-        liquidatedBefore: 'Liquidated at ',
+        liquidatedBefore: 'Liquidated, P&L ',
         liquidatedBy: ' by ',
         followingBefore: 'Started copying ',
         followingAfter: ' · margin {margin}',

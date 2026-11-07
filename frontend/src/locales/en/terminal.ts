@@ -19,7 +19,7 @@ export const terminal: Catalog['terminal'] = {
 
     index: 'Index (oracle · settles here)',
     indexHint:
-      'The on-chain oracle price — also what you actually trade at.\n\nOpening, closing, and liquidation all settle at this price, independent of the display price and candlestick chart above — those are external market references. The oracle is written on-chain periodically by the keeper, so it lags the market a little.',
+      'The on-chain oracle (index) price.\n\nOpening, closing, and liquidation use the mark price: this price plus an open-interest imbalance premium (the two are equal when the premium cap is 0). All of this is independent of the display price and candlestick chart above — those are external market references. The oracle is written on-chain periodically by the keeper, so it lags the market a little.',
 
     mark: 'Mark (OI premium)',
     markHint:
@@ -91,7 +91,10 @@ export const terminal: Catalog['terminal'] = {
     kycPending:
       '⏳ {asset} requires KYC: application submitted, awaiting reviewer approval — unlocks automatically once approved',
     kycRequired:
-      '🔒 {asset} requires KYC — submit an application on the Exchange page (review required after submitting)',
+      '🔒 {asset} requires KYC. Submit it from the KYC card on the Portfolio page (testnet demo: approved as soon as you submit).',
+    kycGoToPortfolio: 'Go to Portfolio to submit',
+    marketModeBlocked: 'This market is closed or paused, so no new positions can be opened.',
+    insufficientWithFee: 'Not enough margin after fees',
     kycRequiredVc:
       '🔒 {asset} is an RWA market — opening a position requires a valid qualified-investor credential registered on-chain',
 
@@ -150,6 +153,8 @@ export const terminal: Catalog['terminal'] = {
     short: 'SHORT',
     closed: 'Closed ✓',
     close: 'Close',
+    copyManaged: 'Copy position',
+    copyManagedTip: 'This position came from copy trading. Closing it alone would put the copy record out of step, so manage it in Portfolio.',
     stale: 'Price stale',
     markHint:
       'Contract getMarkPrice: index price plus the premium from platform-wide long/short imbalance. A position\u2019s own PnL uses the mark with its own notional excluded, so the two can differ when the premium cap is above 0.',
@@ -245,7 +250,7 @@ export const terminal: Catalog['terminal'] = {
     atCapacity: 'Display limit reached',
 
     disclaimer:
-      "The chart is reference pricing from an external public source, not this platform's trade record — opening, closing, and liquidation all settle at the on-chain oracle index price.",
+      "The chart is reference pricing from an external public source, not this platform's trade record — opening, closing, and liquidation all settle at the on-chain mark price (index plus the open-interest imbalance premium).",
 
     error: "Couldn't load candles",
     loading: 'Loading candles…',

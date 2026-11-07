@@ -162,8 +162,8 @@ export function timeAgo(ts: number, nowSec: number = Math.floor(Date.now() / 100
   return interpolate(ago.days, { n: Math.floor(diff / 86400) })
 }
 
-/** LONG / SHORT。UI 統一英文，方向詞不再各頁自己寫三元運算。 */
-export const sideLabel = (isLong: boolean): 'LONG' | 'SHORT' => (isLong ? 'LONG' : 'SHORT')
+/** 方向詞（做多／做空）走 catalog，不再各頁自己寫三元運算。 */
+export const sideLabel = (isLong: boolean): string => (isLong ? t.whale.side.long : t.whale.side.short)
 
 /** 方向的顏色意圖，同樣交給元件層對應 theme。 */
 export const sideTone = (isLong: boolean): 'long' | 'short' => (isLong ? 'long' : 'short')

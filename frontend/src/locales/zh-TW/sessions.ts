@@ -8,9 +8,16 @@ export const sessions = {
   title: '🤖 AI Agent 委任',
   viewOn: '在 {explorer} 查看 ↗',
 
+  prereq: {
+    title: 'Agent 下單前要先準備三件事',
+    margin: '到專業終端把 USDC 存進交易帳戶，session 不會動用你錢包裡的 USDC。',
+    eth: 'Agent 地址要有少量測試 ETH，付手續費與每次開倉的執行費。',
+    kyc: '要交易股票、債券類標的，你的錢包要先完成 KYC。',
+  },
   ssi: {
+    detailsToggle: '給開發者：技術細節',
     title: 'SSI 三角：你的錢包就是信任根',
-    flow: '流程：連錢包 → 設限額建 session → 簽發授權 VC → 一鍵匯出 agent 設定 → 之後只下口頭交易意圖。',
+    flow: '流程：連錢包 → 設限額建 session → 簽發授權 VC → 匯出 agent 設定 → 之後只下口頭交易意圖。',
   },
 
   wrongNetwork: {
@@ -33,6 +40,11 @@ export const sessions = {
     allowedAssets: '允許交易的標的',
     allowedAssetsHint: 'agent 只能在這些標的上開倉（鏈上白名單，createSessionWithAssets）。至少選一檔。',
     noAssetSelected: '請至少選擇一檔允許交易的標的。',
+    invalidAgent: 'Agent 地址格式不對，請貼上 0x 開頭的地址，或按「產生 agent 金鑰」。',
+    invalidAmounts: '單筆上限與總預算都要大於 0。',
+    perTradeOverBudget: '單筆上限不能大於總預算。',
+    invalidLeverage: '最大槓桿要是 1 到 5 的整數。',
+    invalidHours: '時數要大於 0。',
   },
 
   /** 瀏覽器裡產生的一次性 burner 金鑰。 */
@@ -117,7 +129,7 @@ export const sessions = {
     open: '委託憑證 v3',
     title: '委託授權憑證 v3（W3C VC 2.0）',
     intro:
-      '把這個 session 的額度、資產白名單與 x402 付費上限簽成一張可驗證憑證，再錨定到鏈上：付費 API 就能確認「誰授權了這個代理人、授權到哪裡」（Know Your Agent）。',
+      '把這個 session 的額度、資產白名單與 x402 付費上限簽成一張可驗證憑證，用來證明「誰授權了這個代理人、授權到哪裡」（Know Your Agent）。部署了錨定合約的環境可以再錨定到鏈上；目前的測試站只能簽發憑證，尚未啟用鏈上錨定與付費 API 檢查。',
     agentDid: '代理人 DID（holder）',
     issuerDid: '簽發者 DID（你）',
     sessionTerms: 'Session 額度（與鏈上逐欄一致）',
@@ -151,6 +163,8 @@ export const sessions = {
     hideJson: '收起 JSON',
     download: '下載憑證 .json',
     revoke: '撤銷這張憑證',
+    revokeUnavailable: '這個站還沒設定憑證狀態清單，無法單獨撤銷憑證。要停止授權，請撤銷 session，鏈上立即生效。',
+    revokeListSkipped: 'Session 已撤銷，鏈上立即生效。憑證的撤銷清單這次沒有簽署完成，不影響 session 的撤銷。',
     revoking: '撤銷中…',
     revokedDownloaded: '已簽好撤銷清單（sequence {seq}），但尚未確認發佈（已下載）；請交給營運方發佈（npm run vc-status install），發佈後按「確認已發佈」。在那之前憑證仍有效。',
     revokedPublished: '已簽好撤銷清單（sequence {seq}），並確認已發佈到狀態清單目錄。',
@@ -199,9 +213,10 @@ export const sessions = {
   /** #36：十段句中夾標記的說明，各自拆成標記前後的片段。 */
   markup: {
     introBefore:
-      '委派一把有界 session key 給 agent：限單筆保證金、總預算、最大槓桿與到期。 Agent 只能在限額內經 AgentSessionManager 代你開/平倉，永不持有你的主錢包私鑰。 每個 agent 具 ',
+      '讓 AI 幫你下單，但只能照你設的上限：每筆多少、總共多少、最高幾倍、哪些資產、到什麼時候。主錢包私鑰不會交給它，隨時可撤銷。',
+    introTech: '每個 agent 有 ',
     introMid: ' 身分，授權可憑證化為 ',
-    introAfter: ' 供下單前驗簽 （SSI / 可驗證自主交易，見 docs/AGENT_IDENTITY_VC_SSI.md）。',
+    introAfter: '，下單前會先驗簽。',
 
     roleIssuerBefore: '🖊️ ',
     roleIssuerBold: 'Issuer＝你',
@@ -233,7 +248,7 @@ export const sessions = {
     step1Bold: 'MCP 設定',
     step1Mid1: '貼進 Claude Desktop/Code 的 ',
     step1Mid2: '，並把 ',
-    step1After: ' 換成你本機 agent 的 session key。',
+    step1After: ' 換成你本機 agent 的 session key；再先 clone 專案、安裝相依套件，把設定裡的 /path/to/… 換成本機路徑。',
     step2Before: '把 ',
     step2Bold: '授權 VC',
     step2Mid1: '存成檔案，agent 下單時以 ',

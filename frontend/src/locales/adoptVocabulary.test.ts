@@ -37,7 +37,6 @@ function offenders(catalog: typeof zhTW): string[] {
         CapExceeded: catalog.errors.contract.CapExceeded,
         EnforcedPause: catalog.errors.contract.EnforcedPause,
         userRejected: catalog.errors.contract['user rejected'],
-        executionReverted: catalog.errors.contract['execution reverted'],
         reverted: catalog.errors.reverted.adopt,
         unrecognised: catalog.errors.unrecognised,
       },

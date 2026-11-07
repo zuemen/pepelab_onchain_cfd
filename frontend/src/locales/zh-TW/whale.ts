@@ -14,6 +14,7 @@ export const whale = {
   },
 
   /** feed 上點名一筆交易的原因。 */
+  side: { long: '做多', short: '做空' },
   tag: {
     mega: '巨額',
     megaHint: '名義價值超過 {threshold}',
@@ -81,8 +82,6 @@ export const whale = {
     /**
      * simple 模式把一筆交易寫成一句話，每個片段之間本來就用明確的
      * `{' '}` 隔開，不是靠 JSX 折疊換行空白，所以直接搬進 catalog 不會漏空格。
-     * sideLabel()（多／空）是 `lib/pepefi/whale.ts` 裡的獨立函式，不經過
-     * catalog，這句子裡仍是英文 LONG/SHORT，是另一個已知缺口。
      */
     openedVerb: '開倉',
     forPreposition: '金額為',

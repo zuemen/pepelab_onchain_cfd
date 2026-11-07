@@ -1,9 +1,11 @@
 import { useState } from 'react'
+import { Link as RouterLink } from 'react-router'
 
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 
 import { t } from 'src/locales'
+import { paths } from 'src/routes/paths'
 import { ASSET_META } from 'src/lib/pepefi/assetMeta'
 import { prettyError } from 'src/lib/pepefi/errorMessages'
 import { SHOW_LEVERAGE } from 'src/lib/pepefi/featureFlags'
@@ -148,6 +150,17 @@ export function PositionsTable({
                     </Box>
                   )}
                   <Box>
+                    {/* 跟單部位一律到投資組合處理：那裡分得出進行中與已結束的跟單。 */}
+                    {p.copiedFrom && !/^0x0+$/.test(p.copiedFrom) ? (
+                      <Button
+                        component={RouterLink}
+                        to={paths.pepefi.portfolio}
+                        title={t.terminal.positions.copyManagedTip}
+                        sx={{ ...monoCss, fontSize: 11.5, fontWeight: 700, textTransform: 'none', py: 0.4, px: 1.4, borderRadius: '7px', color: C.mut, border: `1px solid ${C.line}` }}
+                      >
+                        {t.terminal.positions.copyManaged}
+                      </Button>
+                    ) : (
                     <Button
                       onClick={() => void closePos(p.id, p.asset)}
                       disabled={busy[k] || !!stale}
@@ -172,6 +185,7 @@ export function PositionsTable({
                           ? t.terminal.positions.stale
                           : t.terminal.positions.close}
                     </Button>
+                    )}
                   </Box>
                 </Box>
               )

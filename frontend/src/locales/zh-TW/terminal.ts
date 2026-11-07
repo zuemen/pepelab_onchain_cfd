@@ -28,7 +28,7 @@ export const terminal = {
 
     index: '指數（oracle · 此為結算價）',
     indexHint:
-      '鏈上預言機價格，也是你實際成交的價格。\n\n開倉、平倉、清算全部以這個價格結算，跟上面的顯示價和 K 線圖都無關——那兩個是外部行情的參考。預言機由 keeper 定期寫入鏈上，所以會比市場慢一些。',
+      '鏈上預言機的指數價。\n\n開倉、平倉、清算用的是標記價：這個價格加上多空失衡溢價（溢價上限為 0 時兩者相同）。兩者都跟上面的顯示價和 K 線圖無關——那兩個是外部行情的參考。預言機由 keeper 定期寫入鏈上，所以會比市場慢一些。',
 
     mark: '標記價（OI 溢價）',
     markHint:
@@ -75,7 +75,7 @@ export const terminal = {
     marginAria: '保證金（{token}）',
 
     notional: '名義價值',
-    entryOracle: '進場價（oracle）',
+    entryOracle: '預估進場價（指數價）',
     noPriceNotice:
       '⛔ 讀不到鏈上指數價，無法計算進場與清算價。在讀到價格之前不送單。',
     estLiquidation: '預估清算價',
@@ -99,7 +99,10 @@ export const terminal = {
     /** 受管制標的的三種 KYC 狀態，各自是完整的一句話。 */
     kycUnknown: '⚠ 無法確認 KYC 狀態（鏈上讀取失敗）。合規閘門採 fail-closed，{asset} 暫停交易。',
     kycPending: '⏳ {asset} 需 KYC：申請已送出，等待審核人員核准中，核准後自動解鎖',
-    kycRequired: '🔒 {asset} 需 KYC，請至 Exchange 頁送出申請（送出後需審核）',
+    kycRequired: '🔒 {asset} 需 KYC，請到「投資組合」頁的 KYC 卡片送出申請（測試網展示：送出即通過）',
+    kycGoToPortfolio: '前往投資組合送出申請',
+    marketModeBlocked: '這個標的目前休市或暫停，不能開新倉。',
+    insufficientWithFee: '含手續費後保證金不足',
     kycRequiredVc: '🔒 {asset} 是 RWA 市場，開倉需要有效的合格投資人資格（可驗證憑證登記上鏈）',
 
     riskNotice:
@@ -160,6 +163,8 @@ export const terminal = {
     short: '做空',
     closed: '已平倉 ✓',
     close: '平倉',
+    copyManaged: '跟單部位',
+    copyManagedTip: '這是跟單開出的部位。單筆平倉會讓跟單紀錄對不上，請到「投資組合」處理。',
     stale: '價格過期',
     /** 「標記價」欄與 PnL 欄的 tooltip（見 lib/pepefi/positionPnl.ts 檔頭）。 */
     markHint:
@@ -258,7 +263,7 @@ export const terminal = {
     atCapacity: '已達顯示上限',
 
     disclaimer:
-      '圖表為外部公開來源的參考行情，非本平台成交紀錄；開倉 / 平倉 / 清算一律以鏈上 oracle index 價結算。',
+      '圖表為外部公開來源的參考行情，非本平台成交紀錄；開倉 / 平倉 / 清算一律以鏈上標記價結算（指數價＋多空失衡溢價）。',
 
     error: '無法載入 K 線',
     loading: '載入 K 線…',
