@@ -50,11 +50,11 @@ import Link from '@mui/material/Link';
 import Tooltip from '@mui/material/Tooltip';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
-// Base Sepolia blocks every ~2s. FETCH_BLOCKS is the total lookback per
+// Base Sepolia blocks every ~0.2s (measured 2026-11). FETCH_BLOCKS is the total lookback per
 // refresh / "load older" step; every scan goes through scanContractEvents →
 // getLogsChunked, whose CHUNK_SIZE is set from a measured node limit (the public
 // RPC rejects eth_getLogs spans over 1,000 blocks — see chainLogs.ts).
-const FETCH_BLOCKS = 9000   // ~5 h on Base Sepolia (2 s/block)
+const FETCH_BLOCKS = 9000   // ~30 min on Base Sepolia (0.2 s/block)
 
 // Events are cached client-side so history survives past the scan window — the
 // chain keeps everything forever, but a fixed lookback can only ever see the

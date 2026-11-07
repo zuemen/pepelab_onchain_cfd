@@ -48,8 +48,8 @@ export const history = {
 
   empty: {
     title: '尚無活動',
-    windowOnly: '最近約 5 小時（{blocks} 個區塊）內找不到活動。更早的活動可以往下載入較舊的區塊。',
-    windowFiltered: '最近約 5 小時（{blocks} 個區塊）內找不到符合篩選「{filter}」的活動。更早的活動可以往下載入較舊的區塊。',
+    windowOnly: '最近約 30 分鐘（{blocks} 個區塊）內找不到活動。更早的活動可以往下載入較舊的區塊。',
+    windowFiltered: '最近約 30 分鐘（{blocks} 個區塊）內找不到符合篩選「{filter}」的活動。更早的活動可以往下載入較舊的區塊。',
   },
 
   column: {

@@ -28,7 +28,7 @@ export const DEPLOY_BLOCK_BY_CHAIN: Record<number, number> = {
 export const AVG_BLOCK_TIME_BY_CHAIN: Record<number, number> = {
   31337: 1, // 本地鏈只在有交易時出塊，1 是保守估計
   11155111: 12, // Ethereum Sepolia
-  84532: 2, // Base Sepolia（OP Stack，2 秒）
+  84532: 0.2, // Base Sepolia：2026-11 實測每 0.2 秒一塊（43,200 塊 = 144 分鐘）
 }
 
 /** 不認得的鏈用 12 秒——高估比低估安全，寧可掃少一點也不要炸掉節點。 */
@@ -38,8 +38,8 @@ export const DEFAULT_AVG_BLOCK_TIME = 12
  * 預設回看 24 小時。這是「近期動向」需要的範圍，不是完整鏈史。
  *
  * 2026-09-29 以前是 7 天——但公開節點的 getLogs 範圍上限只有數百到一千塊（見
- * MEASURED_GETLOGS_MAX_BLOCKS），7 天在 Base Sepolia 是 302,400 塊，分段數不可行。
- * 24 小時 = 43,200 塊 = 216 段（CHUNK_SIZE 200），落在 MAX_CHUNKS 之內。
+ * MEASURED_GETLOGS_MAX_BLOCKS），7 天在 Base Sepolia 是 3,024,000 塊，分段數不可行。
+ * Base Sepolia 上 MAX_CHUNKS 的上限約 44,000 塊，實際只回看約 2.4 小時；畫面的範圍標示依區塊時間換算。
  */
 export const DEFAULT_SCAN_WINDOW_SEC = 24 * 3600
 

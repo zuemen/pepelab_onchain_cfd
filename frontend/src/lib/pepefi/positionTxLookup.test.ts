@@ -17,15 +17,15 @@ const steadyChain = (head: number, t0: number, bt: number) => ({
 });
 
 describe('estimateBlockAt', () => {
-  it('lands on the right block on a steady 2-second chain (Base Sepolia)', async () => {
-    const chain = steadyChain(47_581_184, 1_700_000_000, 2);
-    const ts = 1_700_000_000 + 47_581_181 * 2;
+  it('lands on the right block on a steady 0.2-second chain (Base Sepolia)', async () => {
+    const chain = steadyChain(47_581_184, 1_700_000_000, 0.2);
+    const ts = 1_700_000_000 + 47_581_181 * 0.2;
     const r = await estimateBlockAt(chain, ts, 84532);
     expect(r).toEqual({ est: 47_581_181, latest: 47_581_184 });
   });
 
   it('corrects itself on a chain whose real block time differs from the average', async () => {
-    // anvil fork：有交易才出塊，實際約 30 秒一塊；第一次用 2 秒推會偏很遠，修正後要落在窗口內。
+    // anvil fork：有交易才出塊，實際約 30 秒一塊；第一次用 0.2 秒推會偏很遠，修正後要落在窗口內。
     const chain = steadyChain(1_000, 1_700_000_000, 30);
     const target = 990;
     const r = (await estimateBlockAt(chain, 1_700_000_000 + target * 30, 84532))!;
