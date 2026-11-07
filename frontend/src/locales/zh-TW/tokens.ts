@@ -293,7 +293,7 @@ export const tokens = {
     reserveRole: '儲備營運',
     reserveWho: 'AssetVault 營運方持有 USDC 儲備；儲備率由 keeper 定期寫成鏈上觀測事件，跌破門檻自動暫停鑄造。',
     auditRole: '程式稽核',
-    auditWho: '合約經逐次稽核，修補紀錄見 docs/；所有部署位址可在區塊瀏覽器查證。',
+    auditWho: '合約只經過團隊內部多輪審查，沒有第三方稽核；修補紀錄見 docs/，所有部署位址可在區塊瀏覽器查證。',
     disclosureTitle: '誠實聲明',
     disclosure: 'demo 中的碳見證由專案團隊自行安排，尚非機構獨立性。多方見證與歧見可見減輕但不解決「資料本身是否屬實」。',
   },
@@ -302,7 +302,7 @@ export const tokens = {
   markup: {
     introBefore: '本頁展示',
     introBold1: '代幣化資產（ERC-20）',
-    introMid1: '。與交易頁的合成持倉不同，這裡買入的資產會以 ERC-20 token 形式',
+    introMid1: '。這裡的代幣是合成代幣，只追蹤價格，你不會真的持有股票、債券或黃金。買入後會以 ERC-20 token 形式',
     /**
      * SHOW_PERPETUALS 關閉時的版本。原句拿「交易頁的合成持倉」當對照，但旗標關著
      * 的時候那個東西在畫面上不存在——用一個看不到的概念解釋看得到的概念，只會讓

@@ -276,7 +276,7 @@ export const tokens: Catalog['tokens'] = {
       'The AssetVault operator holds the USDC reserve; the reserve ratio is written to on-chain observation events by a keeper and minting auto-halts if it breaches the floor.',
     auditRole: 'Code audit',
     auditWho:
-      'The contracts have been audited in successive passes, with fix records in docs/; every deployed address is verifiable on a block explorer.',
+      'The contracts have only had several rounds of internal team review and no third-party audit; fix records are in docs/, and every deployed address is verifiable on a block explorer.',
     disclosureTitle: 'Honest disclosure',
     disclosure:
       "In this demo the carbon attestations are arranged by the project team and are not yet institutional independence. Multi-party attestation and visible dispersion mitigate — but do not solve — whether the underlying data is truthful.",
@@ -287,7 +287,7 @@ export const tokens: Catalog['tokens'] = {
     introBefore: 'This page showcases ',
     introBold1: 'tokenized assets (ERC-20)',
     introMid1:
-      '. Unlike the synthetic positions on the trading page, assets bought here arrive as ERC-20 tokens ',
+      '. These are synthetic tokens that only track prices; you never own the real stock, bond or gold. They arrive as ERC-20 tokens ',
     introMid1Spot: '. Assets bought here arrive as ERC-20 tokens ',
     introBold2: 'right in your wallet',
     introMid2: ', where you can add it to MetaMask or send it to someone else. Trading settles in ',

@@ -92,7 +92,7 @@ export const copy: Catalog['copy'] = {
       "Copying opens {count} positions in one transaction — if even one asset's price is stale, the whole thing gets rejected, and the gas for {count} execution fees is already spent.",
 
     kycRequired:
-      '🔒 This strategy includes stock / bond assets and requires KYC review before you can copy it (approval is required after submitting).',
+      '🔒 This strategy includes stock / bond assets and requires KYC before you can copy it (testnet demo: approved as soon as you submit, with no manual review).',
     kycSubmit: 'Submit KYC Application',
 
     approving: 'Approving…',

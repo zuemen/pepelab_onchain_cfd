@@ -193,7 +193,7 @@ export const exchange = {
     currencyNoteLine1Before: '💱 幣別：買進資產與兌換用 ',
     currencyNoteLine1After: '（測試網模擬幣，可用 Faucet 免費領）；',
     currencyNoteLine2After: ' 付費 API 結算用 ',
-    currencyNoteLine2End: '（EIP-3009，真實資產）。兩者用途不同、勿混用。',
+    currencyNoteLine2End: '（EIP-3009，測試網代幣，不是真錢）。兩者用途不同、勿混用。',
 
     ethBalanceBefore: 'ETH 餘額：',
     /** 這一頁沒有開倉,ETH 只用來付 gas。 */

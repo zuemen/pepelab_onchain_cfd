@@ -12,13 +12,13 @@ export const guide: Catalog['guide'] = {
   pillars: {
     trust: {
       title: 'Trust',
-      short: 'Your assets stay in your own wallet, and every record is on-chain for anyone to check.',
+      short: 'You keep your private key, your margin is recorded under your address and can only be withdrawn to you, and every trade is on-chain for anyone to check.',
       detail:
-        'PepeFi never holds your private keys. Positions opened by copying are in your name, and only you can cancel them. Every position and strategy version a trader publishes is recorded on-chain and cannot be deleted later. This is a testnet prototype: margin sits in smart contracts under the contract rules, synthetic assets are not fully collateralized, and risks are disclosed on the Reserves & Solvency page.',
+        'PepeFi never holds your private keys, and the contracts have no function that lets the platform directly withdraw user funds. Positions opened by copying are in your name, and every position and strategy version a trader publishes is recorded on-chain and cannot be deleted later. This is a testnet prototype: the operator can still change parameters, pause and upgrade, using a single key that is visible on-chain; a timelock handover script is ready but has not been run. Synthetic assets are not fully collateralized, and risks are disclosed on the Reserves & Solvency page.',
     },
     intelligence: {
       title: 'Intelligence',
-      short: 'Let AI trade inside the limits you set, without ever getting your private key, or follow the traders you pick automatically.',
+      short: 'Let AI trade inside the limits you set, without ever getting your main wallet key, or follow the traders you pick automatically.',
       detail:
         'You give an AI agent a limited session key: size per trade, total budget, maximum leverage and expiry are all on-chain, and you can revoke it at any time. When the AI needs data, it pays a small amount itself through x402, with no account to set up.',
     },
@@ -28,6 +28,12 @@ export const guide: Catalog['guide'] = {
       detail:
         'Each asset has a sourced carbon-intensity tier that sets its fee, so it is more than a green label. Part of the platform fee buys simulated carbon credits and burns them on the spot, and every retirement can be checked. This is a testnet: the credits are simulated and do not represent real emission cuts.',
     },
+  },
+
+  marketplace: {
+    traders: 'Copy a trader',
+    allocations: 'Ready-made allocations',
+    simNote: 'Testnet demo: most traders and allocation publishers listed here are simulated accounts run by a program, not real people, and their results are not real investment returns.',
   },
 
   copyFlow: {

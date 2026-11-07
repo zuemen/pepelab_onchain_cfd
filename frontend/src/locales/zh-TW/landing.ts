@@ -72,10 +72,10 @@ export const landing = {
 
   steps: {
     heading: '如何開始',
-    one: '安裝 MetaMask，切換到 Base Sepolia testnet',
-    two: '前往 Exchange，點擊「Get 1000 USDC」取得測試資金',
-    three: '到「資產」頁買進 XAU、BGRN，回 Portfolio 看四類資產的配置與損益',
-    four: '切到專家模式，到 Marketplace 看交易者的鏈上紀錄與碳分級組成，挑一位跟單；或在 Trader 頁登記成為交易者',
+    one: '安裝 MetaMask，切換到 Base Sepolia 測試網，並先從公開水龍頭領少量測試 ETH 付手續費',
+    two: '到「入金與兌換」按「領取 USDC」取得測試資金',
+    three: '到「資產」頁買進黃金、債券，回「投資組合」看四類資產的配置與市值',
+    four: '到「交易市集」看交易者的鏈上紀錄與碳分級組成，挑一位跟單；或在 Trader 頁登記成為交易者',
   },
 
   /** 跟單旗標關閉時（機構租戶）替換掉的字串——不介紹一個看不到的功能。 */

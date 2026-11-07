@@ -1,4 +1,13 @@
+import { useState } from 'react';
+
+import Tab from '@mui/material/Tab';
+import Tabs from '@mui/material/Tabs';
+import Alert from '@mui/material/Alert';
+import Container from '@mui/material/Container';
+
+import { t } from 'src/locales';
 import { useMode } from 'src/contexts/mode-context';
+import { CopyFlow } from 'src/components/pepefi/GuideFlow';
 import { FEATURE_COPY_TRADING } from 'src/lib/pepefi/featureFlags';
 import AllocationMarketplace from 'src/components/pepefi/AllocationMarketplace';
 import TraderLeaderboard from 'src/components/pepefi/TraderLeaderboard';
@@ -10,6 +19,27 @@ import TraderLeaderboard from 'src/components/pepefi/TraderLeaderboard';
  */
 export default function MarketplacePage() {
   const { mode } = useMode();
+  const [tab, setTab] = useState<'traders' | 'allocations'>('traders');
   // 跟單排行榜跟著 FEATURE_COPY_TRADING 走（商業版預設關）——關閉時兩個模式都是配置市集。
-  return mode === 'expert' && FEATURE_COPY_TRADING ? <TraderLeaderboard /> : <AllocationMarketplace />;
+  if (!FEATURE_COPY_TRADING) return <AllocationMarketplace />;
+
+  // 11/07：老師要的主線是跟單，簡單模式也要看得到交易者。兩個分頁只渲染選中的那個，
+  // 沒點「跟單交易者」就不會掃排行榜的 getLogs。
+  const showTabs = mode === 'simple';
+  const active = showTabs ? tab : 'traders';
+  return (
+    <>
+      <Container maxWidth="lg" sx={{ pt: 3, display: 'flex', flexDirection: 'column', gap: 2 }}>
+        <CopyFlow />
+        <Alert severity="info">{t.guide.marketplace.simNote}</Alert>
+        {showTabs && (
+          <Tabs value={tab} onChange={(_, v) => setTab(v)}>
+            <Tab value="traders" label={t.guide.marketplace.traders} />
+            <Tab value="allocations" label={t.guide.marketplace.allocations} />
+          </Tabs>
+        )}
+      </Container>
+      {active === 'traders' ? <TraderLeaderboard /> : <AllocationMarketplace />}
+    </>
+  );
 }

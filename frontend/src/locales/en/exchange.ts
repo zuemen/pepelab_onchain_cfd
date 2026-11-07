@@ -163,7 +163,7 @@ export const exchange: Catalog['exchange'] = {
     currencyNoteLine1After: ' (testnet mock — free from the Faucet); ',
     currencyNoteLine2After: ' payments settle in ',
     currencyNoteLine2End:
-      " (EIP-3009, real asset). The two serve different purposes — don't mix them up.",
+      " (EIP-3009, a testnet token, not real money). The two serve different purposes — don't mix them up.",
 
     ethBalanceBefore: 'ETH balance: ',
     ethBalanceAfterSpot: ' (on-chain transactions need a little ETH for gas)',

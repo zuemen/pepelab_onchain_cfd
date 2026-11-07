@@ -31,7 +31,7 @@ type Action = {
 
 // 沒有 "Positions"：這一列現在長在 Portfolio 頁上，連回自己是死連結。
 const ACTIONS: Action[] = [
-  { label: t.portfolio.quickAction.trade,       to: '/exchange',    icon: 'solar:chart-square-bold-duotone', primary: true },
+  { label: t.portfolio.quickAction.trade,       to: '/tokens',      icon: 'solar:chart-square-bold-duotone', primary: true },
   // 跟單旗標關閉時（商業版預設）同一個入口叫「瀏覽配置市集」——/marketplace 那時只剩配置市集。
   {
     label: FEATURE_COPY_TRADING ? t.portfolio.quickAction.copyTrader : t.portfolio.quickAction.marketplace,

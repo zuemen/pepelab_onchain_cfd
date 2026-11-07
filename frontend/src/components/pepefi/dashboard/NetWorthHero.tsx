@@ -81,7 +81,7 @@ export default function NetWorthHero({ parts, pnlPct, loading }: Props) {
   const breakdown: BreakdownItem[] = [
     { label: part.spot,    value: parts.spotHoldings, href: '/tokens', hint: unread.spot, risk: risk.spot, partial: (parts.spotUnpriced ?? 0) > 0 },
     { label: part.wallet,  value: parts.walletCash, href: '/exchange', hint: unread.wallet,  risk: risk.wallet },
-    { label: part.trading, value: sumOrNull(parts.freeMargin, parts.lockedMargin), href: '/exchange', hint: unread.trading, risk: risk.trading },
+    { label: part.trading, value: sumOrNull(parts.freeMargin, parts.lockedMargin), href: '/terminal', hint: unread.trading, risk: risk.trading },
     { label: part.staked,  value: parts.staked,     href: '/stake',    hint: unread.staked,  risk: FEATURE_COPY_TRADING ? risk.staked : risk.stakedNoCopy },
     { label: part.lpVault, value: parts.vault,      href: '/vault',    hint: unread.lpVault, risk: risk.lpVault },
   ];

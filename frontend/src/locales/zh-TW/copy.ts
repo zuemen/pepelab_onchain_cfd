@@ -90,7 +90,7 @@ export const copy = {
       '跟單是一筆交易開 {count} 個倉位，只要有一檔過期整筆都會被拒絕，而 {count} 份 execution fee 的 gas 已經付出去了。',
 
     kycRequired:
-      '🔒 此策略包含股票 / 債券資產，需通過 KYC 審核才能跟單（送出申請後需等審核人員核准）。',
+      '🔒 此策略包含股票 / 債券資產，需通過 KYC 才能跟單（測試網展示：送出申請後立即通過，沒有人工審核）。',
     kycSubmit: '送出 KYC 申請',
 
     approving: '批准中…',

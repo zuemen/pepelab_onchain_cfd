@@ -122,7 +122,7 @@ export default function RwaAllocation({ rows, holdings = [] }: Props) {
       )}
 
       <BenchmarkStrip />
-      <AnchoredComparison rows={rows} />
+      {(rows.length > 0 || total === 0n) && <AnchoredComparison rows={rows} />}
     </Card>
   );
 }
