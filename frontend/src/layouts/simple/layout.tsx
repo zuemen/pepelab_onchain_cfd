@@ -7,9 +7,6 @@ import { merge } from 'es-toolkit';
 import Box from '@mui/material/Box';
 import Alert from '@mui/material/Alert';
 
-
-import { t } from 'src/locales';
-
 import { Logo } from 'src/components/logo';
 
 import { SimpleCompactContent } from './content';

@@ -7,9 +7,9 @@ import Button from '@mui/material/Button';
 import { useRouter } from 'src/routes/hooks';
 
 import { t } from 'src/locales';
+import { useWalletContext } from 'src/contexts/wallet-context';
 
 import { useAuthContext } from 'src/auth/hooks';
-import { useWalletContext } from 'src/contexts/wallet-context';
 import { signOut } from 'src/auth/context/jwt/action';
 
 // ----------------------------------------------------------------------

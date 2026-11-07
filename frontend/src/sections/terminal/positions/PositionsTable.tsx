@@ -4,8 +4,9 @@ import { Link as RouterLink } from 'react-router'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 
-import { t } from 'src/locales'
 import { paths } from 'src/routes/paths'
+
+import { t } from 'src/locales'
 import { ASSET_META } from 'src/lib/pepefi/assetMeta'
 import { prettyError } from 'src/lib/pepefi/errorMessages'
 import { SHOW_LEVERAGE } from 'src/lib/pepefi/featureFlags'
