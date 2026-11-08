@@ -328,7 +328,7 @@ export async function tick({ config, env, now = Math.floor(Date.now() / 1000), f
       status: "事件",
       title: "監控狀態重置",
       lines: [
-        `KV 沒有事件檢查點（首次部署，或狀態被清除／遺失）：事件掃描往回看 ${back} 個區塊（約 ${Math.round((Number(back) * (config.network?.blockTimeSec ?? 2)) / 60)} 分鐘），從區塊 ${summary.initialFrom} 重新開始；更早的事件未掃描`,
+        `KV 沒有事件檢查點（首次部署，或狀態被清除／遺失）：事件掃描往回看 ${back} 個區塊（約 ${Math.round((Number(back) * (config.network?.blockTimeSec ?? 0.2)) / 60)} 分鐘），從區塊 ${summary.initialFrom} 重新開始；更早的事件未掃描`,
         "開啟中的告警、累計提領視窗、保險金與餘額高點也從零開始累積",
         `若不是剛部署：到 ${config.network.explorer} 補查狀態遺失期間的 owner／角色／接線變更`,
       ],

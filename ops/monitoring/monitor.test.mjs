@@ -264,7 +264,8 @@ test("M3：RPC 429／5xx／逾時／連線錯誤 → 退避重試後成功，不
     let n = 0;
     w.rpcHttp = () => (n++ % 2 === 0 ? fault : null); // 每個請求第一次都失敗、重試才過
     const waits = [];
-    const r = await runOnce({ config: cfg, env: env0, state: {}, fetchImpl: w.fetch, now: 1, sleep: async (ms) => void waits.push(ms) });
+    // 假鏈只有 1,000 塊：範圍放寬到 1,000，讓 eth_getLogs 只有一個請求（這個測試驗的是重試，不是分段）。
+    const r = await runOnce({ config: cfg, env: { ...env0, MAX_BLOCK_RANGE: "1000" }, state: {}, fetchImpl: w.fetch, now: 1, sleep: async (ms) => void waits.push(ms) });
     assert.equal(r.errors.length, 0, `${JSON.stringify(fault)}：${r.errors.join()}`);
     assert.equal(r.notes.filter((x) => x.status === "事件").length, 1);
     assert.equal(r.summary.rpcRetries, 2, "eth_blockNumber 與 eth_getLogs 各重試一次");
@@ -403,20 +404,21 @@ const ownerLog = (w, block, n) =>
     tx: "0x" + n.toString(16).padStart(64, "0"),
   });
 
-test("H1：節點限 1000 塊、積欠 5000 塊 → 一輪內分段追上，每筆 log 恰好一次", async () => {
+test("H1：節點限 201 塊（sepolia.base.org 2026-10-25 實測）、積欠 3000 塊 → 一輪內分段追上，每筆 log 恰好一次", async () => {
   const w = fakeWorld();
   w.head = 2_000_003;
-  w.rangeLimit = 1000;
+  w.rangeLimit = 201;
   const cfg = only("owner-transferred");
   const latest = w.head - 3;
-  const state = { checkpoint: latest - 5000 };
-  // 每一段各放一筆，再加上段落邊界的兩筆（邊界最容易漏或重複）。
-  const blocks = [latest - 4999, latest - 4000, latest - 3999, latest - 2500, latest - 1500, latest - 1, latest];
+  const state = { checkpoint: latest - 3000 };
+  // 每段 200 塊：第一段 latest−2999…latest−2800、第二段從 latest−2799 開始。
+  // 分散放幾筆，再加上段落邊界的兩筆（邊界最容易漏或重複）。
+  const blocks = [latest - 2999, latest - 2800, latest - 2799, latest - 1500, latest - 700, latest - 1, latest];
   blocks.forEach((b, i) => ownerLog(w, b, i + 1));
   const r1 = await runOnce({ config: cfg, env: env0, state, fetchImpl: w.fetch, now: 100 });
   assert.equal(r1.errors.length, 0, r1.errors.join());
-  assert.equal(FULL.params.MAX_BLOCK_RANGE.default, "1000", "預設值不可超過公開 RPC 的上限");
-  assert.deepEqual(w.spans, [1000, 1000, 1000, 1000, 1000]);
+  assert.equal(FULL.params.MAX_BLOCK_RANGE.default, "200", "預設值不可超過公開 RPC 的上限（201 塊）");
+  assert.deepEqual(w.spans, Array(15).fill(200), "沒有被拒、沒有減半重試");
   assert.equal(state.checkpoint, latest, "一輪追上");
   assert.equal(r1.notes.filter((n) => n.status === "事件").length, blocks.length);
   assert.equal(new Set(r1.notes.map((n) => n.key)).size, blocks.length, "不重複");
@@ -443,23 +445,66 @@ test("H1：MAX_BLOCK_RANGE 設得比節點上限大 → 413／-32614 後自動�
   assert.equal(r.notes.filter((n) => n.status === "事件").length, 2);
 });
 
+test("出塊速度：0.2 秒一塊（每輪 1,500 塊）＋公開 RPC 上限 201 塊 → 預設設定每輪追平、不浪費請求；範圍設到上限 1000 也仍追得上", async () => {
+  assert.equal(FULL.network.blockTimeSec, 0.2);
+  const perRound = (5 * 60) / FULL.network.blockTimeSec; // cron 每 5 分鐘
+  assert.equal(perRound, 1500);
+  const cap = Number(FULL.params.MAX_BLOCK_RANGE.default) * Number(FULL.params.MAX_SCAN_REQUESTS.default);
+  assert.ok(cap >= 2 * perRound, `預設每輪可掃 ${cap} 塊，要明顯大於每輪新增 ${perRound} 塊`);
+  // 範圍下限的組合也追得上（範圍不超過節點上限時）。
+  assert.ok(PARAM_SPECS.MAX_BLOCK_RANGE.min * PARAM_SPECS.MAX_SCAN_REQUESTS.min > perRound);
+
+  const run = async (env) => {
+    const w = fakeWorld();
+    w.head = 5_000_003;
+    w.rangeLimit = 201;
+    const state = { checkpoint: w.head - 3 };
+    const lags = [];
+    for (let i = 0; i < 4; i++) {
+      w.head += perRound;
+      const before = w.spans.length;
+      const r = await runOnce({ config: only("owner-transferred"), env, state, fetchImpl: w.fetch, now: 300 * i });
+      assert.equal(r.errors.length, 0, r.errors.join());
+      lags.push({ lag: w.head - 3 - state.checkpoint, spans: w.spans.slice(before) });
+    }
+    return lags;
+  };
+  const cur = await run(env0);
+  for (const { lag, spans } of cur) {
+    assert.equal(lag, 0, "每輪追平");
+    assert.ok(spans.every((n) => n <= 200), "沒有超過節點上限、沒有被拒的請求");
+    assert.equal(spans.length, 8, "⌈1,500 ÷ 200⌉ = 8 個請求");
+  }
+  // 舊預設（MAX_BLOCK_RANGE 1000、MAX_SCAN_REQUESTS 10）：1000 → 500 → 250 → 125 浪費 3 個請求，
+  // 剩 7 × 125 = 875 塊 < 1,500，每輪多落後 625 塊（請求數下限現在是 16，這組設定已經設不出來）。
+  assert.ok(7 * 125 < perRound);
+  // 範圍設到上限 1000、請求數用下限 16：仍浪費 3 個請求，但 13 × 125 = 1,625 塊 ≥ 1,500，每輪追平。
+  const wide = await run({ ...env0, MAX_BLOCK_RANGE: "1000", MAX_SCAN_REQUESTS: "16" });
+  assert.deepEqual(wide[0].spans.slice(0, 4), [1000, 500, 250, 125]);
+  assert.ok(wide.every((x) => x.lag === 0), wide.map((x) => x.lag).join(" → "));
+});
+
 test("H1：積欠超過一輪額度 → 檢查點每輪前進、發落後告警、幾輪後追上並恢復", async () => {
   const w = fakeWorld();
   w.head = 3_000_003;
-  w.rangeLimit = 1000;
+  w.rangeLimit = 201;
   const cfg = only("owner-transferred");
+  // 預設每輪 16 × 200 = 3,200 塊；LAG_ALERT_BLOCKS 預設 18,000。
   const state = { checkpoint: w.head - 3 - 25_000 };
   ownerLog(w, w.head - 3 - 100, 7); // 最新的一筆：要到追上那一輪才看得到
   const r1 = await runOnce({ config: cfg, env: env0, state, fetchImpl: w.fetch, now: 0 });
   assert.equal(r1.errors.length, 0, r1.errors.join());
-  assert.equal(w.spans.length, 10, "每輪最多 MAX_SCAN_REQUESTS 個 eth_getLogs");
-  assert.equal(state.checkpoint, w.head - 3 - 15_000);
-  assert.ok(r1.notes.some((n) => n.key === "monitor-self:lag" && n.status === "觸發"));
-  await runOnce({ config: cfg, env: env0, state, fetchImpl: w.fetch, now: 300 });
+  assert.equal(w.spans.length, 16, "每輪最多 MAX_SCAN_REQUESTS 個 eth_getLogs");
+  assert.equal(state.checkpoint, w.head - 3 - 21_800);
+  assert.ok(r1.notes.some((n) => n.key === "monitor-self:lag" && n.status === "觸發"), "落後 21,800 > 18,000");
+  const r2 = await runOnce({ config: cfg, env: env0, state, fetchImpl: w.fetch, now: 300 });
+  assert.ok(!r2.notes.some((n) => n.key === "monitor-self:lag"), "落後 18,600：告警開著、不重送");
   const r3 = await runOnce({ config: cfg, env: env0, state, fetchImpl: w.fetch, now: 600 });
-  assert.equal(state.checkpoint, w.head - 3);
-  assert.ok(r3.notes.some((n) => n.status === "事件"));
-  assert.ok(r3.notes.some((n) => n.key === "monitor-self:lag" && n.status === "恢復"));
+  assert.ok(r3.notes.some((n) => n.key === "monitor-self:lag" && n.status === "恢復"), "落後 15,400 ≤ 18,000");
+  let last;
+  for (let i = 3; i < 8; i++) last = await runOnce({ config: cfg, env: env0, state, fetchImpl: w.fetch, now: 300 * i });
+  assert.equal(state.checkpoint, w.head - 3, "25,000 ÷ 3,200 → 第 8 輪追上");
+  assert.ok(last.notes.some((n) => n.status === "事件"));
 });
 
 test("H1：中途某段失敗 → 已成功的段落保留、檢查點停在最後成功處、錯誤訊息帶 RPC 回應內文", async () => {
@@ -643,18 +688,21 @@ test("L-a：過去的爆量（複審 l1sim）——跨輪接得起來、即時�
 
   // 跨輪：落後追趕被分成兩輪，同一段爆量的前三筆在第一輪、後三筆在第二輪才掃到。
   // 區塊時間與區塊號一致（每塊 2 秒）：第一輪結束時的掃描進度落後 now 約 9.5 小時。
+  // 這條假鏈是 2 秒一塊（scanTime 用 network.blockTimeSec 換算，所以設定也要一致）。
+  const cfg2s = { ...cfg, network: { ...cfg.network, blockTimeSec: 2 } };
   const split = fakeWorld();
   split.head = 20_003;
   const tOf = (b) => now - (20_000 - b) * 2;
   [2980, 2983, 2986].forEach((b, i) => W(split, b, tOf(b), 9000, i));
   [2992, 2995, 2998].forEach((b, i) => W(split, b, tOf(b), 9000, i));
   const st2 = { checkpoint: 990 };
-  const env = { ...env0, MAX_SCAN_REQUESTS: "2" };
-  const a = await runOnce({ config: cfg, env, state: st2, fetchImpl: split.fetch, now, sleep: noSleep });
+  // 一輪 16 × 125 = 2,000 塊：991…2990，剛好把爆量切成兩半。
+  const env = { ...env0, MAX_SCAN_REQUESTS: "16", MAX_BLOCK_RANGE: "125" };
+  const a = await runOnce({ config: cfg2s, env, state: st2, fetchImpl: split.fetch, now, sleep: noSleep });
   assert.equal(st2.checkpoint, 2990);
   assert.equal(a.notes.filter((n) => n.key.includes("window")).length, 0, "27,000 未達門檻");
   assert.equal(st2.windows["large-margin-withdrawal"].length, 3, "前三筆留著，等下一輪接上");
-  const b = await runOnce({ config: cfg, env, state: st2, fetchImpl: split.fetch, now: now + 300, sleep: noSleep });
+  const b = await runOnce({ config: cfg2s, env, state: st2, fetchImpl: split.fetch, now: now + 300, sleep: noSleep });
   const past = b.notes.filter((n) => n.key.startsWith("large-margin-withdrawal:window-past:"));
   assert.equal(past.length, 1, JSON.stringify(b.notes.map((n) => n.key)));
   assert.match(past[0].lines[0], /累計 54,000，6 筆/);
@@ -1569,7 +1617,7 @@ test("L-f：等於關掉告警的覆寫值——執行期夾住並講出來；MI
   const cfg = FULL;
   assert.deepEqual(configProblems(cfg, {}), [], "預設值沒有問題");
   const bad = configProblems(cfg, { LAG_ALERT_BLOCKS: "1000000", LARGE_WITHDRAWAL_BPS: "10000", SELF_ERRORS_BEFORE_ALERT: "12", HTTP_FAILS_BEFORE_ALERT: "6", MIN_SEVERITY: "SEV-1" });
-  assert.ok(bad.some((m) => /LAG_ALERT_BLOCKS=1000000 超過上限 1800，以 1800 執行/.test(m)), bad.join("\n"));
+  assert.ok(bad.some((m) => /LAG_ALERT_BLOCKS=1000000 超過上限 18000，以 18000 執行/.test(m)), bad.join("\n"));
   assert.ok(bad.some((m) => /LARGE_WITHDRAWAL_BPS=10000 超過上限 5000/.test(m)));
   assert.ok(bad.some((m) => /SELF_ERRORS_BEFORE_ALERT=12 超過上限 6/.test(m)));
   assert.ok(bad.some((m) => /超過 6 輪（約 30 分鐘）；SELF_ERRORS_BEFORE_ALERT 以 1 執行/.test(m)), bad.join("\n"));
@@ -1578,7 +1626,7 @@ test("L-f：等於關掉告警的覆寫值——執行期夾住並講出來；MI
   assert.equal(minSeverityOf(cfg, { MIN_SEVERITY: "SEV-3" }), "SEV-3");
 });
 
-test("L-f：LAG_ALERT_BLOCKS 被設成 1,000,000 → 仍以 1,800 告警", async () => {
+test("L-f：LAG_ALERT_BLOCKS 被設成 1,000,000 → 仍以 18,000 告警", async () => {
   const w = fakeWorld();
   w.head = 100_000;
   const r = await runOnce({ config: only("owner-transferred"), env: { ...env0, LAG_ALERT_BLOCKS: "1000000" }, state: { checkpoint: 1 }, fetchImpl: w.fetch, now: 1 });

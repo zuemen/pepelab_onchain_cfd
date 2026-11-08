@@ -165,7 +165,7 @@ export { PARAM_SPECS, paramComboProblems };
  * 調到 10000、把 explorer 換成別人的網域，原本 CI 都是綠的。改了這些 → 紅，並印出新雜湊；
  * **人工審過改動**後把新雜湊貼到這裡。
  */
-export const GLOBAL_CONFIG_HASH = "019835e593e922c4581583f41e2d881965787b21953f4f5ea817fa6bf5cc6594";
+export const GLOBAL_CONFIG_HASH = "c1aa855b853553cdbdcd6ab6422c99c7a29d5c90bc3f09c702bee8b423fc5088";
 /** 告警訊息裡 tx 連結的網域（白名單）。 */
 export const EXPLORER_ALLOW = ["https://sepolia.basescan.org"];
 /** 告警訊息裡「處置」連結的前綴：只能指向本 repo。 */
@@ -196,7 +196,8 @@ export function checkGlobalConfig(cfg) {
     out.push(`(全域)：repoBlobBase 必須以 ${REPO_BLOB_PREFIX} 開頭（告警裡的「處置」連結）`);
   }
   const bt = cfg.network?.blockTimeSec;
-  if (!Number.isInteger(bt) || bt < 1 || bt > 12) out.push(`(全域)：network.blockTimeSec 必須是 1–12 的整數，現在是 ${JSON.stringify(bt)}`);
+  // 可以是小數：Base Sepolia 2026-11 實測約 0.2 秒一塊。下限 0.1、上限 12（以太坊主網）。
+  if (typeof bt !== "number" || !Number.isFinite(bt) || bt < 0.1 || bt > 12) out.push(`(全域)：network.blockTimeSec 必須是 0.1–12 之間的數字（可含小數），現在是 ${JSON.stringify(bt)}`);
   if (cfg.deployment?.chainId !== cfg.network?.chainId) out.push("(全域)：deployment.chainId 必須等於 network.chainId");
   return out;
 }

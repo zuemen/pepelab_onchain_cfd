@@ -11,34 +11,34 @@
     "chainId": 84532,
     "publicRpc": "https://sepolia.base.org",
     "explorer": "https://sepolia.basescan.org",
-    "blockTimeSec": 2
+    "blockTimeSec": 0.2
   },
   "repoBlobBase": "https://github.com/zuemen/pepelab_onchain_cfd/blob/master",
   "params": {
     "CONFIRMATIONS": {
       "default": "3",
       "unit": "區塊",
-      "doc": "只掃 head 往前這麼多塊之前的區塊，降低 reorg 造成的假告警。上限 64（約 2 分鐘）：再大等於把全部事件告警延後"
+      "doc": "只掃 head 往前這麼多塊之前的區塊，降低 reorg 造成的假告警。3 塊約 0.6 秒（Base Sepolia 約 0.2 秒一塊）。上限 64（約 13 秒）：再大等於把全部事件告警延後"
     },
     "INITIAL_LOOKBACK_BLOCKS": {
-      "default": "1800",
+      "default": "18000",
       "unit": "區塊",
-      "doc": "KV 沒有事件檢查點（首次部署，或狀態被清除／遺失）時往回掃的區塊數（Base 約 2 秒一塊，1,800 塊約 1 小時）。下限 150（一輪 cron）：狀態遺失時不可以從「現在」開始、靜默漏掉中間的事件；同時發 monitor-self:state-reset 說明重建"
+      "doc": "KV 沒有事件檢查點（首次部署，或狀態被清除／遺失）時往回掃的區塊數（Base Sepolia 約 0.2 秒一塊，18,000 塊約 1 小時）。下限 1,500（一輪 cron 5 分鐘）：狀態遺失時不可以從「現在」開始、靜默漏掉中間的事件；上限 36,000（2 小時）。預設設定淨追趕 1,700 塊／輪，回看 18,000 塊約 11 輪（55 分鐘）掃完；同時發 monitor-self:state-reset 說明重建"
     },
     "MAX_BLOCK_RANGE": {
-      "default": "1000",
+      "default": "200",
       "unit": "區塊",
-      "doc": "每個 eth_getLogs 的最大範圍。公開 RPC（sepolia.base.org）實測上限 1,000 塊，超過回 HTTP 413／-32614。節點拒絕範圍時引擎會自動減半重試"
+      "doc": "每個 eth_getLogs 的最大範圍。公開 RPC（sepolia.base.org）2026-10-25 實測上限 201 塊（以前是 1,000），超過回 HTTP 413／-32614，所以預設 200。節點拒絕範圍時引擎會自動減半重試（每次浪費一個請求）。上限 1,000 只給有更大上限的自訂 RPC"
     },
     "MAX_SCAN_REQUESTS": {
-      "default": "10",
+      "default": "16",
       "unit": "個請求",
-      "doc": "每輪最多幾個 eth_getLogs（含範圍減半後的重試）。落後時一輪內分多段追趕：10 × 1000 塊 ≈ 5.5 小時的積欠；受 Cloudflare 免費方案每次執行 50 個 subrequest 限制，不要調高到擠壓狀態規則與通知"
+      "doc": "每輪最多幾個 eth_getLogs（含範圍減半後的重試）。每輪（5 分鐘）新增約 1,500 塊；16 × 200 塊 = 3,200 塊／輪，正常時只用約 8 個，落後時每輪淨追 1,700 塊。下限 16（16 × MAX_BLOCK_RANGE 下限 100 = 1,600 塊仍追得上）；受 Cloudflare 免費方案每次執行 50 個 subrequest 限制，上限 20，不要擠壓狀態規則與通知"
     },
     "LAG_ALERT_BLOCKS": {
-      "default": "1800",
+      "default": "18000",
       "unit": "區塊",
-      "doc": "一輪掃完後仍落後超過這個值時發監控自身告警（代表一輪追不完，或 eth_getLogs 持續失敗）。1,800 塊約 1 小時"
+      "doc": "一輪掃完後仍落後超過這個值時發監控自身告警（代表一輪追不完，或 eth_getLogs 持續失敗）。18,000 塊約 1 小時（約 0.2 秒一塊）；下限 1,500（一輪 cron）"
     },
     "REMIND_SEC": {
       "default": "21600",

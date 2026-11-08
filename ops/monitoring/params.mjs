@@ -31,17 +31,32 @@ export const MAX_ALERT_DELAY_ROUNDS = 6;
  *   keys     MUTE_KEYS（格式與白名單由 notify.parseMuteKeys 處理）
  */
 export const PARAM_SPECS = {
-  // 確認數：Base 的 reorg 很淺；64 塊約 2 分鐘。更大等於把全部事件告警延後（複審 M-1：1e8 → 永不掃描）。
+  // ── 區塊數參數的換算基準（2026-11 重算）──────────────────────────────────────────────
+  // Base Sepolia 實測每 0.2 秒一塊（monitors.json network.blockTimeSec = 0.2；以前照 2 秒設計）。
+  // cron 每 5 分鐘 → 每輪新產生 300 / 0.2 = 1,500 塊。公開 RPC（sepolia.base.org）的 eth_getLogs
+  // 上限 2026-10-25 實測為 201 塊（toBlock − fromBlock = 200 成功、202 塊回 HTTP 413／-32614，見
+  // frontend/src/lib/pepefi/chainLogs.ts 的 MEASURED_GETLOGS_MAX_BLOCKS；2026-10-01 時還是 1,000）。
+  //
+  // 確認數：Base 的 reorg 很淺；64 塊約 12.8 秒（0.2 秒一塊）。更大等於把全部事件告警延後（複審 M-1：1e8 → 永不掃描）。
   CONFIRMATIONS: { type: "int", min: 0, max: 64 },
-  // KV 沒有檢查點時往回掃的區塊數。下限 150（一輪 cron 的區塊數）：狀態遺失時不可以從「現在」開始、
-  // 靜默漏掉中間的事件（複審 M-1：0 或 0.5 → 永不掃描）。上限 10,000（MAX_SCAN_REQUESTS × MAX_BLOCK_RANGE）。
-  INITIAL_LOOKBACK_BLOCKS: { type: "int", min: 150, max: 10_000 },
-  // 公開 RPC（sepolia.base.org）的 eth_getLogs 上限是 1,000 塊（2026-10-01 實測）。下限 300：
-  // 300 × MAX_SCAN_REQUESTS 下限 2 = 600 塊／輪，是 cron 間隔（150 塊）的 4 倍，落後時追得上。
-  MAX_BLOCK_RANGE: { type: "int", min: 300, max: 1000 },
+  // KV 沒有檢查點時往回掃的區塊數。預設 18,000 塊＝1 小時（18,000 × 0.2 秒）。
+  // 下限 1,500（一輪 cron 的區塊數）：狀態遺失時不可以從「現在」開始、靜默漏掉中間的事件
+  // （複審 M-1：0 或 0.5 → 永不掃描）。上限 36,000（2 小時）。
+  // 預設設定每輪可掃 3,200 塊、每輪新增 1,500 塊，淨追趕 1,700 塊／輪：回看 18,000 塊約 11 輪（55 分鐘）
+  // 掃完，且第一輪後落後 18,000 − 3,200 = 14,800 < LAG_ALERT_BLOCKS 預設 18,000，不會誤發落後告警；
+  // 回看設到上限 36,000 時約 21 輪掃完，期間會發 monitor-self:lag（看得見，不是靜默）。
+  INITIAL_LOOKBACK_BLOCKS: { type: "int", min: 1500, max: 36_000 },
+  // 每個 eth_getLogs 的最大區塊數。預設 200（≤ 公開 RPC 實測上限 201，不會被拒而浪費減半重試的請求）。
+  // 舊預設 1,000 在 201 的上限下每輪被拒 3 次（1000→500→250→125），剩 7 × 125 = 875 塊／輪 < 1,500，永遠落後。
+  // 下限 100：100 × MAX_SCAN_REQUESTS 下限 16 = 1,600 塊／輪 ≥ 每輪新增 1,500 塊，範圍內任何組合都不會
+  // 結構性落後（前提是範圍不超過節點上限；超過時引擎自動減半，代價是浪費請求）。上限 1,000 留給付費 RPC（RPC_URL）。
+  MAX_BLOCK_RANGE: { type: "int", min: 100, max: 1000 },
   // Cloudflare 免費方案每次執行 50 個 subrequest：事件掃描最多佔 20 個，其餘留給狀態規則與通知。
-  MAX_SCAN_REQUESTS: { type: "int", min: 2, max: 20 },
-  LAG_ALERT_BLOCKS: { type: "int", min: 150, max: 1800 }, // 1 小時（Base 每 2 秒一塊）
+  // 預設 16：16 × 200 = 3,200 塊／輪 ≈ 每輪新增 1,500 塊的 2.1 倍；正常時只用 ⌈1,500 / 200⌉ = 8 個，
+  // 落後時才用滿。下限 16（見 MAX_BLOCK_RANGE 的下限說明）。
+  MAX_SCAN_REQUESTS: { type: "int", min: 16, max: 20 },
+  // 一輪掃完仍落後超過此值時發監控自身告警。預設＝上限 18,000 塊＝1 小時（0.2 秒一塊）；下限 1,500（一輪 cron）。
+  LAG_ALERT_BLOCKS: { type: "int", min: 1500, max: 18_000 },
   // 狀態型告警持續時的提醒間隔：上限 1 天（原本 7 天、執行期無上限 → 開著的告警永不提醒）。
   REMIND_SEC: { type: "int", min: 300, max: 86_400 },
   MIN_SEVERITY: { type: "severity", allowed: MIN_SEVERITY_ALLOWED, fallback: "SEV-2" },
