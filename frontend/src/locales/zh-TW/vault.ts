@@ -9,7 +9,7 @@ export const vault = {
    *  （保險），Simple 拿掉那個字。 */
   title: '保險金庫',
   titleSimple: '金庫',
-  subtitle: '存入 USDC，賺取協議收益',
+  subtitle: '存入測試 USDC 賺取協議手續費（測試網示範）。金庫要吸收交易者的極端虧損，份額價值可能下跌。',
 
   /** #151：Simple Mode 版的做市收益提示——不講 bps、不講機制，只講結果。
    *  Expert 版仍用下面 markup.mmActiveLabel 那三句。 */
@@ -51,7 +51,7 @@ export const vault = {
   activity: {
     title: '近期活動',
     emptyTitle: '尚無活動',
-    emptyDescription: '存入 USDC 即可開始賺取協議手續費收益。',
+    emptyDescription: '存入測試 USDC 即可開始累積協議手續費收益；金庫要吸收極端虧損，份額價值可能下跌。',
     readFailedTitle: '讀取失敗',
     readFailedDescription: '金庫的鏈上事件讀取失敗，這裡的空白不代表沒有活動。請稍後重新整理。',
     partial: '部分區塊範圍讀取失敗，下方活動可能不完整。',

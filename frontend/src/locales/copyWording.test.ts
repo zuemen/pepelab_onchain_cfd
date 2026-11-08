@@ -19,11 +19,16 @@ const ZH = /跟單|跟隨者/;
 const EN =
   /copy[- ]?trad|copy a trader|copy this trader|copier|copied (?:position|from)|\+ copied|follower|unfollow|copy fee|copy position|copy record|social copy|copying (?:a|the|trader)/i;
 
-// 白名單一律寫**精確 key**，只有兩條「整條路由都被旗標收起」的例外用前綴（ROUTE_PREFIXES）。
+// 白名單一律寫**精確 key**，只有「整條路由或整個元件都被旗標收起」的例外用前綴（ROUTE_PREFIXES）。
 // 萬用前綴（例如 portfolio.page.）會讓同一區塊新加的跟單文案悄悄過關。
 const ROUTE_PREFIXES: ReadonlyArray<{ prefix: string; why: string }> = [
   { prefix: 'copy.', why: '/copy/:addr 整條路由由 FeatureGate 收起' },
   { prefix: 'rewards.', why: '/rewards 整條路由由 PEPE 獎勵旗標收起' },
+  { prefix: 'guide.pillars.', why: 'SloganPillars 只在 LandingPage 的 FEATURE_COPY_TRADING 區塊內渲染' },
+  { prefix: 'guide.copyFlow.', why: 'CopyFlow 只在 LandingPage 的旗標區塊與 MarketplacePage 旗標開啟分支渲染' },
+  { prefix: 'guide.mode.', why: 'ModeGuideCard 在 PortfolioPage 由 FEATURE_COPY_TRADING 包住' },
+  { prefix: 'guide.marketplace.', why: 'MarketplacePage 旗標關閉時直接回 AllocationMarketplace，不渲染這些字' },
+  // guide.twin.* 不在白名單：數位孿生卡片在 /rwa 對所有租戶渲染，不得提到跟單。
 ];
 
 const ALLOWED: ReadonlyArray<{ key: string; why: string }> = [
@@ -31,6 +36,7 @@ const ALLOWED: ReadonlyArray<{ key: string; why: string }> = [
   { key: 'marketplace.subtitle', why: '交易者排行榜，只在 Expert + 跟單旗標開啟時渲染' },
   { key: 'marketplace.sort.followers', why: '同上（排行榜）' },
   { key: 'marketplace.card.copy', why: '同上（排行榜）' },
+  { key: 'marketplace.card.starHint', why: '同上（排行榜星號的說明）' },
   { key: 'marketplace.card.followersLabel', why: '同上（排行榜）' },
   { key: 'marketplace.card.legacyFollowersTip', why: '同上（排行榜跟隨人數欄的說明：舊版合約上的跟隨者）' },
   { key: 'marketplace.footer.followersTotal', why: '同上（排行榜）' },
@@ -99,6 +105,9 @@ const ALLOWED: ReadonlyArray<{ key: string; why: string }> = [
   { key: 'traderProfile.activity.timeline.detail.followingBefore', why: '同上' },
   { key: 'traderProfile.activity.timeline.detail.followedByAfter', why: '同上' },
   { key: 'errors.contract.no strategies', why: '合約錯誤對應，只在觸發該錯誤時出現' },
+  { key: 'errors.contract.NotSyncExecutor', why: '同上' },
+  { key: 'terminal.positions.copyManaged', why: '部位帶 copiedFrom 才顯示；旗標關閉時不會有跟單部位' },
+  { key: 'terminal.positions.copyManagedTip', why: '同上' },
   { key: 'errors.contract.TradingFeeExceedsMargin', why: '同上' },
   { key: 'errors.contract.CopyAlreadyClaimed', why: '同上' },
   { key: 'errors.contract.NotFollowing', why: '同上' },
@@ -115,6 +124,8 @@ const ALLOWED: ReadonlyArray<{ key: string; why: string }> = [
   { key: 'feed.sentence.resync', why: '自動同步（ADR-024）的動態類型在 COPY_FEED_TYPES 裡，旗標關閉時 FeedPage／TraderFeedSection 不列' },
   { key: 'feed.sentence.autoSyncOn', why: '同上' },
   { key: 'feed.sentence.autoSyncOff', why: '同上' },
+
+  { key: 'x402.docs.product.copyFlow', why: 'X402DocsPage 在旗標關閉時不渲染這一句' },
 
   // ── 非使用者畫面 ──
   { key: 'admin.treasury.claim.note', why: '管理員頁（營運方自己看，描述實際的費用分潤模型）' },

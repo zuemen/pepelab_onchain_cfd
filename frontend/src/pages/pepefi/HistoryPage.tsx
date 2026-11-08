@@ -50,11 +50,11 @@ import Link from '@mui/material/Link';
 import Tooltip from '@mui/material/Tooltip';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
-// Base Sepolia blocks every ~2s. FETCH_BLOCKS is the total lookback per
+// Base Sepolia blocks every ~0.2s (measured 2026-11). FETCH_BLOCKS is the total lookback per
 // refresh / "load older" step; every scan goes through scanContractEvents →
 // getLogsChunked, whose CHUNK_SIZE is set from a measured node limit (the public
 // RPC rejects eth_getLogs spans over 1,000 blocks — see chainLogs.ts).
-const FETCH_BLOCKS = 9000   // ~5 h on Base Sepolia (2 s/block)
+const FETCH_BLOCKS = 9000   // ~30 min on Base Sepolia (0.2 s/block)
 
 // Events are cached client-side so history survives past the scan window — the
 // chain keeps everything forever, but a fixed lookback can only ever see the
@@ -882,6 +882,8 @@ export default function HistoryPage() {
 
       const { evs, failedChunks, contiguousLow } = await scanRange(windowStart, currentBlock)
       await hashing
+      // 掃描期間換了分頁或重新整理：舊結果不能寫進新的快取。
+      if (isCancelled()) return
       // 只把「從最新塊往下連續成功」的那一段算進覆蓋；與舊覆蓋不相接（隔天回訪的
       // 缺口、失敗段）就以新的一段為準，「載入較舊」會從它的下緣往下補。
       commit(
@@ -1045,7 +1047,7 @@ export default function HistoryPage() {
                 filterKey !== 'all'
                   ? interpolate(t.history.empty.windowFiltered, {
                       blocks: FETCH_BLOCKS.toLocaleString(),
-                      filter: filterKey,
+                      filter: FILTERS.find((f) => f.key === filterKey)?.label ?? filterKey,
                     })
                   : interpolate(t.history.empty.windowOnly, { blocks: FETCH_BLOCKS.toLocaleString() })
               }

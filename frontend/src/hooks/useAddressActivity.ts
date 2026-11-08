@@ -53,6 +53,8 @@ export interface AddressPosition {
 export interface AddressActivity {
   events:    AddressEvent[]
   positions: AddressPosition[]
+  /** getUserPositions 讀取失敗：positions 是空的，但不代表沒有部位。 */
+  positionsFailed: boolean
   scanRange: { from: number; to: number } | null
   progress:  { done: number; total: number } | null
   /** 讀不到的部位數。限流不該被靜默翻譯成「這個部位不存在」。 */
@@ -91,6 +93,7 @@ export function useAddressActivity(
   const [missing,   setMissing]   = useState(0)
   const [loading,   setLoading]   = useState(false)
   const [error,     setError]     = useState<string | null>(null)
+  const [positionsFailed, setPositionsFailed] = useState(false)
   const [failedChunks, setFailedChunks] = useState(0)
 
   const runId = useRef(0)
@@ -132,6 +135,7 @@ export function useAddressActivity(
 
     setLoading(true)
     setError(null)
+    setPositionsFailed(false)
     setFailedChunks(0)
 
     try {
@@ -251,8 +255,12 @@ export function useAddressActivity(
       // 用 getUserPositions 而不是從事件推：它是鏈上的權威清單，也涵蓋掃描
       // 視窗之前就開著的倉——那些倉的 PositionOpened 早就掉出視窗了。
       const ids = await (async () => {
-        try { return (await exchange.getUserPositions(address)) as bigint[] }
-        catch { return [] as bigint[] }
+        try { return await withRetry(() => exchange.getUserPositions(address)) as bigint[] }
+        catch {
+          // 讀不到不等於沒有未平倉：畫面要說讀取失敗。
+          setPositionsFailed(true)
+          return [] as bigint[]
+        }
       })()
       if (isStale()) return
 
@@ -306,5 +314,5 @@ export function useAddressActivity(
 
   useEffect(() => { void fetchActivity() }, [fetchActivity])
 
-  return { events, positions, scanRange, progress, missing, loading, error, failedChunks, refetch: fetchActivity }
+  return { events, positions, positionsFailed, scanRange, progress, missing, loading, error, failedChunks, refetch: fetchActivity }
 }

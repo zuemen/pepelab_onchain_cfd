@@ -7,7 +7,7 @@ import type { Catalog } from '../zh-TW';
 export const adopt: Catalog['adopt'] = {
   title: 'Allocations',
   subtitle:
-    'Browse the asset mixes Allocation Publishers share openly, and buy the same spot tokens at the same weights into your own wallet.',
+    "Pick a published portfolio, enter an amount, and we buy the same mix for you. The tokens go straight to your wallet. It's a one-time purchase: later changes by the publisher won't affect you. Publishers marked Simulated are programs, not real people.",
 
   connectWallet: 'Connect a wallet to browse Allocations.',
   notDeployed: 'Spot tokens are not enabled on this network yet, so Allocations cannot be adopted here.',
@@ -31,6 +31,7 @@ export const adopt: Catalog['adopt'] = {
     noName: 'Unnamed Allocation Publisher',
     assetCount: '{count} assets',
     adopt: 'Adopt',
+    details: "See this publisher's record",
   },
 
   dialog: {

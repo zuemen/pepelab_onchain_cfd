@@ -13,6 +13,7 @@ export const whale: Catalog['whale'] = {
   },
 
   /** feed 上點名一筆交易的原因。 */
+  side: { long: 'Long', short: 'Short' },
   tag: {
     mega: 'Mega',
     megaHint: 'Notional above {threshold}',

@@ -145,7 +145,7 @@ export const admin = {
         'Router 目前僅有 {amount} ETH 可用。請先使用下方的 Treasury 工具挹注資金，再進行兌換。',
       approving: '批准中…',
       approve: '① 批准 USDC',
-      approved: 'USDT 已批准 ✓',
+      approved: 'USDC 已批准 ✓',
       swapping: '兌換中…',
       swap: '② 兌換為 ETH',
       done: '已將 {amount} USDC 兌換為 {eth} ETH ✓',
@@ -163,7 +163,7 @@ export const admin = {
     },
 
     incentives: {
-      title: '🎁 PepeLab 獎勵池充值',
+      title: '🎁 {brand} 獎勵池補充資金',
       description:
         '跟單獎勵、每日簽到、等級晉級與交易挖礦均由 PEPE 代幣激勵。為防止用戶領取時發生 revert InsufficientPool 錯誤，請確保此激勵合約中有足夠的 PEPE 儲備。',
       /** 還不知道合約版本時（探測讀不到 bytecode）：不斷言簽到發不發 PEPE。 */
@@ -271,9 +271,9 @@ export const admin = {
       /** 掃描 KYCSubmitted 掉段，比某幾筆讀不到更嚴重——佇列本身可能漏了申請人。 */
       scanIncomplete: '掃描鏈上事件時有 {count} 段失敗，佇列可能不完整（部分申請人未列出），可重新整理再試。',
       refresh: '↺ 重新整理',
-      scanRange: '掃描範圍：區塊 {from} – {to}',
+      scanRange: '掃描範圍：區塊 {from} – {to}（約 {span}）',
       scanning: '掃描鏈上事件中…（{done}/{total}）',
-      scanningHint: '審核佇列回看 7 天，公共 RPC 單次只能查 1,000 個區塊，需要數百次查詢，可能要花上數分鐘。',
+      scanningHint: '審核佇列只回看最近約 {span}（查詢次數有上限），更早送出的申請不會列在這裡。公共 RPC 單次只能查約 200 個區塊，需要上千次查詢，可能要花上數分鐘。',
       /** 表格中姓名／國籍欄位是雜湊時的標記。 */
       hashedLabel: '雜湊',
 

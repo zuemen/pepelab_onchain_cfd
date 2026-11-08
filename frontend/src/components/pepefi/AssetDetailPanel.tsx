@@ -161,7 +161,7 @@ export function AssetDetailPanel({
           <Chip
             size="small"
             variant="outlined"
-            label={`Oracle: ${price > 0n ? fUsd(Number(price) / 1e8) : '—'}`}
+            label={`${dl.currentPrice}: ${price > 0n ? fUsd(Number(price) / 1e8) : '—'}`}
             sx={{ alignSelf: 'flex-start', fontFamily: MONO }}
           />
 
@@ -215,6 +215,10 @@ export function AssetDetailPanel({
               </Typography>
             )}
           </Box>
+
+          <Typography variant="caption" color="text.secondary">
+            {interpolate(dl.syntheticLine, { ticker: assetRow.ticker })}
+          </Typography>
 
           <Stack direction="row" spacing={1}>
             <Button

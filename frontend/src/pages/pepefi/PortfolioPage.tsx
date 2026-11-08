@@ -42,6 +42,7 @@ import { STABLE_LABEL } from 'src/lib/pepefi/tokenLabel';
 import { firstBlocking, stalenessNotice } from 'src/lib/pepefi/priceFreshness';
 
 import { useMode } from 'src/contexts/mode-context';
+import { ModeGuideCard } from 'src/components/pepefi/GuideFlow';
 import { useAccountBalances } from 'src/hooks/useAccountBalances';
 import { useLegacyAssets } from 'src/hooks/useLegacyAssets';
 import { LegacyAssetsBanner } from 'src/components/pepefi/LegacyAssetsBanner';
@@ -144,7 +145,8 @@ interface CopyRec {
   traderName:    string;
   initialAmount: bigint;    // 18-dec
   copiedAt:      bigint;
-  currentValue:  bigint;    // sum of getPositionValue for all positionIds
+  /** sum of getPositionValue for all positionIds；任一筆讀不到就是 null（顯示「—」、不判定停損）。 */
+  currentValue:  bigint | null;
   /** 這筆 active 跟單底下的部位——平倉按鈕據此判斷哪些部位要走「取消跟單」。 */
   positionIds:   bigint[];
   versionId:     bigint;
@@ -431,9 +433,10 @@ export default function PortfolioPage() {
         return [cfg, st, cap, ex];
       };
 
-      const getVal = async (id: bigint): Promise<bigint> => {
+      // 讀不到不能補 0：現值變 0 會顯示 -100% 與「已達停損」，誘導使用者平倉。
+      const getVal = async (id: bigint): Promise<bigint | null> => {
         try { return (await contracts.exchange.getPositionValue(id)) as bigint; }
-        catch { return 0n; }
+        catch { return null; }
       };
 
       const enriched = await Promise.all(
@@ -449,7 +452,7 @@ export default function PortfolioPage() {
             traderName:    nameMap[rec.trader] ?? '',
             initialAmount: rec.initialAmount,
             copiedAt:      rec.copiedAt,
-            currentValue:  vals.reduce((s, v) => s + v, 0n),
+            currentValue:  sumOrNull(vals),
             positionIds:   [...rec.positionIds],
             versionId:     rec.versionId,
             strategyCount: countMap[rec.trader] ?? null,
@@ -892,7 +895,8 @@ export default function PortfolioPage() {
 
   // ── Derived (chart data) ───────────────────────────────────────────────────
   const totalInitial = copyRecs.reduce((s, r) => s + r.initialAmount, 0n);
-  const totalCopyCur = copyRecs.reduce((s, r) => s + r.currentValue, 0n);
+  // 讀不到的那筆以投入金額計（圖上持平），不當成歸零。
+  const totalCopyCur = copyRecs.reduce((s, r) => s + (r.currentValue ?? r.initialAmount), 0n);
   const initVal      = Number(totalInitial) / 1e18;
   const curVal       = Number(totalCopyCur) / 1e18;
 
@@ -1125,6 +1129,7 @@ export default function PortfolioPage() {
           {t.portfolio.page.refresh}
         </Button>
       </Box>
+      {FEATURE_COPY_TRADING && <ModeGuideCard />}
 
       <LegacyAssetsBanner state={legacyAssets} />
 
@@ -1278,7 +1283,7 @@ export default function PortfolioPage() {
                   // 合約支援自動同步時改成就地同步，不經過 /copy，所以旗標關閉也照樣可以同步既有的跟單。
                   const outdated = (FEATURE_COPY_TRADING || autoSync.supported) && rec.strategyCount !== null && isOutdated(rec.versionId, rec.strategyCount);
                   const refreshKey = `refresh_${rec.index}`;
-                  const stopHit = stopLossReached(rec.initialAmount, rec.currentValue, stopLoss[rec.index] ?? null);
+                  const stopHit = rec.currentValue !== null && stopLossReached(rec.initialAmount, rec.currentValue, stopLoss[rec.index] ?? null);
                   // ADR-024：合約支援自動同步時，「更新到最新版」改成就地同步（resyncAtVersion），不必取消再重跟
                   const resyncKey = `resync_${rec.index}`;
                   const autoKey = `autosync_${rec.index}`;
@@ -1342,10 +1347,10 @@ export default function PortfolioPage() {
                         {f18(rec.initialAmount)}
                       </TableCell>
                       <TableCell sx={{ fontFamily: MONO, fontWeight: 'bold' }}>
-                        {f18(rec.currentValue)}
+                        {rec.currentValue === null ? '—' : f18(rec.currentValue)}
                       </TableCell>
-                      <TableCell sx={{ fontFamily: MONO, fontWeight: 'bold', color: returnColor(rec.initialAmount, rec.currentValue) }}>
-                        {returnPct(rec.initialAmount, rec.currentValue)}
+                      <TableCell sx={{ fontFamily: MONO, fontWeight: 'bold', color: rec.currentValue === null ? 'text.secondary' : returnColor(rec.initialAmount, rec.currentValue) }}>
+                        {rec.currentValue === null ? '—' : returnPct(rec.initialAmount, rec.currentValue)}
                         {stopHit && (
                           <Box>
                             <Chip size="small" color="error" label={t.portfolio.page.stopLossReached} sx={{ mt: 0.5, height: 20, fontSize: '0.6875rem' }} />

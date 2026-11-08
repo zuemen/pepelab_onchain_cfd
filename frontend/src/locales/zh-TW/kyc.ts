@@ -9,7 +9,7 @@ export const kyc = {
   titleAwaitingReview: 'KYC 申請審核中',
   /** 線上舊版 KYCRegistry 是自助驗證：送出當下就通過。 */
   titleVerified: 'KYC 已通過',
-  subtitle: '交易股票 / 債券類合成資產需要通過 KYC 審核',
+  subtitle: '開立股票、債券類的槓桿部位前需要 KYC；只買進或贖回代幣不需要',
   closeAria: '關閉',
 
   /** 這個視窗最重要的一句話：送出 ≠ 通過，所以兩種狀態各自是完整的一段。 */
@@ -19,7 +19,7 @@ export const kyc = {
     '送出後會在鏈上留下一筆待審申請（KYCSubmitted），需由審核人員核准（approveKYC）才會通過。核准前仍無法交易受管制標的。',
   noticeTitleSelfService: '此部署為自助驗證：送出即通過',
   noticeBodySelfService:
-    '目前部署在這條鏈上的 KYCRegistry 是展示用的舊版：送出後鏈上立即記為已驗證（isVerified），沒有人工審核。原始碼現行版是審核制（送出後需 approveKYC），尚待擁有者重新部署。',
+    '目前部署在這條鏈上的 KYCRegistry 是展示用的舊版：送出後鏈上立即記為已驗證（isVerified），沒有人工審核。',
   noticeTitleVerified: '✅ 已通過 KYC，可以交易受管制標的',
   noticeBodyVerified:
     '鏈上已記錄你的 KYC（isVerified = true）。目前部署的 KYCRegistry 是展示用的自助驗證版本，送出即通過、不經人工審核。關掉這個視窗後即可下單。',
@@ -83,11 +83,11 @@ export const kyc = {
   status: {
     cardTitle: 'KYC 驗證狀態',
     verifiedTitle: '已通過驗證',
-    verifiedBody: '你可以交易受管制的 RWA 標的（如 AAPL、TSLA）。',
+    verifiedBody: '你可以開立股票、債券類的槓桿部位（如 AAPL、TSLA）。',
     pendingTitle: '審核中',
     pendingBody: '申請已送出，正在等待審核員核准，無需重新送出。',
     unverifiedTitle: '尚未驗證',
-    unverifiedBody: '交易受管制的 RWA 標的（如 AAPL、TSLA）前，需要先通過 KYC 驗證。',
+    unverifiedBody: '只買進或贖回代幣不需要驗證；開立股票、債券類的槓桿部位（如 AAPL、TSLA）前才需要。',
     unverifiedAction: '送出 KYC 申請',
     notRequiredTitle: '此鏈無需驗證',
     notRequiredBody: '目前連線的鏈上沒有部署 KYC 閘門，交易任何標的都不需要驗證。',

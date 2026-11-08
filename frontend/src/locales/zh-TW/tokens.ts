@@ -43,7 +43,7 @@ export const tokens = {
   // #136：Simple Mode 用「資產」——不需要知道底層是代幣化的 ERC-20 機制
   // 才能決定要不要買。Expert 維持原本的標題，工程細節是它的賣點。
   titleSimple: '資產',
-  subtitle: 'ERC-20 代幣化資產',
+  subtitle: '用測試幣買合成代幣，練習配置股票、黃金和加密資產。代幣只追蹤價格，你不會真的持有這些資產。碳排越高手續費越高：先看碳分級，再按「買進」。',
 
   notDeployed: '代幣化資產尚未在此網路啟用（AssetVault 未部署）。',
 
@@ -99,7 +99,7 @@ export const tokens = {
   table: {
     column: {
       asset: '資產',
-      provenance: '身世',
+      provenance: '碳分級',
       tradingFee: '買入費率',
       price: 'Oracle 價格',
       balance: '我的餘額',
@@ -129,6 +129,8 @@ export const tokens = {
     cancel: '取消',
     confirm: '確認',
     working: '處理中…',
+    currentPrice: '目前價格',
+    syntheticLine: '合成代幣：只追蹤 {ticker} 的價格，不是真的 {ticker}。',
     // #134：按鈕停用時要說明原因，不能只是變灰。贖回唯一會被擋的原因就是
     // 金庫暫停，可以直接講死；買進的原因（暫停／鑄造停止／比率不可信）已經
     // 在上面「金庫防護與健康度」區塊逐一解釋過，這裡指回去而不是重講一次。
@@ -219,7 +221,7 @@ export const tokens = {
         carbonCaveat: 'Scope 1+2（市場法），不含 Scope 3。',
       },
       sGOLD: {
-        underlying: 'COMEX 黃金近月期貨結算的現貨黃金價格（XAU/USD）。',
+        underlying: 'COMEX 黃金近月期貨（GC=F）的價格，與現貨有基差。',
         carbonSource: 'S&P Global Market Intelligence — Greenhouse gas and gold mines',
         carbonCaveat: '0.85 tCO2e／盎司（2019 全球平均開採排放），產業年排放超過 100 Mt CO2e；每盎司基準，不與股票的營收基準同尺度。',
       },
@@ -246,7 +248,7 @@ export const tokens = {
       sICLN: {
         underlying: 'iShares Global Clean Energy ETF，持有全球潔淨能源相關公司：再生能源發電、電力公用事業、電機設備與半導體。',
         carbonSource: 'iShares ICLN 產品頁（MSCI ESG Fund Ratings，2026-09-18）',
-        carbonCaveat: 'MSCI 持股加權碳強度，涵蓋 92.81% 持股。量的是成分公司自己的營運排放（Scope 1+2），不計它們替別人避免的排放；約 45% 持股是發電業，即使再生能源比重高，每單位營收的排放仍高。由 MSCI 計算，與個股列的公司自揭數字不同來源。',
+        carbonCaveat: 'MSCI 持股加權碳強度（2026-09-18 快照，與上方評級卡的資料日不同），涵蓋 92.81% 持股。量的是成分公司自己的營運排放（Scope 1+2），不計它們替別人避免的排放；約 45% 持股是發電業，即使再生能源比重高，每單位營收的排放仍高。由 MSCI 計算，與個股列的公司自揭數字不同來源。',
       },
       sESGU: {
         underlying: 'iShares ESG Aware MSCI USA ETF，偏重 ESG 特性較佳的美國大中型股組合。',
@@ -285,7 +287,7 @@ export const tokens = {
   /** issue #100 ③：誰提供價格、誰見證碳資料、誰營運儲備、誰稽核程式。 */
   who: {
     title: '誰負責什麼',
-    intro: 'RWA 的價值在於知道誰在線上。匿名是加密的價值，不是 RWA 的。',
+    intro: 'RWA 的價值在於知道誰負責。匿名是加密貨幣的特色，RWA 不是這樣。',
     priceRole: '價格',
     priceWho: 'keeper 從 CoinGecko／Yahoo Finance 取價，寫進 GuardedOracle（單次偏差上限）。過期報價不寫上鏈。',
     carbonRole: '碳資料見證',
@@ -293,7 +295,7 @@ export const tokens = {
     reserveRole: '儲備營運',
     reserveWho: 'AssetVault 營運方持有 USDC 儲備；儲備率由 keeper 定期寫成鏈上觀測事件，跌破門檻自動暫停鑄造。',
     auditRole: '程式稽核',
-    auditWho: '合約經逐次稽核，修補紀錄見 docs/；所有部署位址可在區塊瀏覽器查證。',
+    auditWho: '合約只經過團隊內部多輪審查，沒有第三方稽核；修補紀錄見 docs/，所有部署位址可在區塊瀏覽器查證。',
     disclosureTitle: '誠實聲明',
     disclosure: 'demo 中的碳見證由專案團隊自行安排，尚非機構獨立性。多方見證與歧見可見減輕但不解決「資料本身是否屬實」。',
   },
@@ -301,8 +303,8 @@ export const tokens = {
   /** #36：四段句中夾標記的說明，各自拆成標記前後的片段。 */
   markup: {
     introBefore: '本頁展示',
-    introBold1: '代幣化資產（ERC-20）',
-    introMid1: '。與交易頁的合成持倉不同，這裡買入的資產會以 ERC-20 token 形式',
+    introBold1: '代幣化資產',
+    introMid1: '。這裡的代幣是合成代幣，只追蹤價格，你不會真的持有股票、債券或黃金。買入後會以 ERC-20 token 形式',
     /**
      * SHOW_PERPETUALS 關閉時的版本。原句拿「交易頁的合成持倉」當對照，但旗標關著
      * 的時候那個東西在畫面上不存在——用一個看不到的概念解釋看得到的概念，只會讓
@@ -311,7 +313,7 @@ export const tokens = {
     introMid1Spot: '。買入的資產會以 ERC-20 token 形式',
     introBold2: '出現在你的錢包中',
     introMid2: '，可加入 MetaMask 檢視、可轉帳給他人。 買賣以 ',
-    introAfter: ' 結算，價格取自鏈上 oracle（無滑價）。',
+    introAfter: ' 結算，價格取自鏈上預言機（無滑價）。',
 
     vaultDryBefore: '提示：賣出由金庫的 USDC 儲備支付。若儲備不足會顯示「vault dry」， 需由管理者呼叫 ',
     vaultDryAfter: ' 補充。',

@@ -3,8 +3,8 @@ import { it, expect, describe } from 'vitest'
 import { kycTicketNotice } from './kycNotice'
 
 describe('kycTicketNotice', () => {
-  it('舊 allowlist 登錄：指向 Exchange 頁送出申請', () => {
-    expect(kycTicketNotice('sAAPL', { unknown: false, pending: false, vcAction: 'legacy' })).toContain('Exchange')
+  it('舊 allowlist 登錄：指向投資組合頁的 KYC 卡片', () => {
+    expect(kycTicketNotice('sAAPL', { unknown: false, pending: false, vcAction: 'legacy' })).toContain('投資組合')
   })
 
   it('VC 准入登錄（以及確認中／讀不到種類）：不再叫人去 Exchange 頁送出申請', () => {

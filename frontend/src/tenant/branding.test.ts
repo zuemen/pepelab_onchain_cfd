@@ -217,35 +217,39 @@ describe('default tenant is the current production site, unchanged', () => {
   // 換成 Web3 社交交易的說法，舊的標題移到 meta.titleNoCopy（跟單旗標關閉的租戶用）。
   const ORIGINAL = {
     'zh-TW': {
-      'meta.title': 'PepeLab · Web3 社交交易',
+      'meta.title': 'PepeFi · Web3 社交交易',
       'meta.description':
-        'PepeLab — Base 鏈上的 Web3 社交交易平台：跟著鏈上透明的交易者投資。社交跟單、第三方 ESG 評級與碳分級、GameFi（測試網研究原型）。',
-      'meta.titleNoCopy': 'PepeLab · Agent 原生代幣化 RWA',
+        'PepeFi — Base 鏈上的 Web3 社交交易平台：跟著鏈上透明的交易者投資。社交跟單、第三方 ESG 評級與碳分級、GameFi（測試網研究原型）。',
+      'meta.titleNoCopy': 'PepeFi · Agent 原生代幣化 RWA',
       'meta.descriptionNoCopy':
-        'PepeLab — 基於 Base 鏈的 Agent 原生代幣化資產引擎（測試網研究原型）。鏈上鑄造與贖回合成股債金幣 + x402 付費訊號 + agent session 委任。',
-      'common.wallet.intro': '選擇您的登入通道以進入 PepeLab 鏈上 RWA 平台。',
-      'exchange.guide.spotTitle': '在 PepeLab 上買賣代幣化資產',
-      'x402.docs.how.ask.body': '助理向 PepeLab 要一筆資料，例如某位交易者的下一步。',
-      'x402.docs.how.quote.title': 'PepeLab 報價',
-      'nav.section.pepelab': 'PepeLab',
+        'PepeFi — 基於 Base 鏈的 Agent 原生代幣化資產引擎（測試網研究原型）。鏈上鑄造與贖回合成股債金幣 + x402 付費訊號 + agent session 委任。',
+      'common.wallet.intro': '選擇您的登入通道以進入 PepeFi 鏈上 RWA 平台。',
+      'exchange.guide.spotTitle': '在 PepeFi 上買賣代幣化資產',
+      'x402.docs.how.ask.body': '助理向 PepeFi 要一筆資料，例如某位交易者的績效與最新策略。',
+      'x402.docs.how.quote.title': 'PepeFi 報價',
+      'nav.section.pepelab': 'PepeFi',
+      'rewards.title': '🎁 PepeFi 獎勵',
+      'admin.treasury.incentives.title': '🎁 PepeFi 獎勵池補充資金',
       'landing.tagline': '跟著透明的交易者投資 🐸',
       'landing.enterDashboard': '🐸 進入 Dashboard',
       'landing.copyOff.tagline': 'RWA · 代幣化資產 · Agent 原生 🐸',
     },
     en: {
-      'meta.title': 'PepeLab · Web3 Social Trading',
+      'meta.title': 'PepeFi · Web3 Social Trading',
       'meta.description':
-        'PepeLab — Web3 social trading on Base: invest alongside traders whose every move is on-chain. Social copy trading, third-party ESG ratings with carbon tiers, and GameFi (testnet research prototype).',
-      'meta.titleNoCopy': 'PepeLab · Agent-Native Tokenized RWA',
+        'PepeFi — Web3 social trading on Base: invest alongside traders whose every move is on-chain. Social copy trading, third-party ESG ratings with carbon tiers, and GameFi (testnet research prototype).',
+      'meta.titleNoCopy': 'PepeFi · Agent-Native Tokenized RWA',
       'meta.descriptionNoCopy':
-        'PepeLab — an agent-native tokenized-asset engine on Base (testnet research prototype). Mint and redeem synthetic equities, bonds, gold and crypto on-chain + x402 paid signals + bounded agent sessions.',
+        'PepeFi — an agent-native tokenized-asset engine on Base (testnet research prototype). Mint and redeem synthetic equities, bonds, gold and crypto on-chain + x402 paid signals + bounded agent sessions.',
       'common.wallet.intro':
-        'Choose your sign-in channel to enter the PepeLab on-chain RWA platform.',
-      'exchange.guide.spotTitle': 'How to buy and sell tokenized assets on PepeLab',
+        'Choose your sign-in channel to enter the PepeFi on-chain RWA platform.',
+      'exchange.guide.spotTitle': 'How to buy and sell tokenized assets on PepeFi',
       'x402.docs.how.ask.body':
-        'Your assistant asks PepeLab for a piece of data, such as a trader’s next move.',
-      'x402.docs.how.quote.title': 'PepeLab quotes a price',
-      'nav.section.pepelab': 'PepeLab',
+        'Your assistant asks PepeFi for a piece of data, such as a trader’s record and latest strategy.',
+      'x402.docs.how.quote.title': 'PepeFi quotes a price',
+      'nav.section.pepelab': 'PepeFi',
+      'rewards.title': '🎁 PepeFi Rewards',
+      'admin.treasury.incentives.title': '🎁 PepeFi Incentives Pool Refill',
       'landing.tagline': 'Invest alongside transparent traders 🐸',
       'landing.enterDashboard': '🐸 Enter Dashboard',
       'landing.copyOff.tagline': 'RWA · Tokenized Assets · Agent-Native 🐸',

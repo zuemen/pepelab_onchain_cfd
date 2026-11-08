@@ -269,7 +269,7 @@ export function DelegationCredentialPanel({
 
   const revoke = async (confirmedNoPublishedList = false) => {
     if (!signer || !stored) return
-    if (confirmedNoPublishedList && !window.confirm(interpolate(t.sessions.delegation.confirmNoListPrompt, { reason: baseFailure ?? '?' }))) return
+    if (confirmedNoPublishedList && !window.confirm(interpolate(t.sessions.delegation.confirmNoListPrompt, { reason: baseFailure ?? (statusUrl() ? '?' : 'status_source_unset') }))) return
     try {
       setBusy('revoke')
       const r = await revokeDelegationCredential({
@@ -283,7 +283,8 @@ export function DelegationCredentialPanel({
       setNeedImport(false)
       onStored(afterRevocation(stored, r))
       notify(
-        interpolate(r.published ? t.sessions.delegation.revokedPublished : t.sessions.delegation.revokedDownloaded, {
+        // 沒設定狀態清單的站讀不回清單，無法確認發佈：改用不叫人按「確認已發佈」的提示。
+        interpolate(r.published ? t.sessions.delegation.revokedPublished : statusUrl() ? t.sessions.delegation.revokedDownloaded : t.sessions.delegation.revokedDownloadedNoStatus, {
           seq: String(r.list.sequence),
         }),
         true,
@@ -449,19 +450,21 @@ export function DelegationCredentialPanel({
             >
               {d.download}
             </Button>
-            {stored.revocationPending && (
+            {stored.revocationPending && statusUrl() && (
               <Button variant="contained" color="warning" onClick={() => void confirmPublished()} disabled={busy !== ''} sx={{ textTransform: 'none' }}>
                 {busy === 'confirm' ? d.confirmingPublished : d.confirmPublished}
               </Button>
             )}
+            {/* 沒設定狀態清單的站也能撤銷：先匯入目前的清單或確認第一次撤銷，簽好的清單會下載。 */}
             {!stored.revoked && (
               <Button variant="outlined" color="error" onClick={() => void revoke()} disabled={busy !== '' || !signer} sx={{ textTransform: 'none' }}>
                 {busy === 'revoke' ? d.revoking : stored.revocationPending ? d.revokeAgain : d.revoke}
               </Button>
             )}
           </Stack>
-          {stored.revocationPending && <Alert severity="warning">{d.revokePendingNote}</Alert>}
-          {needImport && !stored.revoked && (
+          {stored.revocationPending && <Alert severity="warning">{statusUrl() ? d.revokePendingNote : d.revokePendingNoteNoStatus}</Alert>}
+          {!stored.revoked && !stored.revocationPending && !statusUrl() && <Alert severity="info">{d.revokeUnavailable}</Alert>}
+          {(needImport || (!statusUrl() && !stored.revocationPending)) && !stored.revoked && (
             <Alert severity="info">
               {d.importHint}{' '}
               <Button component="label" size="small" sx={{ textTransform: 'none' }}>

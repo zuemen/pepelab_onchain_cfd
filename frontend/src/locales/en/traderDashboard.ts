@@ -28,7 +28,7 @@ export const traderDashboard: Catalog['traderDashboard'] = {
 
     stakeRequiredTitle: 'Stake required to publish',
     stakeRequiredBody:
-      'You need to stake at least 100 USDC before publishing a strategy. This gives followers confidence that you have skin-in-the-game.',
+      'You need to stake at least 100 USDC before publishing a strategy, so followers know you have skin in the game. You also cannot publish while an unstake request is pending.',
     goToStake: 'Go to Trader Stake →',
     stakeRequiredBodyNeutral:
       'Publishing a strategy requires a trader reputation stake of at least 100 USDC, so anyone using your strategy knows you have skin in the game.',

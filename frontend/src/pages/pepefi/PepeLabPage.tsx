@@ -227,7 +227,9 @@ export default function PepeLabPage() {
   // ── Potion Shop Logic ────────────────────────────────────────────────────────
 
   // Calculate effective PEPE balance (on-chain if connected, otherwise local storage)
-  const finalPepeBal = onChainPepeBal !== null ? Math.floor(Number(onChainPepeBal) / 1e18) : pepeBal;
+  // 真錢包讀不到鏈上餘額時不能拿本機預設值 5,000 充數：顯示「—」、當 0 擋花費；只有模擬錢包才用本機值。
+  const pepeBalUnread = onChainPepeBal === null && !wallet.isMock;
+  const finalPepeBal = onChainPepeBal !== null ? Math.floor(Number(onChainPepeBal) / 1e18) : wallet.isMock ? pepeBal : 0;
 
   // ── Potion Shop Logic ────────────────────────────────────────────────────────
 
@@ -499,7 +501,7 @@ export default function PepeLabPage() {
             tabs — every tab spends it, so it reads as a page-level fact. */}
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, bgcolor: 'rgba(124,193,74,0.12)', border: '1px solid rgba(124,193,74,0.3)', px: 2, py: 0.75, borderRadius: 2 }}>
           <Typography variant="subtitle2" sx={{ color: 'var(--palette-primary-main)', fontWeight: 'bold' }}>
-            {interpolate(t.pepelab.header.balance, { amount: finalPepeBal.toLocaleString() })}
+            {interpolate(t.pepelab.header.balance, { amount: pepeBalUnread ? '—' : finalPepeBal.toLocaleString() })}
           </Typography>
           {/* Every tab spends PEPE; this is where it is earned. Without the link a
               new wallet sits at 0 with nothing on the page saying what to do. */}
@@ -1181,7 +1183,7 @@ export default function PepeLabPage() {
             <Box sx={{ position: 'relative', zIndex: 1, p: 4, textAlign: 'center', maxHeight: 'calc(100vh - 32px)', overflowY: 'auto' }}>
 
             <Typography variant="overline" sx={{ color: 'text.secondary', letterSpacing: 2, zIndex: 1, position: 'relative' }}>
-              EVOLUTION
+              {t.pepelab.evolveDialog.label}
             </Typography>
             <Typography variant="h4" sx={{ fontWeight: 900, color: evolvedTo.color, mb: 2, zIndex: 1, position: 'relative', textShadow: `0 0 24px ${evolvedTo.color}88` }}>
               {t.pepelab.evolveDialog.title}
@@ -1262,7 +1264,7 @@ export default function PepeLabPage() {
             
             <Box sx={{ my: 1.5, zIndex: 1, position: 'relative' }}>
               <Box sx={{ px: 2, py: 0.5, bgcolor: `${getRarityColor(drawResult.rarity)}20`, color: getRarityColor(drawResult.rarity), border: `1px solid ${getRarityColor(drawResult.rarity)}`, borderRadius: 1.5, fontSize: '0.8rem', fontWeight: 'bold', display: 'inline-block' }}>
-                {interpolate(t.pepelab.drawDialog.rarity, { rarity: drawResult.rarity })}
+                {interpolate(t.pepelab.drawDialog.rarity, { rarity: t.pepelab.gacha.rarityLabel[drawResult.rarity] })}
               </Box>
             </Box>
 

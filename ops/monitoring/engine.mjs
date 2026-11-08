@@ -188,7 +188,8 @@ const clip = (s, n) => {
 /**
  * 節點拒絕這個 eth_getLogs 範圍（區塊數或結果數超過上限）。縮小範圍重試就會過，
  * 所以不算「RPC 壞了」。實測（2026-10-01，https://sepolia.base.org）：超過 1,000 塊回
- * HTTP 413 `{"code":-32614,"message":"eth_getLogs is limited to a 1,000 range"}`。
+ * HTTP 413 `{"code":-32614,"message":"eth_getLogs is limited to a 1,000 range"}`；2026-10-25 再實測
+ * 上限降為 201 塊（同樣 413／-32614），所以 MAX_BLOCK_RANGE 預設 200（見 params.mjs）。
  * 其他節點常見的是 -32005「query returned more than 10000 results」（-32005 本身不算：有些節點的
  * 限流也用這個碼，那要退避重試而不是縮小範圍）。
  */
@@ -1140,7 +1141,8 @@ export async function runOnce({ config, env = {}, state, fetchImpl, now = Math.f
   let scanTime = now;
   try {
     const r = await scanEvents({ config, env, rpc, state, now });
-    scanTime = now - r.lagBlocks * (config.network?.blockTimeSec ?? 2);
+    // blockTimeSec 可以是小數（Base Sepolia 0.2 秒一塊）：無條件捨去成整數秒，寧可多留一點累計紀錄。
+    scanTime = Math.floor(now - r.lagBlocks * (config.network?.blockTimeSec ?? 0.2));
     findings.push(...r.findings);
     state.checkpoint = r.nextCheckpoint;
     if (r.initialFrom !== undefined && r.nextCheckpoint !== undefined && r.nextCheckpoint !== null) initialFrom = r.initialFrom;

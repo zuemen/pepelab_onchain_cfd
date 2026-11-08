@@ -1,13 +1,15 @@
 import { useEffect } from 'react';
-import { Outlet, useNavigate, useOutletContext } from 'react-router';
+import { Outlet, useLocation, useNavigate, useOutletContext } from 'react-router';
 
 import Box from '@mui/material/Box';
 
 import { usePathname } from 'src/routes/hooks';
 
 import { type WalletAPI } from 'src/hooks/useWallet';
+import { useReadChain } from 'src/hooks/useRwaTransparency';
 
 import { t } from 'src/locales';
+import { calibrateBlockTime } from 'src/lib/pepefi/chainLogs';
 import { useWalletContext } from 'src/contexts/wallet-context';
 import { CHAIN_NAMES, isPrimaryChain, PRIMARY_CHAIN_ID } from 'src/contracts/addresses';
 
@@ -32,16 +34,27 @@ export function PepefiLayout() {
   const wallet = useWalletContext();
   const pathname = usePathname();
   const navigate = useNavigate();
+  const location = useLocation();
 
   useEffect(() => {
     if (wallet.initializing) return;
     const isPublic = isPublicPath(pathname);
     if (!wallet.isConnected && !isPublic) {
-      navigate('/', { replace: true });
+      // 記下原本要去的頁面，連上錢包後帶回去（例如別人傳來的 /trader/0x… 連結）。
+      navigate('/', { replace: true, state: { returnTo: `${pathname}${location.search}` } });
     } else if (wallet.isConnected && pathname === '/') {
-      navigate(AFTER_CONNECT_PATH, { replace: true });
+      const returnTo = (location.state as { returnTo?: string } | null)?.returnTo;
+      navigate(returnTo ?? AFTER_CONNECT_PATH, { replace: true });
     }
-  }, [wallet.initializing, wallet.isConnected, pathname, navigate]);
+  }, [wallet.initializing, wallet.isConnected, pathname, location.search, location.state, navigate]);
+
+  // 出塊時間以實測為準（寫死的表會過時，見 chainLogs 的 calibrateBlockTime）。每條鏈每次開站量一次。
+  // 用讀取用的 provider：沒連錢包的訪客走公開節點，一樣會校正。
+  const { provider, chainId } = useReadChain();
+  useEffect(() => {
+    if (!provider || !chainId) return;
+    void calibrateBlockTime(provider, chainId);
+  }, [provider, chainId]);
 
   if (wallet.initializing) return <LoadingScreen />;
 

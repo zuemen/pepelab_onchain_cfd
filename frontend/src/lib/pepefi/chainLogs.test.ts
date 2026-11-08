@@ -23,14 +23,17 @@ import {
   isChunkScanAborted,
   ChunkScanAbortedError,
   describeScanWindow,
+  calibrateBlockTime,
+  recordMeasuredBlockTime,
+  resetMeasuredBlockTimes,
   DEFAULT_AVG_BLOCK_TIME,
   DEFAULT_SCAN_WINDOW_SEC,
 } from './chainLogs'
 
 describe('avgBlockTime', () => {
-  it('Base Sepolia 是 2 秒,不是 Ethereum 的 12 秒', () => {
+  it('Base Sepolia 是 0.2 秒(2026-11 實測),不是 Ethereum 的 12 秒', () => {
     // F-3 的核心誤差：用 12 秒去換算 Base 的區塊，時間會被高估六倍。
-    expect(avgBlockTime(84532)).toBe(2)
+    expect(avgBlockTime(84532)).toBe(0.2)
     expect(avgBlockTime(11155111)).toBe(12)
   })
 
@@ -42,8 +45,8 @@ describe('avgBlockTime', () => {
 })
 
 describe('blocksForSeconds', () => {
-  it('同一段時間在 Base 上是 Ethereum 的六倍塊數', () => {
-    expect(blocksForSeconds(84532, 3600)).toBe(1800)
+  it('同一段時間在 Base 上是 Ethereum 的六十倍塊數', () => {
+    expect(blocksForSeconds(84532, 3600)).toBe(18000)
     expect(blocksForSeconds(11155111, 3600)).toBe(300)
   })
 
@@ -73,8 +76,8 @@ describe('scanFromBlock', () => {
     const currentBlock = 48_000_000
     const from = scanFromBlock({ chainId: 84532, currentBlock })
     expect(from).toBeGreaterThan(42_838_953)
-    // 24 小時 ÷ 2 秒 = 43,200 塊
-    expect(from).toBe(currentBlock - 43_200)
+    // 24 小時 ÷ 0.2 秒 = 432,000 塊，被 MAX_CHUNKS 夾到 44,000 段內
+    expect(from).toBe(currentBlock - MAX_CHUNKS * CHUNK_SIZE + 1)
   })
 
   it('剛部署不久的鏈不會掃到部署塊之前的空白區', () => {
@@ -226,16 +229,16 @@ describe('getLogsChunked', () => {
 
 describe('describeScanWindow', () => {
   it('同樣的塊數在不同鏈上代表不同長度的時間', () => {
-    expect(describeScanWindow(84532, 43_200)).toBe('1.0d')
+    expect(describeScanWindow(84532, 43_200)).toBe('2.4h')
     expect(describeScanWindow(11155111, 43_200)).toBe('6.0d')
   })
 
   it('小範圍用分鐘', () => {
-    expect(describeScanWindow(84532, 300)).toBe('10m')
+    expect(describeScanWindow(84532, 3_000)).toBe('10m')
   })
 
   it('中間的量級用小時', () => {
-    expect(describeScanWindow(84532, 2_700)).toBe('1.5h')
+    expect(describeScanWindow(84532, 27_000)).toBe('1.5h')
   })
 })
 
@@ -249,8 +252,9 @@ describe('CHUNK_SIZE 對齊實測上限', () => {
     }
   })
 
-  it('預設 24 小時視窗在 Base 上不會被 MAX_CHUNKS 截短', () => {
-    expect(MAX_CHUNKS * CHUNK_SIZE).toBeGreaterThanOrEqual(blocksForSeconds(84532, DEFAULT_SCAN_WINDOW_SEC))
+  it('Base 上預設視窗會被 MAX_CHUNKS 截短到約 2.4 小時,畫面要照實標示', () => {
+    expect(MAX_CHUNKS * CHUNK_SIZE).toBeLessThan(blocksForSeconds(84532, DEFAULT_SCAN_WINDOW_SEC))
+    expect(describeScanWindow(84532, MAX_CHUNKS * CHUNK_SIZE)).toBe('2.4h')
   })
 })
 
@@ -566,5 +570,47 @@ describe('動態牆的 24 小時掃描要併發（2026-10-27：序列時正式�
       const src = readFileSync(new URL(rel, import.meta.url), 'utf8')
       expect(src, rel).toMatch(/getLogsChunked\([\s\S]*?concurrency: UI_SCAN_CONCURRENCY/)
     }
+  })
+})
+
+describe('calibrateBlockTime：出塊時間以實測為準', () => {
+  const fake = (headNum: number, headTs: number, pastTs: number) => ({
+    getBlock: async (tag: number | 'latest') =>
+      tag === 'latest' ? { number: headNum, timestamp: headTs } : { number: tag, timestamp: pastTs },
+  })
+
+  it('實測值取代表上的值，換算跟著變', async () => {
+    resetMeasuredBlockTimes()
+    expect(avgBlockTime(84532)).toBe(0.2)
+    // 1,000 塊花了 2,000 秒 → 2 秒一塊（模擬鏈又變慢）
+    expect(await calibrateBlockTime(fake(50_000_000, 1_800_002_000, 1_800_000_000), 84532)).toBe(2)
+    expect(avgBlockTime(84532)).toBe(2)
+    expect(blocksForSeconds(84532, 3600)).toBe(1800)
+    expect(describeScanWindow(84532, 43_200)).toBe('1.0d')
+    resetMeasuredBlockTimes()
+  })
+
+  it('不合理的實測值（時間戳倒退、太慢）不採用', async () => {
+    resetMeasuredBlockTimes()
+    expect(await calibrateBlockTime(fake(50_000_000, 1_800_000_000, 1_800_000_500), 84532)).toBeNull()
+    expect(await calibrateBlockTime(fake(50_000_000, 1_900_000_000, 1_800_000_000), 84532)).toBeNull()
+    expect(avgBlockTime(84532)).toBe(0.2)
+  })
+
+  it('讀不到區塊就維持表上的值，不丟錯', async () => {
+    resetMeasuredBlockTimes()
+    const broken = { getBlock: async () => { throw new Error('rpc down') } }
+    expect(await calibrateBlockTime(broken, 84532)).toBeNull()
+    expect(await calibrateBlockTime(fake(10, 100, 0), 84532)).toBeNull()
+    expect(avgBlockTime(84532)).toBe(0.2)
+  })
+
+  it('recordMeasuredBlockTime 只收合理範圍', () => {
+    resetMeasuredBlockTimes()
+    expect(recordMeasuredBlockTime(84532, Number.NaN)).toBe(false)
+    expect(recordMeasuredBlockTime(84532, 0)).toBe(false)
+    expect(recordMeasuredBlockTime(84532, 0.25)).toBe(true)
+    expect(avgBlockTime(84532)).toBe(0.25)
+    resetMeasuredBlockTimes()
   })
 })

@@ -7,9 +7,16 @@ export const sessions: Catalog['sessions'] = {
   title: '🤖 AI Agent Sessions',
   viewOn: 'View on {explorer} ↗',
 
+  prereq: {
+    title: 'Three things to prepare before the agent can trade',
+    margin: 'Switch to Expert mode and deposit USDC into your trading account in the Pro Terminal. A session never touches the USDC in your wallet.',
+    eth: 'The agent address needs a little test ETH for network fees and each execution fee.',
+    kyc: 'To trade stock or bond markets, your wallet must complete KYC first.',
+  },
   ssi: {
+    detailsToggle: 'For developers: technical details',
     title: 'The SSI triangle: your wallet is the root of trust',
-    flow: 'Flow: connect wallet → set limits and create a session → issue an authorization VC → export the agent config in one click → from then on, just state trade intent verbally.',
+    flow: 'Flow: connect wallet → set limits and create a session → issue an authorization VC → export the agent config → from then on, just state trade intent verbally.',
   },
 
   wrongNetwork: {
@@ -32,6 +39,11 @@ export const sessions: Catalog['sessions'] = {
     allowedAssets: 'Allowed assets',
     allowedAssetsHint: 'The agent can open positions only in these assets (on-chain allow-list via createSessionWithAssets). Pick at least one.',
     noAssetSelected: 'Select at least one allowed asset.',
+    invalidAgent: 'That agent address is not valid. Paste a 0x address, or generate an agent key.',
+    invalidAmounts: 'The per-trade cap and total budget must both be above 0.',
+    perTradeOverBudget: 'The per-trade cap cannot exceed the total budget.',
+    invalidLeverage: 'Max leverage must be a whole number from 1 to 5.',
+    invalidHours: 'Hours must be above 0.',
   },
 
   /** 瀏覽器裡產生的一次性 burner 金鑰。 */
@@ -117,7 +129,7 @@ export const sessions: Catalog['sessions'] = {
     open: 'Delegation VC v3',
     title: 'Delegation credential v3 (W3C VC 2.0)',
     intro:
-      "Sign this session's limits, asset allow-list and x402 spending caps into a verifiable credential, then anchor it on chain: paid APIs can confirm who authorized this agent and for what (Know Your Agent).",
+      "Sign this session's limits, asset allow-list and x402 spending caps into a verifiable credential that shows who authorized this agent and for what (Know Your Agent). Deployments with an anchor contract can also anchor it on chain; this testnet site can only issue credentials and does not yet run on-chain anchoring or paid-API checks.",
     agentDid: 'Agent DID (holder)',
     issuerDid: 'Issuer DID (you)',
     sessionTerms: 'Session limits (match the chain field by field)',
@@ -151,12 +163,17 @@ export const sessions: Catalog['sessions'] = {
     hideJson: 'Hide JSON',
     download: 'Download credential .json',
     revoke: 'Revoke this credential',
+    revokeUnavailable: 'This site has no credential status list configured, so the published list cannot be read. Before revoking, import the list that is currently published (.json) below, or confirm that none was ever published (first revocation). The newly signed list will be downloaded; give it to verifiers. To stop the authorization right away, revoke the session: it takes effect on-chain immediately.',
+    revokeCredentialInPanel: 'Session revoked: it takes effect on-chain right away. Its delegation credential is not revoked yet. In the list, press "Delegation VC v3" for this session, then in the dialog import the current status list (or confirm this is the first revocation) and press Revoke. The signed list will be downloaded; give it to verifiers.',
+    revokeListSkipped: 'Session revoked: it takes effect on-chain right away. The credential status list was not signed this time, which does not affect the session revocation. To finish revoking the credential, use Revoke again in the delegation credential panel for this session (you can import the current list there).',
     revoking: 'Revoking…',
     revokedDownloaded: 'Revocation list signed (sequence {seq}) but not confirmed published (downloaded); hand it to the operator (npm run vc-status install), then press Confirm published. Until then the credential is still valid.',
     revokedPublished: 'Revocation list signed (sequence {seq}) and confirmed in the status directory.',
     revokeBaseUnavailable:
       "Could not read the currently published status list ({reason}), so nothing was signed: a revocation list must build on the published one, or verifiers reject it and the revocation does not take effect. Set VITE_VC_STATUS_URL, or import the current list and try again.",
     statusRevokePending: 'Revocation pending (sequence {seq}, not in effect yet)',
+    revokedDownloadedNoStatus: 'Revocation list signed (sequence {seq}) and downloaded; give it to verifiers. This site has no credential status list configured, so it cannot confirm here whether verifiers have adopted it.',
+    revokePendingNoteNoStatus: 'The revocation list is signed and downloaded, but this site has no credential status list configured, so it cannot confirm whether verifiers have adopted it; until they switch to the new list, this credential may still be accepted. To stop the authorization right away, revoke the session: it takes effect on-chain immediately.',
     revokePendingNote: 'The revocation list is signed but not confirmed published: until verifiers see it, this credential is still valid. To stop paid APIs right away, unanchor it first.',
     revokeAgain: 'Sign the revocation list again',
     confirmPublished: 'Confirm published',
@@ -199,10 +216,11 @@ export const sessions: Catalog['sessions'] = {
   /** #36：十段句中夾標記的說明，各自拆成標記前後的片段。 */
   markup: {
     introBefore:
-      "Delegate a bounded session key to the agent: capped per-trade margin, total budget, max leverage, and an expiry. The agent can only open/close positions on your behalf through AgentSessionManager within those limits, and never holds your main wallet's private key. Each agent has a ",
+      'Let an AI agent trade for you, only within limits you set: per-trade amount, total budget, maximum leverage, allowed assets and an end date. It never gets your main wallet\'s private key, and you can revoke access at any time.',
+    introTech: 'Each agent has a ',
     introMid: ' identity, and the authorization can be credentialed as a ',
     introAfter:
-      ' for signature verification before an order (SSI / verifiable autonomous trading, see docs/AGENT_IDENTITY_VC_SSI.md).',
+      ' that is checked before an order.',
 
     roleIssuerBefore: '🖊️ ',
     roleIssuerBold: 'Issuer=you',
@@ -235,7 +253,7 @@ export const sessions: Catalog['sessions'] = {
     step1Bold: 'MCP config',
     step1Mid1: " into Claude Desktop/Code's ",
     step1Mid2: ', and replace ',
-    step1After: " with your local agent's session key.",
+    step1After: " with your local agent's session key. Also clone the repo, install its dependencies, and replace /path/to/… in the config with your local path.",
     step2Before: 'Save the ',
     step2Bold: 'authorization VC',
     step2Mid1: ' as a file; when the agent places an order, point ',

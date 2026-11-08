@@ -55,6 +55,7 @@ export const toTerminalPos = (r: OpenPositionRead): Pos => ({
   entryPrice: r.entryPrice,
   margin: r.margin,
   leverage: r.leverage,
+  copiedFrom: r.copiedFrom,
   status: r.status,
   pnl: r.pnl,
   value: r.value,

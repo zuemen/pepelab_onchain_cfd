@@ -10,7 +10,7 @@
 > 只有本人能提領；跟單開出的部位在跟隨者自己名下；現貨代幣在使用者自己的錢包。營運方仍保有暫停與凍結市場、調整參數（含自動減倉）、
 > 升級金庫與指定代理合約的權限，價格由受信任的 keeper 寫入（見 §5），所以自管不等於「完全不需信任」。
 > 跟單預設是快照式（複製交易者當下那一版策略）；跟隨者可以在鏈上開啟**自動同步**，之後任何人都能、也只能把他的部位
-> 調成交易者鏈上最新版，平台不替任何人簽名（[ADR-024](docs/ADR-024-copy-auto-sync.md)，**僅原始碼、Base Sepolia 尚未部署**）。
+> 調成交易者鏈上最新版，平台不替任何人簽名（[ADR-024](docs/ADR-024-copy-auto-sync.md)，**已部署 Base Sepolia，2026-10-27 實跑**）。
 > 沒有自動停損。
 >
 > **未來延伸：B2B 白標**。同一套合約與前端可以租戶形式提供給**持牌金融機構**（租戶隔離見 ADR-008、
@@ -20,7 +20,7 @@
 > **現況**：本 repo 是 2026 年 Capstone 專題出身的**研究原型**，只部署在 **Base Sepolia 測試網
 > （chainId 84532）**。沒有真實資產、沒有第三方安全稽核、沒有任何監理許可，**不是生產系統**。
 
-- 名稱：產品名為 **PepeFi**。PepeLab 是早期名稱，也是 demo 主題（因此 repo、網址與部分舊文件仍使用 PepeLab）。
+- 名稱：平台名稱是 **PepeFi**，PepeLab 是團隊（公司）名稱（因此 repo、網址與部分舊文件仍使用 PepeLab）。
 - 正式展示站（測試網）：<https://pepelab-onchain-cfd-djot.vercel.app>（中文）；英文版 <https://pepelab-onchain-cfd-djot.vercel.app/en/>
   （同一個 Vercel 專案、一次 build，見 [`frontend/docs/adr/0010-locale-by-url-path.md`](frontend/docs/adr/0010-locale-by-url-path.md)）
 - 事實基準日：2026-10-26（位址與部署狀態以 #344 cutover 之後的唯讀讀回為準，見
@@ -97,9 +97,7 @@ Sepolia 的合約**未做金鑰輪替**（見 [`docs/RUNBOOK_KEY_ROTATION.md`](d
   資產白名單與撤銷；授權 VC（EIP-712）由鏈下 agent 驗證。
 - **x402 付費資料 API**（`agent/signal-api`）：`/signals/:trader` 0.01 USDC、`/oracle/:asset` 0.005 USDC。
   已上線的保護（#180）：收款地址守門（fail-closed，不安全時回 503，不發出 402）、結算佇列冪等。
-  **截至 2026-09-30，正式 signal-api 的收款地址未通過守門，付費端點回 503**。x402 FeeRouter 已在 2026-10-10 以新的 treasury
-  重新部署（§2）；signal-api 的 Vercel 環境變數（`PAY_TO`、`X402_FEE_ROUTER`）換成新值並重新部署是擁有者待辦
-  （[`docs/CUTOVER_LOG_2026-10-10.md`](docs/CUTOVER_LOG_2026-10-10.md) 第 4 步）。
+  正式 signal-api 未付款時回 402（2026-11-07 實測）；x402 FeeRouter 已於 2026-10-10 重新部署（§2）。
 - **營運**（#178、#182、#190）：keeper 指向現行 exchange、GuardedOracle 恢復餵價、keeper 熔斷與來源後備、
   位址一致性 CI、oracle 告警。處置見 [`docs/RUNBOOK_KEEPER.md`](docs/RUNBOOK_KEEPER.md)。
 - **前端**（#181、#192）：移除假價、改為誠實的鏈上讀取；KYC 改送雜湊；商業版功能旗標；CSP 與安全標頭；
@@ -140,7 +138,7 @@ PR #191、#198 合併時只改了原始碼。2026-10-20 的 #344 cutover（`Rede
 2026-10-20 部署（`DeployCarbonRetirement.s.sol`）；分流與退役由 keeper 每次執行順帶觸發，前端從
 `exchange → feeRouter() → platformTreasury()` 找到退役合約，不需另外設定位址。公開鏈回放的資料集含 24 筆退役（9.36 公噸，模擬額度）。
 
-### 3.4 跟單自動同步（ADR-024，僅原始碼、尚未部署）
+### 3.4 跟單自動同步（ADR-024，已部署 Base Sepolia）
 
 跟單原本是快照式：交易者發布新版策略後，跟隨者的部位不會變。自動同步讓跟隨者在鏈上同意一次，之後**任何人**
 （跟隨者自己的 agent、平台 keeper、第三方 bot）都能呼叫 `CopyTracker.resyncFor`，但它**只能**把部位調成交易者鏈上最新版：
@@ -206,7 +204,7 @@ public 執行者由 GitHub Actions `copy-sync-executor.yml` 排程執行（即�
   - 交易所讀取的價格由 keeper 金鑰寫入 `MockOracle`，屬於受信任的中繼，不是去中心化預言機。
   - 碳權退役（#105／#333，已部署）銷毀的是本專案自行鑄造的模擬碳權，不是真實碳權，不抵銷任何真實排放。
   - `AssetVaultV2` 為非足額抵押的合成曝險。
-  - 跟單自動同步（ADR-024，未部署）：任何人都能執行同步，但只能調成交易者鏈上最新版；別人代為同步之間至少隔 1 小時，
+  - 跟單自動同步（ADR-024）：任何人都能執行同步，但只能調成交易者鏈上最新版；別人代為同步之間至少隔 1 小時，
     執行費只按跟隨者同意的費率扣。冷卻限制的是頻率，不是每一輪的金額：交易者每個冷卻期都能發一版，讓跟隨者「全平再開」付交易費，
     績效費也沒有高水位線（`docs/KNOWN_LIMITATIONS.md` #39、#41、#42）。
 

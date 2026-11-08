@@ -4,7 +4,7 @@ import type { Catalog } from '../zh-TW';
  * 見 `../zh-TW/freshness.ts`。
  */
 export const freshness: Catalog['freshness'] = {
-  unknownAge: 'Age unknown',
+  unknownAge: 'Update time unknown',
 
   /** Short price-source tag shown next to a price. 'none' = neither source readable; the UI shows '—'. */
   priceSource: {

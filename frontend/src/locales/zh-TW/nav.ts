@@ -33,11 +33,11 @@ export const nav = {
     stake: '質押',
   },
   account: {
-    profile: '個人首頁',
+    profile: '我的交易者主頁',
     potions: '魔法藥水商店',
-    mounts: '尊貴坐騎',
+    mounts: '我的坐騎',
     skins: '🎰 造型盲盒與商城',
-    staking: '交易員信譽質押',
-    rewards: '🎁 每日激勵',
+    staking: '交易者聲譽質押',
+    rewards: '獎勵 🎁',
   },
 };

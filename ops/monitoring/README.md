@@ -90,7 +90,7 @@ Worker 持有的東西只有：
 
 ## 第一次執行
 
-KV 沒有檢查點時，事件掃描往回看 `INITIAL_LOOKBACK_BLOCKS`（預設 1,800 塊約 1 小時；範圍 150–10,000，執行期也夾住，設成 0 不會變成「從現在開始」），**不會**補掃更早的歷史，並送出一則 SEV-3「**監控狀態重置**：往回看 N 個區塊，從區塊 M 重新開始；更早的事件未掃描」。剛部署時收到是正常的；**之後再收到代表 KV 狀態遺失或被清除**，那段期間的事件要到區塊瀏覽器人工補查。
+KV 沒有檢查點時，事件掃描往回看 `INITIAL_LOOKBACK_BLOCKS`（預設 18,000 塊，Base Sepolia 約 0.2 秒一塊＝約 1 小時；範圍 1,500–36,000，執行期也夾住，設成 0 不會變成「從現在開始」；預設設定約 10 輪、約 45–50 分鐘掃完這段回看），**不會**補掃更早的歷史，並送出一則 SEV-3「**監控狀態重置**：往回看 N 個區塊，從區塊 M 重新開始；更早的事件未掃描」。剛部署時收到是正常的；**之後再收到代表 KV 狀態遺失或被清除**，那段期間的事件要到區塊瀏覽器人工補查。
 
 `x402-payto` 沒設 `EXPECTED_PAY_TO` 時以第一次觀察值為基準，並送出一則「基準已設定：payTo = 0x…」（SEV-2，比照 monitor-self 不可被 `MUTE_KEYS`／`MIN_SEVERITY` 擋掉）供確認；基準被重建的那一輪，原本開著的「收款地址變更」不會被當成恢復。保險金、交易所與 PepeIncentives 餘額的「24 小時高點」從部署後開始累積。
 
@@ -117,11 +117,11 @@ KV 沒有檢查點時，事件掃描往回看 `INITIAL_LOOKBACK_BLOCKS`（預設
 - 告警狀態機：事件型每筆送一次；狀態型首次「觸發」、嚴重度升級或超過 `REMIND_SEC`（6 小時）「持續」、條件解除「恢復」。接線、實作位址與 x402 `payTo` 的告警開著時，**觀察值又變成另一個值會立刻再通知**（「值再次變更」，去重 id 含新值），不等 `REMIND_SEC`。**規則讀取失敗時不會發恢復**。
 - 同一條規則一輪內超過 5 則事件通知時，合併成一則摘要（筆數、首末時間、前 5 筆明細），不讓爆量把同一段時間的 SEV-1 擠掉。
 - 通道各自送、各自重送：某個通道失敗時，通知只對「沒送到的那個通道」留在 outbox，下一輪重送。送出順序是 SEV-1 與 monitor-self 優先、其次依發生時間（同一個 key 的觸發一定先於恢復）；每輪的通知數受 Cloudflare subrequest 上限約束，額度先給關鍵通知。outbox 滿了先丟最低嚴重度、最舊的；**SEV-1 與 monitor-self 不因容量或時間被丟**（只有已送到至少一個通道的才在 24 小時後過期）。有丟棄或合併時發一則不可靜音的 `monitor-self:outbox`（數量、涉及的 key、時間範圍）。通道從設定移除或被停用後，一個通道都還沒送到的通知改送現有通道。有通知沒送達時該次 cron 記為失敗、不打心跳；同一通道連續 `CHANNEL_STUCK_ROUNDS` 輪以上送不出去時，透過其他通道發 `monitor-self` 告警。
-- 延遲：cron 5 分鐘＋`CONFIRMATIONS`（3 塊）。落後超過 `LAG_ALERT_BLOCKS` 時發監控自身告警。
-- 事件掃描：公開 RPC 的 `eth_getLogs` 一次最多 1,000 塊（超過回 HTTP 413／-32614），所以 `MAX_BLOCK_RANGE` 上限 1,000（CI 與執行期都強制）。停機後積欠的區塊**分段追趕**：每輪最多 `MAX_SCAN_REQUESTS` 段、每段一個檢查點；範圍被拒時自動減半重試，不會卡死在同一個檢查點。
+- 延遲：cron 5 分鐘＋`CONFIRMATIONS`（3 塊，約 0.6 秒）。落後超過 `LAG_ALERT_BLOCKS`（預設 18,000 塊約 1 小時）時發監控自身告警。
+- 事件掃描：Base Sepolia 約 0.2 秒一塊（`monitors.json` 的 `network.blockTimeSec` = 0.2，2026-11 實測），每輪 cron（5 分鐘）新增約 1,500 塊。公開 RPC 的 `eth_getLogs` 一次最多 201 塊（2026-10-25 實測，以前是 1,000；超過回 HTTP 413／-32614），所以 `MAX_BLOCK_RANGE` 預設 200、`MAX_SCAN_REQUESTS` 預設 16：每輪最多 16 × 200 = 3,200 塊，是新增量的 2.1 倍（正常時只用約 8 個請求）；範圍下限 100 × 請求數下限 16 = 1,600 塊仍大於 1,500。`MAX_BLOCK_RANGE` 上限 1,000 只給上限更大的自訂 RPC（CI 與執行期都強制範圍）。停機後積欠的區塊**分段追趕**：每輪最多 `MAX_SCAN_REQUESTS` 段、每段一個檢查點；範圍被拒時自動減半重試，不會卡死在同一個檢查點。
 - RPC 讀取：限流（429／-32007）與 5xx 以退避重試；`monitor-self:errors` 要**連續 `SELF_ERRORS_BEFORE_ALERT` 輪**讀取失敗才告警，公開 RPC 偶發抖動不會觸發／恢復輪流洗版。部分資產讀取失敗時，已算出的告警照送，但該規則不算成功評估（不發恢復）。
 - 靜音：`MUTE_KEYS` 只接受 `monitors.json` 的 `mutableKeys` 白名單（完全相同的 key，沒有前綴比對；白名單也釘在檢查器的 `MUTABLE_KEYS`，要加一項必須改程式碼並經人工審查）。白名單以外的值——包括在 Cloudflare dashboard 或 `--var` 設、不經 CI 的——執行期一律忽略，並發一則不可靜音的 `monitor-self:config`（SEV-2）。**SEV-1、`monitor-self`、「基準已設定」在任何設定下都送**；`MIN_SEVERITY` 只能設 SEV-2～SEV-4。
-- 參數範圍：**每一個**參數的型別與上下限都在 `params.mjs`（CI 與 Worker 執行期共用同一張表，範圍列在 `rules.md` 的參數表）。範圍的原則是「範圍內的任何值都不等於關掉告警」，例如 `CONFIRMATIONS` ≤ 64、`INITIAL_LOOKBACK_BLOCKS` ≥ 150、`REMIND_SEC` ≤ 1 天、`ORACLE_DEVIATION_CRIT_BPS` ≤ 3,000、`GAS_*` ≥ 0.001、`HTTP_FAILS_BEFORE_ALERT`＋`SELF_ERRORS_BEFORE_ALERT` 讓持續故障在 6 輪（約 30 分鐘）內告警。CI 擋 `monitors.json` 與 `wrangler.toml`；Cloudflare dashboard 或 `--var` 設的值不經 CI，執行期照表夾值（格式不對用預設值）並發 `monitor-self:config`。引擎只能透過只認這張表的存取器讀參數，測試會掃原始碼，擋下沒定義範圍的新參數。
+- 參數範圍：**每一個**參數的型別與上下限都在 `params.mjs`（CI 與 Worker 執行期共用同一張表，範圍列在 `rules.md` 的參數表）。範圍的原則是「範圍內的任何值都不等於關掉告警」，例如 `CONFIRMATIONS` ≤ 64、`INITIAL_LOOKBACK_BLOCKS` ≥ 1,500（一輪 cron）、`MAX_BLOCK_RANGE` × `MAX_SCAN_REQUESTS` 的下限組合 ≥ 每輪新增區塊數、`REMIND_SEC` ≤ 1 天、`ORACLE_DEVIATION_CRIT_BPS` ≤ 3,000、`GAS_*` ≥ 0.001、`HTTP_FAILS_BEFORE_ALERT`＋`SELF_ERRORS_BEFORE_ALERT` 讓持續故障在 6 輪（約 30 分鐘）內告警。CI 擋 `monitors.json` 與 `wrangler.toml`；Cloudflare dashboard 或 `--var` 設的值不經 CI，執行期照表夾值（格式不對用預設值）並發 `monitor-self:config`。引擎只能透過只認這張表的存取器讀參數，測試會掃原始碼，擋下沒定義範圍的新參數。
 - 累計提領視窗以**區塊時間**計算（不是 Worker 執行時間）。停機後追趕時才掃到的提領，若在發生當時的視窗內累計達門檻，另發一則一次性「（累計，過去發生）」告警，訊息標明發生時間——即時視窗看不到它們，但它們正是停機期間被拆單抽走的情境。只有本輪真的掃到「發生時間已在即時視窗之外」的提領（也就是落後追趕）時才評估，正常運作的穩定提領流量不會觸發。
 - 部分事件在部署版合約裡不存在（前端 ABI 比部署版新）：這些規則在 `rules.md` 標「部署版不發此事件」，改由接線狀態規則輪詢 getter；CI 以 `deployed.json` 確認每條 active 事件規則的 topic0 都在部署版 bytecode 裡。CI 也從部署版的 **selector** 出發：受監控合約裡每個像管理操作的函式（set／withdraw／grant…），都要在 `adminFunctions` 指定涵蓋它的規則或寫明理由——不發事件的 setter（例如 PepeIncentives 的 `withdraw`、`setEsgRegistry`）由狀態規則涵蓋。
 - **接線檢查只證明「位址沒被換掉」，不證明「位址是安全的」**：預期值來自前端設定或部署當時的鏈上快照。目前 FeeRouter／X402FeeRouter 的 `platformTreasury()` 預期值、以及 x402 收款的首次基準，都等於 `frontend/src/contracts/x402.ts` 列為不安全、待換的地址；換掉之後要重抓 `deployed.json` 並更新預期值（`EXPECTED_PAY_TO`）。

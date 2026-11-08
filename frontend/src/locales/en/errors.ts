@@ -14,7 +14,7 @@ export const errors: Catalog['errors'] = {
       'Your wallet is short on USDC — grab free test USDC from the faucet on the Funding & Swap page first 🚰',
     '0xbb723368': 'This asset is an RWA market — complete KYC verification before trading.',
     '0x4f402872':
-      'This market is closed or paused (on-chain mode reduce-only or halted): no new positions; existing positions can still be closed.',
+      'This market is closed or paused (on-chain mode reduce-only or halted): no new positions. In reduce-only you can still close existing positions; in halted mode closing waits until it is lifted.',
     // Keyword matches (case-insensitive)
     ERC20InsufficientBalance:
       'Your wallet is short on USDC — grab free test USDC from the faucet on the Funding & Swap page first 🚰',
@@ -23,7 +23,7 @@ export const errors: Catalog['errors'] = {
     NoStrategyPublished: "This trader hasn't published a strategy",
     TradingFeeExceedsMargin:
       'Copy amount is too small — the trading fee would exceed the margin. Increase the amount.',
-    InsufficientFreeMargin: 'Insufficient free margin — deposit more USDC first.',
+    InsufficientFreeMargin: 'Insufficient free margin (opening also deducts a trading fee). Deposit more USDC or lower the amount.',
     MarginTooLow: 'Margin is below the minimum threshold (10 USDC).',
     InvalidLeverage: 'Leverage must be 1x, 2x, or 5x.',
     NotPositionOwner: 'Only the position owner can do this.',
@@ -40,7 +40,16 @@ export const errors: Catalog['errors'] = {
     DuplicateAsset: 'Each asset can appear only once in a strategy.',
     WeightExceedsMax: 'No single asset can exceed 50% of the strategy.',
     CooldownNotElapsed: "The unstake cooldown hasn't ended yet.",
-    NoUnstakeRequest: 'No pending unstake request.',
+    NoPendingUnstake: 'No pending unstake request.',
+    BelowMinStake: 'Your total stake would be below the minimum (100 USDC). Raise the amount.',
+    NotSyncExecutor: 'This copy names a different sync executor. Only they or you can sync it.',
+    VaultDry: 'The vault does not hold enough USDC for this redemption. Lower the amount or try again later.',
+    ZeroAmount: 'The amount cannot be 0.',
+    IsPaused: 'This feature is paused right now. Try again later.',
+    ZeroAgent: 'The agent address cannot be empty.',
+    ZeroBudget: 'The total budget must be above 0.',
+    ZeroLeverage: 'Max leverage must be above 0.',
+    InvalidExpiry: 'The expiry is invalid. Hours must be above 0.',
     InsufficientStake: 'Insufficient stake.',
     AlreadyMined: "This position's trade-mining reward was already claimed — don't claim it twice.",
     AlreadyCheckedIn: "You've already checked in today — come back tomorrow!",
@@ -55,7 +64,9 @@ export const errors: Catalog['errors'] = {
     StalePrice:
       "The on-chain price is stale — the keeper hasn't updated it yet. Wait a few minutes and try again, or ask an admin to trigger the keeper manually.",
     NotKycVerified: 'This asset is an RWA market — complete KYC verification before trading.',
-    AssetNotActive: 'This market is closed or paused (on-chain mode reduce-only or halted): no new positions; existing positions can still be closed.',
+    AssetNotActive: 'This market is closed or paused (on-chain mode reduce-only or halted): no new positions. In reduce-only you can still close existing positions; in halted mode closing waits until it is lifted.',
+    AssetHalted: 'This market is halted. Opening and closing both wait until it is lifted.',
+    OpenInterestCapExceeded: 'Open interest on this market has hit its cap. Lower the amount or try again later.',
     PositionIsHealthy:
       "This position's margin is still healthy — it doesn't meet the liquidation condition.",
     FundingIntervalNotElapsed:
@@ -157,10 +168,9 @@ export const errors: Catalog['errors'] = {
     'user rejected': 'You rejected the transaction',
     'User rejected': 'You rejected the transaction',
     ACTION_REJECTED: 'You rejected the transaction',
-    'insufficient funds': 'Not enough ETH to cover the gas fee',
+    'insufficient funds': 'Not enough test ETH for the network fee. Get a little from a public Base Sepolia faucet first.',
     OutOfFunds:
-      'ETH balance is too low to cover the execution fee (opening a position requires ETH) — claim test ETH first 🚰',
-    'execution reverted': 'Transaction execution failed',
+      'Not enough ETH for the execution fee (opening a position needs ETH). Get a little test ETH from a public Base Sepolia faucet first.',
     'nonce too low': 'Nonce too low — try again.',
   },
 

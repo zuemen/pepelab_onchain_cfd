@@ -15,6 +15,7 @@ import { stake } from './stake';
 import { vault } from './vault';
 import { whale } from './whale';
 import { admin } from './admin';
+import { guide } from './guide';
 import { common } from './common';
 import { legacy } from './legacy';
 import { tokens } from './tokens';
@@ -68,6 +69,7 @@ const en: Catalog = {
   vault,
   sessions,
   tokens,
+  guide,
   landing,
   common,
   kyc,

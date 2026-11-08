@@ -1,3 +1,4 @@
+import { Link as RouterLink } from 'react-router';
 import { useState, useEffect, useCallback } from 'react';
 import { parseEther, type ContractTransactionResponse } from 'ethers';
 
@@ -50,6 +51,8 @@ import {
   type AdoptionResult,
 } from 'src/lib/pepefi/allocationAdoption';
 import AssetIcon from 'src/components/pepefi/AssetIcon';
+import WalletButton from 'src/components/pepefi/WalletButton';
+import { fetchHeroIndex, heroByAddress, fSignedPct, fDrawdown, type HeroSummary } from 'src/lib/pepefi/heroData';
 import { MONO, shortAddr } from 'src/components/pepefi/brandKit';
 import { TableSkeleton } from 'src/components/pepefi/Skeleton';
 
@@ -133,10 +136,25 @@ export default function AllocationMarketplace() {
     void load();
   }, [load]);
 
+  // 模擬發布者的標示與績效來自靜態績效檔；讀不到就不顯示，不影響採用。
+  const [heroes, setHeroes] = useState<Map<string, HeroSummary> | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    void fetchHeroIndex(wallet.chainId)
+      .then((index) => {
+        if (!cancelled) setHeroes(index ? heroByAddress(index) : null);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [wallet.chainId]);
+
   if (!wallet.isConnected) {
     return (
-      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '60vh' }}>
+      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, alignItems: 'center', justifyContent: 'center', minHeight: '60vh' }}>
         <Typography color="text.secondary">{t.adopt.connectWallet}</Typography>
+        <WalletButton wallet={wallet} />
       </Box>
     );
   }
@@ -199,7 +217,11 @@ export default function AllocationMarketplace() {
             <Grid container spacing={2}>
               {items.map((item) => (
                 <Grid key={item.publisher} size={{ xs: 12, sm: 6, md: 4 }}>
-                  <AllocationCard item={item} onAdopt={() => setAdopting(item)} />
+                  <AllocationCard
+                    item={item}
+                    hero={heroes?.get(item.publisher.toLowerCase())}
+                    onAdopt={() => setAdopting(item)}
+                  />
                 </Grid>
               ))}
             </Grid>
@@ -220,7 +242,7 @@ export default function AllocationMarketplace() {
 
 // ----------------------------------------------------------------------
 
-function AllocationCard({ item, onAdopt }: { item: PublishedAllocation; onAdopt: () => void }) {
+function AllocationCard({ item, hero, onAdopt }: { item: PublishedAllocation; hero?: HeroSummary; onAdopt: () => void }) {
   return (
     <Card sx={{ p: 2.5, height: '100%', display: 'flex', flexDirection: 'column', gap: 2 }}>
       <Box>
@@ -230,6 +252,16 @@ function AllocationCard({ item, onAdopt }: { item: PublishedAllocation; onAdopt:
         <Typography variant="caption" color="text.secondary" sx={{ fontFamily: MONO }}>
           {shortAddr(item.publisher)} · {interpolate(t.adopt.card.assetCount, { count: item.legs.length })}
         </Typography>
+        {hero && (
+          <Box sx={{ mt: 0.75, display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 1 }}>
+            <Chip size="small" variant="outlined" label={t.marketplace.hero.simulatedTag} sx={{ height: 20, fontSize: '0.6875rem' }} />
+            <Typography variant="caption" color="text.secondary">
+              {t.marketplace.hero.totalReturn} <Box component="span" sx={{ fontFamily: MONO }}>{fSignedPct(hero.totalReturnPct)}</Box>
+              {' · '}
+              {t.marketplace.hero.maxDrawdown} <Box component="span" sx={{ fontFamily: MONO }}>{fDrawdown(hero.maxDrawdownPct)}</Box>
+            </Typography>
+          </Box>
+        )}
       </Box>
 
       <Stack spacing={1} sx={{ flex: 1 }}>
@@ -254,6 +286,9 @@ function AllocationCard({ item, onAdopt }: { item: PublishedAllocation; onAdopt:
       <Button variant="contained" onClick={onAdopt} sx={{ textTransform: 'none', fontWeight: 'bold' }}>
         {t.adopt.card.adopt}
       </Button>
+      <Link component={RouterLink} to={`/trader/${item.publisher}`} variant="caption" sx={{ textAlign: 'center' }}>
+        {t.adopt.card.details}
+      </Link>
     </Card>
   );
 }

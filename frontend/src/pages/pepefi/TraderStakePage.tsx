@@ -81,6 +81,11 @@ export default function TraderStakePage() {
     if (!contracts || !wallet.address) return
     const amt = parseEther(stakeInput || '0')
     if (amt === 0n) { notify(t.stake.add.enterAmount, false); return }
+    // 合約要求質押後總額達最低門檻（BelowMinStake）；先擋，免得 approve 完才失敗。
+    if (info && info.amount + amt < minStake) {
+      notify(interpolate(t.stake.add.belowMinimum, { amount: f18(minStake, 0), token: STABLE_LABEL }), false)
+      return
+    }
     setLoad('stake', true)
     try {
       const approveTx = asTx(await contracts.usdc.approve(String(contracts.traderStake.target), amt))
@@ -222,7 +227,7 @@ export default function TraderStakePage() {
                 : '…'}
             </Typography>
           </Box>
-          <Box sx={{ h: 8, bgcolor: 'background.neutral', borderRadius: 1, overflow: 'hidden' }}>
+          <Box sx={{ height: 8, bgcolor: 'background.neutral', borderRadius: 1, overflow: 'hidden' }}>
             <Box
               sx={{
                 bgcolor: repBarColor,
@@ -243,7 +248,9 @@ export default function TraderStakePage() {
             label={
               eligible
                 ? t.stake.current.eligible
-                : interpolate(t.stake.current.notEligible, { token: STABLE_LABEL })
+                : info && info.unstakeAmount > 0n
+                  ? t.stake.current.notEligibleUnstaking
+                  : interpolate(t.stake.current.notEligible, { token: STABLE_LABEL })
             }
             color={eligible ? 'success' : 'error'}
             variant="outlined"

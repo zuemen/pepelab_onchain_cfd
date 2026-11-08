@@ -614,7 +614,7 @@ contract CopyTracker is ReentrancyGuard, Ownable {
     //     因此跟隨者不需要信任呼叫者——與無需許可的清算同一個道理；
     //   • 任一新腿開不起來（RWA 未 KYC、市場 ReduceOnly／Halted、OI 上限…）整筆 revert，
     //     部位維持舊版，不做部分同步；
-    //   • 平台、owner、執行者都碰不到跟隨者的 USDC 與油箱；同步時油箱只付「不高於跟隨者
+    //   • CopyTracker 本身沒有讓平台、owner、執行者提走跟隨者 USDC 與油箱的路徑（交易所 owner 的權限見 docs/KNOWN_LIMITATIONS.md）；同步時油箱只付「不高於跟隨者
     //     簽名帶入的每腿費率上限的 executionFee」與跟隨者自己設定的小費——上限是跟隨者
     //     交易參數的一部分，不是執行當下才讀的交易所費率，owner 搶先調費只會讓交易失敗；
     //   • 第三方同步之間至少隔跟隨者設定的冷卻，冷卻本身不得低於 MIN_SYNC_INTERVAL。

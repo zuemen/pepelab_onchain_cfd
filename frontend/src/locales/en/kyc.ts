@@ -7,7 +7,7 @@ export const kyc: Catalog['kyc'] = {
   title: 'Submit KYC Application',
   titleAwaitingReview: 'KYC Application Under Review',
   titleVerified: 'KYC Verified',
-  subtitle: 'Trading stock / bond synthetic assets requires KYC review',
+  subtitle: 'Required before opening leveraged stock or bond positions. Buying or redeeming tokens does not need it.',
   closeAria: 'Close',
 
   /** 這個視窗最重要的一句話：送出 ≠ 通過，所以兩種狀態各自是完整的一段。 */
@@ -17,7 +17,7 @@ export const kyc: Catalog['kyc'] = {
     "Submitting leaves a pending application on-chain (KYCSubmitted) — approval only happens once a reviewer calls approveKYC. You still can't trade regulated assets before it's approved.",
   noticeTitleSelfService: 'This deployment is self-service: submitting verifies you immediately',
   noticeBodySelfService:
-    'The KYCRegistry deployed on this chain is the older demo version: submitting marks you verified on-chain right away (isVerified), with no manual review. The current source uses a review flow (approveKYC after submission); it awaits a redeploy by the owner.',
+    'The KYCRegistry deployed on this chain is the older demo version: submitting marks you verified on-chain right away (isVerified), with no manual review.',
   noticeTitleVerified: '✅ KYC verified — regulated assets are unlocked',
   noticeBodyVerified:
     'Your KYC is recorded on-chain (isVerified = true). The KYCRegistry currently deployed is the self-service demo version: submitting verifies you immediately, with no manual review. Close this dialog and you can place orders.',
@@ -73,11 +73,11 @@ export const kyc: Catalog['kyc'] = {
   status: {
     cardTitle: 'KYC Verification Status',
     verifiedTitle: 'Verified',
-    verifiedBody: 'You can trade regulated RWA assets (e.g. AAPL, TSLA).',
+    verifiedBody: 'You can open leveraged positions on stocks and bonds (e.g. AAPL, TSLA).',
     pendingTitle: 'Under review',
     pendingBody: 'Your application has been submitted and is awaiting reviewer approval — no need to resubmit.',
     unverifiedTitle: 'Not verified',
-    unverifiedBody: 'Trading regulated RWA assets (e.g. AAPL, TSLA) requires KYC verification first.',
+    unverifiedBody: 'You don\'t need verification to buy or redeem tokens, only to open leveraged stock or bond positions (e.g. AAPL, TSLA).',
     unverifiedAction: 'Submit KYC Application',
     notRequiredTitle: 'No verification required on this chain',
     notRequiredBody: 'This chain has no KYC gate deployed — no verification is needed to trade any asset.',

@@ -62,8 +62,9 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
     // ── M-3: hard bounds on every owner-adjustable risk knob ──────────────────
     // The setters used to be unbounded, so a compromised (or careless) owner key
     // could set a 1000% trading fee and confiscate every open position's margin
-    // on close. These ceilings make that impossible at the bytecode level rather
-    // than by policy.
+    // on close. These ceilings cap the fee at the bytecode level rather than by
+    // policy. They bound fees only: MMR and the liquidation penalty are separate
+    // owner knobs, and the owner key can still hurt positions through them.
     uint256 public constant MAX_TRADING_FEE_BPS          = 100;    // 1.00% per side
     uint256 public constant MAX_BORROW_FEE_BPS_PER_HOUR  = 10;     // 0.10%/h
     uint256 public constant MAX_MAINTENANCE_MARGIN_BPS   = 9_999;  // must stay < 100%

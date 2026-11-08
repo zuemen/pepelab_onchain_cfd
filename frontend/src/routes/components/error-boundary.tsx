@@ -4,6 +4,8 @@ import { useRouteError, isRouteErrorResponse } from 'react-router';
 
 import GlobalStyles from '@mui/material/GlobalStyles';
 
+import { t } from 'src/locales';
+
 // ----------------------------------------------------------------------
 
 export function ErrorBoundary() {
@@ -14,7 +16,21 @@ export function ErrorBoundary() {
       {inputGlobalStyles()}
 
       <div className={errorBoundaryClasses.root}>
-        <div className={errorBoundaryClasses.container}>{renderErrorMessage(error)}</div>
+        <div className={errorBoundaryClasses.container}>
+          {import.meta.env.DEV ? (
+            renderErrorMessage(error)
+          ) : (
+            // 正式站不給一般使用者看 stack，只講下一步能做什麼。
+            <>
+              <h1 className={errorBoundaryClasses.title}>{t.common.shell.errorTitle}</h1>
+              <p className={errorBoundaryClasses.message}>{t.common.shell.errorBody}</p>
+              <p className={errorBoundaryClasses.message}>
+                <button type="button" onClick={() => window.location.reload()}>{t.common.shell.errorReload}</button>{' '}
+                <a href={import.meta.env.BASE_URL}>{t.common.shell.errorHome}</a>
+              </p>
+            </>
+          )}
+        </div>
       </div>
     </>
   );

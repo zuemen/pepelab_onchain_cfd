@@ -268,7 +268,10 @@ export function buildWaterfall(s: SolvencySnapshot): WaterfallLayer[] {
 
 /** 每段塊數＝chainLogs 的預設段長（公開節點上限 201 塊）。 */
 export const HISTORY_CHUNK = CHUNK_SIZE
-/** Base Sepolia 約 2 秒一塊：24 小時 ≈ 43,200 塊 ≈ 216 段（≤ MAX_CHUNKS）。 */
+/**
+ * 目標塊數。原本以 2 秒一塊算成 24 小時；Base Sepolia 2026-11 實測 0.2 秒一塊，同樣塊數只有約 2.4 小時。
+ * 段數上限（MAX_CHUNKS × 段長）也只容得下這麼多，所以不加大；畫面的時間依實際出塊時間換算（ReserveRatioChart）。
+ */
 export const HISTORY_WINDOW_BLOCKS = 43_200
 export const HISTORY_MAX_CHUNKS = MAX_CHUNKS
 

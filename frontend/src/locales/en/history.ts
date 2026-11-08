@@ -5,7 +5,7 @@ import type { Catalog } from '../zh-TW';
  */
 export const history: Catalog['history'] = {
   title: 'Transaction History',
-  subtitle: 'On-chain auditability — decoded directly from Base Sepolia via ethers.js',
+  subtitle: 'Everything you did on the platform, read directly from the Base Sepolia testnet. Follow the links to check it yourself.',
   loading: 'Loading…',
   scanningLogs: 'Syncing chain logs…',
   refresh: '↺ Refresh',
@@ -45,8 +45,8 @@ export const history: Catalog['history'] = {
 
   empty: {
     title: 'No activity yet',
-    windowOnly: 'No events found in the last {blocks} blocks.',
-    windowFiltered: 'No events found in the last {blocks} blocks for filter "{filter}".',
+    windowOnly: 'No activity in roughly the last 30 minutes ({blocks} blocks). Load older blocks below to see earlier activity.',
+    windowFiltered: 'No activity for filter "{filter}" in roughly the last 30 minutes ({blocks} blocks). Load older blocks below to see earlier activity.',
   },
 
   column: {

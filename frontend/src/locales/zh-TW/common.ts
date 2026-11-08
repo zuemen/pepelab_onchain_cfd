@@ -7,7 +7,7 @@
 export const common = {
   /** 錢包連線視窗。 */
   wallet: {
-    dialogTitle: '連接帳號 / Connect Wallet',
+    dialogTitle: '連接錢包',
 
     /** 錢包按鈕本身與已連線後的選單。 */
     connectButton: '連接錢包',
@@ -77,7 +77,10 @@ export const common = {
     accountAvatarAria: '帳戶頭像',
     accountButtonAria: '開啟帳戶選單',
     signOut: '登出',
-    needHelp: '需要協助？',
+    errorTitle: '頁面發生錯誤',
+    errorBody: '請重新整理頁面；如果還是一樣，先回首頁。',
+    errorReload: '重新整理',
+    errorHome: '回首頁',
 
     settings: {
       title: '顯示設定',

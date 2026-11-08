@@ -6,6 +6,7 @@ import { RWA_CARD_ORDER } from 'src/lib/pepefi/rwaProfile'
 import { useReadChain, useRwaSnapshot } from 'src/hooks/useRwaTransparency'
 
 import { RwaCardsView } from 'src/components/pepefi/rwa/RwaCardsView'
+import { DigitalTwinRoadmap } from 'src/components/pepefi/rwa/DigitalTwinRoadmap'
 
 // /rwa：RWA 資產卡與法遵揭露。資料來源與限制見 docs/RWA_TRANSPARENCY.md §1。
 
@@ -33,6 +34,7 @@ export default function RwaPage() {
         updatedAt={updatedAt}
         stale={failed}
       />
+      <DigitalTwinRoadmap />
     </Container>
   )
 }

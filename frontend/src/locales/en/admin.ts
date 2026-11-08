@@ -137,7 +137,7 @@ export const admin: Catalog['admin'] = {
         'Router only has {amount} ETH available. Fund it using the Treasury Tools below before swapping.',
       approving: 'Approving…',
       approve: '① Approve USDC',
-      approved: 'USDT approved ✓',
+      approved: 'USDC approved ✓',
       swapping: 'Swapping…',
       swap: '② Swap to ETH',
       done: 'Swapped {amount} USDC → {eth} ETH ✓',
@@ -156,7 +156,7 @@ export const admin: Catalog['admin'] = {
     },
 
     incentives: {
-      title: '🎁 PepeLab Incentives Pool Refill',
+      title: '🎁 {brand} Incentives Pool Refill',
       description:
         'Copy rewards, daily check-in, tier upgrades, and trade mining are all incentivized with PEPE. Keep this incentives contract stocked with enough PEPE to avoid a revert InsufficientPool error when users claim.',
       descriptionUnknown:
@@ -256,9 +256,9 @@ export const admin: Catalog['admin'] = {
       /** A failed KYCSubmitted scan chunk is worse than a few unreadable rows — the queue itself may be missing applicants. */
       scanIncomplete: '{count} chunk(s) of the on-chain event scan failed — the queue may be incomplete (some applicants may be missing). Refresh to retry.',
       refresh: '↺ Refresh',
-      scanRange: 'Scanned range: block {from} – {to}',
+      scanRange: 'Scanned range: block {from} – {to} (about {span})',
       scanning: 'Scanning on-chain events… ({done}/{total})',
-      scanningHint: 'The queue looks back 7 days and the public RPC allows only 1,000 blocks per query, so this takes hundreds of requests and may take several minutes.',
+      scanningHint: 'The queue only looks back about {span} (the number of queries is capped), so earlier applications are not listed here. The public RPC allows only about 200 blocks per query, so this takes over a thousand requests and may take several minutes.',
       hashedLabel: 'hash',
 
       pendingTitle: 'Pending Applications',

@@ -138,7 +138,7 @@ export default function HeroKpiStrip() {
       <Grid size={{ xs: 6, md: 3 }}>
         <KpiTile label={t.landing.heroKpi.x402Revenue} live={!!rev}>
           <Mono glow tone="green">
-            ${feeUsd.toFixed(3)}
+            {rev ? `$${feeUsd.toFixed(3)}` : '—'}
           </Mono>
         </KpiTile>
       </Grid>

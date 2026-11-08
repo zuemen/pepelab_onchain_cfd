@@ -7,8 +7,8 @@ export const rewards: Catalog['rewards'] = {
   connectWallet: 'Connect wallet to view your rewards.',
   connectTitle: '🎁 Rewards',
 
-  title: '🎁 PepeLab Rewards',
-  subtitle: 'Trade, follow, and check-in daily to earn PEPE.',
+  title: '🎁 {brand} Rewards',
+  subtitle: 'Trade and copy to earn PEPE (a testnet game token with no real value). Daily check-ins add achievement points.',
 
   /** 合約沒部署在這條鏈上時，四個領取動作共用的同一句話。 */
   offline:
@@ -51,8 +51,8 @@ export const rewards: Catalog['rewards'] = {
 
   tierSection: {
     title: 'Tier Upgrade',
-    description: 'Claim a one-time tier reward once your cumulative volume hits the threshold.',
-    cumulative: 'Cumulative notional: ${amount}',
+    description: 'Claim a one-time tier reward once the notional of your open positions hits the threshold. Closing positions lowers this number.',
+    cumulative: 'Open notional now: ${amount}',
     reward: '{amount} PEPE',
     required: '${amount} required',
     claimed: 'Claimed',
@@ -112,7 +112,7 @@ export const rewards: Catalog['rewards'] = {
   /** PEPE 餘額與空投領取卡（PepeTokenCard，從舊版首頁搬到這一頁）。 */
   pepeToken: {
     label: '🐸 PEPE Token',
-    subtitle: 'Pepe RWA Token · claim the airdrop once your KYC is approved',
+    subtitle: 'Platform game token (testnet, no real value) · claim the airdrop once KYC is done',
     addToWallet: 'Add to wallet',
     reloadAria: 'Reload PEPE balance',
     notAvailable: 'PEPE is not available on this network (contracts not deployed here).',
@@ -124,9 +124,9 @@ export const rewards: Catalog['rewards'] = {
     claiming: 'Claiming…',
     claim: 'Claim {amount} PEPE',
     kycTooltip:
-      'Requires an approved KYC application (submitting is not the same as being approved)',
+      'KYC must be completed first',
     kycRequired:
-      'Requires approved KYC — submitting an application is not the same as being approved',
+      'KYC must be completed first. Submit it from the KYC card on the Portfolio page.',
 
     notDeployed: 'PepeToken is not deployed on this network.',
   },

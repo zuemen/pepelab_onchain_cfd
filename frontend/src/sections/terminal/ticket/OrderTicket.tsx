@@ -133,8 +133,13 @@ export function OrderTicket({
   // 清算價和 /exchange 共用 lib/pepefi/liquidation.ts。原本這裡少算了 5.1% 的
   // 維持保證金 + 平倉費 buffer，同一個倉位在兩頁會看到兩個清算價，而且這邊的
   // 比實際更寬鬆——正好是會害人的那個方向。
-  const liq = estimateLiquidationPrice({ entryPrice: curPrice, isLong, leverage: BigInt(effLev) })
-  const overFree = marginBig !== null && marginBig > freeMgn
+  const feeBps = BigInt(Math.ceil(tradingParams.tradingFeeBps))
+  const liq = estimateLiquidationPrice({ entryPrice: curPrice, isLong, leverage: BigInt(effLev), tradingFeeBps: feeBps })
+  // 合約要求 freeMargin >= 保證金 + 名目 × 費率，只比保證金的話全押必定 revert。
+  const overFree = marginBig !== null && marginBig + (marginBig * BigInt(effLev) * feeBps) / 10000n > freeMgn
+  const maxMargin = (freeMgn * 10000n) / (10000n + BigInt(effLev) * feeBps)
+  // 只能減倉或暫停時合約會 revert AssetNotActive，先擋下來並寫明原因。
+  const modeBlocked = marketStatus?.kind === 'reduceOnly' || marketStatus?.kind === 'halted'
   // 讀不到鏈上指數價（0 = 未讀到或從未寫入）時不讓送單：清算價算不出來，
   // 鏈上也會 revert。原因寫在按鈕上方，不只是把按鈕變灰。
   const noPrice = curPrice <= 0n
@@ -151,7 +156,7 @@ export function OrderTicket({
       notify(t.terminal.ticket.enterMargin, false)
       return
     }
-    if (amt > freeMgn) {
+    if (amt > maxMargin) {
       notify(t.terminal.ticket.insufficientFreeMargin, false)
       return
     }
@@ -272,7 +277,7 @@ export function OrderTicket({
           <Box sx={labelCss}>{t.terminal.ticket.margin}</Box>
           <Box
             sx={{ ...monoCss, fontSize: 11, color: C.mut, cursor: 'pointer' }}
-            onClick={() => setMargin(fromUnits(freeMgn, 18).toFixed(2))}
+            onClick={() => setMargin((Math.floor(fromUnits(maxMargin, 18) * 100) / 100).toFixed(2))}
           >
             {interpolate(t.terminal.ticket.free, { amount: fNum(fromUnits(freeMgn, 18)) })}
           </Box>
@@ -345,7 +350,7 @@ export function OrderTicket({
               data-testid="ticket-kyc-credentials"
               sx={{ display: 'block', mt: 0.5, color: C.lime, fontWeight: 700 }}
             >
-              {t.investorVc.goToCredential} →
+              {kycVcAction === 'legacy' ? t.terminal.ticket.kycGoToPortfolio : t.investorVc.goToCredential} →
             </Box>
           )}
           {kycVcAction === 'checking' && !kycPending && (
@@ -368,6 +373,12 @@ export function OrderTicket({
       {tenantNotice && (
         <Box sx={{ ...monoCss, fontSize: 11.5, color: C.red, ...panel, borderColor: C.line2, p: 1 }}>
           {tenantNotice}
+        </Box>
+      )}
+
+      {modeBlocked && (
+        <Box sx={{ ...monoCss, fontSize: 11.5, color: C.red, ...panel, borderColor: C.line2, p: 1 }}>
+          {t.terminal.ticket.marketModeBlocked}
         </Box>
       )}
 
@@ -405,7 +416,7 @@ export function OrderTicket({
 
       <Button
         onClick={() => (closedWarning ? setConfirmOpen(true) : void openPosition())}
-        disabled={busy || !margin || overFree || kycBlocked || staleBlocked || noPrice || !!tenantNotice}
+        disabled={busy || !margin || overFree || kycBlocked || staleBlocked || noPrice || !!tenantNotice || modeBlocked}
         sx={{
           py: 1.4,
           borderRadius: '10px',
@@ -421,7 +432,7 @@ export function OrderTicket({
         {busy
           ? t.terminal.ticket.submitting
           : overFree
-            ? t.terminal.ticket.insufficientMargin
+            ? t.terminal.ticket.insufficientWithFee
             : interpolate(t.terminal.ticket.ctaOpen, {
                 side: isLong ? t.terminal.ticket.sideLong : t.terminal.ticket.sideShort,
                 asset: meta?.ticker ?? '',

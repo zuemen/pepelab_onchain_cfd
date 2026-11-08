@@ -7,6 +7,7 @@ import Typography from '@mui/material/Typography'
 
 import { t, interpolate } from 'src/locales'
 import { timeText } from 'src/lib/pepefi/rwaLabels'
+import { describeScanWindow } from 'src/lib/pepefi/chainLogs'
 import { formatRatio, HISTORY_CHUNK, plottablePoints } from 'src/lib/pepefi/solvency'
 
 const W = 640
@@ -29,9 +30,10 @@ export function chartPath(points: { timestamp: number; ratio: number }[]): strin
  * 準備率隨時間（ReserveObserved 事件）。null = 還在讀。
  * 讀取失敗顯示「讀取失敗」、沒有事件顯示「沒有事件」——兩者都不是 0。
  */
-export function ReserveRatioChart({ history, loading }: { history: ReserveHistory | null; loading: boolean }) {
+export function ReserveRatioChart({ history, loading, chainId = null }: { history: ReserveHistory | null; loading: boolean; chainId?: number | null }) {
   const s = t.rwa.solvency
-  const hours = Math.round(((history ? history.toBlock - history.fromBlock + 1 : 0) * 2) / 3600)
+  // 時間依這條鏈的出塊時間換算（不再假設 2 秒一塊）。
+  const span = describeScanWindow(chainId, history ? history.toBlock - history.fromBlock + 1 : 0)
   const plot = history ? plottablePoints(history.points) : []
   const unknown = history ? history.points.length - plot.length : 0
   const series = plot.map((p) => ({ timestamp: p.timestamp, ratio: Number(p.ratioBps) }))
@@ -45,7 +47,7 @@ export function ReserveRatioChart({ history, loading }: { history: ReserveHistor
       {history && history.status !== 'failed' && (
         <Typography variant="caption" color="text.secondary">
           {interpolate(s.historyWindow, {
-            hours,
+            span,
             from: history.fromBlock,
             to: history.toBlock,
             chunk: HISTORY_CHUNK,

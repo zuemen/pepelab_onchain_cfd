@@ -121,6 +121,9 @@ function makeAmmReader(amm: Contract, provider: Provider): AmmReader {
 // safeRead now lives in src/lib/pepefi/safeRead.ts so every page shares one
 // implementation — this file was the only place that had the guard.
 
+/** Base 官方文件列出的測試網水龍頭清單。 */
+const ETH_FAUCETS_URL = 'https://docs.base.org/get-started/get-funds';
+
 export default function ExchangePage() {
   const wallet = usePepefiWallet();
   const contracts    = useContracts(wallet.provider, wallet.signer, wallet.chainId);
@@ -130,6 +133,7 @@ export default function ExchangePage() {
   const [ethBal,    setEthBal]    = useState('0.0000');
   /** 未經四捨五入的 ETH 餘額。ethBal 是給畫面看的 4 位小數字串,拿去比大小會失準。 */
   const [ethBalRaw, setEthBalRaw] = useState(0n);
+  const [ethBalLoaded, setEthBalLoaded] = useState(false);
   const [pageLoading, setPageLoading] = useState(true);
 
   const [pepeBal,   setPepeBal]   = useState(0n);
@@ -229,6 +233,7 @@ export default function ExchangePage() {
       setUsdcBal(bal);
       setEthBal(f18(eBal, 4));
       setEthBalRaw(eBal);
+      setEthBalLoaded(true);
 
       // USDT balance — MockUSDT is a separate token from the USDC margin
       // stablecoin. Skip the read when it isn't deployed on this chain.
@@ -652,6 +657,7 @@ export default function ExchangePage() {
         <Typography variant="subtitle2" sx={{ fontWeight: 'bold', mb: 1 }}>
           {t.exchange.guide.spotTitle}
         </Typography>
+        <Typography variant="body2" sx={{ mb: 1 }}>{t.exchange.markup.lead}</Typography>
         <Typography variant="body2" component="ol" sx={{ pl: 2, m: 0, '& li': { mb: 0.5 } }}>
           <li><strong>{t.exchange.markup.stepGetTokensLabel}</strong> {interpolate(t.exchange.markup.stepGetTokensBody, { token: STABLE_LABEL })}</li>
           <li><strong>{t.exchange.markup.stepBuyLabel}</strong> {interpolate(t.exchange.markup.stepBuyBody, { token: STABLE_LABEL })}</li>
@@ -771,14 +777,26 @@ export default function ExchangePage() {
               {t.exchange.markup.ethBalanceBefore}<Box component="span" sx={{ fontFamily: MONO, color: 'text.primary' }}>{ethBal}</Box>{t.exchange.markup.ethBalanceAfterSpot}
             </Typography>
 
+            {/* 全新錢包第一步就卡在這裡：平台的水龍頭只發代幣，不發付手續費用的 ETH。 */}
+            {ethBalLoaded && ethBalRaw === 0n && (
+              <Alert
+                severity="warning"
+                action={
+                  <Button color="inherit" size="small" component="a" href={ETH_FAUCETS_URL} target="_blank" rel="noopener noreferrer">
+                    {t.exchange.markup.noEthCta}
+                  </Button>
+                }
+              >
+                {t.exchange.markup.noEth}
+              </Alert>
+            )}
+
             {/* faucet() 現在要求 msg.sender == tx.origin：合約錢包按下去必定
                 revert FaucetCallerMustBeEOA。這是水龍頭唯一一個使用者自己無法
                 從錯誤訊息推理出來的限制，所以寫在按鈕旁邊而不是只放在 toast。 */}
             <Alert severity="info" variant="outlined" sx={{ py: 0.5 }}>
               <Typography variant="caption">
-                {t.exchange.markup.faucetEoaLine1}<b>{t.exchange.markup.faucetEoaBold1}</b>{t.exchange.markup.faucetEoaLine1After}
-                <code>{t.exchange.markup.faucetEoaCode1}</code>{t.exchange.markup.faucetEoaLine2Mid}<b>{t.exchange.markup.faucetEoaBold2}</b>
-                {t.exchange.markup.faucetEoaLine3}<code>{t.exchange.markup.faucetEoaCode2}</code>{t.exchange.markup.faucetEoaLine3After}
+                {t.exchange.markup.faucetLimit}
               </Typography>
             </Alert>
 
@@ -943,7 +961,7 @@ export default function ExchangePage() {
                 </Typography>
               )}
               <Typography variant="caption" color="text.secondary">
-                {poolNote}
+                {poolNote} {t.exchange.swap.smallPoolNote}
               </Typography>
             </Box>
 

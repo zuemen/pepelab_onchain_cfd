@@ -15,7 +15,7 @@ export const portfolio = {
     titleTooltip: '各項依目前價格估算後加總，不是現在就能全部領出的金額。各項的流動性與風險不同，滑到下方各欄的標題可以看說明。',
     liquid: '可立即動用',
     liquidTooltip: '錢包的 USDC ＋ 交易帳戶的可用保證金：不必平倉、解除質押或贖回就能動用。不含部位鎖住的保證金、質押、LP 保險金庫與代幣化資產。',
-    unrealisedPnl: '未實現 PnL',
+    unrealisedPnl: '未實現損益',
     unrealisedPnlTooltip: '未平倉部位現在平倉的淨損益：依合約標記價計算，已扣手續費與資金費，與交易終端機的持倉表同一個算法。不含部分部位獲利時另收的 10% 績效費；資金費以最後一次結算為準；不含穿倉補貼。有部位讀不到數字時，這裡顯示「—」並標成總額不完整',
 
     /**
@@ -31,7 +31,7 @@ export const portfolio = {
       wallet: '錢包',
       trading: '交易帳戶',
       staked: '已質押',
-      lpVault: 'LP 保險金庫',
+      lpVault: '保險金庫存款',
     },
 
     /** 每一欄的流動性與風險說明，滑過欄位標題時出現。 */
@@ -39,7 +39,7 @@ export const portfolio = {
       spot: '依預言機價格估算，不是市場成交價；標的休市時價格可能停在最後一筆。贖回時以當下預言機價格換回 USDC，而且資產金庫要有足夠的 USDC 準備才贖得到。這些是合成代幣，不能換成真正的股票或商品。',
       wallet: '你的 Web3 錢包裡的 USDC，隨時可以動用。價值取決於穩定幣能否維持 1 美元。',
       trading: '可用保證金隨時可以提領；部位鎖住的保證金要平倉才拿得回來。槓桿部位虧損到維持保證金時會被強制平倉。這一欄不含未實現 PnL，PnL 另外列在淨資產旁邊。',
-      staked: '質押在 TraderStake 的 USDC。申請解除質押後要等 1 天才能領回。跟你下單的跟單者虧損 30% 以上退出時，你的質押會被罰沒該筆虧損的一半，最多罰到質押的 50%。',
+      staked: '質押在 TraderStake 的 USDC。申請解除質押後要等 1 天才能領回。跟你下單的跟隨者虧損 30% 以上退出時，你的質押會被罰沒該筆虧損的一半，最多罰到質押的 50%。',
       /** 跟單旗標關閉的租戶用這一句：不提跟單，只講罰沒上限。 */
       stakedNoCopy: '質押在 TraderStake 的 USDC。申請解除質押後要等 1 天才能領回。合約的罰沒規則觸發時會被扣除，單次最多扣質押的 50%。',
       lpVault: 'LP 保險金庫在交易者穿倉時負責補貼，補貼會讓份額價值下降。這裡顯示的是依目前份額價格估算可贖回的 USDC，金庫準備不足時無法全額贖回。',
@@ -61,7 +61,7 @@ export const portfolio = {
    * 用同一個 title 或同一組詞會讓讀者以為算法一樣。
    */
   allocation: {
-    title: 'RWA 資產配置',
+    title: '我的資產配置',
     subtitle: '持有的代幣化資產市值 ＋ 未平倉部位保證金；不含錢包現金、質押與 LP 金庫——不是淨資產的配置。',
     /**
      * SHOW_PERPETUALS 關閉時的版本。仍然要提到部位保證金——帳戶裡可能還有旗標
@@ -218,7 +218,7 @@ export const portfolio = {
       '你目前在展示導覽模式，沒有連接錢包，因此無法讀取真實餘額或部位。請連接真實錢包以查看你的實際投資組合。',
 
     emptyTitle: '你的投資組合是空的',
-    emptyDescription: '先取得測試用 {token}，接著可以跟單交易者或自行開倉。',
+    emptyDescription: '先領測試用 {token}，再到「資產」頁買進黃金、股票等代幣化資產；想跟單，到「交易市集」挑交易者。',
     /** 跟單旗標關閉時。 */
     emptyDescriptionNoCopy: '先取得測試用 {token}，接著到「資產」頁買進代幣化資產，或到配置市集參考他人發布的配置。',
     emptyCta: '取得 {token}',
@@ -255,9 +255,9 @@ export const portfolio = {
       stopLoss: '停損提醒',
       actions: '操作',
     },
-    unfollow: '取消跟隨',
+    unfollow: '取消跟單',
     unfollowStale: '價格過期',
-    unfollowedOk: '已取消跟隨並平倉所有部位 ✓',
+    unfollowedOk: '已取消跟單並平倉所有部位 ✓',
 
     openPositions: '未平倉部位',
     openCount: '{count} 筆未平倉 · 手動 + 跟單',

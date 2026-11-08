@@ -7,7 +7,7 @@
  */
 export const adopt = {
   title: '配置市集',
-  subtitle: '瀏覽配置發布者公開的資產配置，照同樣的比例把現貨代幣買進你自己的錢包。',
+  subtitle: '挑一份別人公開的資產組合，輸入金額，照同樣比例幫你買進，代幣直接進你的錢包。只買一次，對方之後調整不影響你。標「模擬」的發布者是程式，不是真人。',
 
   connectWallet: '連接錢包後即可瀏覽配置。',
   notDeployed: '這個網路還沒有啟用現貨代幣，暫時無法採用配置。',
@@ -34,6 +34,7 @@ export const adopt = {
     noName: '未命名的配置發布者',
     assetCount: '{count} 檔資產',
     adopt: '採用',
+    details: '看這位發布者的紀錄',
   },
 
   dialog: {
@@ -49,7 +50,7 @@ export const adopt = {
     insufficientBalance: '錢包的 USDC 餘額不足。',
     vaultPaused: '金庫目前暫停中，暫時無法買進。',
     mintingHalted: '金庫目前暫停鑄造，暫時無法買進。贖回不受影響。',
-    txCount: '接下來錢包會請你確認 {total} 筆交易：1 筆核准 USDC、{legs} 筆買進。',
+    txCount: '接下來錢包會請你確認 {total} 筆交易：1 筆批准 USDC、{legs} 筆買進。',
     confirm: '確認採用',
     running: '採用中…',
     cancel: '取消',

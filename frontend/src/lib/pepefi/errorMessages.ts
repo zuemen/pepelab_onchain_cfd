@@ -57,8 +57,6 @@ export function prettyError(err: unknown, context?: 'read' | 'mining' | 'tier' |
   const msgLower = `${revertName ?? ''} ${msg}`.toLowerCase()
   
   for (const [keyword, friendly] of Object.entries(ERROR_MAP)) {
-    // 讀取不是交易：通用的 execution reverted 不能翻成「交易執行失敗」，交給下面的讀取情境處理。
-    if (context === 'read' && keyword === 'execution reverted') continue
     if (msgLower.includes(keyword.toLowerCase())) return friendly
   }
 

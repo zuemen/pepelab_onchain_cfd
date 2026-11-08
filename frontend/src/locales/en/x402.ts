@@ -7,7 +7,7 @@ export const x402: Catalog['x402'] = {
   docs: {
     title: 'x402: let your AI assistant pay for trading data on its own',
     testnetChip: 'Testnet · no real money',
-    lead: 'When your AI trading assistant needs data, there is no account to sign up for and no monthly subscription — each time it wants one piece, it pays a few cents from its own wallet (from $0.01) and gets the data on the spot.',
+    lead: 'When your AI trading assistant needs data, there is no account to sign up for and no monthly subscription — each time it wants one piece, it pays a small fee from its own wallet (from $0.005) and gets the data on the spot.',
 
     benefits: {
       payPerUse: {
@@ -26,7 +26,7 @@ export const x402: Catalog['x402'] = {
 
     how: {
       heading: 'How one purchase works',
-      ask: { title: 'The assistant asks', body: 'Your assistant asks {brand} for a piece of data, such as a trader’s next move.' },
+      ask: { title: 'The assistant asks', body: 'Your assistant asks {brand} for a piece of data, such as a trader’s record and latest strategy.' },
       quote: { title: '{brand} quotes a price', body: 'The service replies: "This one is $0.01, payable in Circle USDC."' },
       pay: {
         title: 'It pays and gets the data',
@@ -38,9 +38,10 @@ export const x402: Catalog['x402'] = {
       heading: 'What you can buy',
       perCall: '/ call',
       signalsName: 'Trader signal',
-      signals: 'Pick a trader and get their next move: direction, asset and confidence.',
+      signals: 'Pick a trader and get their latest strategy version and allocation (asset, direction, weight, leverage), performance, and a funding-aware position reference.',
       oracleName: 'Live market snapshot',
       oracle: 'An asset’s current index price, mark price and funding rate.',
+      copyFlow: 'An agent can use it like this: on a notice that a trader published a new version, buy the trader signal, confirm the version matches the notice, then sync the follower’s positions. The sync only happens if the follower turned on auto-sync beforehand, the cooldown has passed and the contract simulation succeeds; otherwise no transaction is sent and the follower handles it themselves.',
     },
 
     split: {

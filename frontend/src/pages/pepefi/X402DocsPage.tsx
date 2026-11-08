@@ -15,6 +15,7 @@ import AccordionDetails from '@mui/material/AccordionDetails'
 
 import { t, interpolate } from 'src/locales'
 import { x402FeeRouter } from 'src/contracts/deployment'
+import { FEATURE_COPY_TRADING } from 'src/lib/pepefi/featureFlags'
 import { SIGNAL_API_URL, demoBuySignal } from 'src/lib/pepefi/signalApi'
 import { explorerTx, X402_SETTLEMENT_CHAIN_ID } from 'src/lib/pepefi/explorer'
 import { Mono as Num, LiveDot, PEPE, MONO, hexA } from 'src/components/pepefi/brandKit'
@@ -93,7 +94,7 @@ function SplitBar({ rev }: { rev: RevenueTotals | null }) {
         </Typography>
         <Typography variant="caption" color="text.secondary" sx={{ ml: 'auto' }}>
           {docs.split.accrued}{' '}
-          <Num tone="green">${(rev?.feeUsd ?? 0).toFixed(3)}</Num>{' · '}
+          <Num tone="green">{rev ? `$${rev.feeUsd.toFixed(3)}` : '—'}</Num>{' · '}
           <Num tone="muted">
             {rev == null
               ? '—'
@@ -116,7 +117,7 @@ function SplitBar({ rev }: { rev: RevenueTotals | null }) {
               {interpolate(docs.split.share, { label: s.label, pct: s.pct })}
             </Typography>
             <Num tone="muted" sx={{ fontSize: 12 }}>
-              ${(s.val ?? 0).toFixed(4)}
+              {s.val == null ? '—' : `$${s.val.toFixed(4)}`}
             </Num>
           </Stack>
         ))}
@@ -255,6 +256,9 @@ export default function X402DocsPage() {
             </Grid>
           ))}
         </Grid>
+        {FEATURE_COPY_TRADING && (
+          <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>{docs.product.copyFlow}</Typography>
+        )}
         <Box sx={{ mt: 2 }}>
           <SplitBar rev={rev} />
         </Box>

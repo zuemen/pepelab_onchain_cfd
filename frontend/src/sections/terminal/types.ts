@@ -32,6 +32,8 @@ export interface Pos {
   entryPrice: bigint
   margin: bigint
   leverage: bigint
+  /** 跟單開出的部位是交易者地址；自己開的是零地址。 */
+  copiedFrom?: string
   /** ok 才有數字；其餘（讀取失敗、無有效價格、價格過期）三個欄位都是 null，畫面顯示「—」。 */
   status: PnlStatus
   /** 未實現損益：合約 getPositionValue − 保證金（見 lib/pepefi/positionPnl.ts）。 */

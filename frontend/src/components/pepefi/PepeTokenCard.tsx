@@ -10,6 +10,7 @@ import Typography from '@mui/material/Typography';
 import { Icon } from '@iconify/react';
 
 import { t, interpolate } from 'src/locales';
+import { prettyError } from 'src/lib/pepefi/errorMessages';
 import { useContracts } from 'src/hooks/useContracts';
 import { usePepefiWallet } from 'src/layouts/pepefi';
 import { isDeployed } from 'src/lib/pepefi/safeRead';
@@ -85,9 +86,7 @@ export default function PepeTokenCard() {
       await (tx as { wait: () => Promise<unknown> }).wait();
       await fetchPepe();
     } catch (e: unknown) {
-      const raw = e instanceof Error ? e.message : String(e);
-      const match = raw.match(/revert[^"]*"([^"]+)"/) ?? raw.match(/"([^"]+)"/);
-      setClaimError(match ? match[1] : raw.slice(0, 100));
+      setClaimError(prettyError(e));
     } finally {
       setClaimLoading(false);
     }

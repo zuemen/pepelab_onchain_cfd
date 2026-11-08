@@ -62,6 +62,7 @@ import Stack from '@mui/material/Stack';
 import Button from '@mui/material/Button';
 import IconButton from '@mui/material/IconButton';
 import Chip from '@mui/material/Chip';
+import WalletButton from 'src/components/pepefi/WalletButton';
 import Alert from '@mui/material/Alert';
 import Select from '@mui/material/Select';
 import MenuItem from '@mui/material/MenuItem';
@@ -436,8 +437,9 @@ export default function TraderLeaderboard() {
 
   if (!wallet.isConnected) {
     return (
-      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '60vh' }}>
+      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, alignItems: 'center', justifyContent: 'center', minHeight: '60vh' }}>
         <Typography color="text.secondary">{t.common.wallet.connectPrompt.marketplace}</Typography>
+        <WalletButton wallet={wallet} />
       </Box>
     );
   }
@@ -571,6 +573,7 @@ export default function TraderLeaderboard() {
             <Podium
               podium={podium}
               returnLabel={usingHeroData ? t.marketplace.hero.podiumReturn : undefined}
+              pnlLabel={pnlLabel}
               onScoreClick={(el, trader) => setScorePopover({ anchorEl: el, trader })}
             />
           ) : (
@@ -714,8 +717,16 @@ export default function TraderLeaderboard() {
                               >
                                 {trader.displayName || t.marketplace.card.noName}
                               </Link>
+                              {trader.hero && (
+                                <Chip
+                                  size="small"
+                                  variant="outlined"
+                                  label={t.marketplace.hero.simulatedTag}
+                                  sx={{ height: 18, fontSize: '0.625rem', flexShrink: 0 }}
+                                />
+                              )}
                               {star && (
-                                <Tooltip title={`${t.marketplace.card.starTrader} · ${t.marketplace.card.verifiedOnChain}`}>
+                                <Tooltip title={`${t.marketplace.card.starTrader} · ${t.marketplace.card.starHint}`}>
                                   <span>⭐</span>
                                 </Tooltip>
                               )}

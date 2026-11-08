@@ -8,8 +8,8 @@ export const rewards = {
   connectWallet: '連接錢包以查看你的獎勵。',
   connectTitle: '🎁 獎勵',
 
-  title: '🎁 PepeLab 獎勵',
-  subtitle: '交易、跟單、每日簽到，賺取 PEPE。',
+  title: '🎁 {brand} 獎勵',
+  subtitle: '交易、跟單可賺 PEPE（測試網遊戲幣，不具真實價值）；每日簽到累積成就點數。',
 
   /** 合約沒部署在這條鏈上時，四個領取動作共用的同一句話。 */
   offline: 'PEPE 獎勵系統尚未部署在此網路，暫時無法領取',
@@ -59,8 +59,8 @@ export const rewards = {
 
   tierSection: {
     title: '等級獎勵',
-    description: '累積交易量達標即可領取一次性等級獎勵。',
-    cumulative: '累積名義價值：${amount}',
+    description: '目前未平倉部位的名義價值達標，即可領取一次性等級獎勵；平倉後這個數字會下降。',
+    cumulative: '目前未平倉名義價值：${amount}',
     reward: '{amount} PEPE',
     required: '需要 ${amount}',
     claimed: '已領取',
@@ -71,8 +71,8 @@ export const rewards = {
 
   copy: {
     title: '跟單獎勵',
-    description: '跟單成功後，跟單者與被跟單者各領 {amount} PEPE（每對一次）。',
-    descriptionGeneric: '跟單成功後，跟單者與被跟單者各領一次 PEPE（每對一次）。',
+    description: '跟單成功後，跟隨者與被跟單的交易者各領 {amount} PEPE（每對一次）。',
+    descriptionGeneric: '跟單成功後，跟隨者與被跟單的交易者各領一次 PEPE（每對一次）。',
     empty: '找不到進行中的跟單。',
     claimed: '已領取',
     claim: '{amount} PEPE',
@@ -129,7 +129,7 @@ export const rewards = {
   /** PEPE 餘額與空投領取卡（PepeTokenCard，從舊版首頁搬到這一頁）。 */
   pepeToken: {
     label: '🐸 PEPE 代幣',
-    subtitle: 'Pepe RWA 代幣 · KYC 核准後即可領取空投',
+    subtitle: '平台遊戲幣（測試網，不具真實價值）· 完成 KYC 可領空投',
     addToWallet: '加入錢包',
     reloadAria: '重新載入 PEPE 餘額',
     notAvailable: '此網路無法使用 PEPE（合約尚未部署）。',
@@ -140,8 +140,8 @@ export const rewards = {
     poolEmpty: '獎池已空',
     claiming: '領取中…',
     claim: '領取 {amount} PEPE',
-    kycTooltip: '需要已核准的 KYC 申請（送出申請不等於已核准）',
-    kycRequired: '需要已核准的 KYC——送出申請不等於已核准',
+    kycTooltip: '需要先完成 KYC',
+    kycRequired: '需要先完成 KYC，請到「投資組合」頁的 KYC 卡片送出',
 
     notDeployed: 'PepeToken 尚未在此網路部署。',
   },

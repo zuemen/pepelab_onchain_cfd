@@ -149,7 +149,7 @@ describe('timeAgo', () => {
 
 describe('sideLabel', () => {
   it('UI 統一英文', () => {
-    expect(sideLabel(true)).toBe('LONG')
-    expect(sideLabel(false)).toBe('SHORT')
+    expect(sideLabel(true)).toBe('做多')
+    expect(sideLabel(false)).toBe('做空')
   })
 })

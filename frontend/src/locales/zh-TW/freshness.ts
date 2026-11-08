@@ -5,7 +5,7 @@
  * 單獨放進 catalog 沒辦法翻譯：英文要寫成 "of sBTC" 或 "sBTC's"，而且位置跟中文不同。
  */
 export const freshness = {
-  unknownAge: '年齡未知',
+  unknownAge: '更新時間不明',
 
   /** 價格來源的短標籤（顯示在價格旁）。'none' = 兩個來源都讀不到，畫面顯示「—」。 */
   priceSource: {

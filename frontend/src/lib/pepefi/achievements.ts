@@ -33,6 +33,17 @@ export const TODAY_INDEX = () => Math.floor(Date.now() / 1000 / 86400)
  */
 export const dailyRewardFor = (streak: number) => 50 + 10 * Math.min(streak, 6)
 
+/**
+ * 畫面要用的連簽天數。鏈上的 streak 要到下次簽到才更新：昨天和今天都沒簽就是斷了，
+ * 下一次簽到合約只算第 1 天（基礎獎勵），不能照舊值顯示。
+ */
+export const effectiveStreak = (streak: number, lastDay: number, today: number): number =>
+  lastDay === today || lastDay === today - 1 ? streak : 0
+
+/** 今天這次簽到記入多少：簽過了就是剛記入的那一筆，還沒簽就看有沒有斷。 */
+export const todayRewardFor = (streak: number, lastDay: number, today: number): number =>
+  lastDay === today ? dailyRewardFor(Math.max(streak - 1, 0)) : dailyRewardFor(effectiveStreak(streak, lastDay, today))
+
 // ── What a check-in pays (capability probe) ──────────────────────────────────
 
 /**

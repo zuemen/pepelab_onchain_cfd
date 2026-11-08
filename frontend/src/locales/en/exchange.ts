@@ -88,7 +88,7 @@ export const exchange: Catalog['exchange'] = {
   swap: {
     title: 'Swap',
     poolBadge: '● Constant-product pool · Slippage applies',
-    oracleFixedBadge: '● Oracle-priced · No slippage (older contract)',
+    oracleFixedBadge: '● Oracle-priced · No slippage',
     notDeployed: "The swap pool (PepeAMM) isn't deployed on this network. Switch to Base Sepolia.",
 
     youPay: 'You pay',
@@ -107,9 +107,10 @@ export const exchange: Catalog['exchange'] = {
     poolInventory: 'Pool inventory',
     unavailable: 'Unavailable',
     loadingValue: 'Loading…',
+    smallPoolNote: 'This testnet pool is small, so large swaps get rejected by the price guard. Start with a small amount.',
     oracleFixedNote:
-      'The live PepeAMM is an older contract: it swaps at the oracle price (minus a 0.3% fee, no slippage) and is not a constant-product pool. This version has no oraclePrice() and no pool-price band, so no separate oracle reference is shown; reserves are only the inventory available to swap out and do not set the price.',
-    noOracleRefNote: 'This contract version has no oraclePrice(), so no oracle reference price is shown.',
+      'This swap pool uses the oracle price (minus a 0.3% fee, no slippage), not a constant-product curve. Reserves are only the inventory available to swap and do not set the price.',
+    noOracleRefNote: 'This pool does not show a separate oracle reference price.',
     unknownVersionNote:
       'Could not identify the live contract version, so prices and price impact are hidden; the amount you receive still follows the live contract quote.',
     checkingVersionNote: 'Checking the live contract version…',
@@ -151,10 +152,11 @@ export const exchange: Catalog['exchange'] = {
    * 組出來的句子會黏成一個字。
    */
   markup: {
+    lead: 'Claim free test tokens here. They have no real value. Then buy on the Assets page. Without test ETH you cannot pay network fees, so get a little from a Base Sepolia faucet first.',
     stepBuyLabel: 'Buy assets:',
     stepBuyBody: 'Go to the Assets page and buy tokenized equities, bonds, gold, and crypto with {token} — the tokens land directly in your wallet.',
     stepPortfolioLabel: 'Check your allocation:',
-    stepPortfolioBody: 'Go to Portfolio — the share, value, and PnL of all four classes are there.',
+    stepPortfolioBody: 'Go to Portfolio: the share and value of all four classes are there. Spot holdings have no on-chain cost basis, so profit and loss is not calculated.',
 
     stepGetTokensLabel: 'Get tokens:',
     stepGetTokensBody: 'Claim test {token} (and PEPE) from the faucet — no swap needed.',
@@ -163,21 +165,14 @@ export const exchange: Catalog['exchange'] = {
     currencyNoteLine1After: ' (testnet mock — free from the Faucet); ',
     currencyNoteLine2After: ' payments settle in ',
     currencyNoteLine2End:
-      " (EIP-3009, real asset). The two serve different purposes — don't mix them up.",
+      " (EIP-3009, a testnet token, not real money). The two serve different purposes — don't mix them up.",
 
     ethBalanceBefore: 'ETH balance: ',
     ethBalanceAfterSpot: ' (on-chain transactions need a little ETH for gas)',
+    noEth: 'Your wallet has no test ETH, so it cannot pay network fees for claiming or buying. Get a little from a Base Sepolia faucet first.',
+    noEthCta: 'See faucets ↗',
 
-    faucetEoaLine1: '🔑 The faucet only pays out to ',
-    faucetEoaBold1: 'regular wallets (EOAs)',
-    faucetEoaLine1After: " — the contract's anti-bot condition is",
-    faucetEoaCode1: ' msg.sender == tx.origin',
-    faucetEoaLine2Mid: ', so a ',
-    faucetEoaBold2: 'Safe / ERC-4337 smart contract wallet',
-    faucetEoaLine3: ' (or any batch / multicall proxy call) gets rejected by the contract with ',
-    faucetEoaCode2: 'FaucetCallerMustBeEOA',
-    faucetEoaLine3After:
-      '. Use a regular EOA wallet to claim instead, then transfer the tokens over. Each address can claim once every 24 hours.',
+    faucetLimit: '🔑 Each wallet can claim once every 24 hours. Smart contract wallets (Safe and the like) cannot claim, so use a regular wallet.',
 
     priceImpactBefore: '⚠ This swap has a price impact as high as ',
     priceImpactAfter:

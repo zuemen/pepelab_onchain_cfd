@@ -2,10 +2,10 @@
 //
 //
 // 之前 WhaleTrackerPage 把 `DEPLOY_BLOCK = 10_874_200` 寫死——那是 **Ethereum
-// Sepolia** 的區塊。連到 Base Sepolia（2 秒一塊、高度數千萬）時，它會從一個
+// Sepolia** 的區塊。連到 Base Sepolia（當時以為 2 秒一塊，2026-11 實測 0.2 秒；高度數千萬）時，它會從一個
 // 五千萬塊以前的位置開始，用 9,900 塊為單位串行 getLogs，等於幾千次 RPC：頁面
 // 卡住幾分鐘，公共節點直接限流。useWhaleAlerts 則反過來，單發一次 50,000 塊的
-// queryFilter（Base Sepolia 公開節點的實際上限只有 1,000 塊，見 MEASURED_GETLOGS_MAX_BLOCKS）並用 12 秒/塊估時間，在 Base 上把時間高估
+// queryFilter（Base Sepolia 公開節點的實際上限當時 1,000 塊，2026-10-25 實測已降為 201 塊，見 MEASURED_GETLOGS_MAX_BLOCKS）並用 12 秒/塊估時間，在 Base 上把時間高估
 // 六倍。
 //
 // 這裡把「從哪一塊開始掃」「一塊多久」變成依 chainId 查表的純函式，讓兩邊共用
@@ -28,7 +28,7 @@ export const DEPLOY_BLOCK_BY_CHAIN: Record<number, number> = {
 export const AVG_BLOCK_TIME_BY_CHAIN: Record<number, number> = {
   31337: 1, // 本地鏈只在有交易時出塊，1 是保守估計
   11155111: 12, // Ethereum Sepolia
-  84532: 2, // Base Sepolia（OP Stack，2 秒）
+  84532: 0.2, // Base Sepolia：2026-11 實測每 0.2 秒一塊（43,200 塊 = 144 分鐘）
 }
 
 /** 不認得的鏈用 12 秒——高估比低估安全，寧可掃少一點也不要炸掉節點。 */
@@ -38,8 +38,8 @@ export const DEFAULT_AVG_BLOCK_TIME = 12
  * 預設回看 24 小時。這是「近期動向」需要的範圍，不是完整鏈史。
  *
  * 2026-09-29 以前是 7 天——但公開節點的 getLogs 範圍上限只有數百到一千塊（見
- * MEASURED_GETLOGS_MAX_BLOCKS），7 天在 Base Sepolia 是 302,400 塊，分段數不可行。
- * 24 小時 = 43,200 塊 = 216 段（CHUNK_SIZE 200），落在 MAX_CHUNKS 之內。
+ * MEASURED_GETLOGS_MAX_BLOCKS），7 天在 Base Sepolia 是 3,024,000 塊，分段數不可行。
+ * Base Sepolia 上 MAX_CHUNKS 的上限約 44,000 塊，實際只回看約 2.4 小時；畫面的範圍標示依區塊時間換算。
  */
 export const DEFAULT_SCAN_WINDOW_SEC = 24 * 3600
 
@@ -96,7 +96,82 @@ export const MAX_CHUNKS = 220
 
 export function avgBlockTime(chainId: number | null | undefined): number {
   if (chainId === null || chainId === undefined) return DEFAULT_AVG_BLOCK_TIME
-  return AVG_BLOCK_TIME_BY_CHAIN[chainId] ?? DEFAULT_AVG_BLOCK_TIME
+  return measuredBlockTime(chainId) ?? AVG_BLOCK_TIME_BY_CHAIN[chainId] ?? DEFAULT_AVG_BLOCK_TIME
+}
+
+// ── 出塊時間實測校正 ─────────────────────────────────────────────────────────
+// 上面的表是寫死的，但鏈會改：Base Sepolia 原本 2 秒一塊，2026-11 實測變成 0.2 秒，表沒跟上時
+// 全站的「最近 N 小時」都差十倍。所以開站時用兩個區塊的時間戳實測一次，之後的換算以實測為準；
+// 結果存在 localStorage（一天內有效），下次開站一開始就用實測值。表只是第一次開站的預設。
+
+/** 實測取樣的區塊距離：Base 上約 3 分鐘、Ethereum 上約 3 小時；時間戳是整數秒，距離太短不準。 */
+export const BLOCK_TIME_SAMPLE_BLOCKS = 1_000
+/** 合理範圍外的實測值（節點回傳怪資料）不採用。 */
+const MIN_BLOCK_TIME = 0.05
+const MAX_BLOCK_TIME = 60
+const MEASURE_TTL_MS = 24 * 3600 * 1000
+const storageKey = (chainId: number) => `pepefi:blockTime:${chainId}`
+const measured = new Map<number, number>()
+
+function measuredBlockTime(chainId: number): number | undefined {
+  const hit = measured.get(chainId)
+  if (hit !== undefined) return hit
+  try {
+    const raw = globalThis.localStorage?.getItem(storageKey(chainId))
+    if (!raw) return undefined
+    const { sec, at } = JSON.parse(raw) as { sec?: unknown; at?: unknown }
+    if (typeof sec !== 'number' || typeof at !== 'number' || Date.now() - at > MEASURE_TTL_MS) return undefined
+    if (!(sec >= MIN_BLOCK_TIME && sec <= MAX_BLOCK_TIME)) return undefined
+    measured.set(chainId, sec)
+    return sec
+  } catch {
+    return undefined
+  }
+}
+
+/** 記下實測值；超出合理範圍回 false 不採用。 */
+export function recordMeasuredBlockTime(chainId: number, sec: number): boolean {
+  if (!Number.isFinite(sec) || sec < MIN_BLOCK_TIME || sec > MAX_BLOCK_TIME) return false
+  measured.set(chainId, sec)
+  try {
+    globalThis.localStorage?.setItem(storageKey(chainId), JSON.stringify({ sec, at: Date.now() }))
+  } catch {
+    /* 存不了就只在這次開站有效 */
+  }
+  return true
+}
+
+/** 測試用：清掉實測值（記憶體與 localStorage）。 */
+export function resetMeasuredBlockTimes(): void {
+  const ids = new Set([...measured.keys(), ...Object.keys(AVG_BLOCK_TIME_BY_CHAIN).map(Number)])
+  measured.clear()
+  for (const id of ids) {
+    try {
+      globalThis.localStorage?.removeItem?.(storageKey(id))
+    } catch {
+      /* 沒有 localStorage */
+    }
+  }
+}
+
+/**
+ * 讀最新塊與往前 BLOCK_TIME_SAMPLE_BLOCKS 塊的時間戳，算平均出塊時間並記下。
+ * 讀不到就回 null，繼續用表上的值（不擋任何頁面）。
+ */
+export async function calibrateBlockTime(
+  provider: { getBlock: (tag: number | 'latest') => Promise<{ number: number; timestamp: number } | null> },
+  chainId: number,
+): Promise<number | null> {
+  try {
+    const head = await provider.getBlock('latest')
+    if (!head || head.number < BLOCK_TIME_SAMPLE_BLOCKS) return null
+    const past = await provider.getBlock(head.number - BLOCK_TIME_SAMPLE_BLOCKS)
+    if (!past) return null
+    const sec = (head.timestamp - past.timestamp) / (head.number - past.number)
+    return recordMeasuredBlockTime(chainId, sec) ? sec : null
+  } catch {
+    return null
+  }
 }
 
 /** 把一段時間換算成該鏈的塊數。 */

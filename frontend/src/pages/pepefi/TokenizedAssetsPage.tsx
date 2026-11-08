@@ -393,19 +393,6 @@ export default function TokenizedAssetsPage() {
   // 這個金庫有哪些防護——單欄清單，只有硬化版金庫真的有這些防護時才顯示。
   // 舊版金庫（isV2 為 false）沒有這九項裡的大多數，把這張清單套在它頭上會是
   // 一個站不住的宣稱，所以呼叫端必須只在 isV2 時 render 它，不能無條件顯示。
-  // ── not deployed on this chain ──────────────────────────────────────────────
-  if (!vaultReady) {
-    return (
-      <Container maxWidth="md" sx={{ py: 3, display: 'flex', flexDirection: 'column', gap: 3 }}>
-        <Box>
-          <Typography variant="h4" sx={{ fontWeight: 800 }}>{mode === 'simple' ? t.tokens.titleSimple : t.tokens.title}</Typography>
-          <Typography variant="body2" color="text.secondary">{t.tokens.subtitle}</Typography>
-        </Box>
-        <Alert severity="info">{t.tokens.notDeployed}</Alert>
-      </Container>
-    )
-  }
-
   // #133：資產表的每一列由 assetRows 這個純函式算出來——分級解析、費率
   // 推導、排序、買賣可用性全部在那邊測過，這裡只是把鏈上讀回來的原始資料
   // 餵進去。
@@ -600,6 +587,20 @@ export default function TokenizedAssetsPage() {
     chainId: wallet.chainId,
     balance: selectedRow?.balance,
   })
+  // 提早 return 要放在所有 hook 之後：斷開錢包時 vaultReady 會變 false，hook 數量不能跟著變。
+  // ── not deployed on this chain ──────────────────────────────────────────────
+  if (!vaultReady) {
+    return (
+      <Container maxWidth="md" sx={{ py: 3, display: 'flex', flexDirection: 'column', gap: 3 }}>
+        <Box>
+          <Typography variant="h4" sx={{ fontWeight: 800 }}>{mode === 'simple' ? t.tokens.titleSimple : t.tokens.title}</Typography>
+          <Typography variant="body2" color="text.secondary">{t.tokens.subtitle}</Typography>
+        </Box>
+        <Alert severity="info">{t.tokens.notDeployed}</Alert>
+      </Container>
+    )
+  }
+
   const detailPanel = selected && selectedRow && selectedMeta ? (
     <AssetDetailPanel
       sym={selected.sym}
@@ -640,6 +641,8 @@ export default function TokenizedAssetsPage() {
         <Typography variant="body2" color="text.secondary">{t.tokens.subtitle}</Typography>
         <RwaInfoLink />
       </Box>
+
+      <SyntheticDisclosure />
 
       <Alert severity="info">
         {t.tokens.markup.introBefore}<b>{t.tokens.markup.introBold1}</b>{SHOW_PERPETUALS ? t.tokens.markup.introMid1 : t.tokens.markup.introMid1Spot}<b>{t.tokens.markup.introBold2}</b>{t.tokens.markup.introMid2}<b>USDC</b>{t.tokens.markup.introAfter}
@@ -725,7 +728,6 @@ export default function TokenizedAssetsPage() {
         </Typography>
       )}
 
-      <SyntheticDisclosure />
     </Box>
 
       {/* #134：桌面版詳情層——側邊欄，表格保持可見。sticky 讓面板跟著捲動，
