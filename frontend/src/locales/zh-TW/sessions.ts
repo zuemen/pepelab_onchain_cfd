@@ -172,6 +172,8 @@ export const sessions = {
     revokeBaseUnavailable:
       '無法取得目前已發佈的狀態清單（{reason}），所以沒有簽署：撤銷清單必須接在已發佈的那份之後，否則驗證端會拒收、撤銷不會生效。請設定 VITE_VC_STATUS_URL，或匯入目前的清單後再試。',
     statusRevokePending: '撤銷待發佈（sequence {seq}，尚未生效）',
+    revokedDownloadedNoStatus: '已簽好撤銷清單（sequence {seq}）並下載；請交給驗證方。這個站沒設定憑證狀態清單，無法在這裡確認驗證方是否已採用。',
+    revokePendingNoteNoStatus: '撤銷清單已簽好並下載，但這個站沒設定憑證狀態清單，無法確認驗證方是否已採用；在驗證方換上新清單之前，這張憑證仍可能被接受。要立刻停止授權，撤銷 session 即可，鏈上立即生效。',
     revokePendingNote: '撤銷清單已簽好，但還沒確認發佈：在驗證端看到新清單之前，這張憑證仍然有效。要立即擋下付費 API，可以先「解除錨定」。',
     revokeAgain: '重新簽署撤銷清單',
     confirmPublished: '確認已發佈',

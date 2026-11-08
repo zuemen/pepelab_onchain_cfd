@@ -172,6 +172,8 @@ export const sessions: Catalog['sessions'] = {
     revokeBaseUnavailable:
       "Could not read the currently published status list ({reason}), so nothing was signed: a revocation list must build on the published one, or verifiers reject it and the revocation does not take effect. Set VITE_VC_STATUS_URL, or import the current list and try again.",
     statusRevokePending: 'Revocation pending (sequence {seq}, not in effect yet)',
+    revokedDownloadedNoStatus: 'Revocation list signed (sequence {seq}) and downloaded; give it to verifiers. This site has no credential status list configured, so it cannot confirm here whether verifiers have adopted it.',
+    revokePendingNoteNoStatus: 'The revocation list is signed and downloaded, but this site has no credential status list configured, so it cannot confirm whether verifiers have adopted it; until they switch to the new list, this credential may still be accepted. To stop the authorization right away, revoke the session: it takes effect on-chain immediately.',
     revokePendingNote: 'The revocation list is signed but not confirmed published: until verifiers see it, this credential is still valid. To stop paid APIs right away, unanchor it first.',
     revokeAgain: 'Sign the revocation list again',
     confirmPublished: 'Confirm published',

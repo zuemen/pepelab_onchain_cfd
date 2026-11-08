@@ -283,7 +283,8 @@ export function DelegationCredentialPanel({
       setNeedImport(false)
       onStored(afterRevocation(stored, r))
       notify(
-        interpolate(r.published ? t.sessions.delegation.revokedPublished : t.sessions.delegation.revokedDownloaded, {
+        // 沒設定狀態清單的站讀不回清單，無法確認發佈：改用不叫人按「確認已發佈」的提示。
+        interpolate(r.published ? t.sessions.delegation.revokedPublished : statusUrl() ? t.sessions.delegation.revokedDownloaded : t.sessions.delegation.revokedDownloadedNoStatus, {
           seq: String(r.list.sequence),
         }),
         true,
@@ -449,7 +450,7 @@ export function DelegationCredentialPanel({
             >
               {d.download}
             </Button>
-            {stored.revocationPending && (
+            {stored.revocationPending && statusUrl() && (
               <Button variant="contained" color="warning" onClick={() => void confirmPublished()} disabled={busy !== ''} sx={{ textTransform: 'none' }}>
                 {busy === 'confirm' ? d.confirmingPublished : d.confirmPublished}
               </Button>
@@ -461,7 +462,7 @@ export function DelegationCredentialPanel({
               </Button>
             )}
           </Stack>
-          {stored.revocationPending && <Alert severity="warning">{d.revokePendingNote}</Alert>}
+          {stored.revocationPending && <Alert severity="warning">{statusUrl() ? d.revokePendingNote : d.revokePendingNoteNoStatus}</Alert>}
           {!stored.revoked && !stored.revocationPending && !statusUrl() && <Alert severity="info">{d.revokeUnavailable}</Alert>}
           {(needImport || (!statusUrl() && !stored.revocationPending)) && !stored.revoked && (
             <Alert severity="info">
