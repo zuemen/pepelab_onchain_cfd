@@ -269,7 +269,7 @@ export function DelegationCredentialPanel({
 
   const revoke = async (confirmedNoPublishedList = false) => {
     if (!signer || !stored) return
-    if (confirmedNoPublishedList && !window.confirm(interpolate(t.sessions.delegation.confirmNoListPrompt, { reason: baseFailure ?? '?' }))) return
+    if (confirmedNoPublishedList && !window.confirm(interpolate(t.sessions.delegation.confirmNoListPrompt, { reason: baseFailure ?? (statusUrl() ? '?' : 'status_source_unset') }))) return
     try {
       setBusy('revoke')
       const r = await revokeDelegationCredential({
@@ -454,8 +454,8 @@ export function DelegationCredentialPanel({
                 {busy === 'confirm' ? d.confirmingPublished : d.confirmPublished}
               </Button>
             )}
-            {/* 這個站沒設定狀態清單時走不完撤銷憑證；已開始的撤銷流程仍要能接著做。 */}
-            {!stored.revoked && (statusUrl() || stored.revocationPending) && (
+            {/* 沒設定狀態清單的站也能撤銷：先匯入目前的清單或確認第一次撤銷，簽好的清單會下載。 */}
+            {!stored.revoked && (
               <Button variant="outlined" color="error" onClick={() => void revoke()} disabled={busy !== '' || !signer} sx={{ textTransform: 'none' }}>
                 {busy === 'revoke' ? d.revoking : stored.revocationPending ? d.revokeAgain : d.revoke}
               </Button>
@@ -463,7 +463,7 @@ export function DelegationCredentialPanel({
           </Stack>
           {stored.revocationPending && <Alert severity="warning">{d.revokePendingNote}</Alert>}
           {!stored.revoked && !stored.revocationPending && !statusUrl() && <Alert severity="info">{d.revokeUnavailable}</Alert>}
-          {needImport && !stored.revoked && (
+          {(needImport || (!statusUrl() && !stored.revocationPending)) && !stored.revoked && (
             <Alert severity="info">
               {d.importHint}{' '}
               <Button component="label" size="small" sx={{ textTransform: 'none' }}>
