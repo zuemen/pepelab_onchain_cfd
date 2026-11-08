@@ -2,10 +2,10 @@
 //
 //
 // 之前 WhaleTrackerPage 把 `DEPLOY_BLOCK = 10_874_200` 寫死——那是 **Ethereum
-// Sepolia** 的區塊。連到 Base Sepolia（2 秒一塊、高度數千萬）時，它會從一個
+// Sepolia** 的區塊。連到 Base Sepolia（當時以為 2 秒一塊，2026-11 實測 0.2 秒；高度數千萬）時，它會從一個
 // 五千萬塊以前的位置開始，用 9,900 塊為單位串行 getLogs，等於幾千次 RPC：頁面
 // 卡住幾分鐘，公共節點直接限流。useWhaleAlerts 則反過來，單發一次 50,000 塊的
-// queryFilter（Base Sepolia 公開節點的實際上限只有 1,000 塊，見 MEASURED_GETLOGS_MAX_BLOCKS）並用 12 秒/塊估時間，在 Base 上把時間高估
+// queryFilter（Base Sepolia 公開節點的實際上限當時 1,000 塊，2026-10-25 實測已降為 201 塊，見 MEASURED_GETLOGS_MAX_BLOCKS）並用 12 秒/塊估時間，在 Base 上把時間高估
 // 六倍。
 //
 // 這裡把「從哪一塊開始掃」「一塊多久」變成依 chainId 查表的純函式，讓兩邊共用
