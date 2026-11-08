@@ -6,6 +6,7 @@ import Box from '@mui/material/Box';
 import { usePathname } from 'src/routes/hooks';
 
 import { type WalletAPI } from 'src/hooks/useWallet';
+import { useReadChain } from 'src/hooks/useRwaTransparency';
 
 import { t } from 'src/locales';
 import { calibrateBlockTime } from 'src/lib/pepefi/chainLogs';
@@ -48,7 +49,8 @@ export function PepefiLayout() {
   }, [wallet.initializing, wallet.isConnected, pathname, location.search, location.state, navigate]);
 
   // 出塊時間以實測為準（寫死的表會過時，見 chainLogs 的 calibrateBlockTime）。每條鏈每次開站量一次。
-  const { provider, chainId } = wallet;
+  // 用讀取用的 provider：沒連錢包的訪客走公開節點，一樣會校正。
+  const { provider, chainId } = useReadChain();
   useEffect(() => {
     if (!provider || !chainId) return;
     void calibrateBlockTime(provider, chainId);

@@ -693,6 +693,9 @@ const out = (r: Rig) => r.lines.join("\n");
   s.cancelAll();
   assert.equal(s.size(), 0);
   assert.ok(timers[1].cleared && timers[2].cleared, "結束時清掉計時器");
+  assert.equal(s.schedule({ ...NOTICE, toVersion: 3 }, 10), null, "關閉後不再排程（停止中的處理回 cooldown 也不會排出新的計時器）");
+  timers[1].fn();
+  assert.equal(pushed.length, 1, "關閉前已觸發的計時器也不再推入佇列");
   ok("冷卻重試排程：冷卻結束後自動排回佇列，同一版不重複排");
 }
 
@@ -712,6 +715,41 @@ const out = (r: Rig) => r.lines.join("\n");
   assert.equal((await processNotice(r.deps, q[0])).result, "synced");
   assert.equal(r.pays(), 1);
   ok("冷卻中收到通知：不必重新觸發，冷卻結束自動付費並同步");
+}
+
+{
+  // RPC 卡在舊區塊：鏈上時間不前進，牆鐘到了就判狀態不明，不會卡住佇列幾十分鐘
+  const r = rig({ authUsed: async () => false });
+  let wall = 0;
+  r.deps.clock = () => wall;
+  r.deps.sleep = async (ms) => void (wall += ms);
+  r.setPay(async () => ({
+    status: 402, body: null, sentAtomic: 10_000n, paidAtomic: 0n, unsettledAtomic: 10_000n, tx: null,
+    authorizations: [{ from: ALICE, nonce: "0x" + "cd".repeat(32), validBefore: r.chain.time + 60 }],
+  }));
+  assert.equal((await processNotice(r.deps, r.notice)).result, "payment-failed");
+  assert.equal(r.deps.ledger.signals[signalKey(r.notice)].status, "uncertain");
+  assert.ok(wall <= 11 * 60 * 1000, "牆鐘上限內就停下");
+  ok("等授權到期時鏈上時間不前進：牆鐘上限到就判狀態不明");
+}
+
+{
+  // 接線：wrapFetchWithPayment 風格的重送（init.headers 帶 X-PAYMENT）經過 meteredFetch → capture，payer 回報這次的授權
+  const auth = { from: ALICE, to: BOB, value: "10000", validAfter: "0", validBefore: "1900000000", nonce: "0x" + "ef".repeat(32) };
+  const hdr = Buffer.from(JSON.stringify({ x402Version: 1, payload: { signature: "0x", authorization: auth } })).toString("base64");
+  const cap = captureAuthorizations(async () => new Response("{}", { status: 402 }));
+  const meter = meteredFetch(cap.fetch);
+  const payFetch = (async (url: string | URL | Request, init?: RequestInit) => {
+    await meter.fetch(url, init);
+    return meter.fetch(url, { ...init, headers: { ...(init?.headers as Record<string, string> | undefined), "X-PAYMENT": hdr } });
+  }) as typeof fetch;
+  const pay = makeSignalPayer({ api: "http://api.test", payFetch, meter, redact: makeRedactor([]), drainAuthorizations: cap.drain });
+  const a = await pay(TRADER.toLowerCase());
+  assert.equal(a.status, 402);
+  assert.equal(a.sentAtomic, 10_000n);
+  assert.equal(classifyPayment(a), "rejected");
+  assert.deepEqual(a.authorizations, [{ from: ALICE, nonce: "0x" + "ef".repeat(32), validBefore: 1_900_000_000 }]);
+  ok("makeSignalPayer 接上 captureAuthorizations：回報這次送出的授權，供 402 後核對");
 }
 
 console.log(`\n全部通過（${n} 項）`);

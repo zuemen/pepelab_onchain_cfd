@@ -359,7 +359,7 @@ export const MAX_AUTH_WAIT_SEC = 600;
  *   全部沒被使用 → not-charged（可以安全重試）；任何一張被用掉、解不開、或查不了 → uncertain（不自動重付）。
  */
 export async function resolveRejected(
-  d: Pick<AgentDeps, "reads" | "authUsed" | "sleep" | "print">,
+  d: Pick<AgentDeps, "reads" | "authUsed" | "sleep" | "print" | "clock">,
   a: Pick<PayAttempt, "authorizations">,
 ): Promise<{ cls: "not-charged" | "uncertain"; why: string }> {
   const auths = a.authorizations;
@@ -367,10 +367,11 @@ export async function resolveRejected(
   if (auths.some((x) => x === null)) return { cls: "uncertain", why: "有一張授權解不開，無法核對" };
   const list = auths as SentAuthorization[];
   const until = Math.max(...list.map((x) => x.validBefore));
+  const deadline = (d.clock ?? Date.now)() + (MAX_AUTH_WAIT_SEC + 60) * 1000; // RPC 卡在舊區塊時也不會無限等
   let now = await d.reads.blockTimestamp();
   if (until - now > MAX_AUTH_WAIT_SEC) return { cls: "uncertain", why: `授權要到 ${new Date(until * 1000).toISOString()} 才到期，太久了` };
   if (now <= until) d.print(`   伺服器回 402：等授權到期（約 ${until - now + 1} 秒）再到鏈上核對有沒有被扣款`);
-  for (let i = 0; now <= until && i < 100; i++) {
+  for (let i = 0; now <= until && i < 100 && (d.clock ?? Date.now)() < deadline; i++) {
     await (d.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms))))(Math.min(until - now + 2, 30) * 1000);
     now = await d.reads.blockTimestamp();
   }
@@ -446,6 +447,8 @@ export interface AgentDeps {
   authUsed?: (from: string, nonce: string) => Promise<boolean>;
   /** 測試用；預設 setTimeout。 */
   sleep?: (ms: number) => Promise<void>;
+  /** 測試用；預設 Date.now。等授權到期的牆鐘上限用它。 */
+  clock?: () => number;
 }
 
 export interface Outcome {
@@ -723,20 +726,23 @@ export function makeRetryScheduler(
   },
 ) {
   const pending = new Map<string, unknown>();
+  let closed = false;
   return {
-    /** 回傳實際等待秒數；已經排過回傳 null。 */
+    /** 回傳實際等待秒數；已經排過或已關閉回傳 null。 */
     schedule(n: NewVersionNotice, inSec: number): number | null {
       const k = syncKey(n);
-      if (pending.has(k)) return null;
+      if (closed || pending.has(k)) return null;
       const delay = Math.min(Math.max(0, Math.ceil(inSec)) + RETRY_MARGIN_SEC, MAX_RETRY_DELAY_SEC);
       pending.set(k, timers.set(() => {
         pending.delete(k);
-        push(n);
+        if (!closed) push(n);
       }, delay * 1000));
       return delay;
     },
     size: () => pending.size,
+    /** 關閉：清掉計時器，之後不再排程（agent 停止時呼叫）。 */
     cancelAll(): void {
+      closed = true;
       for (const t of pending.values()) timers.clear(t);
       pending.clear();
     },

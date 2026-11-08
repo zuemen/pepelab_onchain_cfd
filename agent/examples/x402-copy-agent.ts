@@ -15,7 +15,7 @@ import { createWalletClient, http, publicActions, type Hex } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { baseSepolia } from "viem/chains";
 import { wrapFetchWithPayment } from "x402-fetch";
-import { formatUsdcAtomic, guardViemAccount, meteredFetch, resolveSettlementToken, resolveX402MaxValue } from "@pepelab/shared";
+import { formatUsdcAtomic, guardViemAccount, meteredFetch, OFFICIAL_USDC_DOMAINS, resolveX402MaxValue } from "@pepelab/shared";
 import { getAddresses } from "../../frontend/src/contracts/addresses.ts";
 import { followerFootprint, makeChainReads, makeExecutor, supportsAutoSync, supportsSyncExecutor, trackerRegistry } from "../copy-sync/src/chain.ts";
 import { ExecutorWallet } from "../copy-sync/src/guard.ts";
@@ -158,7 +158,8 @@ async function main(): Promise<void> {
     const client = createWalletClient({ account, chain: baseSepolia, transport: http(rpcUrl) }).extend(publicActions);
     const capture = captureAuthorizations();
     const meter = meteredFetch(capture.fetch);
-    const usdc = new ethers.Contract(resolveSettlementToken(), ["function authorizationState(address,bytes32) view returns (bool)"], provider);
+    // 查簽章守門實際允許簽的那顆 USDC（不讀 X402_SETTLEMENT_TOKEN：指錯代幣會把已扣款誤判成沒扣）。
+    const usdc = new ethers.Contract(OFFICIAL_USDC_DOMAINS[baseSepolia.id]!.verifyingContract, ["function authorizationState(address,bytes32) view returns (bool)"], provider);
     authUsed = async (from, nonce) => Boolean(await usdc.getFunction("authorizationState")(from, nonce));
     const payFetch = wrapFetchWithPayment(
       meter.fetch,
@@ -213,12 +214,15 @@ async function main(): Promise<void> {
     authUsed,
   };
 
+  let stopping = false;
   // 冷卻中的通知：冷卻結束後自動再排入佇列（copy-sync 不會為同一版再通知一次）。
   const retries = makeRetryScheduler((n) => {
+    if (stopping) return;
     if (!queue.push(n)) print(`冷卻結束要重試，但佇列已滿：跟隨者 ${n.follower}#${n.recordIdx} versionId ${n.toVersion} 請重新觸發`);
   });
   const queue = makeSerialQueue<NewVersionNotice>(
     async (n) => {
+      if (stopping) return; // 停止中：佇列裡剩下的不再付款、不再送交易
       const o = await processNotice(deps, n);
       if (o.code === "cooldown" && o.retryInSec !== undefined) {
         const wait = retries.schedule(n, o.retryInSec);
@@ -235,7 +239,6 @@ async function main(): Promise<void> {
     (b) => print([...blockedLines(b), ""].join("\n")),
   );
 
-  let stopping = false;
   const stop = () => {
     if (stopping) process.exit(130);
     stopping = true;

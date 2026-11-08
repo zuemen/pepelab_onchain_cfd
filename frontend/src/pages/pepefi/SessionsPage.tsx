@@ -123,6 +123,9 @@ function sessionFormProblem(f: { agent: string; perTrade: string; budget: string
   return null
 }
 
+/** 這個站有沒有設定憑證狀態清單（VITE_VC_STATUS_URL）。 */
+const VC_STATUS_CONFIGURED = !!(import.meta.env.VITE_VC_STATUS_URL as string | undefined)?.trim()
+
 export default function SessionsPage() {
   const wallet = usePepefiWallet()
   const deployed = isSessionManagerDeployed(wallet.chainId)
@@ -422,10 +425,13 @@ export default function SessionsPage() {
       if (res === 'timeout') await fetchSessions()
       // Revoking the session also revokes its v3 credential in the ADR-016 status list
       // (the chain already makes isAnchored false; the list covers verifiers that cache).
-      // 沒設定 VITE_VC_STATUS_URL 的站也要問：會改走「下載簽好的清單」交給驗證方。
-      // 簽不成（例如找不到可信的舊清單）時 session 已撤銷，只提示到憑證區塊補完。
+      // 有設定 VITE_VC_STATUS_URL 才能在這裡讀到目前的清單、直接簽新的一份。
+      // 沒設定的站讀不到可信的舊清單，簽了也會被驗證方拒收：不在這裡問，改請使用者到
+      // 委託憑證區塊匯入目前的清單（或確認是第一次撤銷）後撤銷，那裡會下載簽好的清單。
       const d = delegations[id]
-      if (d && !d.revoked && wallet.signer && wallet.address && window.confirm(t.sessions.delegation.revokeWithSession)) {
+      if (d && !d.revoked && !VC_STATUS_CONFIGURED) {
+        notify(t.sessions.delegation.revokeCredentialInPanel, true)
+      } else if (d && !d.revoked && wallet.signer && wallet.address && window.confirm(t.sessions.delegation.revokeWithSession)) {
         try {
           const r = await revokeDelegationCredential({
             signer: wallet.signer, user: wallet.address,
