@@ -26,7 +26,7 @@ export function ErrorBoundary() {
               <p className={errorBoundaryClasses.message}>{t.common.shell.errorBody}</p>
               <p className={errorBoundaryClasses.message}>
                 <button type="button" onClick={() => window.location.reload()}>{t.common.shell.errorReload}</button>{' '}
-                <a href="/">{t.common.shell.errorHome}</a>
+                <a href={import.meta.env.BASE_URL}>{t.common.shell.errorHome}</a>
               </p>
             </>
           )}

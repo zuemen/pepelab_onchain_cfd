@@ -235,7 +235,7 @@ export const rwa: Catalog['rwa'] = {
     notFullyBacked:
       "The vault is not fully collateralized: it is the counterparty to every long and limits exposure with a minimum ratio, per-asset caps and pausing, not 1:1 backing. Today's ratio is high only because the liability is small and the reserve is a large amount of test tokens; it cannot be used to claim over-collateralization.",
     historyTitle: 'Reserve ratio history (ReserveObserved events)',
-    historyWindow: 'Last ~{hours} h (blocks {from}–{to}, ≤ {chunk} blocks per query)',
+    historyWindow: 'Last ~{span} (blocks {from}–{to}, ≤ {chunk} blocks per query)',
     historyLoading: 'Scanning on-chain events…',
     historyFailed: 'Read failed: could not fetch events for this period.',
     historyPartial: '{failed}/{total} segments failed; the curve may have gaps.',

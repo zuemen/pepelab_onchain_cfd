@@ -6,7 +6,9 @@ import { t, interpolate } from 'src/locales'
 import { mapLimit, withRetry, RPC_CONCURRENCY } from 'src/lib/pepefi/rpcBatch'
 import {
   UI_RETRIES,
+  CHUNK_SIZE,
   scanFromBlock,
+  blocksForSeconds,
   queryLogsChunked,
   isChunkScanAborted,
   type ChunkProgress,
@@ -29,12 +31,20 @@ import { latestSubmissionByAddress, bucketOf, type ReviewBucket } from 'src/lib/
 
 export type { ReviewBucket }
 
-/** 審核佇列的回看視窗：7 天。 */
+/** 審核佇列想回看 7 天。 */
 const KYC_SCAN_WINDOW_SEC = 7 * 24 * 3600;
-/** 7 天 ÷ 2 秒 ÷ CHUNK_SIZE(200) = 1,512 段；留一點餘裕（2026-10-25 節點上限降為 200 塊後段長再減半）。 */
+/**
+ * 段數上限。2 秒一塊時 7 天約 1,512 段；Base Sepolia 2026-11 實測 0.2 秒一塊，7 天要約 15,000 段，
+ * 公開節點跑不完，所以實際只回看 1,600 × 200 塊（約 18 小時）。畫面依實際範圍標示，不再說 7 天。
+ */
 const KYC_SCAN_MAX_CHUNKS = 1_600;
-/** 併發 3；每次往返約 0.5 秒（2026-10-25 實測），1,512 段約五分鐘（有進度條）。 */
+/** 併發 3；每次往返約 0.5 秒（2026-10-25 實測），1,600 段約五分鐘（有進度條）。 */
 const KYC_SCAN_CONCURRENCY = 3;
+
+/** 佇列在這條鏈上最多回看幾塊（還沒掃描、不知道確切範圍時給畫面估算用）。 */
+export function kycScanBlocks(chainId: number | null | undefined): number {
+  return Math.min(blocksForSeconds(chainId, KYC_SCAN_WINDOW_SEC), KYC_SCAN_MAX_CHUNKS * CHUNK_SIZE);
+}
 
 export interface ReviewApplication {
   address:         string
@@ -101,8 +111,8 @@ export function useKYCReviewQueue(
       const latest = await withRetry(() => provider.getBlockNumber());
       if (isStale()) return;
 
-      // 審核佇列刻意維持 7 天視窗（全站預設已降為 24 小時）：漏掉一段就是漏掉一位
-      // 申請人。公開節點 getLogs 上限 201 塊，7 天在 Base 上約 1,512 段，較慢但有進度條。
+      // 審核佇列想看 7 天（全站預設是 24 小時）：漏掉一段就是漏掉一位申請人。但段數有上限，
+      // 在 Base Sepolia 上實際約 18 小時——更早送出的申請不在佇列裡，畫面照實標出回看多久。
       const from = scanFromBlock({
         chainId,
         currentBlock: latest,

@@ -256,9 +256,9 @@ export const admin: Catalog['admin'] = {
       /** A failed KYCSubmitted scan chunk is worse than a few unreadable rows — the queue itself may be missing applicants. */
       scanIncomplete: '{count} chunk(s) of the on-chain event scan failed — the queue may be incomplete (some applicants may be missing). Refresh to retry.',
       refresh: '↺ Refresh',
-      scanRange: 'Scanned range: block {from} – {to}',
+      scanRange: 'Scanned range: block {from} – {to} (about {span})',
       scanning: 'Scanning on-chain events… ({done}/{total})',
-      scanningHint: 'The queue looks back 7 days and the public RPC allows only 1,000 blocks per query, so this takes hundreds of requests and may take several minutes.',
+      scanningHint: 'The queue only looks back about {span} (the number of queries is capped), so earlier applications are not listed here. The public RPC allows only about 200 blocks per query, so this takes over a thousand requests and may take several minutes.',
       hashedLabel: 'hash',
 
       pendingTitle: 'Pending Applications',

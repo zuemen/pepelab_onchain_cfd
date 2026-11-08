@@ -23,6 +23,9 @@ import {
   isChunkScanAborted,
   ChunkScanAbortedError,
   describeScanWindow,
+  calibrateBlockTime,
+  recordMeasuredBlockTime,
+  resetMeasuredBlockTimes,
   DEFAULT_AVG_BLOCK_TIME,
   DEFAULT_SCAN_WINDOW_SEC,
 } from './chainLogs'
@@ -567,5 +570,47 @@ describe('動態牆的 24 小時掃描要併發（2026-10-27：序列時正式�
       const src = readFileSync(new URL(rel, import.meta.url), 'utf8')
       expect(src, rel).toMatch(/getLogsChunked\([\s\S]*?concurrency: UI_SCAN_CONCURRENCY/)
     }
+  })
+})
+
+describe('calibrateBlockTime：出塊時間以實測為準', () => {
+  const fake = (headNum: number, headTs: number, pastTs: number) => ({
+    getBlock: async (tag: number | 'latest') =>
+      tag === 'latest' ? { number: headNum, timestamp: headTs } : { number: tag, timestamp: pastTs },
+  })
+
+  it('實測值取代表上的值，換算跟著變', async () => {
+    resetMeasuredBlockTimes()
+    expect(avgBlockTime(84532)).toBe(0.2)
+    // 1,000 塊花了 2,000 秒 → 2 秒一塊（模擬鏈又變慢）
+    expect(await calibrateBlockTime(fake(50_000_000, 1_800_002_000, 1_800_000_000), 84532)).toBe(2)
+    expect(avgBlockTime(84532)).toBe(2)
+    expect(blocksForSeconds(84532, 3600)).toBe(1800)
+    expect(describeScanWindow(84532, 43_200)).toBe('1.0d')
+    resetMeasuredBlockTimes()
+  })
+
+  it('不合理的實測值（時間戳倒退、太慢）不採用', async () => {
+    resetMeasuredBlockTimes()
+    expect(await calibrateBlockTime(fake(50_000_000, 1_800_000_000, 1_800_000_500), 84532)).toBeNull()
+    expect(await calibrateBlockTime(fake(50_000_000, 1_900_000_000, 1_800_000_000), 84532)).toBeNull()
+    expect(avgBlockTime(84532)).toBe(0.2)
+  })
+
+  it('讀不到區塊就維持表上的值，不丟錯', async () => {
+    resetMeasuredBlockTimes()
+    const broken = { getBlock: async () => { throw new Error('rpc down') } }
+    expect(await calibrateBlockTime(broken, 84532)).toBeNull()
+    expect(await calibrateBlockTime(fake(10, 100, 0), 84532)).toBeNull()
+    expect(avgBlockTime(84532)).toBe(0.2)
+  })
+
+  it('recordMeasuredBlockTime 只收合理範圍', () => {
+    resetMeasuredBlockTimes()
+    expect(recordMeasuredBlockTime(84532, Number.NaN)).toBe(false)
+    expect(recordMeasuredBlockTime(84532, 0)).toBe(false)
+    expect(recordMeasuredBlockTime(84532, 0.25)).toBe(true)
+    expect(avgBlockTime(84532)).toBe(0.25)
+    resetMeasuredBlockTimes()
   })
 })

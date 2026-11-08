@@ -239,11 +239,26 @@ function CopyPageView() {
   useEffect(() => { setApproved(false) }, [totalMargin])
 
   // 批准不檢查餘額，沒先擋的話要到第二步才 revert。讀不到（null）就不擋，交給合約。
+  // 餘額會在別頁（水龍頭、兌換）或別的分頁變動：回到這頁、跟單送出後都重讀，免得用舊值擋人或放行。
   const [walletUsdc, setWalletUsdc] = useState<bigint | null>(null)
+  const [usdcTick, setUsdcTick] = useState(0)
   useEffect(() => {
     if (!contracts || !wallet.address) return
-    void (contracts.usdc.balanceOf(wallet.address) as Promise<bigint>).then(setWalletUsdc).catch(() => setWalletUsdc(null))
-  }, [contracts, wallet.address])
+    let alive = true
+    void (contracts.usdc.balanceOf(wallet.address) as Promise<bigint>)
+      .then(v => { if (alive) setWalletUsdc(v) })
+      .catch(() => { if (alive) setWalletUsdc(null) })
+    return () => { alive = false }
+  }, [contracts, wallet.address, usdcTick])
+  useEffect(() => {
+    const bump = () => { if (document.visibilityState === 'visible') setUsdcTick(n => n + 1) }
+    window.addEventListener('focus', bump)
+    document.addEventListener('visibilitychange', bump)
+    return () => {
+      window.removeEventListener('focus', bump)
+      document.removeEventListener('visibilitychange', bump)
+    }
+  }, [])
 
   // 槓桿上限的預設：這一版策略最高的槓桿（交易者之後調高不會帶著跟隨者一起調高）。
   useEffect(() => {
@@ -410,7 +425,10 @@ function CopyPageView() {
       navigate('/portfolio')
     } catch (e) {
       notify(prettyError(e), false)
-    } finally { setLoad('follow', false) }
+    } finally {
+      setLoad('follow', false)
+      setUsdcTick(n => n + 1)
+    }
   }
 
   // ADR-024：跟單＋開啟自動同步＋存入油箱。合約有一筆完成的函式就一筆送；沒有就分三步：

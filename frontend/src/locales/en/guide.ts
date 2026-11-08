@@ -40,11 +40,11 @@ export const guide: Catalog['guide'] = {
     heading: 'Are these tokenized securities? Not today. Digital twins are the next step',
     short: 'Today the tokens and perpetuals are synthetic exposure on a testnet and only track prices. The route to real securities is a digital twin built with licensed partners: an off-chain custodian holds the official record, and the on-chain token is its twin.',
     roadmap: [
-      { title: 'Now: synthetic track (testnet)', text: 'Shows the product and technology: spot tokens, perpetuals, copy trading and AI authorization.' },
+      { title: 'Now: synthetic track (testnet)', text: 'Shows the product and technology: spot tokens, perpetuals and AI authorization.' },
       { title: 'Next: licensed partner pilot', text: 'A licensed institution issues twin tokens, with no leverage, for credentialed wallets only.' },
       { title: 'Later: align with regulatory specs', text: 'Add closed-market price bands, standardized reporting data and on-chain handling of corporate actions.' },
     ],
-    notice: 'PepeFi is not a venue under the SEC exemption and has no regulatory approval. This table only compares gaps and is not a compliance statement. The digital twin column is a plan and has not been built.',
+    notice: 'This platform is not a venue under the SEC exemption and has no regulatory approval. This table only compares gaps and is not a compliance statement. The digital twin column is a plan and has not been built.',
     columns: ['Item', 'Now (synthetic track)', 'Next (digital twin, planned)', 'SEC exemption condition'],
     rows: [
       { item: 'What the token is', now: 'A synthetic token that only tracks price', twin: 'An on-chain representation of the same security held by a custodian', sec: 'Must represent the same security; synthetic exposure is out of scope' },

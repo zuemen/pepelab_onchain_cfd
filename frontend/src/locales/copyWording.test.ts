@@ -19,12 +19,16 @@ const ZH = /跟單|跟隨者/;
 const EN =
   /copy[- ]?trad|copy a trader|copy this trader|copier|copied (?:position|from)|\+ copied|follower|unfollow|copy fee|copy position|copy record|social copy|copying (?:a|the|trader)/i;
 
-// 白名單一律寫**精確 key**，只有兩條「整條路由都被旗標收起」的例外用前綴（ROUTE_PREFIXES）。
+// 白名單一律寫**精確 key**，只有「整條路由或整個元件都被旗標收起」的例外用前綴（ROUTE_PREFIXES）。
 // 萬用前綴（例如 portfolio.page.）會讓同一區塊新加的跟單文案悄悄過關。
 const ROUTE_PREFIXES: ReadonlyArray<{ prefix: string; why: string }> = [
   { prefix: 'copy.', why: '/copy/:addr 整條路由由 FeatureGate 收起' },
   { prefix: 'rewards.', why: '/rewards 整條路由由 PEPE 獎勵旗標收起' },
-  { prefix: 'guide.', why: '引導元件（GuideFlow）只在跟單旗標開啟時渲染' },
+  { prefix: 'guide.pillars.', why: 'SloganPillars 只在 LandingPage 的 FEATURE_COPY_TRADING 區塊內渲染' },
+  { prefix: 'guide.copyFlow.', why: 'CopyFlow 只在 LandingPage 的旗標區塊與 MarketplacePage 旗標開啟分支渲染' },
+  { prefix: 'guide.mode.', why: 'ModeGuideCard 在 PortfolioPage 由 FEATURE_COPY_TRADING 包住' },
+  { prefix: 'guide.marketplace.', why: 'MarketplacePage 旗標關閉時直接回 AllocationMarketplace，不渲染這些字' },
+  // guide.twin.* 不在白名單：數位孿生卡片在 /rwa 對所有租戶渲染，不得提到跟單。
 ];
 
 const ALLOWED: ReadonlyArray<{ key: string; why: string }> = [

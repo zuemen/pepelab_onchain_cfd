@@ -109,9 +109,6 @@ const STICKY_ACTION_CELL = {
   boxShadow: '-8px 0 8px -8px rgba(0,0,0,0.4)',
 } as const
 
-/** 這個站有沒有設定憑證狀態清單；沒有就走不完「撤銷憑證」。 */
-const VC_STATUS_CONFIGURED = !!(import.meta.env.VITE_VC_STATUS_URL as string | undefined)?.trim()
-
 /** 建立 session 前的欄位檢查，回傳第一個問題的說明；沒問題回 null。 */
 function sessionFormProblem(f: { agent: string; perTrade: string; budget: string; maxLev: string; hours: string }): string | null {
   const c = t.sessions.create
@@ -425,9 +422,10 @@ export default function SessionsPage() {
       if (res === 'timeout') await fetchSessions()
       // Revoking the session also revokes its v3 credential in the ADR-016 status list
       // (the chain already makes isAnchored false; the list covers verifiers that cache).
-      // 這個站沒設定狀態清單時不問：鏈上撤銷已生效，後面那段走不完。
+      // 沒設定 VITE_VC_STATUS_URL 的站也要問：會改走「下載簽好的清單」交給驗證方。
+      // 簽不成（例如找不到可信的舊清單）時 session 已撤銷，只提示到憑證區塊補完。
       const d = delegations[id]
-      if (VC_STATUS_CONFIGURED && d && !d.revoked && wallet.signer && wallet.address && window.confirm(t.sessions.delegation.revokeWithSession)) {
+      if (d && !d.revoked && wallet.signer && wallet.address && window.confirm(t.sessions.delegation.revokeWithSession)) {
         try {
           const r = await revokeDelegationCredential({
             signer: wallet.signer, user: wallet.address,

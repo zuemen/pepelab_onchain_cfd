@@ -222,7 +222,7 @@ export const rwa = {
     notFullyBacked:
       '金庫非足額抵押：它是所有多頭的對手方，靠最低準備率、逐資產上限與暫停來限制曝險，不是 1:1 準備。現在的比率很高，是因為負債很小而儲備是大量測試幣，不能拿來宣稱超額擔保。',
     historyTitle: '準備率歷史（ReserveObserved 事件）',
-    historyWindow: '最近約 {hours} 小時（區塊 {from}–{to}，每段 ≤ {chunk} 塊）',
+    historyWindow: '最近約 {span}（區塊 {from}–{to}，每段 ≤ {chunk} 塊）',
     historyLoading: '正在掃描鏈上事件…',
     historyFailed: '讀取失敗：無法取得這段期間的事件。',
     historyPartial: '{failed}／{total} 段讀取失敗，曲線可能有缺口。',

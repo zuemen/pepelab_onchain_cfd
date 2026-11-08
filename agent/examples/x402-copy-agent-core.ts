@@ -13,7 +13,7 @@ import type { ChainReads, Executor } from "../copy-sync/src/engine.ts";
 import { versionStep } from "../copy-sync/src/engine.ts";
 import { CATEGORY_LABEL, classifyRevert, isRevert, type RevertCategory } from "../copy-sync/src/errors.ts";
 import { errText, type Redactor } from "../copy-sync/src/log.ts";
-import { formatUsdcAtomic, type PaymentMeter } from "../shared/src/x402Client.ts";
+import { formatUsdcAtomic, X402_PAYMENT_HEADERS, type PaymentMeter } from "../shared/src/x402Client.ts";
 
 // ── 通知驗證 ────────────────────────────────────────────────────────────────
 
@@ -181,6 +181,8 @@ export interface ChainSnapshot {
 export interface Blocked {
   code: "no-record" | "trader-mismatch" | "stale" | "already-synced" | "auto-sync-off" | "executor" | "cooldown" | `sim-${RevertCategory}`;
   reason: string;
+  /** 冷卻中：還要幾秒（鏈上時間）才可以同步；agent 會在那之後自動再試一次。 */
+  retryInSec?: number;
   /** 本人該怎麼做。 */
   action: string;
 }
@@ -223,7 +225,8 @@ export function gateDecision(n: NewVersionNotice, s: ChainSnapshot, me: string |
     return {
       code: "cooldown",
       reason: `冷卻中，到 ${new Date(s.readyAt * 1000).toISOString()}`,
-      action: `冷卻結束後重新觸發通知（x402-copy-agent.md「重新觸發」）；急的話本人到投資組合按「立即同步」（本人不受冷卻）`,
+      action: `agent 開著的話，冷卻結束後會自動再試一次（不必重新觸發）；急的話本人到投資組合按「立即同步」（本人不受冷卻）`,
+      retryInSec: s.readyAt - s.now,
     };
   }
   return null;
@@ -266,7 +269,63 @@ export function checkSignal(body: unknown, n: Pick<NewVersionNotice, "trader" | 
   return { ok: true, version };
 }
 
+/** 送給伺服器的 EIP-3009 授權（從付款 header 解出）。用來在伺服器回 402 後核對有沒有被結算。 */
+export interface SentAuthorization {
+  from: string;
+  nonce: string;
+  /** 秒（unix）。過了這個時間授權就不能再被結算。 */
+  validBefore: number;
+}
+
+/** 解 v1 X-PAYMENT／v2 PAYMENT-SIGNATURE（base64 JSON，payload.authorization）。解不開回 null。 */
+export function parseAuthorization(header: string | null | undefined): SentAuthorization | null {
+  if (!header) return null;
+  try {
+    const a = (JSON.parse(Buffer.from(header, "base64").toString("utf8")) as {
+      payload?: { authorization?: { from?: unknown; nonce?: unknown; validBefore?: unknown } };
+    })?.payload?.authorization;
+    if (!a || typeof a.from !== "string" || !ethers.isAddress(a.from)) return null;
+    if (typeof a.nonce !== "string" || !/^0x[0-9a-fA-F]{64}$/.test(a.nonce)) return null;
+    const vb = typeof a.validBefore === "string" && /^\d+$/.test(a.validBefore) ? Number(a.validBefore) : typeof a.validBefore === "number" ? a.validBefore : NaN;
+    if (!Number.isSafeInteger(vb)) return null;
+    return { from: ethers.getAddress(a.from), nonce: a.nonce.toLowerCase(), validBefore: vb };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * 包在 meteredFetch 底下，記下每一張送出去的授權。
+ * 解不開的付款 header 也要記（標成 null），這樣呼叫端知道「有送出但無法核對」。
+ */
+export function captureAuthorizations(base: typeof globalThis.fetch = globalThis.fetch) {
+  let sent: (SentAuthorization | null)[] = [];
+  const fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+    const inputHeaders =
+      typeof input === "object" && input !== null && "headers" in input
+        ? (input as { headers?: ConstructorParameters<typeof Headers>[0] }).headers
+        : undefined;
+    const headers = new Headers(init?.headers ?? inputHeaders);
+    for (const h of X402_PAYMENT_HEADERS) {
+      const raw = headers.get(h);
+      if (raw) sent.push(parseAuthorization(raw));
+    }
+    return base(input, init);
+  }) as typeof globalThis.fetch;
+  return {
+    fetch,
+    /** 取出並清空目前記下的授權。 */
+    drain(): (SentAuthorization | null)[] {
+      const out = sent;
+      sent = [];
+      return out;
+    },
+  };
+}
+
 export interface PayAttempt {
+  /** 這次送出的授權；null 表示有送出但解不開。沒接 captureAuthorizations 時為 undefined。 */
+  authorizations?: (SentAuthorization | null)[];
   /** HTTP 狀態；連線錯誤或拒絕簽署時為 null。 */
   status: number | null;
   body: unknown;
@@ -279,13 +338,47 @@ export interface PayAttempt {
 
 /**
  * paid：拿到 2xx 且送過授權。free：拿到 2xx 但伺服器沒要求付款。
- * not-charged：沒有送出任何授權（例如超過單筆上限被拒簽），或伺服器明確回 402 拒收（例如 USDC 不足）；可以重試。
+ * not-charged：沒有送出任何授權（例如超過單筆上限被拒簽）；可以重試。
+ * rejected：送出授權後伺服器回 402。多半是沒扣款（例如 USDC 不足、facilitator 暫時失敗），
+ *   但 402 不能證明授權沒被用掉——要等授權到期、在鏈上查過沒被使用，才可以當作沒付（見 resolveRejected）。
  * uncertain：授權已交出但沒拿到明確結果（5xx、斷線）；授權有效期內仍可能被結算，不自動重付。
  */
-export function classifyPayment(a: Pick<PayAttempt, "status" | "sentAtomic">): "paid" | "free" | "not-charged" | "uncertain" {
+export function classifyPayment(a: Pick<PayAttempt, "status" | "sentAtomic">): "paid" | "free" | "not-charged" | "rejected" | "uncertain" {
   const ok = a.status !== null && a.status >= 200 && a.status < 300;
   if (ok) return a.sentAtomic > 0n ? "paid" : "free";
-  return a.sentAtomic > 0n && a.status !== 402 ? "uncertain" : "not-charged";
+  if (a.sentAtomic === 0n) return "not-charged";
+  return a.status === 402 ? "rejected" : "uncertain";
+}
+
+/** 等授權到期的上限（秒）。簽章守門把付款視窗限制在 300 秒內，正常不會碰到。 */
+export const MAX_AUTH_WAIT_SEC = 600;
+
+/**
+ * 伺服器回 402 之後，核對送出的授權有沒有被結算：
+ *   等到鏈上時間超過 validBefore（之後誰都不能再結算），再查 USDC 的 authorizationState。
+ *   全部沒被使用 → not-charged（可以安全重試）；任何一張被用掉、解不開、或查不了 → uncertain（不自動重付）。
+ */
+export async function resolveRejected(
+  d: Pick<AgentDeps, "reads" | "authUsed" | "sleep" | "print">,
+  a: Pick<PayAttempt, "authorizations">,
+): Promise<{ cls: "not-charged" | "uncertain"; why: string }> {
+  const auths = a.authorizations;
+  if (!d.authUsed || !auths || auths.length === 0) return { cls: "uncertain", why: "沒有可核對的授權紀錄" };
+  if (auths.some((x) => x === null)) return { cls: "uncertain", why: "有一張授權解不開，無法核對" };
+  const list = auths as SentAuthorization[];
+  const until = Math.max(...list.map((x) => x.validBefore));
+  let now = await d.reads.blockTimestamp();
+  if (until - now > MAX_AUTH_WAIT_SEC) return { cls: "uncertain", why: `授權要到 ${new Date(until * 1000).toISOString()} 才到期，太久了` };
+  if (now <= until) d.print(`   伺服器回 402：等授權到期（約 ${until - now + 1} 秒）再到鏈上核對有沒有被扣款`);
+  for (let i = 0; now <= until && i < 100; i++) {
+    await (d.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms))))(Math.min(until - now + 2, 30) * 1000);
+    now = await d.reads.blockTimestamp();
+  }
+  if (now <= until) return { cls: "uncertain", why: "等不到授權到期" };
+  for (const x of list) {
+    if (await d.authUsed(x.from, x.nonce)) return { cls: "uncertain", why: "授權已在鏈上被使用（扣了款但沒拿到訊號）" };
+  }
+  return { cls: "not-charged", why: "授權已過期且沒被使用，確定沒扣款" };
 }
 
 /** 從結算證明 header（v1 X-PAYMENT-RESPONSE／v2 PAYMENT-RESPONSE，base64 JSON）取 tx hash。 */
@@ -309,12 +402,16 @@ export function makeSignalPayer(a: {
   payFetch: typeof fetch;
   meter: PaymentMeter;
   redact: Redactor;
+  /** captureAuthorizations().drain：有接才能在 402 後核對授權。 */
+  drainAuthorizations?: () => (SentAuthorization | null)[];
 }): (trader: string) => Promise<PayAttempt> {
   return async (trader) => {
+    a.drainAuthorizations?.(); // 清掉先前殘留的，只留這次的
     const sent0 = a.meter.totalSentAtomic();
     const paid0 = a.meter.totalPaidAtomic();
     const unsettled0 = a.meter.unsettledAtomic();
     const delta = () => ({
+      ...(a.drainAuthorizations ? { authorizations: a.drainAuthorizations() } : {}),
       sentAtomic: a.meter.totalSentAtomic() - sent0,
       paidAtomic: a.meter.totalPaidAtomic() - paid0,
       unsettledAtomic: a.meter.unsettledAtomic() - unsettled0,
@@ -345,11 +442,17 @@ export interface AgentDeps {
   txLink: (hash: string) => string;
   dryRun: boolean;
   txTimeoutMs: number;
+  /** USDC authorizationState(from, nonce)：授權是否已被使用。沒有時，402 一律當作狀態不明。 */
+  authUsed?: (from: string, nonce: string) => Promise<boolean>;
+  /** 測試用；預設 setTimeout。 */
+  sleep?: (ms: number) => Promise<void>;
 }
 
 export interface Outcome {
   result: "synced" | "blocked" | "duplicate" | "mismatch" | "payment-failed" | "dry-run" | "unconfirmed" | "tx-failed" | "error";
   code?: string;
+  /** 冷卻中：幾秒後可以再試（呼叫端排程重試）。 */
+  retryInSec?: number;
   paidAtomic: bigint;
   paymentTx: string | null;
   syncTx: string | null;
@@ -392,8 +495,9 @@ export async function processNotice(d: AgentDeps, n: NewVersionNotice): Promise<
   let paidAtomic = 0n;
   let unsettledAtomic = 0n;
   let paymentTx: string | null = null;
-  const done = (result: Outcome["result"], extra: { code?: string; syncTx?: string | null } = {}): Outcome => ({
+  const done = (result: Outcome["result"], extra: { code?: string; syncTx?: string | null; retryInSec?: number } = {}): Outcome => ({
     result, code: extra.code, paidAtomic, paymentTx, syncTx: extra.syncTx ?? null,
+    ...(extra.retryInSec !== undefined ? { retryInSec: extra.retryInSec } : {}),
   });
   const fee = () => {
     if (paidAtomic > 0n) d.print(`   費用：本次已付 ${formatUsdcAtomic(paidAtomic)} USDC${paymentTx ? `（tx ${paymentTx}）` : "（沒拿到 tx）"}`);
@@ -407,7 +511,7 @@ export async function processNotice(d: AgentDeps, n: NewVersionNotice): Promise<
     d.print(`   不同步：${b.reason}`);
     d.print(`   本人：${b.action}`);
     fee();
-    return done("blocked", { code: b.code });
+    return done("blocked", { code: b.code, retryInSec: b.retryInSec });
   };
   const failure = (what: string, e: unknown): Outcome => {
     d.print(`   ${what}：${errText(e, d.redact)}`);
@@ -450,11 +554,21 @@ export async function processNotice(d: AgentDeps, n: NewVersionNotice): Promise<
     paidAtomic = a.paidAtomic;
     unsettledAtomic = a.unsettledAtomic;
     paymentTx = a.tx;
-    const cls = classifyPayment(a);
+    let cls = classifyPayment(a);
+    let why = "";
+    if (cls === "rejected") {
+      try {
+        ({ cls, why } = await resolveRejected(d, a));
+      } catch (e) {
+        cls = "uncertain";
+        why = `核對授權時讀鏈失敗：${errText(e, d.redact)}`;
+      }
+      if (cls === "not-charged") unsettledAtomic = 0n; // 已確認授權過期且沒被使用
+    }
     if (cls === "not-charged") {
       delete d.ledger.signals[sigKey];
       d.persist(d.ledger);
-      d.print(`② x402 沒有付款：${a.error ?? `HTTP ${a.status}`}`);
+      d.print(`② x402 沒有付款：${a.error ?? `HTTP ${a.status}`}${why ? `（${why}）` : ""}`);
       d.print("   本人：確認 X402_API_URL、X402_MAX_PAYMENT_USDC 與付款錢包的 USDC，再重新觸發通知");
       fee();
       return done("payment-failed");
@@ -462,7 +576,7 @@ export async function processNotice(d: AgentDeps, n: NewVersionNotice): Promise<
     if (cls === "uncertain") {
       d.ledger.signals[sigKey] = { status: "uncertain", tx: a.tx, paidAtomic: a.paidAtomic.toString(), version: null };
       d.persist(d.ledger);
-      d.print(`② x402 買訊號失敗：${a.error ?? `HTTP ${a.status}`}。不同步，這一版也不會自動重付`);
+      d.print(`② x402 買訊號失敗：${a.error ?? `HTTP ${a.status}`}${why ? `（${why}）` : ""}。不同步，這一版也不會自動重付`);
       d.print(`   本人：查付款錢包的 USDC 紀錄；要同步請到投資組合按「立即同步」。${MANUAL_RETRY}`);
       fee();
       return done("payment-failed");
@@ -590,6 +704,43 @@ export function routeWebhook(req: WebhookRequest, cfg: AgentConfig): WebhookResp
   if (a.kind === "ignore") return { status: 200, message: `略過：${a.reason}` };
   if (a.kind === "blocked") return { status: 200, message: "已記錄", blocked: a.notice };
   return { status: 202, message: "已排入處理", notice: a.notice };
+}
+
+/** readyAt 是鏈上時間，本機時鐘可能差一點：多等這麼久再試。 */
+export const RETRY_MARGIN_SEC = 30;
+/** 單次排程最長等多久；更久的冷卻到時會再被擋一次、再排一次。 */
+export const MAX_RETRY_DELAY_SEC = 24 * 3600;
+
+/**
+ * 冷卻中的通知：冷卻結束後自動重新排入佇列（同一筆跟單的同一版只排一次）。
+ * 重試時照常從頭檢查：交易者若又發了新版，這則舊通知會被判定過期而停下。
+ */
+export function makeRetryScheduler(
+  push: (n: NewVersionNotice) => void,
+  timers: { set: (fn: () => void, ms: number) => unknown; clear: (t: unknown) => void } = {
+    set: (fn, ms) => setTimeout(fn, ms),
+    clear: (t) => clearTimeout(t as ReturnType<typeof setTimeout>),
+  },
+) {
+  const pending = new Map<string, unknown>();
+  return {
+    /** 回傳實際等待秒數；已經排過回傳 null。 */
+    schedule(n: NewVersionNotice, inSec: number): number | null {
+      const k = syncKey(n);
+      if (pending.has(k)) return null;
+      const delay = Math.min(Math.max(0, Math.ceil(inSec)) + RETRY_MARGIN_SEC, MAX_RETRY_DELAY_SEC);
+      pending.set(k, timers.set(() => {
+        pending.delete(k);
+        push(n);
+      }, delay * 1000));
+      return delay;
+    },
+    size: () => pending.size,
+    cancelAll(): void {
+      for (const t of pending.values()) timers.clear(t);
+      pending.clear();
+    },
+  };
 }
 
 /** 依序處理通知（付款與 nonce 都不該並行）。佇列滿了回傳 false。 */

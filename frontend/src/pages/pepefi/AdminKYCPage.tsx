@@ -3,7 +3,8 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { isAddress } from 'ethers'
 import { useContracts } from 'src/hooks/useContracts'
 import { usePepefiWallet } from 'src/layouts/pepefi'
-import { useKYCReviewQueue, type ReviewApplication } from 'src/hooks/useKYCReviewQueue'
+import { describeScanWindow } from 'src/lib/pepefi/chainLogs'
+import { kycScanBlocks, useKYCReviewQueue, type ReviewApplication } from 'src/hooks/useKYCReviewQueue'
 import { screenApplication, type ScreeningResult, type ScreeningReasonCode } from 'src/lib/pepefi/kycScreening'
 import { isCommitmentHash, verifyKycCommitment } from 'src/lib/pepefi/kycCommitment'
 import { t, interpolate } from 'src/locales'
@@ -578,7 +579,9 @@ export default function AdminKYCPage() {
             sx={{ mt: 0.5, height: 4, borderRadius: 2 }}
           />
           <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
-            {t.admin.kyc.queue.scanningHint}
+            {interpolate(t.admin.kyc.queue.scanningHint, {
+              span: describeScanWindow(wallet.chainId, queue.scanRange ? queue.scanRange.to - queue.scanRange.from : kycScanBlocks(wallet.chainId)),
+            })}
           </Typography>
         </Box>
       )}
@@ -676,7 +679,7 @@ export default function AdminKYCPage() {
 
       {queue.scanRange && (
         <Typography variant="caption" color="text.disabled">
-          {interpolate(t.admin.kyc.queue.scanRange, queue.scanRange)}
+          {interpolate(t.admin.kyc.queue.scanRange, { ...queue.scanRange, span: describeScanWindow(wallet.chainId, queue.scanRange.to - queue.scanRange.from) })}
         </Typography>
       )}
     </Container>

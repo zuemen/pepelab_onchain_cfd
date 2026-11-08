@@ -8,6 +8,7 @@ import { usePathname } from 'src/routes/hooks';
 import { type WalletAPI } from 'src/hooks/useWallet';
 
 import { t } from 'src/locales';
+import { calibrateBlockTime } from 'src/lib/pepefi/chainLogs';
 import { useWalletContext } from 'src/contexts/wallet-context';
 import { CHAIN_NAMES, isPrimaryChain, PRIMARY_CHAIN_ID } from 'src/contracts/addresses';
 
@@ -45,6 +46,13 @@ export function PepefiLayout() {
       navigate(returnTo ?? AFTER_CONNECT_PATH, { replace: true });
     }
   }, [wallet.initializing, wallet.isConnected, pathname, location.search, location.state, navigate]);
+
+  // 出塊時間以實測為準（寫死的表會過時，見 chainLogs 的 calibrateBlockTime）。每條鏈每次開站量一次。
+  const { provider, chainId } = wallet;
+  useEffect(() => {
+    if (!provider || !chainId) return;
+    void calibrateBlockTime(provider, chainId);
+  }, [provider, chainId]);
 
   if (wallet.initializing) return <LoadingScreen />;
 

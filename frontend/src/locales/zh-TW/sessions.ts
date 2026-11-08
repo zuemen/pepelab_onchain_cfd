@@ -164,7 +164,7 @@ export const sessions = {
     download: '下載憑證 .json',
     revoke: '撤銷這張憑證',
     revokeUnavailable: '這個站還沒設定憑證狀態清單，無法單獨撤銷憑證。要停止授權，請撤銷 session，鏈上立即生效。',
-    revokeListSkipped: 'Session 已撤銷，鏈上立即生效。憑證的撤銷清單這次沒有簽署完成，不影響 session 的撤銷。',
+    revokeListSkipped: 'Session 已撤銷，鏈上立即生效。憑證的撤銷清單這次沒有簽署完成，不影響 session 的撤銷；要補上憑證撤銷，請到這個 session 的委託憑證區塊再按一次撤銷（可匯入目前的清單）。',
     revoking: '撤銷中…',
     revokedDownloaded: '已簽好撤銷清單（sequence {seq}），但尚未確認發佈（已下載）；請交給營運方發佈（npm run vc-status install），發佈後按「確認已發佈」。在那之前憑證仍有效。',
     revokedPublished: '已簽好撤銷清單（sequence {seq}），並確認已發佈到狀態清單目錄。',

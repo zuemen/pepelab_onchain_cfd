@@ -15,7 +15,7 @@ import { createWalletClient, http, publicActions, type Hex } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { baseSepolia } from "viem/chains";
 import { wrapFetchWithPayment } from "x402-fetch";
-import { formatUsdcAtomic, guardViemAccount, meteredFetch, resolveX402MaxValue } from "@pepelab/shared";
+import { formatUsdcAtomic, guardViemAccount, meteredFetch, resolveSettlementToken, resolveX402MaxValue } from "@pepelab/shared";
 import { getAddresses } from "../../frontend/src/contracts/addresses.ts";
 import { followerFootprint, makeChainReads, makeExecutor, supportsAutoSync, supportsSyncExecutor, trackerRegistry } from "../copy-sync/src/chain.ts";
 import { ExecutorWallet } from "../copy-sync/src/guard.ts";
@@ -25,8 +25,10 @@ import { acquireProcessLock } from "../copy-sync/src/state.ts";
 import { LocalNonceSigner } from "../keeper/nonceSigner.ts";
 import {
   blockedLines,
+  captureAuthorizations,
   createWebhookServer,
   loadLedger,
+  makeRetryScheduler,
   makeSerialQueue,
   makeSignalPayer,
   processNotice,
@@ -44,7 +46,8 @@ const USAGE = `用法：npx tsx examples/x402-copy-agent.ts --followers 0x..,0x.
   --state-file PATH       去重紀錄（預設 agent/.state/x402-copy-agent/<chainId>-<tracker>.json）
   --allow-plaintext-key   公開鏈上允許執行者用明文 COPY_SYNC_PRIVATE_KEY（同 copy-sync）
 環境變數：COPY_SYNC_RPC_URL（或 BASE_SEPOLIA_RPC_URL）；真跑另需 X402_API_URL、AGENT_PRIVATE_KEY、
-COPY_SYNC_KEYSTORE（或 COPY_SYNC_PRIVATE_KEY）；X402_MAX_PAYMENT_USDC 是單筆付費上限。`;
+COPY_SYNC_KEYSTORE（或 COPY_SYNC_PRIVATE_KEY）；X402_MAX_PAYMENT_USDC 是單筆付費上限。
+真跑只接受 Base Sepolia（chainId 84532）：x402 付款在 Base Sepolia，讀鏈、送交易、付款簽章都用同一個 RPC。`;
 
 const die = (msg: string): never => {
   console.error(`x402-copy-agent：${msg}`);
@@ -101,6 +104,8 @@ async function main(): Promise<void> {
   } finally {
     probe.destroy();
   }
+  // 付款錢包簽的是 Base Sepolia USDC；RPC 若指到別條鏈，付款與同步會分在兩條鏈上。
+  if (!dryRun && chainId !== baseSepolia.id) die(`真跑只支援 Base Sepolia（${baseSepolia.id}），RPC 是 chainId ${chainId}`);
   const provider = new ethers.JsonRpcProvider(rpcUrl, ethers.Network.from(chainId), { batchMaxCount: 1, staticNetwork: true });
   const registered = getAddresses(chainId)?.CopyTracker;
   const trackerRaw = args.tracker ?? registered;
@@ -115,6 +120,7 @@ async function main(): Promise<void> {
   let wallet: ExecutorWallet | null = null;
   let executorAddress: string | null = null;
   let pay: (trader: string) => Promise<PayAttempt> = () => Promise.reject(new Error("dry-run 不付款"));
+  let authUsed: ((from: string, nonce: string) => Promise<boolean>) | undefined;
   if (!dryRun) {
     const api = process.env.X402_API_URL?.trim().replace(/\/$/, "");
     if (!api || !/^https?:\/\//.test(api)) die("真跑需要 X402_API_URL");
@@ -149,14 +155,17 @@ async function main(): Promise<void> {
     if ((await provider.getBalance(wallet.address)) === 0n) die("執行者熱錢包沒有 gas ETH");
     signer = new LocalNonceSigner(wallet);
 
-    const client = createWalletClient({ account, chain: baseSepolia, transport: http(process.env.BASE_SEPOLIA_RPC_URL?.trim() || "https://sepolia.base.org") }).extend(publicActions);
-    const meter = meteredFetch();
+    const client = createWalletClient({ account, chain: baseSepolia, transport: http(rpcUrl) }).extend(publicActions);
+    const capture = captureAuthorizations();
+    const meter = meteredFetch(capture.fetch);
+    const usdc = new ethers.Contract(resolveSettlementToken(), ["function authorizationState(address,bytes32) view returns (bool)"], provider);
+    authUsed = async (from, nonce) => Boolean(await usdc.getFunction("authorizationState")(from, nonce));
     const payFetch = wrapFetchWithPayment(
       meter.fetch,
       client as unknown as Parameters<typeof wrapFetchWithPayment>[1],
       resolveX402MaxValue(),
     ) as unknown as typeof fetch;
-    pay = makeSignalPayer({ api: api!, payFetch, meter, redact });
+    pay = makeSignalPayer({ api: api!, payFetch, meter, redact, drainAuthorizations: capture.drain });
     console.log(`執行者 ${wallet.address}（${describeKeySource(spec.spec)}；只能簽 resyncFor）`);
     console.log(`付款 ${account.address}  ${api}`);
   }
@@ -201,11 +210,20 @@ async function main(): Promise<void> {
     txLink: (h: string) => (explorer ? `${explorer}${h}` : h),
     dryRun,
     txTimeoutMs: 120_000,
+    authUsed,
   };
 
+  // 冷卻中的通知：冷卻結束後自動再排入佇列（copy-sync 不會為同一版再通知一次）。
+  const retries = makeRetryScheduler((n) => {
+    if (!queue.push(n)) print(`冷卻結束要重試，但佇列已滿：跟隨者 ${n.follower}#${n.recordIdx} versionId ${n.toVersion} 請重新觸發`);
+  });
   const queue = makeSerialQueue<NewVersionNotice>(
     async (n) => {
-      await processNotice(deps, n);
+      const o = await processNotice(deps, n);
+      if (o.code === "cooldown" && o.retryInSec !== undefined) {
+        const wait = retries.schedule(n, o.retryInSec);
+        if (wait !== null) print(`   已排程：約 ${Math.ceil(wait / 60)} 分鐘後（${new Date(Date.now() + wait * 1000).toLocaleString()}）自動再試，agent 要保持開著`);
+      }
       print("");
     },
     (e) => print(`處理通知時發生錯誤：${errText(e, redact)}`),
@@ -222,6 +240,7 @@ async function main(): Promise<void> {
     if (stopping) process.exit(130);
     stopping = true;
     server.close();
+    retries.cancelAll();
     // 付款或同步進行中就等它做完；再按一次立即結束（狀態檔已先記下，重啟也不會重付）。
     void queue.idle().finally(() => {
       release();

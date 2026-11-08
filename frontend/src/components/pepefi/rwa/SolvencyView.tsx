@@ -184,7 +184,7 @@ export function SolvencyView({ snapshot, loading, history, historyLoading, chain
         </Section>
       </Box>
 
-      <ReserveRatioChart history={history} loading={historyLoading} />
+      <ReserveRatioChart history={history} loading={historyLoading} chainId={chainId} />
 
       {snapshot && <LossWaterfall layers={buildWaterfall(snapshot)} decimals={dec} />}
     </Box>

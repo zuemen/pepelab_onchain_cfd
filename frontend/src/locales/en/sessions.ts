@@ -164,7 +164,7 @@ export const sessions: Catalog['sessions'] = {
     download: 'Download credential .json',
     revoke: 'Revoke this credential',
     revokeUnavailable: 'This site has no credential status list yet, so a credential cannot be revoked on its own. To stop the authorization, revoke the session: it takes effect on-chain right away.',
-    revokeListSkipped: 'Session revoked: it takes effect on-chain right away. The credential status list was not signed this time, which does not affect the session revocation.',
+    revokeListSkipped: 'Session revoked: it takes effect on-chain right away. The credential status list was not signed this time, which does not affect the session revocation. To finish revoking the credential, use Revoke again in the delegation credential panel for this session (you can import the current list there).',
     revoking: 'Revoking…',
     revokedDownloaded: 'Revocation list signed (sequence {seq}) but not confirmed published (downloaded); hand it to the operator (npm run vc-status install), then press Confirm published. Until then the credential is still valid.',
     revokedPublished: 'Revocation list signed (sequence {seq}) and confirmed in the status directory.',

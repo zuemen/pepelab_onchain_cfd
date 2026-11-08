@@ -17,8 +17,9 @@ import { makeWebhookNotifier, type NotifyPayload } from "../copy-sync/src/notify
 import { emptyState, scopeOf } from "../copy-sync/src/state.ts";
 import { meteredFetch } from "../shared/src/x402Client.ts";
 import {
-  admitNotification, adviceFor, blockedLines, checkSignal, classifyPayment, createWebhookServer, dedupeDecision, emptyLedger, gateDecision,
-  loadLedger, makeSerialQueue, makeSignalPayer, MAX_BODY_BYTES, parseLedger, paymentTxFromHeaders, processNotice, routeWebhook, saveLedger,
+  admitNotification, adviceFor, blockedLines, captureAuthorizations, checkSignal, classifyPayment, createWebhookServer, dedupeDecision, emptyLedger, gateDecision,
+  loadLedger, makeRetryScheduler, makeSerialQueue, makeSignalPayer, MAX_BODY_BYTES, parseAuthorization, parseLedger, paymentTxFromHeaders, processNotice,
+  RETRY_MARGIN_SEC, routeWebhook, saveLedger,
   signalKey, syncKey,
   type AgentConfig, type AgentDeps, type ChainSnapshot, type Ledger, type NewVersionNotice, type PayAttempt,
 } from "./x402-copy-agent-core.ts";
@@ -155,6 +156,8 @@ const NOTICE: NewVersionNotice = { chainId: FAKE_CHAIN_ID, follower: ALICE.toLow
   assert.equal(cd.code, "cooldown");
   assert.match(cd.reason, new RegExp(new Date(300_000).toISOString()), "印出冷卻結束時間");
   assert.match(cd.action, /本人不受冷卻/);
+  assert.match(cd.action, /自動再試/);
+  assert.equal(cd.retryInSec, 100, "還要多久（鏈上時間）");
   assert.equal(code(NOTICE, snap({ readyAt: 200 })), undefined, "時間到（now == readyAt）就可以");
   ok("冷卻中：不同步，印出到什麼時候與本人的選項");
 
@@ -192,7 +195,8 @@ const NOTICE: NewVersionNotice = { chainId: FAKE_CHAIN_ID, follower: ALICE.toLow
   assert.equal(classifyPayment({ status: 200, sentAtomic: 0n }), "free");
   assert.equal(classifyPayment({ status: null, sentAtomic: 0n }), "not-charged", "拒簽（超過上限）");
   assert.equal(classifyPayment({ status: 400, sentAtomic: 0n }), "not-charged");
-  assert.equal(classifyPayment({ status: 402, sentAtomic: 10_000n }), "not-charged", "伺服器明確拒收（例如 USDC 不足）：可以重試");
+  assert.equal(classifyPayment({ status: 402, sentAtomic: 10_000n }), "rejected", "送出授權後回 402：要核對授權才知道有沒有扣款");
+  assert.equal(classifyPayment({ status: 402, sentAtomic: 0n }), "not-charged", "沒送出授權的 402");
   assert.equal(classifyPayment({ status: 502, sentAtomic: 10_000n }), "uncertain", "授權已交出");
   assert.equal(classifyPayment({ status: null, sentAtomic: 10_000n }), "uncertain", "斷線");
   ok("classifyPayment：授權交出去但沒拿到成功回應 → 狀態不明，不自動重付");
@@ -256,7 +260,7 @@ const paid = (version: number | null = 1): PayAttempt => ({
   sentAtomic: 10_000n, paidAtomic: 10_000n, unsettledAtomic: 0n, tx: TX,
 });
 
-function rig(opts: { autoSync?: boolean; cooled?: boolean; gas?: boolean; dryRun?: boolean; ledger?: Ledger; onPay?: (c: FakeChain) => void } = {}): Rig {
+function rig(opts: { autoSync?: boolean; cooled?: boolean; gas?: boolean; dryRun?: boolean; ledger?: Ledger; onPay?: (c: FakeChain) => void; authUsed?: (from: string, nonce: string) => Promise<boolean> } = {}): Rig {
   const chain = new FakeChain();
   chain.publish(TRADER, [alloc(BTC)]);
   chain.follow(ALICE, TRADER);
@@ -292,6 +296,11 @@ function rig(opts: { autoSync?: boolean; cooled?: boolean; gas?: boolean; dryRun
     txLink: (h) => `https://explorer.test/tx/${h}`,
     dryRun: !!opts.dryRun,
     txTimeoutMs: 200,
+    authUsed: opts.authUsed,
+    sleep: async (ms) => {
+      chain.time += Math.ceil(ms / 1000);
+      chain.mine();
+    },
   };
   return { chain, deps, lines, pays: () => payCount, sends: () => sendCount, notice: NOTICE, setPay: (fn) => void (payImpl = fn) };
 }
@@ -352,6 +361,7 @@ const out = (r: Rig) => r.lines.join("\n");
   assert.equal(r.pays(), 0);
   assert.equal(r.sends(), 0);
   assert.match(out(r), /冷卻中，到 \d{4}-/);
+  assert.ok(o.retryInSec !== undefined && o.retryInSec > 0 && o.retryInSec <= 3600, "回傳還要等多久，給呼叫端排程");
   // 冷卻結束後重新觸發：這次才付費與同步
   r.chain.time += 3600;
   r.chain.mine();
@@ -439,13 +449,47 @@ const out = (r: Rig) => r.lines.join("\n");
   assert.equal(persisted[0].signals[signalKey(c.notice)].status, "paying", "付款前先寫入");
   ok("付款前先寫紀錄：中途被砍，重啟不會再付");
 
-  const rejected = rig();
-  rejected.setPay(async () => ({ status: 402, body: null, sentAtomic: 10_000n, paidAtomic: 0n, unsettledAtomic: 10_000n, tx: null }));
-  assert.equal((await processNotice(rejected.deps, rejected.notice)).result, "payment-failed");
+  const AUTH = { from: ALICE, nonce: "0x" + "cd".repeat(32), validBefore: 0 };
+  const r402 = (c: FakeChain, over: Partial<typeof AUTH> | null = {}): PayAttempt => ({
+    status: 402, body: null, sentAtomic: 10_000n, paidAtomic: 0n, unsettledAtomic: 10_000n, tx: null,
+    authorizations: over === null ? [null] : [{ ...AUTH, validBefore: c.time + 60, ...over }],
+  });
+  const checked: string[] = [];
+  const rejected = rig({ authUsed: async (_f, nonce) => (checked.push(nonce), false) });
+  rejected.setPay(async () => r402(rejected.chain));
+  const t0 = rejected.chain.time;
+  const ro = await processNotice(rejected.deps, rejected.notice);
+  assert.equal(ro.result, "payment-failed");
   assert.equal(rejected.sends(), 0);
+  assert.ok(rejected.chain.time > t0 + 60, "等到授權到期才核對");
+  assert.deepEqual(checked, [AUTH.nonce], "到鏈上查了這張授權");
+  assert.match(out(rejected), /確定沒扣款/);
+  assert.doesNotMatch(out(rejected), /授權已送出、沒看到結算/, "確認沒扣款就不再報未結算");
   rejected.setPay(async () => paid());
   assert.equal((await processNotice(rejected.deps, rejected.notice)).result, "synced", "補了 USDC 再觸發可以完成，不會整版卡死");
-  ok("伺服器回 402（例如 USDC 不足）：不同步、可以重試");
+  ok("伺服器回 402：等授權到期、鏈上確認沒被使用，才當作沒付，可以重試");
+
+  const used = rig({ authUsed: async () => true });
+  used.setPay(async () => r402(used.chain));
+  assert.equal((await processNotice(used.deps, used.notice)).result, "payment-failed");
+  assert.equal(used.deps.ledger.signals[signalKey(used.notice)].status, "uncertain", "授權被用掉了：記成狀態不明");
+  assert.match(out(used), /扣了款但沒拿到訊號/);
+  used.setPay(async () => paid());
+  assert.equal((await processNotice(used.deps, used.notice)).result, "duplicate", "不自動重付");
+  assert.equal(used.pays(), 1);
+  ok("伺服器回 402 但授權已在鏈上被使用：不自動重付");
+
+  for (const [label, mk, deps] of [
+    ["沒有核對手段", (c: FakeChain) => r402(c), {}],
+    ["授權解不開", (c: FakeChain) => r402(c, null), { authUsed: async () => false }],
+    ["授權有效期太長", (c: FakeChain) => r402(c, { validBefore: c.time + 3600 }), { authUsed: async () => false }],
+  ] as const) {
+    const x = rig(deps);
+    x.setPay(async () => mk(x.chain));
+    assert.equal((await processNotice(x.deps, x.notice)).result, "payment-failed", label);
+    assert.equal(x.deps.ledger.signals[signalKey(x.notice)].status, "uncertain", label);
+  }
+  ok("伺服器回 402 但無法核對（沒有查詢、解不開、有效期太長）：當作狀態不明，不自動重付");
 
   const lost = rig();
   let resets = 0;
@@ -607,6 +651,67 @@ const out = (r: Rig) => r.lines.join("\n");
   assert.equal(re?.retryAt, null, "冷卻已過");
   assert.equal(admitNotification(JSON.parse(JSON.stringify(re)), CFG).kind, "accept");
   ok("重新觸發：新的狀態檔跑 notify-only，第一輪就再送同一版的通知");
+}
+
+// ── 7. 授權核對與冷卻重試 ─────────────────────────────────────────────────────
+{
+  const auth = { from: ALICE, to: BOB, value: "10000", validAfter: "0", validBefore: "1900000000", nonce: "0x" + "AB".repeat(32) };
+  const hdr = Buffer.from(JSON.stringify({ x402Version: 1, payload: { signature: "0x", authorization: auth } })).toString("base64");
+  assert.deepEqual(parseAuthorization(hdr), { from: ALICE, nonce: "0x" + "ab".repeat(32), validBefore: 1_900_000_000 });
+  assert.equal(parseAuthorization("not-base64-json"), null);
+  assert.equal(parseAuthorization(Buffer.from(JSON.stringify({ payload: { authorization: { ...auth, nonce: "0x12" } } })).toString("base64")), null);
+  const cap = captureAuthorizations(async () => new Response("{}", { status: 402 }));
+  await cap.fetch("http://api.test/x", { headers: { "X-PAYMENT": hdr } });
+  await cap.fetch("http://api.test/x", { headers: { "PAYMENT-SIGNATURE": "garbage" } });
+  await cap.fetch("http://api.test/x");
+  const got = cap.drain();
+  assert.equal(got.length, 2, "沒帶付款的請求不記");
+  assert.equal(got[0]?.nonce, "0x" + "ab".repeat(32));
+  assert.equal(got[1], null, "解不開也要記（代表送出了但無法核對）");
+  assert.equal(cap.drain().length, 0, "drain 會清空");
+  ok("parseAuthorization／captureAuthorizations：記下每張送出的授權");
+}
+
+{
+  const timers: { fn: () => void; ms: number; cleared: boolean }[] = [];
+  const pushed: NewVersionNotice[] = [];
+  const s = makeRetryScheduler((nn) => void pushed.push(nn), {
+    set: (fn, ms) => {
+      const t = { fn, ms, cleared: false };
+      timers.push(t);
+      return t;
+    },
+    clear: (t) => void ((t as { cleared: boolean }).cleared = true),
+  });
+  assert.equal(s.schedule(NOTICE, 100), 100 + RETRY_MARGIN_SEC);
+  assert.equal(timers[0].ms, (100 + RETRY_MARGIN_SEC) * 1000);
+  assert.equal(s.schedule(NOTICE, 50), null, "同一筆同一版只排一次");
+  assert.equal(s.schedule({ ...NOTICE, toVersion: 2 }, -5), RETRY_MARGIN_SEC, "已經過了也至少等一下");
+  timers[0].fn();
+  assert.deepEqual(pushed, [NOTICE], "時間到排回佇列");
+  assert.equal(s.schedule(NOTICE, 10), 10 + RETRY_MARGIN_SEC, "觸發後可以再排");
+  s.cancelAll();
+  assert.equal(s.size(), 0);
+  assert.ok(timers[1].cleared && timers[2].cleared, "結束時清掉計時器");
+  ok("冷卻重試排程：冷卻結束後自動排回佇列，同一版不重複排");
+}
+
+{
+  // 端到端：冷卻中收到通知 → 排程 → 時間到重跑 → 付費並同步
+  const r = rig({ cooled: false });
+  const q: NewVersionNotice[] = [];
+  let fire: (() => void) | null = null;
+  const s = makeRetryScheduler((nn) => void q.push(nn), { set: (fn) => (fire = fn), clear: () => {} });
+  const first = await processNotice(r.deps, r.notice);
+  assert.equal(first.code, "cooldown");
+  s.schedule(r.notice, first.retryInSec!);
+  assert.equal(r.pays(), 0);
+  r.chain.time += first.retryInSec! + RETRY_MARGIN_SEC;
+  r.chain.mine();
+  fire!();
+  assert.equal((await processNotice(r.deps, q[0])).result, "synced");
+  assert.equal(r.pays(), 1);
+  ok("冷卻中收到通知：不必重新觸發，冷卻結束自動付費並同步");
 }
 
 console.log(`\n全部通過（${n} 項）`);

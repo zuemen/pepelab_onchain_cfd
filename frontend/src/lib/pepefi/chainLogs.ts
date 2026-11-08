@@ -96,7 +96,82 @@ export const MAX_CHUNKS = 220
 
 export function avgBlockTime(chainId: number | null | undefined): number {
   if (chainId === null || chainId === undefined) return DEFAULT_AVG_BLOCK_TIME
-  return AVG_BLOCK_TIME_BY_CHAIN[chainId] ?? DEFAULT_AVG_BLOCK_TIME
+  return measuredBlockTime(chainId) ?? AVG_BLOCK_TIME_BY_CHAIN[chainId] ?? DEFAULT_AVG_BLOCK_TIME
+}
+
+// ── 出塊時間實測校正 ─────────────────────────────────────────────────────────
+// 上面的表是寫死的，但鏈會改：Base Sepolia 原本 2 秒一塊，2026-11 實測變成 0.2 秒，表沒跟上時
+// 全站的「最近 N 小時」都差十倍。所以開站時用兩個區塊的時間戳實測一次，之後的換算以實測為準；
+// 結果存在 localStorage（一天內有效），下次開站一開始就用實測值。表只是第一次開站的預設。
+
+/** 實測取樣的區塊距離：Base 上約 3 分鐘、Ethereum 上約 3 小時；時間戳是整數秒，距離太短不準。 */
+export const BLOCK_TIME_SAMPLE_BLOCKS = 1_000
+/** 合理範圍外的實測值（節點回傳怪資料）不採用。 */
+const MIN_BLOCK_TIME = 0.05
+const MAX_BLOCK_TIME = 60
+const MEASURE_TTL_MS = 24 * 3600 * 1000
+const storageKey = (chainId: number) => `pepefi:blockTime:${chainId}`
+const measured = new Map<number, number>()
+
+function measuredBlockTime(chainId: number): number | undefined {
+  const hit = measured.get(chainId)
+  if (hit !== undefined) return hit
+  try {
+    const raw = globalThis.localStorage?.getItem(storageKey(chainId))
+    if (!raw) return undefined
+    const { sec, at } = JSON.parse(raw) as { sec?: unknown; at?: unknown }
+    if (typeof sec !== 'number' || typeof at !== 'number' || Date.now() - at > MEASURE_TTL_MS) return undefined
+    if (!(sec >= MIN_BLOCK_TIME && sec <= MAX_BLOCK_TIME)) return undefined
+    measured.set(chainId, sec)
+    return sec
+  } catch {
+    return undefined
+  }
+}
+
+/** 記下實測值；超出合理範圍回 false 不採用。 */
+export function recordMeasuredBlockTime(chainId: number, sec: number): boolean {
+  if (!Number.isFinite(sec) || sec < MIN_BLOCK_TIME || sec > MAX_BLOCK_TIME) return false
+  measured.set(chainId, sec)
+  try {
+    globalThis.localStorage?.setItem(storageKey(chainId), JSON.stringify({ sec, at: Date.now() }))
+  } catch {
+    /* 存不了就只在這次開站有效 */
+  }
+  return true
+}
+
+/** 測試用：清掉實測值（記憶體與 localStorage）。 */
+export function resetMeasuredBlockTimes(): void {
+  const ids = new Set([...measured.keys(), ...Object.keys(AVG_BLOCK_TIME_BY_CHAIN).map(Number)])
+  measured.clear()
+  for (const id of ids) {
+    try {
+      globalThis.localStorage?.removeItem?.(storageKey(id))
+    } catch {
+      /* 沒有 localStorage */
+    }
+  }
+}
+
+/**
+ * 讀最新塊與往前 BLOCK_TIME_SAMPLE_BLOCKS 塊的時間戳，算平均出塊時間並記下。
+ * 讀不到就回 null，繼續用表上的值（不擋任何頁面）。
+ */
+export async function calibrateBlockTime(
+  provider: { getBlock: (tag: number | 'latest') => Promise<{ number: number; timestamp: number } | null> },
+  chainId: number,
+): Promise<number | null> {
+  try {
+    const head = await provider.getBlock('latest')
+    if (!head || head.number < BLOCK_TIME_SAMPLE_BLOCKS) return null
+    const past = await provider.getBlock(head.number - BLOCK_TIME_SAMPLE_BLOCKS)
+    if (!past) return null
+    const sec = (head.timestamp - past.timestamp) / (head.number - past.number)
+    return recordMeasuredBlockTime(chainId, sec) ? sec : null
+  } catch {
+    return null
+  }
 }
 
 /** 把一段時間換算成該鏈的塊數。 */
