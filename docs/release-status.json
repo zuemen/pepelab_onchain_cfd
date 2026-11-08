@@ -1,6 +1,6 @@
 {
  "$comment": "由 node scripts/check-deployment-status.mjs 產生（唯讀 RPC），不要手改；docs/RELEASE_STATUS.md 是這份 JSON 的渲染結果。",
- "generatedAt": "2026-10-26",
+ "generatedAt": "2026-11-08",
  "compiler": "0.8.36",
  "denylistSize": 1,
  "chains": {
@@ -8,17 +8,17 @@
    "name": "Base Sepolia",
    "role": "正式測試網（交易、agent session、x402 都在這條鏈）",
    "rpc": "https://sepolia.base.org",
-   "block": 50398268,
+   "block": 55956062,
    "components": [
     {
      "id": "PerpetualExchange",
      "label": "交易引擎",
      "merged": {
-      "pr": 198,
-      "commit": "264f1d4",
-      "date": "2026-09-30"
+      "pr": null,
+      "commit": "5deaa6c",
+      "date": "2026-11-07"
      },
-     "sourceDigest": "09382f09e316b6c0",
+     "sourceDigest": "48ecde8c9f627416",
      "addresses": [
       {
        "key": "PerpetualExchange",
@@ -256,11 +256,11 @@
      "id": "AgentSessionManager",
      "label": "agent session（自主交易授權）",
      "merged": {
-      "pr": 288,
-      "commit": "eda801d",
-      "date": "2026-10-07"
+      "pr": null,
+      "commit": "5deaa6c",
+      "date": "2026-11-07"
      },
-     "sourceDigest": "4b8e2ce30503f238",
+     "sourceDigest": "9ab702c7038f9f05",
      "addresses": [
       {
        "key": "AgentSessionManager",
@@ -318,11 +318,11 @@
      "id": "CopyTracker",
      "label": "跟單",
      "merged": {
-      "pr": 369,
-      "commit": "622eb3b",
-      "date": "2026-10-26"
+      "pr": null,
+      "commit": "5deaa6c",
+      "date": "2026-11-07"
      },
-     "sourceDigest": "e34fc3e5f601933e",
+     "sourceDigest": "2627d21af8d678ee",
      "addresses": [
       {
        "key": "CopyTracker",
@@ -330,7 +330,7 @@
       }
      ],
      "status": "equal",
-     "detail": "完全一致",
+     "detail": "程式碼一致；只有 CBOR metadata（原始碼文字雜湊）不同",
      "leaked": [],
      "reads": [
       {
@@ -523,11 +523,11 @@
      "id": "AssetVaultV2",
      "label": "強化代幣化金庫（UUPS proxy，比對的是實作）",
      "merged": {
-      "pr": 198,
-      "commit": "264f1d4",
-      "date": "2026-09-30"
+      "pr": 405,
+      "commit": "80ceb9f",
+      "date": "2026-11-03"
      },
-     "sourceDigest": "3da3ce3b17b438cf",
+     "sourceDigest": "6f8a1636274b5d04",
      "addresses": [
       {
        "key": "AssetVaultV2",
@@ -1260,17 +1260,17 @@
    "name": "Sepolia",
    "role": "legacy 展示鏈（不是產品路徑；合約未做金鑰輪替）",
    "rpc": "https://ethereum-sepolia-rpc.publicnode.com",
-   "block": 11996639,
+   "block": 12088423,
    "components": [
     {
      "id": "PerpetualExchange",
      "label": "交易引擎",
      "merged": {
-      "pr": 198,
-      "commit": "264f1d4",
-      "date": "2026-09-30"
+      "pr": null,
+      "commit": "5deaa6c",
+      "date": "2026-11-07"
      },
-     "sourceDigest": "09382f09e316b6c0",
+     "sourceDigest": "48ecde8c9f627416",
      "addresses": [
       {
        "key": "PerpetualExchange",
@@ -1502,11 +1502,11 @@
      "id": "CopyTracker",
      "label": "跟單",
      "merged": {
-      "pr": 369,
-      "commit": "622eb3b",
-      "date": "2026-10-26"
+      "pr": null,
+      "commit": "5deaa6c",
+      "date": "2026-11-07"
      },
-     "sourceDigest": "e34fc3e5f601933e",
+     "sourceDigest": "2627d21af8d678ee",
      "addresses": [
       {
        "key": "CopyTracker",
@@ -1635,11 +1635,11 @@
      "id": "AssetVaultV2",
      "label": "強化代幣化金庫（UUPS proxy，比對的是實作）",
      "merged": {
-      "pr": 198,
-      "commit": "264f1d4",
-      "date": "2026-09-30"
+      "pr": 405,
+      "commit": "80ceb9f",
+      "date": "2026-11-03"
      },
-     "sourceDigest": "3da3ce3b17b438cf",
+     "sourceDigest": "6f8a1636274b5d04",
      "addresses": [
       {
        "key": "AssetVaultV2",
@@ -1647,7 +1647,7 @@
       }
      ],
      "status": "behind",
-     "detail": "與原始碼現行版不一致：長度不同（鏈上 8968 B，原始碼 11838 B）",
+     "detail": "與原始碼現行版不一致：長度不同（鏈上 8968 B，原始碼 12383 B）",
      "leaked": [],
      "reads": [
       {
@@ -2244,11 +2244,11 @@
    "id": "signal-api",
    "label": "x402 付費 API（Vercel）",
    "merged": {
-    "pr": 369,
-    "commit": "622eb3b",
-    "date": "2026-10-26"
+    "pr": 411,
+    "commit": "1de5f88",
+    "date": "2026-11-06"
    },
-   "sourceDigest": "8c2051d78f115940",
+   "sourceDigest": "9bad6ecfbcaf996b",
    "deployed": "已部署：Vercel 分支網域（agent/sdk/src/signalApi.ts 的 SIGNAL_API_TESTNET_URL）；健康與付費端點狀態由 scripts/post-deploy-smoke.mjs 檢查",
    "acceptance": {
     "status": "部分驗收",
@@ -2281,11 +2281,11 @@
    "id": "keeper-trigger",
    "label": "keeper 觸發 Worker（Cloudflare）",
    "merged": {
-    "pr": 295,
-    "commit": "2676d04",
-    "date": "2026-10-09"
+    "pr": 386,
+    "commit": "3e29ea6",
+    "date": "2026-10-28"
    },
-   "sourceDigest": "7f5a4cf33b1928ca",
+   "sourceDigest": "83e8b2fd73203ade",
    "deployed": "未部署（ops/keeper-trigger/README.md「現況」，2026-10-02）",
    "acceptance": {
     "status": "未驗收",
@@ -2298,11 +2298,11 @@
    "id": "monitoring",
    "label": "鏈上監控 Worker（Cloudflare）",
    "merged": {
-    "pr": 369,
-    "commit": "622eb3b",
-    "date": "2026-10-26"
+    "pr": null,
+    "commit": "339d632",
+    "date": "2026-11-08"
    },
-   "sourceDigest": "c7ac994bc9b607c1",
+   "sourceDigest": "5c7e78b3d441e10a",
    "deployed": "未部署（ops/monitoring/README.md；2026-10-01 只做過唯讀試跑）",
    "acceptance": {
     "status": "未驗收",
