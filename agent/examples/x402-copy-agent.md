@@ -27,7 +27,7 @@ COPY_SYNC_RPC_URL=<RPC> COPY_SYNC_NOTIFY_WEBHOOK=http://127.0.0.1:8402/webhook \
 | `COPY_SYNC_KEYSTORE`（搭配 `COPY_SYNC_KEYSTORE_PASSWORD_FILE`）或 `COPY_SYNC_PRIVATE_KEY`（公開鏈要加 `--allow-plaintext-key`） | 執行者熱錢包，來源規則同 copy-sync；keystore 要放 repo 外，Windows 路徑請用 `/` 或給 `~/.foundry/keystores` 下的名稱 |
 | `COPY_SYNC_RPC_URL`、`BASE_SEPOLIA_RPC_URL` | 讀鏈、送交易、x402 簽章與核對授權都用同一個：前者優先，沒設時用後者，都沒設用公開節點（copy-sync 一定要設其中一個）。真跑只接受 Base Sepolia（chainId 84532），因為付款在 Base Sepolia |
 | `X402_MAX_PAYMENT_USDC` | 單筆付費上限（預設 0.02；`/signals` 目前 0.01）。累計上限是 `X402_MAX_TOTAL_SPEND_USDC`（預設 1，每個行程） |
-| `X402_COPY_AGENT_PORT` 或 `--port` | webhook 埠（預設 8402，只綁 127.0.0.1） |
+| `X402_COPY_AGENT_PORT` 或 `--port` | webhook 埠（預設 8402，只綁 127.0.0.1）。Windows 開機後可能把一段埠保留給 Hyper-V／WinNAT（`netsh int ipv4 show excludedportrange protocol=tcp`），8402 落在裡面會 `EACCES`，換一個埠並同步改 copy-sync 的 `--notify-webhook` |
 
 ## 前提
 
@@ -50,7 +50,7 @@ COPY_SYNC_RPC_URL=<RPC> COPY_SYNC_NOTIFY_WEBHOOK=http://127.0.0.1:8402/webhook \
 | copy-sync 送來 `blocked`（它模擬被擋時只送這種，不送 `new-version`） | 同上，不付費。處理好後下一輪 `--notify-only` 會送 `new-version` |
 | 通知與鏈上不符（交易者不對、版本不是鏈上最新） | 不付費、不送交易 |
 | 訊號版號與通知不符 | 不同步；費用照實印，同一版不再付 |
-| 送出授權後伺服器回 402（例如 USDC 不足） | 不同步。402 不能證明沒扣款，所以先等授權到期（最多約 11 分鐘；`X402_MAX_VALIDITY_SEC` 調到超過 600 秒時一律當作狀態不明），再到 USDC 合約查 `authorizationState`：確定沒被使用才當作沒付，補足後重新觸發可以重試；被使用了或查不了，就當作狀態不明，不自動重付 |
+| 送出授權後伺服器回 402（例如 USDC 不足） | 不同步。402 不能證明沒扣款，所以先等授權到期（最多約 11 分鐘；`X402_MAX_VALIDITY_SEC` 調到超過 600 秒時一律當作狀態不明），再到 USDC 合約查 `authorizationState`：確定沒被使用才當作沒付，並在約 30 秒後自動重試（每次重新簽一張新授權；同一筆跟單的同一版最多 2 次，用完才請本人補足後重新觸發）；被使用了或查不了，就當作狀態不明，不自動重付 |
 | 授權送出後沒拿到明確結果（5xx、斷線） | 不同步；印未結算金額，不自動重付。查過付款紀錄、確認要再付的話，換一個 `--state-file` 重啟再重新觸發 |
 
 webhook 內容不可信，花錢與送交易一律以鏈上讀到的為準。另外拒絕帶 `Origin` 的請求、Host 不是本機的請求，以及 content-type 不是 JSON 的請求（防瀏覽器網頁打本機）。
@@ -75,7 +75,8 @@ COPY_SYNC_RPC_URL=<RPC> COPY_SYNC_NOTIFY_WEBHOOK=http://127.0.0.1:8402/webhook n
 ## 限制
 
 - `resyncFor` 沒有版本參數，一律同步到鏈上最新版。交易者若在最後一次檢查與交易上鏈之間又發版，部位會到更新的版本；此時會照實印出（`docs/KNOWN_LIMITATIONS.md` #41）。
-- 冷卻重試排程只存在記憶體：agent 重啟就沒了，要重新觸發。
+- 冷卻與拒收的自動重試排程只存在記憶體：agent 重啟就沒了，要重新觸發。
+- 2026-11-11 實測正式站（Vercel，x402.org facilitator）：閒置幾分鐘後的第一筆付款常被回 402（x402-hono 0.5.3 的錯誤內容序列化成 `{}`，看不出原因），緊接著重試就成功；同一個 facilitator 在本機 signal-api 上沒有這個現象。自動重試就是為了這種情況。
 - 等授權到期核對時（最多 10 分鐘），佇列裡其他通知會排在後面。
 
 ## 測試

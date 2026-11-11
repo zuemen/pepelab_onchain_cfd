@@ -28,8 +28,10 @@ import {
   captureAuthorizations,
   createWebhookServer,
   loadLedger,
+  makeRejectBudget,
   makeRetryScheduler,
   makeSerialQueue,
+  planRetry,
   makeSignalPayer,
   processNotice,
   saveLedger,
@@ -215,19 +217,18 @@ async function main(): Promise<void> {
   };
 
   let stopping = false;
+  const rejectBudget = makeRejectBudget();
   // 冷卻中的通知：冷卻結束後自動再排入佇列（copy-sync 不會為同一版再通知一次）。
   const retries = makeRetryScheduler((n) => {
     if (stopping) return;
-    if (!queue.push(n)) print(`冷卻結束要重試，但佇列已滿：跟隨者 ${n.follower}#${n.recordIdx} versionId ${n.toVersion} 請重新觸發`);
+    if (!queue.push(n)) print(`排定的自動重試到了，但佇列已滿：跟隨者 ${n.follower}#${n.recordIdx} versionId ${n.toVersion} 請重新觸發`);
   });
   const queue = makeSerialQueue<NewVersionNotice>(
     async (n) => {
       if (stopping) return; // 停止中：佇列裡剩下的不再付款、不再送交易
       const o = await processNotice(deps, n);
-      if (o.code === "cooldown" && o.retryInSec !== undefined) {
-        const wait = retries.schedule(n, o.retryInSec);
-        if (wait !== null) print(`   已排程：約 ${Math.ceil(wait / 60)} 分鐘後（${new Date(Date.now() + wait * 1000).toLocaleString()}）自動再試，agent 要保持開著`);
-      }
+      const line = planRetry(o, n, rejectBudget, retries);
+      if (line) print(line);
       print("");
     },
     (e) => print(`處理通知時發生錯誤：${errText(e, redact)}`),
@@ -256,7 +257,15 @@ async function main(): Promise<void> {
 
   server.on("error", (e) => {
     release();
-    die(`無法監聽 127.0.0.1:${port}：${(e as Error).message}`);
+    const code = (e as NodeJS.ErrnoException).code;
+    // Windows 開機後會把一段動態埠保留給 Hyper-V／WinNAT（`netsh int ipv4 show excludedportrange protocol=tcp`），
+    // 落在裡面就是 EACCES；EADDRINUSE 是已有程式在用（常見：上一個 agent 沒關）。
+    const hint = code === "EACCES"
+      ? "。這個埠可能被 Windows 保留了，換一個埠（--port 或 X402_COPY_AGENT_PORT），copy-sync 的 --notify-webhook 也要跟著改"
+      : code === "EADDRINUSE"
+        ? "。這個埠已有程式在用（可能是上一個 agent 還開著），先關掉或換 --port"
+        : "";
+    die(`無法監聽 127.0.0.1:${port}：${(e as Error).message}${hint}`);
   });
   server.listen(port, "127.0.0.1", () => {
     print(`監聽 http://127.0.0.1:${port}/webhook  chainId ${chainId}  CopyTracker ${tracker}`);

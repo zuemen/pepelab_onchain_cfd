@@ -558,6 +558,7 @@ export async function processNotice(d: AgentDeps, n: NewVersionNotice): Promise<
     unsettledAtomic = a.unsettledAtomic;
     paymentTx = a.tx;
     let cls = classifyPayment(a);
+    const wasRejected = cls === "rejected";
     let why = "";
     if (cls === "rejected") {
       try {
@@ -572,8 +573,11 @@ export async function processNotice(d: AgentDeps, n: NewVersionNotice): Promise<
       delete d.ledger.signals[sigKey];
       d.persist(d.ledger);
       d.print(`② x402 沒有付款：${a.error ?? `HTTP ${a.status}`}${why ? `（${why}）` : ""}`);
-      d.print("   本人：確認 X402_API_URL、X402_MAX_PAYMENT_USDC 與付款錢包的 USDC，再重新觸發通知");
       fee();
+      // 伺服器收下授權後回 402、且已在鏈上確認授權沒被使用：多半是 facilitator 或伺服器暫時失敗
+      // （正式站實測：閒置幾分鐘後第一筆常這樣，緊接著重試就成功）。確定沒扣款，交給呼叫端有限次自動重試。
+      if (wasRejected) return done("payment-failed", { code: "payment-rejected", retryInSec: 0 });
+      d.print("   本人：確認 X402_API_URL、X402_MAX_PAYMENT_USDC 與付款錢包的 USDC，再重新觸發通知");
       return done("payment-failed");
     }
     if (cls === "uncertain") {
@@ -713,6 +717,61 @@ export function routeWebhook(req: WebhookRequest, cfg: AgentConfig): WebhookResp
 export const RETRY_MARGIN_SEC = 30;
 /** 單次排程最長等多久；更久的冷卻到時會再被擋一次、再排一次。 */
 export const MAX_RETRY_DELAY_SEC = 24 * 3600;
+/** 伺服器拒收付款（已確認沒扣款）時，同一筆跟單的同一版最多自動重試幾次。 */
+export const MAX_REJECTED_RETRIES = 2;
+
+/**
+ * 拒收重試的次數帳：每筆跟單的每一版分開算，用完就停、交給本人。
+ * 回傳 true＝這次可以再試（並記一次）；false＝已用完。
+ */
+export function makeRejectBudget(max = MAX_REJECTED_RETRIES) {
+  const used = new Map<string, number>();
+  return {
+    max,
+    take(n: NewVersionNotice): boolean {
+      const k = syncKey(n);
+      const u = used.get(k) ?? 0;
+      if (u >= max) return false;
+      used.set(k, u + 1);
+      return true;
+    },
+    clear(n: NewVersionNotice): void {
+      used.delete(syncKey(n));
+    },
+    used: (n: NewVersionNotice) => used.get(syncKey(n)) ?? 0,
+  };
+}
+
+/**
+ * 處理完一則通知後要不要自動重試：冷卻結束後重試，或拒收（已確認沒扣款）後有限次重試。
+ * 回傳要印給本人看的那一行（沒有要說的回 null）。拒收次數只在真的排進去之後才扣。
+ */
+export function planRetry(
+  o: Pick<Outcome, "code" | "retryInSec">,
+  n: NewVersionNotice,
+  budget: ReturnType<typeof makeRejectBudget>,
+  retries: { schedule(n: NewVersionNotice, inSec: number): number | null },
+  now: () => number = Date.now,
+): string | null {
+  if (o.code === "cooldown" && o.retryInSec !== undefined) {
+    const wait = retries.schedule(n, o.retryInSec);
+    return wait === null
+      ? null
+      : `   已排程：約 ${Math.ceil(wait / 60)} 分鐘後（${new Date(now() + wait * 1000).toLocaleString()}）自動再試，agent 要保持開著`;
+  }
+  if (o.code === "payment-rejected") {
+    if (budget.used(n) >= budget.max) {
+      budget.clear(n);
+      return `   已自動重試 ${budget.max} 次仍被拒收。本人：確認 X402_API_URL、X402_MAX_PAYMENT_USDC 與付款錢包的 USDC，再重新觸發通知`;
+    }
+    const wait = retries.schedule(n, o.retryInSec ?? 0);
+    if (wait === null) return "   確定沒扣款；這一版已有排程中的重試（或 agent 正在停止），不另外排";
+    budget.take(n);
+    return `   確定沒扣款，約 ${wait} 秒後自動重試（第 ${budget.used(n)}／${budget.max} 次，每次重新簽一張授權）`;
+  }
+  budget.clear(n);
+  return null;
+}
 
 /**
  * 冷卻中的通知：冷卻結束後自動重新排入佇列（同一筆跟單的同一版只排一次）。

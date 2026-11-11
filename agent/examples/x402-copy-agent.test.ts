@@ -18,7 +18,7 @@ import { emptyState, scopeOf } from "../copy-sync/src/state.ts";
 import { meteredFetch } from "../shared/src/x402Client.ts";
 import {
   admitNotification, adviceFor, blockedLines, captureAuthorizations, checkSignal, classifyPayment, createWebhookServer, dedupeDecision, emptyLedger, gateDecision,
-  loadLedger, makeRetryScheduler, makeSerialQueue, makeSignalPayer, MAX_BODY_BYTES, parseAuthorization, parseLedger, paymentTxFromHeaders, processNotice,
+  loadLedger, makeRejectBudget, makeRetryScheduler, planRetry, makeSerialQueue, makeSignalPayer, MAX_BODY_BYTES, parseAuthorization, parseLedger, paymentTxFromHeaders, processNotice,
   RETRY_MARGIN_SEC, routeWebhook, saveLedger,
   signalKey, syncKey,
   type AgentConfig, type AgentDeps, type ChainSnapshot, type Ledger, type NewVersionNotice, type PayAttempt,
@@ -427,6 +427,7 @@ const out = (r: Rig) => r.lines.join("\n");
   assert.equal(r.sends(), 0);
   assert.equal(r.deps.ledger.signals[signalKey(r.notice)], undefined, "沒送出授權：可以重試");
   assert.match(out(r), /X402_MAX_PAYMENT_USDC/);
+  assert.notEqual(o.code, "payment-rejected", "拒簽是設定問題，不自動重試");
   r.setPay(async () => paid());
   assert.equal((await processNotice(r.deps, r.notice)).result, "synced");
   ok("超過單筆上限被拒簽：沒付款、不同步，調整後可以重試");
@@ -460,6 +461,9 @@ const out = (r: Rig) => r.lines.join("\n");
   const t0 = rejected.chain.time;
   const ro = await processNotice(rejected.deps, rejected.notice);
   assert.equal(ro.result, "payment-failed");
+  assert.equal(ro.code, "payment-rejected", "確定沒扣款的拒收：標記給呼叫端自動重試");
+  assert.equal(ro.retryInSec, 0);
+  assert.doesNotMatch(out(rejected), /再重新觸發通知/, "會自動重試，不先叫本人重新觸發");
   assert.equal(rejected.sends(), 0);
   assert.ok(rejected.chain.time > t0 + 60, "等到授權到期才核對");
   assert.deepEqual(checked, [AUTH.nonce], "到鏈上查了這張授權");
@@ -469,9 +473,44 @@ const out = (r: Rig) => r.lines.join("\n");
   assert.equal((await processNotice(rejected.deps, rejected.notice)).result, "synced", "補了 USDC 再觸發可以完成，不會整版卡死");
   ok("伺服器回 402：等授權到期、鏈上確認沒被使用，才當作沒付，可以重試");
 
+  const budget = makeRejectBudget(2);
+  assert.equal(budget.take(rejected.notice), true);
+  assert.equal(budget.take(rejected.notice), true);
+  assert.equal(budget.take(rejected.notice), false, "同一版最多自動重試 2 次");
+  assert.equal(budget.take({ ...rejected.notice, toVersion: rejected.notice.toVersion + 1 }), true, "不同版本分開算");
+  budget.clear(rejected.notice);
+  assert.equal(budget.used(rejected.notice), 0, "成功或改走其他結果後歸零");
+  ok("拒收自動重試有次數上限，每一版分開算");
+
+  {
+    const n = rejected.notice;
+    const b = makeRejectBudget(2);
+    const scheduled: number[] = [];
+    let full = false;
+    const sched = { schedule: (_n: NewVersionNotice, s: number) => (full ? null : (scheduled.push(s), s + 30)) };
+    const rej = { code: "payment-rejected", retryInSec: 0 } as const;
+    assert.match(planRetry(rej, n, b, sched) ?? "", /約 30 秒後自動重試（第 1／2 次/);
+    full = true;
+    assert.match(planRetry(rej, n, b, sched) ?? "", /已有排程中的重試/, "排不進去要說明");
+    assert.equal(b.used(n), 1, "沒排進去就不扣次數");
+    full = false;
+    assert.match(planRetry(rej, n, b, sched) ?? "", /第 2／2 次/);
+    assert.match(planRetry(rej, n, b, sched) ?? "", /已自動重試 2 次仍被拒收/);
+    assert.equal(b.used(n), 0, "用完交給本人後歸零，本人重新觸發可再試");
+    assert.equal(scheduled.length, 2, "只排了 2 次");
+    planRetry(rej, n, b, sched);
+    assert.equal(planRetry({ code: undefined }, n, b, sched), null, "其他結果不排程");
+    assert.equal(b.used(n), 0, "其他結果清掉次數");
+    assert.match(planRetry({ code: "cooldown", retryInSec: 600 }, n, b, sched) ?? "", /分鐘後.*自動再試/);
+    assert.equal(planRetry({ code: "payment-failed-other" }, n, b, sched), null);
+  }
+  ok("planRetry：拒收重試排進去才扣次數、用完交給本人、其他結果歸零");
+
   const used = rig({ authUsed: async () => true });
   used.setPay(async () => r402(used.chain));
-  assert.equal((await processNotice(used.deps, used.notice)).result, "payment-failed");
+  const uo2 = await processNotice(used.deps, used.notice);
+  assert.equal(uo2.result, "payment-failed");
+  assert.notEqual(uo2.code, "payment-rejected", "被用掉：不可自動重試");
   assert.equal(used.deps.ledger.signals[signalKey(used.notice)].status, "uncertain", "授權被用掉了：記成狀態不明");
   assert.match(out(used), /扣了款但沒拿到訊號/);
   used.setPay(async () => paid());
@@ -486,7 +525,9 @@ const out = (r: Rig) => r.lines.join("\n");
   ] as const) {
     const x = rig(deps);
     x.setPay(async () => mk(x.chain));
-    assert.equal((await processNotice(x.deps, x.notice)).result, "payment-failed", label);
+    const xo = await processNotice(x.deps, x.notice);
+    assert.equal(xo.result, "payment-failed", label);
+    assert.notEqual(xo.code, "payment-rejected", `${label}：狀態不明不可自動重試`);
     assert.equal(x.deps.ledger.signals[signalKey(x.notice)].status, "uncertain", label);
   }
   ok("伺服器回 402 但無法核對（沒有查詢、解不開、有效期太長）：當作狀態不明，不自動重付");
