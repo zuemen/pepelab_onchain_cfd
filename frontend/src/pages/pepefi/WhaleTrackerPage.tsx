@@ -279,7 +279,21 @@ export default function WhaleTrackerPage() {
         <Grid size={{ xs: 12, md: 4 }}>
           <Stack spacing={3}>
             <MarketSentimentBar sentiment={sentiment} mode={mode} ready={ready} />
-            <LargestOpenPositions data={largest} mode={mode} ready={ready} />
+            {/* 未平倉部位來自鏈上事件掃描；掃描還沒跑完前不能說「沒有部位」，先顯示載入中。 */}
+            <LargestOpenPositions
+              data={{
+                ...largest,
+                // 掃描中、或掃描剛結束但部位還沒讀回（下一格 effect 才開始讀）都算載入中，不閃「沒有部位」。
+                loading:
+                  largest.loading ||
+                  activity.loading ||
+                  (activity.openTrades.length > 0 && largest.rows.length === 0 && !largest.error),
+                // 掃描失敗或有區段沒讀到時，卡片要說「沒讀到」，不能說「沒有」。
+                error: largest.error ?? (readFailed && largest.rows.length === 0 ? activity.error ?? t.whale.page.scanFailedTitle : null),
+              }}
+              mode={mode}
+              ready={ready}
+            />
           </Stack>
         </Grid>
       </Grid>

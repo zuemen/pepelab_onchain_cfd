@@ -36,6 +36,7 @@ import {
 import { CHAIN_NAMES } from 'src/contracts/addresses'
 import { isPlatformDeployment } from 'src/contracts/deployment'
 import { oracleRowStale } from 'src/lib/pepefi/priceFreshness'
+import { safeRead } from 'src/lib/pepefi/safeRead'
 import { SIGNAL_API_URL } from 'src/lib/pepefi/signalApi'
 import { type SolvencyFlags, readSolvencyFlags, solvencyDisclosure } from 'src/lib/pepefi/solvencyFlags'
 
@@ -183,6 +184,9 @@ export default function AgentMonitorPage() {
   const fetchOracle = useCallback(async () => {
     if (!contracts) return
     try {
+      // 交易所自己的價格年齡上限（Base Sepolia 6 小時）；讀不到就用後備值。
+      const maxAgeRaw = await safeRead<bigint | null>(contracts.exchange.maxPriceAge() as Promise<bigint>, null, 6_000)
+      const maxPriceAgeSec = maxAgeRaw !== null && maxAgeRaw > 0n ? Number(maxAgeRaw) : undefined
       const rows = await Promise.all(
         ASSETS_LIST.map(async (a) => {
           const [price, updatedAt] = (await contracts.oracle.getPrice(a.id)) as unknown as [bigint, bigint]
@@ -192,6 +196,7 @@ export default function AgentMonitorPage() {
             updatedAtSec: Number(updatedAt),
             nowSec: Math.floor(Date.now() / 1000),
             readIsStale: async () => (await contracts.oracle.isStale(a.id)) as boolean,
+            maxPriceAgeSec,
           })
           return { id: a.id, symbol: a.ticker, price8: price, stale, rate: funding[a.id]?.rate ?? 0n }
         }),

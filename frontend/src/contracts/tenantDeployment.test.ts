@@ -490,7 +490,7 @@ describe('checked-in deployment registries', () => {
     expect(PLATFORM_SIGNAL_API_URLS).toContain(DEFAULT_SIGNAL_API_URL);
   });
 
-  it('the agent monitor judges a dedicated tenant’s staleness by timestamp, the platform’s by isStale() (F6)', () => {
+  it('the agent monitor judges a dedicated tenant’s staleness by timestamp, the platform’s by isStale() plus the exchange maxPriceAge (F6)', () => {
     const page = fs.readFileSync(path.join(FRONTEND_ROOT, 'src', 'pages', 'pepefi', 'AgentMonitorPage.tsx'), 'utf8');
     expect(page).toMatch(/oracleRowStale\(\{\s*platform: isPlatformDeployment,/);
     expect(page).not.toMatch(/stale = \(await contracts\.oracle\.isStale/);

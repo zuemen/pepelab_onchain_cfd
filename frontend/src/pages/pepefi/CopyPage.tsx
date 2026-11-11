@@ -25,6 +25,7 @@ import { traderAvatarSrc, traderAvatarImgSx } from 'src/utils/pepefi-assets'
 import TraderRankBadge from 'src/components/pepefi/TraderRankBadge'
 import { useToast } from 'src/components/pepefi/ToastProvider'
 import { belowMinimum, minimumCopyAmount } from 'src/lib/pepefi/copyGuards'
+import { safeRead } from 'src/lib/pepefi/safeRead'
 import { fetchHeroIndex, heroByAddress } from 'src/lib/pepefi/heroData'
 import { heroDisclosure } from 'src/lib/pepefi/heroDisclosure'
 import { useMode } from 'src/contexts/mode-context'
@@ -292,6 +293,34 @@ function CopyPageView() {
   }, [traderAddress, wallet.chainId])
 
   const onchainRwa     = useOnchainRwaFlags(contracts?.exchange, stratAllocs.map((a) => a.asset))
+  // 每個標的的槓桿上限（依碳分級，由交易所決定）。跟單開倉時合約會把策略槓桿夾到這個上限
+  // （CopyTracker._legLeverages），預覽的槓桿欄與名義價值也要照夾，才會和上鏈結果一致。
+  const [assetLevCaps, setAssetLevCaps] = useState<Record<string, bigint>>({})
+  const allocAssetsKey = stratAllocs.map((a) => a.asset).join(',')
+  useEffect(() => {
+    const ex = contracts?.exchange
+    if (!ex || !allocAssetsKey) {
+      setAssetLevCaps({})
+      return undefined
+    }
+    let cancelled = false
+    void (async () => {
+      const assets = allocAssetsKey.split(',')
+      const caps = await Promise.all(
+        assets.map((a) => safeRead<bigint | null>(ex.maxLeverageForAsset(a) as Promise<bigint>, null)),
+      )
+      if (cancelled) return
+      const next: Record<string, bigint> = {}
+      assets.forEach((a, i) => {
+        const c = caps[i]
+        if (c !== null && c > 0n) next[a] = c
+      })
+      setAssetLevCaps(next)
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [contracts?.exchange, allocAssetsKey])
   const hasKYCRequired = stratAllocs.some(a => kycGateApplies(ASSET_META[a.asset]?.regulated, onchainRwa[a.asset]))
   const kycBlocked     = hasKYCRequired && !isKYCVerified
 
@@ -333,7 +362,9 @@ function CopyPageView() {
   // 沒有這個合併入口時是先 followTraderAtVersion 再開自動同步，這次開倉不受上限影響
   const levCap = autoSyncActive && autoSync.combined ? BigInt(syncSettings.maxLeverage) : null
   const previewRows = stratAllocs.map(a => {
-    const leverage = levCap !== null && a.leverage > levCap ? levCap : a.leverage
+    let leverage = levCap !== null && a.leverage > levCap ? levCap : a.leverage
+    const assetCap = assetLevCaps[a.asset]
+    if (assetCap !== undefined && leverage > assetCap) leverage = assetCap
     return {
       ...a,
       leverage,
@@ -731,7 +762,12 @@ function CopyPageView() {
                         ? f18(preview.portions[i])
                         : f18(row.margin)}
                     </TableCell>
-                    <TableCell sx={{ fontFamily: MONO }} align="right">{f18(row.notional)}</TableCell>
+                    {/* 名義價值＝這一列顯示的保證金 × 槓桿：有鏈上預覽時保證金已扣交易手續費，名義價值也要跟著用同一個數，否則一乘就對不上。 */}
+                    <TableCell sx={{ fontFamily: MONO }} align="right">
+                      {preview && preview.portions[i] !== undefined
+                        ? f18(preview.portions[i] * row.leverage)
+                        : f18(row.notional)}
+                    </TableCell>
                     <TableCell sx={{ fontFamily: MONO }} align="right">{fUsd(row.entryPrice)}</TableCell>
                   </TableRow>
                 ))}
