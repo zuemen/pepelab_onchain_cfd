@@ -147,20 +147,25 @@ describe('oracleRowStale（監控頁的過期欄）', () => {
   const NOW = 1785000000
   const DAY = 86400
 
-  it('平台部署：照舊採用 oracle.isStale()，結果與時間戳無關（default 租戶的顯示不變）', async () => {
+  it('平台部署：oracle.isStale() 或超過交易所 maxPriceAge，任一成立就算過期', async () => {
     const calls: string[] = []
     const read = (v: boolean) => async () => {
       calls.push('isStale')
       return v
     }
-    // 30 天前的時間戳，但平台的 isStale() 說不過期 → 顯示不過期（與改版前相同）。
-    expect(await oracleRowStale({ platform: true, updatedAtSec: NOW - 30 * DAY, nowSec: NOW, readIsStale: read(false) })).toBe(false)
+    // isStale() 說不過期（oracle 自己的門檻 24 小時），但已超過交易所的 6 小時 → 交易所會拒單，顯示過期。
+    expect(await oracleRowStale({ platform: true, updatedAtSec: NOW - 21601, nowSec: NOW, readIsStale: read(false) })).toBe(true)
+    expect(await oracleRowStale({ platform: true, updatedAtSec: NOW - 30 * DAY, nowSec: NOW, readIsStale: read(false) })).toBe(true)
+    // 5.8 小時：交易所仍接受 → 不過期。
+    expect(await oracleRowStale({ platform: true, updatedAtSec: NOW - 20880, nowSec: NOW, readIsStale: read(false) })).toBe(false)
+    // 交易所門檻可由呼叫端傳入。
+    expect(await oracleRowStale({ platform: true, updatedAtSec: NOW - 7200, nowSec: NOW, readIsStale: read(false), maxPriceAgeSec: 3600 })).toBe(true)
     // 剛寫入，但 isStale() 說過期 → 顯示過期。
     expect(await oracleRowStale({ platform: true, updatedAtSec: NOW, nowSec: NOW, readIsStale: read(true) })).toBe(true)
-    expect(calls).toEqual(['isStale', 'isStale'])
+    expect(calls).toEqual(['isStale', 'isStale', 'isStale', 'isStale', 'isStale'])
   })
 
-  it('平台部署：isStale() 讀取失敗時當成不過期（與改版前相同）', async () => {
+  it('平台部署：isStale() 讀取失敗時只看時間戳', async () => {
     const r = await oracleRowStale({
       platform: true,
       updatedAtSec: NOW,
@@ -170,6 +175,15 @@ describe('oracleRowStale（監控頁的過期欄）', () => {
       },
     })
     expect(r).toBe(false)
+    const old = await oracleRowStale({
+      platform: true,
+      updatedAtSec: NOW - DAY,
+      nowSec: NOW,
+      readIsStale: async () => {
+        throw new Error('revert')
+      },
+    })
+    expect(old).toBe(true)
   })
 
   it('專屬租戶：不問 isStale()（它永遠回 false），以時間戳對照 6 小時', async () => {
