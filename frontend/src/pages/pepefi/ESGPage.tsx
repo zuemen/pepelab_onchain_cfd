@@ -514,7 +514,7 @@ export default function ESGPage() {
       <Card sx={{ p: { xs: 2, md: 3 }, display: 'flex', flexDirection: 'column', gap: 2 }}>
         <Typography variant="subtitle2" sx={{ fontWeight: 'bold' }}>{tp.legend.title}</Typography>
         <Stack component="ul" spacing={0.75} sx={{ pl: 2.5, m: 0 }}>
-          {[tp.legend.light, tp.legend.scoreOnly, tp.legend.noAverage].map((s) => (
+          {[tp.legend.light, tp.legend.scoreOnly, tp.legend.noAverage, tp.legend.carbonTier].map((s) => (
             <Typography key={s} component="li" variant="body2" color="text.secondary">{s}</Typography>
           ))}
         </Stack>

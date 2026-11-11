@@ -8,6 +8,7 @@ import {
   stopLossReached,
   minimumCopyAmount,
   refreshCopyPath,
+  defaultCopyAmount,
 } from './copyGuards'
 
 const E18 = 10n ** 18n
@@ -81,5 +82,23 @@ describe('stop-loss reminder', () => {
     data.set('pepefi.copyStopLoss.0xabc.6', '99')
     expect(readStopLoss('0xabc', 6, storage)).toBeNull()
     expect(readStopLoss('0xabc', 2, null)).toBeNull()
+  })
+})
+
+describe('defaultCopyAmount（跟單頁預設金額不超過錢包）', () => {
+  const E = 10n ** 18n
+  it('錢包夠 1000 就不改', () => {
+    expect(defaultCopyAmount(1000n * E)).toBeNull()
+    expect(defaultCopyAmount(5000n * E)).toBeNull()
+  })
+  it('不夠就用餘額往下取到 10 的倍數', () => {
+    expect(defaultCopyAmount(562n * E + 26n * 10n ** 16n)).toBe('560')
+    expect(defaultCopyAmount(999n * E)).toBe('990')
+    expect(defaultCopyAmount(10n * E)).toBe('10')
+  })
+  it('不到 10 USDC 或讀不到就維持預設', () => {
+    expect(defaultCopyAmount(9n * E)).toBeNull()
+    expect(defaultCopyAmount(0n)).toBeNull()
+    expect(defaultCopyAmount(null)).toBeNull()
   })
 })

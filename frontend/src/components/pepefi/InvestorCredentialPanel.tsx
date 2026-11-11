@@ -121,6 +121,13 @@ export function InvestorCredentialPanel({ wallet, registryAddress }: Props) {
         ) : (
           <Alert severity="info" data-testid="vc-kyc-disabled">
             {t.investorVc.disabled}
+            <Box component="ul" sx={{ m: 0, mt: 1, pl: 2.5 }}>
+              {t.investorVc.disabledDetail.map((line) => (
+                <Typography key={line} component="li" variant="body2" sx={{ mt: 0.5 }}>
+                  {line}
+                </Typography>
+              ))}
+            </Box>
           </Alert>
         )}
       </Card>

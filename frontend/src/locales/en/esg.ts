@@ -86,6 +86,8 @@ export const esg: Catalog['esg'] = {
       light: 'Colours follow only the groups an agency defines itself: MSCI’s Leader / Average / Laggard, Sustainalytics’ five risk categories, and Morningstar’s globes for funds. Green, amber and red are the better, middle and worse groups of that agency.',
       scoreOnly: 'Agencies that publish only a score with no groups of their own (LSEG, S&P Global) are shown as the number, uncoloured; the platform does not draw thresholds for them.',
       noAverage: 'Every agency uses a different method, scale and direction (lower is better for Sustainalytics, higher for the others), so ratings are never added up, averaged or used to rank assets.',
+      carbonTier:
+        'The carbon tier column is not a rating; it is about emissions. Stocks and ETFs use scope 1+2 emissions per US$1M of revenue: below 1 tonne is Low, 1–8 is Mid, above 8 is High. Crypto uses annual network emissions, gold an industry benchmark for mining emissions per ounce, and the green bond ETF is judged by instrument type; those are tiered by the attestor, not by the tonne thresholds. The tier sets the trading fee and leverage cap. So a fund with a decent ESG rating can still be High carbon: about 45% of the clean energy ETF (ICLN) is power producers, and iShares reports a weighted average carbon intensity of 241.74 tonnes per US$1M of revenue.',
     },
     column: {
       asset: 'Asset',
