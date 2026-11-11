@@ -11,6 +11,11 @@ export const investorVc: Catalog['investorVc'] = {
     QUALIFIED_INVESTOR: 'Qualified investor',
   },
   disabled: 'Credential-based access is not enabled on this deployment. RWA market eligibility is still reviewed by the existing KYC process.',
+  disabledDetail: [
+    'Design: an issuer (for example a broker) reviews you and signs a "qualified investor" credential; you verify it locally here and register it on-chain. The chain records only your address, the credential type, its expiry and a hash of the credential — no name or other personal data — and it lapses automatically when it expires or is revoked. The registry contract is written but not yet switched on for this testnet deployment.',
+    'Today: the testnet uses the demo KYC (submit on the portfolio page and it is approved), which also opens RWA markets such as AAPL.',
+    'Where this site already uses a VC: "Agent Sessions" in the left menu. You sign a credential for your AI agent; without it the agent program refuses to trade; to take the authority back, revoke that session, which takes effect on-chain immediately.',
+  ],
   checking: 'Checking whether this deployment\'s KYC registry is a credential-based (VC) registry…',
   probeFailed: 'Could not determine this deployment\'s KYC registry type (RPC read failed). Please refresh later.',
   goToCredential: 'Get access with a qualified-investor credential',

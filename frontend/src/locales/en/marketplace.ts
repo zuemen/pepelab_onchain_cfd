@@ -11,7 +11,7 @@ export const marketplace: Catalog['marketplace'] = {
   /** See `../zh-TW/marketplace.ts`. */
   hiddenTrader: {
     title: 'This trader has been withdrawn',
-    body: 'This simulated trader’s strategy relied on a basis that is no longer used, so it is no longer listed. Its on-chain record is not deleted and can still be found in a block explorer; any related positions in your name stay in your portfolio and you can close them yourself.',
+    body: 'This simulated trader is no longer listed (its strategy basis is no longer used, or it duplicates a more active trader with the same name). Its on-chain record is not deleted and can still be found in a block explorer; any related positions in your name stay in your portfolio and you can close them yourself.',
     back: 'Back to the trader leaderboard',
   },
 

@@ -24,7 +24,7 @@ import KYCModal from 'src/components/pepefi/KYCModal'
 import { traderAvatarSrc, traderAvatarImgSx } from 'src/utils/pepefi-assets'
 import TraderRankBadge from 'src/components/pepefi/TraderRankBadge'
 import { useToast } from 'src/components/pepefi/ToastProvider'
-import { belowMinimum, minimumCopyAmount } from 'src/lib/pepefi/copyGuards'
+import { belowMinimum, DEFAULT_COPY_AMOUNT, defaultCopyAmount, minimumCopyAmount } from 'src/lib/pepefi/copyGuards'
 import { safeRead } from 'src/lib/pepefi/safeRead'
 import { fetchHeroIndex, heroByAddress } from 'src/lib/pepefi/heroData'
 import { heroDisclosure } from 'src/lib/pepefi/heroDisclosure'
@@ -134,7 +134,9 @@ function CopyPageView() {
   const [loadError,        setLoadError]        = useState<string | null>(null)
   const [stratAllocs,      setStratAllocs]      = useState<AllocWithPrice[]>([])
   const [stakeData,        setStakeData]        = useState<TraderStakeData | null>(null)
-  const [totalMargin,      setTotalMargin]      = useState(searchParams.get('amount') ?? '1000')
+  const [totalMargin,      setTotalMargin]      = useState(searchParams.get('amount') ?? DEFAULT_COPY_AMOUNT.toString())
+  // 使用者自己填過、或網址帶了 amount，就不再自動調整預設金額。
+  const [amountTouched,    setAmountTouched]    = useState(searchParams.get('amount') !== null)
   const [approved,         setApproved]         = useState(false)
   const [busy,             setBusy]             = useState<Record<string, boolean>>({})
   const [preview,          setPreview]          = useState<CopyPreview | null>(null)
@@ -251,6 +253,12 @@ function CopyPageView() {
       .catch(() => { if (alive) setWalletUsdc(null) })
     return () => { alive = false }
   }, [contracts, wallet.address, usdcTick])
+  // 預設 1000 比錢包多時，改成錢包餘額（往下取到 10 的倍數），免得一進頁面就跳「錢包不夠」。
+  useEffect(() => {
+    if (amountTouched) return
+    const next = defaultCopyAmount(walletUsdc)
+    if (next !== null) setTotalMargin(next)
+  }, [walletUsdc, amountTouched])
   useEffect(() => {
     const bump = () => { if (document.visibilityState === 'visible') setUsdcTick(n => n + 1) }
     window.addEventListener('focus', bump)
@@ -691,7 +699,7 @@ function CopyPageView() {
             placeholder={t.copy.amount.placeholder}
             value={totalMargin}
             disabled={!hasStrategy}
-            onChange={e => setTotalMargin(e.target.value)}
+            onChange={e => { setAmountTouched(true); setTotalMargin(e.target.value) }}
             slotProps={{ htmlInput: { min: "0", style: { fontFamily: MONO } } }}
             sx={{ width: 200 }}
           />

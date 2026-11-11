@@ -79,3 +79,19 @@ export function writeStopLoss(
     // 寫不進去（私密視窗、被封鎖）就只是記不住，不影響跟單本身
   }
 }
+
+/** 跟單頁預設金額（USDC）。 */
+export const DEFAULT_COPY_AMOUNT = 1000n
+
+/**
+ * 跟單頁的預設金額：錢包夠就用預設 1000；不夠就用錢包餘額往下取到 10 的倍數，
+ * 免得一打開頁面就跳「錢包不夠」。餘額不到 10 USDC（或讀不到）就維持預設，讓原本的提示說明要先入金。
+ * 回傳整數 USDC 字串；不需要改時回 null。
+ */
+export function defaultCopyAmount(walletBalance: bigint | null, preferred: bigint = DEFAULT_COPY_AMOUNT): string | null {
+  if (walletBalance === null) return null
+  const whole = walletBalance / E18
+  if (whole >= preferred) return null
+  const rounded = (whole / 10n) * 10n
+  return rounded >= 10n ? rounded.toString() : null
+}
