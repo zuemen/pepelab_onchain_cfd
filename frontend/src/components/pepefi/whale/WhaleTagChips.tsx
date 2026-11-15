@@ -5,6 +5,8 @@ import Chip from '@mui/material/Chip'
 import Stack from '@mui/material/Stack'
 import { alpha } from '@mui/material/styles'
 
+import { SHOW_LEVERAGE } from 'src/lib/pepefi/featureFlags'
+
 // 標籤的顏色在這裡才變成實際的顏色。
 //
 // 舊的 whaleTier() 直接在 lib 裡回 `{ bgcolor: 'rgba(0,184,217,0.16)', color: '#00b8d9' }`，
@@ -17,7 +19,9 @@ const TONE_PALETTE: Record<WhaleTone, (t: Theme) => string> = {
   info:   t => t.palette.info.main,
 }
 
-export default function WhaleTagChips({ tags }: { tags: WhaleTag[] }) {
+export default function WhaleTagChips({ tags: all }: { tags: WhaleTag[] }) {
+  // 現貨呈現（SHOW_LEVERAGE 關）時不掛「N× 槓桿」標籤。
+  const tags = SHOW_LEVERAGE ? all : all.filter((tag) => tag.id !== 'high-leverage')
   if (tags.length === 0) return null
 
   return (

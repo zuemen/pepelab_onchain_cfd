@@ -17,7 +17,7 @@ describe('kycTicketNotice', () => {
   })
 
   it('讀取失敗與審核中的說法優先', () => {
-    expect(kycTicketNotice('sGOLD', { unknown: true, pending: false, vcAction: 'credentials' })).toContain('fail-closed')
+    expect(kycTicketNotice('sGOLD', { unknown: true, pending: false, vcAction: 'credentials' })).toContain('確認之前 sGOLD 暫停買賣')
     expect(kycTicketNotice('sAAPL', { unknown: false, pending: true, vcAction: 'legacy' })).toContain('等待審核')
   })
 })

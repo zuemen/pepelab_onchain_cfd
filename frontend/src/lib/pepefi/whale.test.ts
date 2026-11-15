@@ -74,7 +74,7 @@ describe('positionProfile', () => {
   it('高槓桿的門檻也是閉區間', () => {
     const at = positionProfile({ notional: usd(6_000), leverage: HIGH_LEVERAGE_X })
     expect(at.map(t => t.id)).toEqual(['high-leverage'])
-    expect(at[0].label).toBe('20× 槓桿')
+    expect(at[0].label).toBe('高風險')
     expect(positionProfile({ notional: usd(6_000), leverage: HIGH_LEVERAGE_X - 1n })).toEqual([])
   })
 
@@ -149,7 +149,7 @@ describe('timeAgo', () => {
 
 describe('sideLabel', () => {
   it('UI 統一英文', () => {
-    expect(sideLabel(true)).toBe('做多')
-    expect(sideLabel(false)).toBe('做空')
+    expect(sideLabel(true)).toBe('看漲')
+    expect(sideLabel(false)).toBe('看跌')
   })
 })

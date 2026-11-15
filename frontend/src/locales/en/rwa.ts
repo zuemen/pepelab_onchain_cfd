@@ -18,8 +18,8 @@ export const rwa: Catalog['rwa'] = {
     yes: 'Yes',
     no: 'No',
     retry: 'Reload',
-    chainSourcePublic: 'Read-only via the public node for {chain} (no wallet needed, no transactions sent)',
-    chainSourceWallet: "Read-only via your wallet's node for {chain} (no transactions sent)",
+    chainSourcePublic: 'Read-only via the public node for {chain} (no wallet needed, nothing is sent on-chain)',
+    chainSourceWallet: "Read-only via your wallet's node for {chain} (nothing is sent on-chain)",
     noProvider: 'No read-only node available: connect a wallet and switch to Base Sepolia.',
     asOfBlock: 'block {n}',
     lastRead: 'Last successful read at {at}',
@@ -41,7 +41,7 @@ export const rwa: Catalog['rwa'] = {
   cards: {
     title: 'RWA asset cards & compliance disclosures',
     subtitle:
-      'For each market: the real-world asset it references, whether KYC is required, the reference price source, trading hours, carbon tier and risk parameters. Fields marked "on-chain" are live read-only values; when a read fails it says so instead of showing a default.',
+      'For each market: the real-world asset it references, whether KYC is required, the reference price source, buying and selling hours, carbon tier and risk parameters. Fields marked "on-chain" are live read-only values; when a read fails it says so instead of showing a default.',
     classLabel: {
       equity: 'Equity',
       gold: 'Gold',
@@ -56,22 +56,22 @@ export const rwa: Catalog['rwa'] = {
     rwaUnflagged: 'Not flagged',
     rwaNote: {
       goldMismatch:
-        'Gold is a real-world asset, but this deployment does not flag XAU as rwaAsset on-chain, so opening a position does not check KYC. Shown here exactly as it is on-chain.',
+        'Gold is a real-world asset, but this deployment does not flag XAU as rwaAsset on-chain, so buying does not check KYC. Shown here exactly as it is on-chain.',
       unflaggedRwa: 'This market references a real-world asset but is not flagged as rwaAsset on-chain.',
       cryptoNotRwa: 'Crypto assets are not real-world assets (RWA) and are not flagged on-chain.',
       cryptoFlagged: 'Crypto assets are not real-world assets, but this one is flagged as rwaAsset on-chain.',
     },
-    kyc: 'KYC required to open (on-chain)',
+    kyc: 'KYC required to buy (on-chain)',
     kycValue: {
       required: 'Required',
       notRequired: 'Not required',
-      gateOff: 'Not required (the exchange has no KYC registry set)',
+      gateOff: 'Not required (the platform’s on-chain program has no KYC registry set)',
       unknown: 'Cannot tell (read failed)',
     },
     kycNote:
-      "Derived from the exchange's kyc() and rwaAsset(); checked only when opening, never when closing. The live KYC registry is the older version: submission and approval are not separated, so it is not identity verification.",
+      "Derived from the on-chain program's kyc() and rwaAsset(); checked only when buying, never when selling. The live KYC registry is the older version: submission and approval are not separated, so it is not identity verification.",
     priceSource: 'Reference price source',
-    priceSourceValue: 'The keeper reads {source} ({ticker}) and writes it to MockOracle, which the exchange reads',
+    priceSourceValue: 'An automatic updater (the keeper) reads {source} ({ticker}) and writes it to the price source the platform reads (MockOracle)',
     keeperSchedule:
       'The keeper runs every 15 minutes on a GitHub Actions schedule (which can be delayed); it writes when the move is ≥ 0.1% or 15 minutes have passed.',
     secondary: 'Second source: {source} ({ticker}), used only to confirm large moves',
@@ -83,7 +83,7 @@ export const rwa: Catalog['rwa'] = {
       nasdaq: 'Nasdaq',
       goldapi: 'gold-api.com',
     },
-    session: 'Trading hours',
+    session: 'Buying and selling hours',
     sessionValue: {
       crypto: '24/7',
       equity: 'Mon–Fri 09:30–16:00 US Eastern (regular session; scheduled hours only, holidays not included)',
@@ -91,19 +91,19 @@ export const rwa: Catalog['rwa'] = {
     },
     status: 'Right now',
     statusValue: {
-      always: 'Trading 24/7',
+      always: 'Open 24/7',
       open: 'Market open',
       closed: 'Market closed',
-      reduceOnly: 'Reduce-only (on-chain mode)',
+      reduceOnly: 'Sell-only (on-chain mode)',
       halted: 'Halted (on-chain mode)',
     },
     closureRule: 'Market-closed rule',
     closure: {
       noStop:
-        'This deployment does not stop orders while the market is closed: orders still fill at the last close. Prices can gap at the open, so a close-out price can be far from the one on screen.',
-      stop: 'This deployment supports market-closed stops: the keeper switches the asset to reduce-only while closed.',
-      unknown: "Cannot confirm whether this deployment stops orders while closed (reading the exchange's code failed).",
-      crypto: 'Trades 24/7; there is no market close.',
+        'This deployment does not stop orders while the market is closed: orders still fill at the last close. Prices can gap at the open, so a selling price can be far from the one on screen.',
+      stop: 'This deployment supports market-closed stops: the keeper switches the asset to sell-only (no buying) while closed.',
+      unknown: "Cannot confirm whether this deployment stops orders while closed (reading the on-chain program failed).",
+      crypto: 'Open 24/7; there is no market close.',
     },
     carbon: 'Carbon tier (ESGRegistryV2)',
     tier: {
@@ -118,22 +118,22 @@ export const rwa: Catalog['rwa'] = {
     singleAttestor:
       'There is only one attestor so far, and it is the operator itself; "taking the median" does nothing with a single attestation.',
     noAttestor: 'No attestations at all.',
-    maxLeverage: 'Max leverage (on-chain)',
+    maxLeverage: 'Max price-move multiplier (on-chain setting)',
     maxLeverageValue: '{n}×',
-    carbonCapped: 'Capped by carbon tier: the contract takes the smaller of the operator cap and the carbon-tier cap, and the carbon tier sets it here.',
-    maintenance: 'Maintenance margin (on-chain)',
+    carbonCapped: 'Capped by carbon tier: the on-chain program takes the smaller of the operator cap and the carbon-tier cap, and the carbon tier sets it here.',
+    maintenance: 'Minimum kept ratio (on-chain setting)',
     maintenanceValue: '{pct} ({bps} bps)',
     risk: 'Risk disclosure',
     riskCommon:
-      'Leverage magnifies losses, up to the whole margin; prices are written by a single keeper with no third-party audit; tokens and positions give no rights to the underlying.',
+      'If the price falls you can lose the whole amount invested; prices are written by a single automatic updater with no third-party audit; the tokens and your holdings give no rights to the underlying.',
     riskByClass: {
       equity:
-        'Equities only get new prices during the US regular session; dividends are not passed through (longs receive none, shorts pay none); splits trip the circuit breaker and are handled manually; there is no final-settlement function for a delisting.',
+        'Equities only get new prices during the US regular session; no dividends are paid; splits pause the market and are handled manually; there is no final settlement for a delisting.',
       gold: 'Tracks the COMEX front-month future; roll jumps are not handled; there is a basis versus spot.',
       bondEtf: 'ETFs only get new prices during the US regular session; distributions are not passed through; a single keeper source writes the price.',
       esgEtf:
         'ETFs only get new prices during the US regular session; distributions are not passed through; ESG screening is the issuer’s, not a certification by this platform.',
-      crypto: 'Trades 24/7, so liquidation can happen at night and on weekends.',
+      crypto: 'Moves 24/7, so an automatic close-out can happen at night and on weekends.',
     },
     loadFailed: 'On-chain read failed; fields below show "Read failed".',
   },
@@ -144,13 +144,13 @@ export const rwa: Catalog['rwa'] = {
       prototype:
         'This project is not a licensed financial service and holds no financial-services licence.',
       synthetic:
-        'What it offers is a cash-settled synthetic derivative that references real-asset prices (perpetual / contract-for-difference style), not a tokenized security.',
+        'What it offers is a cash-settled synthetic product that tracks real-asset prices (contract-for-difference style), not a tokenized security.',
       noUnderlying:
         'The platform does not issue, hold or custody any underlying asset; holders get no shareholder rights, dividends or claim on the underlying.',
-      settlement: 'Settlement uses MockUSDC, a platform contract anyone can claim from the faucet; it is not Circle-issued USDC.',
+      settlement: 'Settlement uses MockUSDC, the platform’s own on-chain program that anyone can claim from the faucet; it is not Circle-issued USDC.',
       regulated:
         'In Taiwan, contracts for difference are regulated leveraged trading that requires a licence from the regulator; this project is only suitable for an internal PoC at a licensed institution or a regulatory sandbox — to be confirmed by compliance.',
-      unaudited: 'The contracts have not had a third-party security audit.',
+      unaudited: 'The platform’s on-chain programs have not had a third-party security audit.',
     },
     lawsTitle: 'Related regulations (sources in docs/DESIGN_BESU.md §5, checked 2026-10-05)',
     laws: {
@@ -167,7 +167,7 @@ export const rwa: Catalog['rwa'] = {
   oracle: {
     title: 'Reference price witness board',
     subtitle:
-      'The on-chain price the exchange reads (MockOracle, written by the keeper) next to several public off-chain sources. Anyone can reconcile with this page; it is not a signed price and not a decentralized oracle.',
+      'The on-chain price the platform reads (MockOracle, written by an automatic updater) next to several public off-chain sources. Anyone can reconcile with this page; it is not a signed price and not a decentralized price source.',
     colAsset: 'Asset',
     colOnchain: 'On-chain price',
     colWritten: 'Written at (on-chain)',
@@ -175,9 +175,9 @@ export const rwa: Catalog['rwa'] = {
     colSources: 'Off-chain reference (quote time)',
     writtenOnlyNote:
       "On-chain MockOracle stores only the write time (updatedAt), not the source's quote time. On a weekend the write time can be fresh while the price is still Friday's close — check each source's quote time on the right.",
-    ageNote: 'Price age = latest block time − write time (the same clock the contract uses for staleness).',
+    ageNote: 'Price age = latest block time − write time (the same clock the on-chain program uses for staleness).',
     ageLocalClock: '(chain time unavailable, using the local clock)',
-    maxAge: "The contract's maxPriceAge is {age}; beyond it, opening, closing and liquidation all revert.",
+    maxAge: "The on-chain program's price validity limit (maxPriceAge) is {age}; beyond it, buying, selling and automatic close-outs are all rejected.",
     role: {
       'keeper-primary': 'keeper primary',
       'keeper-secondary': 'keeper second source',
@@ -206,21 +206,21 @@ export const rwa: Catalog['rwa'] = {
   solvency: {
     title: 'Reserves & solvency',
     subtitle:
-      "Does the platform have enough money to pay everyone? Live pool numbers are shown here, and full payment is not guaranteed in every situation. The exchange's pool, the insurance vault and the tokenized vault's reserve ratio, all live on-chain reads. This page shows whether counterparty solvency can be checked; it is not a proof of reserve for the underlying assets.",
+      "Does the platform have enough money to pay everyone? Live pool numbers are shown here, and full payment is not guaranteed in every situation. The platform's pool, the risk reserve and the tokenized vault's reserve ratio, all live on-chain reads. This page shows whether counterparty solvency can be checked; it is not a proof of reserve for the underlying assets.",
     notPoR:
       'The platform holds no underlying assets, so there is no — and no need for a — proof of reserve for them. The reserves here are MockUSDC, not a proof of reserve for the underlying.',
-    exchangeTitle: 'Perpetual exchange',
-    exchangeBalance: 'Exchange USDC balance (the pool)',
-    totalMargin: 'Margin of open positions',
-    unrealizedPnl: 'Unrealized PnL of open positions',
-    openPositions: '{open} open position(s) ({scanned} scanned)',
-    noPositions: 'There are no positions yet (nextPositionId = 0).',
-    positionsPartial: '{n} position read(s) failed; totals may be understated.',
-    positionsTruncated: 'Only the latest {n} positions were scanned; totals may be incomplete.',
-    freeMarginNote: 'Deposited balances not used in positions (freeMargin) can only be read per address and are not included.',
-    insuranceTitle: 'Insurance vault',
-    insuranceAssets: 'Insurance vault assets (totalAssets)',
-    adl: 'Auto-deleveraging (ADL)',
+    exchangeTitle: 'Platform pool',
+    exchangeBalance: 'Platform USDC balance (the pool)',
+    totalMargin: 'Amount invested in current holdings',
+    unrealizedPnl: 'Unrealized gain/loss of current holdings',
+    openPositions: '{open} current investment(s) ({scanned} scanned)',
+    noPositions: 'There are no investments yet (nextPositionId = 0).',
+    positionsPartial: '{n} investment read(s) failed; totals may be understated.',
+    positionsTruncated: 'Only the latest {n} investments were scanned; totals may be incomplete.',
+    freeMarginNote: 'Deposited balances not yet invested (freeMargin) can only be read per address and are not included.',
+    insuranceTitle: 'Risk reserve',
+    insuranceAssets: 'Risk reserve assets (totalAssets)',
+    adl: 'Automatic close-out of profitable investments (ADL)',
     adlOn: 'On',
     adlOff: 'Off',
     vaultTitle: 'Tokenized vault (AssetVaultV2)',
@@ -233,7 +233,7 @@ export const rwa: Catalog['rwa'] = {
     ratioOk: 'Every asset is priced.',
     mintingHalted: 'Minting halted (the ratio crossed below the minimum)',
     notFullyBacked:
-      "The vault is not fully collateralized: it is the counterparty to every long and limits exposure with a minimum ratio, per-asset caps and pausing, not 1:1 backing. Today's ratio is high only because the liability is small and the reserve is a large amount of MockUSDC; it cannot be used to claim over-collateralization.",
+      "The vault is not fully collateralized: it is the counterparty to every buyer and limits exposure with a minimum ratio, per-asset caps and pausing, not 1:1 backing. Today's ratio is high only because the liability is small and the reserve is a large amount of MockUSDC; it cannot be used to claim over-collateralization.",
     historyTitle: 'Reserve ratio history (ReserveObserved events)',
     historyWindow: 'Last ~{span} (blocks {from}–{to}, ≤ {chunk} blocks per query)',
     historyLoading: 'Scanning on-chain events…',
@@ -245,19 +245,19 @@ export const rwa: Catalog['rwa'] = {
     historyPoints: '{n} observation(s)',
     historyRange: 'Curve covers {from} to {to}; low {min}, high {max} (the vertical axis auto-scales and does not start at 0)',
     waterfallTitle: 'Loss-absorption waterfall (live deployment)',
-    waterfallIntro: 'When one position loses more than its margin, the shortfall is absorbed in this order (docs/RISK_WATERFALL.md §2):',
+    waterfallIntro: 'When one investment loses more than the amount invested in it, the shortfall is absorbed in this order (docs/RISK_WATERFALL.md §2):',
     waterfall: {
       margin: {
-        title: '① Trader margin',
-        body: "The losing position's own margin absorbs first. Isolated: other positions and withdrawable balances are not touched.",
+        title: '① The amount invested in it',
+        body: "The losing investment's own amount absorbs first. Each is counted separately: your other investments and withdrawable balance are not touched.",
       },
       insurance: {
-        title: '② Insurance vault',
-        body: 'The insurance vault covers the shortfall with no per-event cap; it can be drained to 0.',
+        title: '② Risk reserve',
+        body: 'The risk reserve covers the shortfall with no per-event cap; it can be drained to 0.',
       },
       adl: {
-        title: '③ Auto-deleveraging (ADL)',
-        body: 'If the vault is short, profitable opposite-side positions in the same asset are closed in order and their profit is cut (principal untouched), scanning up to 128 positions.',
+        title: '③ Automatic close-out of profitable investments (ADL)',
+        body: 'If the reserve is short, profitable opposite-direction investments in the same asset are closed out automatically in order and their profit is cut (principal untouched), scanning up to 128 of them.',
       },
       badDebt: {
         title: '④ Bad-debt event',

@@ -4,14 +4,14 @@ import type { Catalog } from '../zh-TW';
  * 見 `../zh-TW/vault.ts`。
  */
 export const vault: Catalog['vault'] = {
-  connectWallet: 'Connect wallet to use the LP Vault.',
+  connectWallet: 'Connect wallet to use the risk reserve.',
   viewOnEtherscan: 'View on Etherscan ↗',
 
-  title: 'Insurance Vault',
-  titleSimple: 'Vault',
-  subtitle: 'Deposit USDC to earn protocol fees. The vault absorbs traders\' extreme losses, so share value can fall.',
+  title: 'Risk Reserve',
+  titleSimple: 'Risk Reserve',
+  subtitle: 'Deposit USDC to share in platform fees. The risk reserve absorbs investors\' extreme losses, so share value can fall.',
 
-  simpleYieldActive: 'This vault is currently earning yield from trading fees.',
+  simpleYieldActive: 'The risk reserve is currently earning a share of platform fees.',
 
   stat: {
     totalAssets: 'Total Assets',
@@ -21,7 +21,7 @@ export const vault: Catalog['vault'] = {
   },
 
   position: {
-    title: 'Your Position',
+    title: 'Your Deposit',
     shares: 'pIV held',
     value: 'USDC value',
   },
@@ -29,7 +29,7 @@ export const vault: Catalog['vault'] = {
   deposit: {
     title: 'Deposit USDC',
     description:
-      'Receive pIV shares proportional to current pool size. Earn yield from protocol fees.',
+      'Receive pIV shares in proportion to the current reserve size, and share in platform fees.',
     placeholder: 'USDC amount',
     cta: 'Deposit',
     estimate: '≈ {shares} pIV',
@@ -50,14 +50,14 @@ export const vault: Catalog['vault'] = {
   activity: {
     title: 'Recent Activity',
     emptyTitle: 'No activity yet',
-    emptyDescription: 'Deposit USDC to start accruing protocol fees. The vault absorbs extreme losses, so share value can fall.',
+    emptyDescription: 'Deposit USDC to start sharing in platform fees. The risk reserve absorbs extreme losses, so share value can fall.',
     readFailedTitle: 'Read failed',
-    readFailedDescription: "The vault's on-chain events could not be read — an empty list here does not mean there was no activity. Please refresh later.",
+    readFailedDescription: "The risk reserve's on-chain events could not be read — an empty list here does not mean there was no activity. Please refresh later.",
     partial: 'Some block ranges could not be read; the activity below may be incomplete.',
-    deposited: 'LP Deposit',
-    withdrawn: 'LP Withdraw',
-    protocolDeposit: 'Protocol Fee',
-    bailout: 'Bailout Paid',
+    deposited: 'Deposit',
+    withdrawn: 'Withdrawal',
+    protocolDeposit: 'Platform fee',
+    bailout: 'Cover paid',
     block: '#{block}',
   },
 
@@ -66,24 +66,24 @@ export const vault: Catalog['vault'] = {
 
   /** #36：三句句中夾標記的說明，各自拆成標記前後的片段。 */
   markup: {
-    mmActiveLabel: 'Market-making yield active:',
-    mmPctRouted: "{pct}% of every trade's fee is routed to LPs —",
+    mmActiveLabel: 'Fee sharing active:',
+    mmPctRouted: '{pct}% of every investment fee goes to depositors —',
     mmAmount: '{amount} USDC',
     mmRoutedToDate: 'routed to date.',
 
     howItWorksLabel: 'How it works:',
     howItWorksBody:
-      ' LPs deposit USDC and receive pIV shares. The vault earns 10% of all copy-trading and performance fees via the FeeRouter. On liquidation the vault only receives the ',
+      ' Depositors put in USDC and receive pIV shares. Through the fee-sharing program (FeeRouter) the risk reserve receives 10% of all copy investing and performance fees. When an investment is settled automatically, the risk reserve only receives the ',
     howItWorksBodyNoCopy:
-      ' LPs deposit USDC and receive pIV shares. The vault earns 10% of platform trading and performance fees via the FeeRouter. On liquidation the vault only receives the ',
-    liquidationPenaltyLabel: 'liquidation penalty',
+      ' Depositors put in USDC and receive pIV shares. Through the fee-sharing program (FeeRouter) the risk reserve receives 10% of platform and performance fees. When an investment is settled automatically, the risk reserve only receives the ',
+    liquidationPenaltyLabel: 'automatic settlement penalty',
     howItWorksCodeWrap: ' (',
     howItWorksTail:
-      ") plus the liquidator's reward — the position owner is refunded whatever margin is left after loss, fees and penalty, so liquidation is no longer a 100% forfeit.",
+      ") plus a reward for whoever carries out the settlement — the investor gets back whatever is left of the amount invested after loss, fees and penalty, so an automatic settlement does not take everything.",
 
     badDebtBefore:
-      "When a trader's loss exceeds their margin (extreme event), the vault pays a 10% bailout floor directly to the trader. If losses exceed what the vault can cover, the shortfall is emitted as a ",
-    badDebtMid: ' event and the vault has to be topped up via ',
-    badDebtAfter: '. LPs bear this risk in exchange for the yield.',
+      "When an investor's loss exceeds the amount invested (an extreme event), the risk reserve pays a 10% cover floor directly to that investor. If losses exceed what the reserve can cover, the shortfall is recorded on-chain as a ",
+    badDebtMid: ' event and the reserve has to be topped up via ',
+    badDebtAfter: '. Depositors bear this risk in exchange for the yield.',
   },
 };

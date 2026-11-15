@@ -9,7 +9,7 @@ export const freshness: Catalog['freshness'] = {
   /** Short price-source tag shown next to a price. 'none' = neither source readable; the UI shows '—'. */
   priceSource: {
     coingecko: 'CoinGecko',
-    oracle: 'On-chain oracle',
+    oracle: 'On-chain price source',
     none: 'No price',
   },
 
@@ -22,12 +22,12 @@ export const freshness: Catalog['freshness'] = {
 
   notice: {
     unknownWithAsset:
-      "⛔ Can't confirm when {asset}'s on-chain index price last updated ({age}). Not sending the order until we know, to avoid paying gas only to be rejected on-chain with StalePrice.",
+      "⛔ Can't confirm when {asset}'s on-chain price last updated ({age}). Nothing is sent until we know, so you don't pay a network fee only to be rejected on-chain (StalePrice).",
     unknownNoAsset:
-      "⛔ Can't confirm when the on-chain index price last updated ({age}). Not sending the order until we know, to avoid paying gas only to be rejected on-chain with StalePrice.",
+      "⛔ Can't confirm when the on-chain price last updated ({age}). Nothing is sent until we know, so you don't pay a network fee only to be rejected on-chain (StalePrice).",
     staleWithAsset:
-      "⛔ {asset}'s on-chain index price is older than the contract's maxPriceAge (last updated {age}). Opening or closing a position right now would be reverted with StalePrice — please wait for the keeper to update it and try again.",
+      "⛔ {asset}'s on-chain price hasn't been updated for too long (last updated {age}). Buying or selling right now would be rejected on-chain (StalePrice) — please wait for the price to update and try again.",
     staleNoAsset:
-      "⛔ The on-chain index price is older than the contract's maxPriceAge (last updated {age}). Opening or closing a position right now would be reverted with StalePrice — please wait for the keeper to update it and try again.",
+      "⛔ The on-chain price hasn't been updated for too long (last updated {age}). Buying or selling right now would be rejected on-chain (StalePrice) — please wait for the price to update and try again.",
   },
 };

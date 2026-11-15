@@ -12,9 +12,9 @@ export const investorVc: Catalog['investorVc'] = {
   },
   disabled: 'Credential-based access is not enabled on this deployment. RWA market eligibility is still reviewed by the existing KYC process.',
   disabledDetail: [
-    'Design: an issuer (for example a broker) reviews you and signs a "qualified investor" credential; you verify it locally here and register it on-chain. The chain records only your address, the credential type, its expiry and a hash of the credential — no name or other personal data — and it lapses automatically when it expires or is revoked. The registry contract is written but not yet switched on for the current deployment.',
+    'Design: an issuer (for example a broker) reviews you and signs a "qualified investor" credential; you verify it locally here and register it on-chain. The chain records only your address, the credential type, its expiry and a hash of the credential — no name or other personal data — and it lapses automatically when it expires or is revoked. The registry on-chain program is written but not yet switched on for the current deployment.',
     'Today: the self-service KYC is used (submit on the portfolio page and it is approved), which also opens RWA markets such as AAPL.',
-    'Where this site already uses a VC: "Agent Sessions" in the left menu. You sign a credential for your AI agent; without it the agent program refuses to trade; to take the authority back, revoke that session, which takes effect on-chain immediately.',
+    'Where this site already uses a VC: "AI Agent Allowances" in the left menu. You sign a credential for your AI agent; without it the agent program refuses to place orders; to take the authority back, revoke that AI agent allowance, which takes effect on-chain immediately.',
   ],
   checking: 'Checking whether this deployment\'s KYC registry is a credential-based (VC) registry…',
   probeFailed: 'Could not determine this deployment\'s KYC registry type (RPC read failed). Please refresh later.',
@@ -23,7 +23,7 @@ export const investorVc: Catalog['investorVc'] = {
   checkingShort: 'Checking KYC method…',
   unknownRetry: 'Could not determine the KYC method — retry',
   intro:
-    'Opening RWA markets (e.g. AAPL) requires a valid qualified-investor status. Upload the verifiable credential (VC) your issuing institution gave you, verify it, then register it on-chain. The chain only stores your address, the credential type, its expiry and a hash of the credential — no personal data.',
+    'Buying in RWA markets (e.g. AAPL) requires a valid qualified-investor status. Upload the verifiable credential (VC) your issuing institution gave you, verify it, then register it on-chain. The chain only stores your address, the credential type, its expiry and a hash of the credential — no personal data.',
   mineVerified: 'Your wallet is eligible for RWA markets (requires: {type}); credential expires {date}',
   mineNotVerified: 'Your wallet has no valid RWA market eligibility (requires: {type}; not registered, expired or revoked).',
   upload: 'Upload VC file',
@@ -45,7 +45,7 @@ export const investorVc: Catalog['investorVc'] = {
   validity: 'Valid {from} → {to} (submit by {deadline})',
   submit: 'Submit attestation on-chain',
   submitting: 'Submitting…',
-  tx: 'Transaction: {hash}',
+  tx: 'On-chain record: {hash}',
   status: {
     notJson: 'Not valid JSON',
     listInvalid: 'Status list rejected ({code}): {reason}',
@@ -60,7 +60,7 @@ export const investorVc: Catalog['investorVc'] = {
   },
   blocker: {
     wrongChain: 'Switch to chainId {chainId}',
-    untrusted: 'The issuer is not trusted by this registry (the contract would revert with UntrustedIssuer)',
+    untrusted: 'The issuer is not trusted by this registry (the on-chain program would revert with UntrustedIssuer)',
     revokedOnChain: 'This credential has been revoked on-chain',
     submitted: 'This credential is already registered',
     nonce: 'Credential nonce ({vc}) does not match the on-chain value ({chain}); ask the issuer to re-issue',

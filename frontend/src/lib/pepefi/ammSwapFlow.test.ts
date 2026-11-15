@@ -1246,7 +1246,7 @@ describe('兌換卡整體（頁面層級）—— 舊版／新版／unknown（#2
     expect(cardText(loading, zhTW)).toMatchObject({
       badge: null,
       poolPrice: '讀取中…',
-      note: '正在確認線上合約版本…',
+      note: '正在確認線上兌換池的版本…',
     })
   })
 

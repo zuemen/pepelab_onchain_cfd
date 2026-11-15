@@ -4,45 +4,45 @@ import type { Catalog } from '../zh-TW';
  * 見 `../zh-TW/traderDashboard.ts`。
  */
 export const traderDashboard: Catalog['traderDashboard'] = {
-  connectWallet: 'Connect wallet to access Trader Dashboard.',
+  connectWallet: 'Connect wallet to open your strategy sharer page.',
   viewOn: 'View on {explorer} ↗',
 
   profile: {
     repChip: '◆ {rep} rep',
-    staked: '{amount} USDC staked',
+    staked: '{amount} USDC performance deposit',
   },
 
   register: {
-    title: 'Register Trader',
+    title: 'Register as a Strategy Sharer',
     registeredChip: '✓ {name}',
-    registeredNote: 'Registered as public trader',
-    placeholder: 'Display name (e.g. AlphaTrader)',
+    registeredNote: 'Registered as a public strategy sharer',
+    placeholder: 'Display name (e.g. Steady Saver)',
     registering: '…',
     cta: 'Register',
-    done: 'Registered as trader ✓',
+    done: 'Registered as a strategy sharer ✓',
   },
 
   publish: {
     title: 'Publish Strategy',
     addAsset: '+ Add Asset',
 
-    stakeRequiredTitle: 'Stake required to publish',
+    stakeRequiredTitle: 'Performance deposit required to publish',
     stakeRequiredBody:
-      'You need to stake at least 100 USDC before publishing a strategy, so followers know you have skin in the game. You also cannot publish while an unstake request is pending.',
-    goToStake: 'Go to Trader Stake →',
+      'You need to place a performance deposit of at least 100 USDC before publishing a strategy, so followers know you share the risk. You also cannot publish while a deposit withdrawal request is pending.',
+    goToStake: 'Go to Performance Deposit →',
     stakeRequiredBodyNeutral:
-      'Publishing a strategy requires a trader reputation stake of at least 100 USDC, so anyone using your strategy knows you have skin in the game.',
+      'Publishing a strategy requires a performance deposit of at least 100 USDC, so anyone using your strategy knows you share the risk.',
 
     empty: 'Click "+ Add Asset" to build your strategy.',
 
     column: {
       asset: 'Asset',
       direction: 'Direction',
-      leverage: 'Leverage',
+      leverage: 'Multiple',
       weight: 'Weight %',
     },
-    long: 'Long ↑',
-    short: 'Short ↓',
+    long: 'Expects rise ↑',
+    short: 'Expects fall ↓',
 
     duplicateWarning: 'Each asset can only appear once per strategy. Remove the duplicate.',
     exceeds: 'exceeds',
@@ -61,24 +61,24 @@ export const traderDashboard: Catalog['traderDashboard'] = {
     cta: 'Publish Strategy',
     done: 'Strategy published ✓',
 
-    registerFirst: 'Register as a trader first to publish.',
+    registerFirst: 'Register as a strategy sharer first to publish.',
 
     /** #36：夾了連到 /stake 的 `<Link>`，拆成前後片段。 */
-    stakeToUnlockBefore: 'Stake ≥ 100 USDC on the ',
-    stakeToUnlockLink: 'Stake page',
+    stakeToUnlockBefore: 'Place a performance deposit of ≥ 100 USDC on the ',
+    stakeToUnlockLink: 'Performance Deposit page',
     stakeToUnlockAfter: ' to unlock publishing.',
   },
 
   earnings: {
     title: 'Fee Earnings',
     refresh: '↺ Refresh',
-    claimable: 'Claimable (copy + perf fees)',
+    claimable: 'Claimable (copy investing + performance fees)',
     claiming: 'Claiming…',
     claimAll: 'Claim All',
-    note: 'Earnings accrue when followers pay the 0.3% copy fee or close copied positions in profit (10% performance fee). Your share is 70% of each fee.',
+    note: 'Earnings accrue when followers pay the 0.3% copy investing fee, or sell investments that followed you at a profit (10% performance fee). Your share is 70% of each fee.',
     claimed: 'Earnings claimed ✓',
-    claimableNeutral: 'Claimable trader earnings',
-    noteNeutral: 'Trader earnings accrue in the FeeRouter under on-chain rules; your share is 70% of each fee.',
+    claimableNeutral: 'Claimable strategy sharer earnings',
+    noteNeutral: 'Strategy sharer earnings accrue under public on-chain rules; your share is 70% of each fee.',
   },
 
   history: {
@@ -86,17 +86,17 @@ export const traderDashboard: Catalog['traderDashboard'] = {
     refresh: '↺ Refresh',
     empty: 'No strategies published yet.',
     /** 摘要行：BTC L 3×  ·  ETH S 2× */
-    summaryEntry: '{asset} {side} {leverage}×',
-    long: 'L',
-    short: 'S',
+    summaryEntry: '{asset} {side}',
+    long: 'Up',
+    short: 'Down',
 
     column: {
       asset: 'Asset',
-      side: 'Side',
-      leverage: 'Leverage',
+      side: 'Direction',
+      leverage: 'Multiple',
       weight: 'Weight',
     },
-    longLabel: 'Long ↑',
-    shortLabel: 'Short ↓',
+    longLabel: 'Expects rise ↑',
+    shortLabel: 'Expects fall ↓',
   },
 };

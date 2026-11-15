@@ -52,7 +52,7 @@ export const pepe: Catalog['pepe'] = {
     },
     'skin-12': {
       name: 'Neon Party DJ Pepe',
-      desc: 'A trendsetting DJ spinning at a massive neon rave — its sense of rhythm is as precise as perfectly minimized slippage.',
+      desc: 'A trendsetting DJ spinning at a massive neon rave — its sense of rhythm is as precise as a perfectly filled order.',
     },
     'skin-13': {
       name: 'Berserker Viking Frog',
@@ -176,8 +176,8 @@ export const pepe: Catalog['pepe'] = {
 
   /** issue #101: achievements unlock on holding time, portfolio carbon, diversification and days untouched — not on how much was bought. */
   achievement: {
-    ach_hold_30: { title: 'Held a Month', desc: 'Hold one position for 30 days' },
-    ach_hold_90: { title: 'A Quarter Untouched', desc: 'Hold one position for 90 days' },
+    ach_hold_30: { title: 'Held a Month', desc: 'Hold one investment for 30 days' },
+    ach_hold_90: { title: 'A Quarter Untouched', desc: 'Hold one investment for 90 days' },
     ach_low_carbon: { title: 'Low-Carbon Portfolio', desc: 'Weighted carbon intensity below 1 tCO2e/$M revenue' },
     ach_diversified: { title: 'Diversified', desc: 'Holdings diversification of 0.7 or higher' },
     ach_steady: { title: 'Steady Hand', desc: '30 days with no buy or sell' },

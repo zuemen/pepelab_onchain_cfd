@@ -23,7 +23,7 @@ export const common = {
     installMetamask: '前往安裝 MetaMask 擴充功能 ↗',
 
     mockTitle: 'Pepe 訪客通道（免錢包）',
-    mockDesc: '無須錢包即可一鍵進入系統、切換 Pepe 蛙頭像與試用跟單',
+    mockDesc: '無須錢包即可一鍵進入系統、切換 Pepe 蛙頭像與試用跟著投資',
 
     /** useWallet 連線失敗的原因。 */
     error: {
@@ -36,8 +36,8 @@ export const common = {
     /** 需要錢包的頁面在未連線時的提示。 */
     connectPrompt: {
       marketplace: '連接錢包以瀏覽市集。',
-      stake: '連接錢包以管理你的質押。',
-      sessions: '連接錢包以管理 agent session。',
+      stake: '連接錢包以管理你的履約押金。',
+      sessions: '連接錢包以管理 AI 代理額度。',
       feed: '連接錢包以查看鏈上動態。',
     },
   },
@@ -59,8 +59,8 @@ export const common = {
   paperTrading: {
     tooltip:
       '本平台運行於測試網，所有資產與資金皆為模擬，不涉及真實金錢。等同 TradingView 的 Paper Trading 模式。',
-    compactLabel: '模擬交易',
-    label: 'PAPER TRADING · 測試網模擬交易',
+    compactLabel: '模擬投資',
+    label: 'PAPER TRADING · 測試網模擬投資',
   },
 
   /**
@@ -131,9 +131,9 @@ export const common = {
     unreadable: '讀取失敗',
     noPrice: '無有效價格',
     stale: '價格過期',
-    unreadableHint: '這個部位的合約資料這次沒讀到（節點逾時或錯誤），不代表沒有損益。重新整理後再看。',
-    noPriceHint: '預言機目前沒有這個標的的有效價格（價格為 0），合約無法估算平倉價值，所以不顯示損益。',
-    staleHint: '預言機價格已超過合約允許的時間沒有更新；合約此時不接受平倉，所以不顯示損益。',
+    unreadableHint: '這筆投資的鏈上資料這次沒讀到（節點逾時或錯誤），不代表沒有損益。重新整理後再看。',
+    noPriceHint: '價格來源目前沒有這個標的的有效價格（價格為 0），無法估算賣出價值，所以不顯示損益。',
+    staleHint: '價格來源已超過鏈上程式允許的時間沒有更新；此時無法賣出，所以不顯示損益。',
   },
 
   avatarPicker: {
@@ -156,7 +156,7 @@ export const common = {
       mid: '。正式部署鏈是',
       primaryBefore: 'Base Sepolia（',
       primaryAfter: '）',
-      after: ' —— 交易、agent session 與 x402 只在那裡。',
+      after: ' —— 買賣、AI 代理額度與 x402 只在那裡。',
       sepoliaExtra: '　Sepolia 保留的是代幣化資產與金庫的對照展示。',
     },
   },
@@ -167,11 +167,11 @@ export const common = {
    */
   disclosure: {
     title: '重要揭露：測試網研究原型，非真實資產',
-    summary: '本站所有資產、資金與交易皆為測試網模擬，不具任何真實價值。',
+    summary: '本站所有資產、資金與買賣紀錄皆為測試網模擬，不具任何真實價值。',
     prototype:
-      '本站為部署於 Base Sepolia 測試網的研究原型，所有代幣、資金與交易皆為模擬，不涉及真實資產或金錢。',
+      '本站為部署於 Base Sepolia 測試網的研究原型，所有代幣、資金與買賣紀錄皆為模擬，不涉及真實資產或金錢。',
     synthetic:
-      '本站所有合成代幣——股票（如 AAPL、TSLA、NVDA）、債券（BGRN）、黃金（XAU）、加密資產（BTC、ETH）與 ETF（ICLN、ESGU）——皆為 AssetVault 發行的合成曝險，且非足額抵押：僅以預言機價格追蹤標的，平台並未持有任何標的資產，也沒有一比一的準備；持有人不具股東、債權人或基金受益人權利（包括表決權、股利或利息請求權），亦無對任何發行人或實物的求償權，贖回取決於 AssetVault 的流動性。',
+      '本站所有合成代幣——股票（如 AAPL、TSLA、NVDA）、債券（BGRN）、黃金（XAU）、加密資產（BTC、ETH）與 ETF（ICLN、ESGU）——皆為 AssetVault 發行的合成曝險（代幣只追蹤標的價格），且非足額抵押：僅依價格來源的報價追蹤標的，平台並未持有任何標的資產，也沒有一比一的準備；持有人不具股東、債權人或基金受益人權利（包括表決權、股利或利息請求權），亦無對任何發行人或實物的求償權，贖回取決於 AssetVault 的流動性。',
     noAdvice: '本站內容僅供技術展示與研究，不構成投資建議、要約或招攬。',
     /** 白標租戶有設定營運機構時才顯示（src/tenant）。 */
     operatedBy: '本站由{operator}營運。',
@@ -182,9 +182,9 @@ export const common = {
   /** 白標租戶相關的共用字串（src/tenant）。 */
   tenant: {
     /** 資產不在租戶白名單：不能新開部位／買進，既有持倉照常出場。 */
-    assetNotEnabled: '本平台未開放此資產的新交易；已持有的部位仍可賣出或平倉。',
+    assetNotEnabled: '本平台未開放買進此資產；已持有的仍可賣出。',
     /** 租戶未授權永續：直接打網址進終端機時，下單面板的說明。 */
-    perpetualsNotAuthorized: '本平台未開放永續部位的新交易；既有部位仍可在「部位」頁籤平倉。',
+    perpetualsNotAuthorized: '本平台未開放這類進階投資的新買進；已持有的仍可在持有清單裡賣出。',
     footer: {
       support: '客服',
       legal: '法律資訊',
@@ -224,7 +224,7 @@ export const common = {
    */
   rankPrefix: '聲譽',
   /** 滑鼠移上去的說明。tier 是下面 tier 裡的名稱。 */
-  rankTooltip: '依質押與罰沒紀錄計算：質押 ÷（質押 + 被罰沒金額 × 5）× 100，從未被罰沒為 100。目前是 {tier} 級。與績效無關。',
+  rankTooltip: '依履約押金與扣罰紀錄計算：押金 ÷（押金 + 被扣罰金額 × 5）× 100，從未被扣罰為 100。目前是 {tier} 級。與績效無關。',
   rankUnknown: '—',
 
   tier: {

@@ -13,46 +13,46 @@
  *    持倉表用的是同一句話。這裡刻意不放第二份 stale 文案——兩份會分岔。
  */
 export const terminal = {
-  connectWallet: '連接錢包以開啟終端機。',
+  connectWallet: '連接錢包以開啟進階投資工具。',
 
   header: {
-    tagline: 'agent 原生永續 · base sepolia',
+    tagline: 'AI 代理原生 · 數位資產投資 · base sepolia',
     status: '鏈上 · 即時',
   },
 
   /** 行情列。每個 Stat 的 hint 都是滑鼠提示，`\n\n` 是段落分隔。 */
   stats: {
     closeHintAria: '關閉說明',
-    perpSuffix: '-PERP',
+    perpSuffix: '',
     displayPrice: '參考價格',
 
-    index: '指數（oracle · 此為結算價）',
+    index: '指數價（價格來源 · 結算用）',
     indexHint:
-      '鏈上預言機的指數價。\n\n開倉、平倉、清算用的是標記價：這個價格加上多空失衡溢價（溢價上限為 0 時兩者相同）。兩者都跟上面的顯示價和 K 線圖無關——那兩個是外部行情的參考。預言機由 keeper 定期寫入鏈上，所以會比市場慢一些。',
+      '鏈上價格來源寫入的指數價。\n\n買進、賣出與自動結清用的是標記價：這個價格加上看漲看跌失衡的溢價（溢價上限為 0 時兩者相同）。兩者都跟上面的顯示價和 K 線圖無關——那兩個是外部行情的參考。價格由營運方的程式定期寫入鏈上，所以會比市場慢一些。',
 
-    mark: '標記價（OI 溢價）',
+    mark: '標記價（失衡溢價）',
     markHint:
-      '在指數價之上，依多空失衡加減一個溢價後的價格。\n\n多單明顯多於空單時 mark 會高於 index，反之則低。用途是讓損益與清算反映「大家都站同一邊」的風險，而不是只看預言機報價。',
+      '在指數價之上，依看漲看跌失衡加減一個溢價後的價格。\n\n看漲的投資明顯多於看跌時，標記價會高於指數價，反之則低。用途是讓損益與自動結清反映「大家都站同一邊」的風險，而不是只看價格來源的報價。',
 
     funding: '資金費率',
     fundingHint:
-      '多空之間定期互付的資金費，用來把價格拉回指數。\n\n正值 = 持多單的人付錢給持空單的人（代表多單過熱）；負值相反。你持倉期間會依這個費率累積成本或收益。',
+      '看漲與看跌的投資之間定期互付的費用，用來把價格拉回指數價。\n\n正值 = 看漲的一方付給看跌的一方（代表看漲過熱）；負值相反。你持有期間會依這個費率累積成本或收益。',
 
-    carbon: '碳分級 · 費率 · 槓桿上限',
+    carbon: '碳分級 · 費率 · 放大上限',
     carbonHint:
-      '這個資產的碳強度落在哪一級，以及由它推導出的交易費與槓桿上限。\n\n規則寫死在 CarbonTiers 合約裡，不是可調參數：碳排越高，在這裡持有越貴、能用的槓桿越少。未評等（沒有未過期的見證資料）一律落到最保守級（最高費率、1×）。',
+      '這個資產的碳強度落在哪一級，以及由它推導出的手續費與放大上限。\n\n規則寫死在公開的鏈上程式（CarbonTiers）裡，不是可調參數：碳排越高，在這裡持有越貴、能放大的比例越低。未評等（沒有未過期的見證資料）一律落到最保守級（最高費率、不放大 1×）。',
     carbonValue: '{tier} · {fee} bps · ≤{lev}×',
 
-    openInterest: '未平倉量 多/空',
+    openInterest: '持有總額 看漲/看跌',
     openInterestHint:
-      '這個標的目前鏈上未平倉的多單 / 空單名目金額。\n\n兩邊差距越大代表市場越偏向一邊，funding 費率也會跟著變大。顯示 "—" 代表鏈上讀取失敗，不是沒有部位。',
+      '這個資產目前鏈上持有中的看漲 / 看跌投資規模。\n\n兩邊差距越大代表市場越偏向一邊，資金費率也會跟著變大。顯示 "—" 代表鏈上讀取失敗，不是沒有人持有。',
 
-    vaultBacking: '金庫後盾',
+    vaultBacking: '風險準備金',
     vaultBackingHint:
-      '保險金庫目前的資金規模——極端行情下用來吸收穿倉損失的後盾。\n\n顯示 $0 代表金庫已部署但還沒有人存入資金，此時平台沒有額外的償付緩衝。這是鏈上的真實狀態，不是顯示錯誤。',
+      '風險準備金目前的規模——極端行情下用來吸收「虧損超過投入金額」那一段的後盾。\n\n顯示 $0 代表準備金已部署但還沒有人存入資金，此時平台沒有額外的償付緩衝。這是鏈上的真實狀態，不是顯示錯誤。',
 
     sourceCoingecko: '參考 · coingecko',
-    sourceOracle: '參考 · 鏈上 oracle',
+    sourceOracle: '參考 · 鏈上價格來源',
     sourceNone: '尚無價格',
 
     /**
@@ -64,67 +64,67 @@ export const terminal = {
 
   /** 下單面板。 */
   ticket: {
-    long: '做多',
-    short: '做空',
-    sideLong: '做多',
-    sideShort: '做空',
+    long: '看漲',
+    short: '看跌',
+    sideLong: '看漲',
+    sideShort: '看跌',
 
-    leverage: '槓桿',
-    margin: '保證金',
+    leverage: '放大比例',
+    margin: '投入金額',
     free: '可用：{amount}',
-    marginAria: '保證金（{token}）',
+    marginAria: '投入金額（{token}）',
 
-    notional: '名義價值',
-    entryOracle: '預估進場價（指數價）',
+    notional: '投資規模',
+    entryOracle: '預估買進價（指數價）',
     noPriceNotice:
-      '⛔ 讀不到鏈上指數價，無法計算進場與清算價。在讀到價格之前不送單。',
-    estLiquidation: '預估清算價',
-    onLiquidation: '清算時',
-    onLiquidationValue: '殘值退還（扣罰金）',
+      '⛔ 讀不到鏈上指數價，無法計算買進價與自動結清價。在讀到價格之前不送出。',
+    estLiquidation: '預估自動結清價',
+    onLiquidation: '自動結清時',
+    onLiquidationValue: '退還剩餘金額（扣罰金）',
     /** `{interval}` 由鏈上 FUNDING_INTERVAL() 格式化（funding.intervalUnit），讀不到是「—」。 */
     fundingRate: '資金費率（{interval}）',
     /** 交易費與槓桿上限：優先讀 exchange 的 per-asset view，讀不到才用碳分級靜態表。 */
-    tradingParams: '交易費 · 槓桿上限',
+    tradingParams: '手續費 · 放大上限',
     tradingParamsValue: '{fee} bps · ≤{lev}× · {source}',
     paramsSource: {
       chain: '來源：鏈上',
       static: '來源：靜態表',
-      pending: '讀取中（暫以 1× 為上限）',
+      pending: '讀取中（暫以 1×、不放大為上限）',
     },
 
-    enterMargin: '輸入保證金',
-    insufficientFreeMargin: '可用保證金不足——請先存入',
-    opened: '{side} {asset} 開倉成功 ✓',
+    enterMargin: '輸入投入金額',
+    insufficientFreeMargin: '可用金額不足——請先存入',
+    opened: '{side} {asset} 買進成功 ✓',
 
     /** 受管制標的的三種 KYC 狀態，各自是完整的一句話。 */
-    kycUnknown: '⚠ 無法確認 KYC 狀態（鏈上讀取失敗）。合規閘門採 fail-closed，{asset} 暫停交易。',
+    kycUnknown: '⚠ 無法確認 KYC 狀態（鏈上讀取失敗）。為了安全，確認之前 {asset} 暫停買賣。',
     kycPending: '⏳ {asset} 需 KYC：申請已送出，等待審核人員核准中，核准後自動解鎖',
     kycRequired: '🔒 {asset} 需 KYC，請到「投資組合」頁的 KYC 卡片送出申請（送出即通過）',
     kycGoToPortfolio: '前往投資組合送出申請',
-    marketModeBlocked: '這個標的目前休市或暫停，不能開新倉。',
-    insufficientWithFee: '含手續費後保證金不足',
-    kycRequiredVc: '🔒 {asset} 是 RWA 市場，開倉需要有效的合格投資人資格（可驗證憑證登記上鏈）',
+    marketModeBlocked: '這個資產目前休市或暫停，不能新買進。',
+    insufficientWithFee: '含手續費後投入金額不足',
+    kycRequiredVc: '🔒 {asset} 是 RWA 市場，買進需要有效的合格投資人資格（可驗證憑證登記上鏈）',
 
     riskNotice:
-      '⚠️ 進階功能：可以買漲或買跌，也可以放大倍數，虧損會放大，部位可能被強制平倉。第一次請選 1 倍。本平台為 oracle 計價永續，損益以 mark 價（含 OI 失衡）結算；極端單邊行情下帳面利潤可能因 ADL 自動減倉而調整；保證金以 USDC 計。',
+      '⚠️ 進階功能：可以押上漲或押下跌，也可以放大投資規模；虧損也會跟著放大，價格不利時這筆投資可能被自動結清，投入金額可能全部虧光。第一次請選 1×（不放大）。價格依鏈上價格來源計算，損益以標記價（含看漲看跌失衡）結算；極端單邊行情下帳面利潤可能被自動調整（ADL）；投入金額以 USDC 計。',
     showRiskNotice: '⚠️ 顯示風險提示',
 
-    submitting: '開倉中…',
-    insufficientMargin: '保證金不足',
-    ctaOpen: '開倉 {side} {asset}',
+    submitting: '買進中…',
+    insufficientMargin: '投入金額不足',
+    ctaOpen: '送出 {side} {asset}',
   },
 
   /** 帳戶區。 */
   account: {
-    equity: '權益',
-    freeMargin: '可用保證金',
-    unrealizedPnl: '未實現 PnL',
+    equity: '總值',
+    freeMargin: '可用金額',
+    unrealizedPnl: '未實現損益',
     /** 有部位讀不出數字時，權益與未實現 PnL 都顯示「—」，下面加這一句。 */
-    pnlPartial: '有部位目前無法估值（讀取失敗或價格不可用），合計不顯示。',
+    pnlPartial: '有投資目前無法估值（讀取失敗或價格不可用），合計不顯示。',
     /** 審查 N1：getPosition 讀不到的部位不在持倉表裡，合計也不顯示。 */
-    positionsUnread: '{count} 個部位讀取失敗，總額不完整。',
+    positionsUnread: '{count} 筆投資讀取失敗，總額不完整。',
     wallet: '錢包 {token}',
-    marginNote: '保證金以 USDC 結算 · USDT 僅供持有/兌換',
+    marginNote: '投入金額以 USDC 結算 · USDT 僅供持有/兌換',
 
     enterAmount: '輸入金額',
     deposited: '已存入 {amount} USDC ✓',
@@ -136,8 +136,8 @@ export const terminal = {
 
   /** 持倉區的分頁殼。 */
   panel: {
-    tabPositions: '持倉（{count}）',
-    tabFills: '成交紀錄',
+    tabPositions: '我的投資（{count}）',
+    tabFills: '買賣紀錄',
     tabFunding: '資金費率',
     refresh: '↺ 重新整理',
 
@@ -145,64 +145,64 @@ export const terminal = {
     updatedAt: '更新於 {time}',
     staleData: '已超過 {sec} 秒沒有更新成功，數字可能已過期（最後更新 {time}）',
     readFailed: '最近一次讀取失敗，顯示的是 {time} 的資料',
-    neverRead: '尚未讀到持倉',
+    neverRead: '尚未讀到我的投資',
   },
 
   positions: {
     column: {
-      asset: '標的',
+      asset: '資產',
       side: '方向',
-      entry: '進場價',
+      entry: '買進價',
       mark: '標記價',
-      margin: '保證金',
-      leverage: '槓桿',
-      pnl: 'PnL',
+      margin: '投入金額',
+      leverage: '放大比例',
+      pnl: '損益',
     },
-    empty: '無未平倉部位',
-    long: '做多',
-    short: '做空',
-    closed: '已平倉 ✓',
-    close: '平倉',
-    copyManaged: '跟單部位',
-    copyManagedTip: '這是跟單開出的部位。單筆平倉會讓跟單紀錄對不上，請到「投資組合」處理。',
+    empty: '目前沒有持有中的投資',
+    long: '看漲',
+    short: '看跌',
+    closed: '已賣出 ✓',
+    close: '賣出',
+    copyManaged: '跟著投資',
+    copyManagedTip: '這筆是跟著策略分享者投資買進的。單筆賣出會讓跟隨紀錄對不上，請到「投資組合」處理。',
     stale: '價格過期',
     /** 「標記價」欄與 PnL 欄的 tooltip（見 lib/pepefi/positionPnl.ts 檔頭）。 */
     markHint:
-      '合約 getMarkPrice：index 價加上全平台多空失衡的溢價。部位自己的損益用的是排除自身名目的標記價，溢價上限大於 0 時兩者可能不同。',
+      '鏈上程式算出的標記價：指數價加上全平台看漲看跌失衡的溢價。每筆投資自己的損益用的是排除自身規模的標記價，溢價上限大於 0 時兩者可能不同。',
     pnlHint:
-      '現在平倉比保證金多拿或少拿多少（合約 getPositionValue − 保證金）：已扣平倉手續費、借貸費與應付資金費。不含部分部位獲利時另收的 10% 績效費；資金費以最後一次結算為準；不含穿倉補貼。',
+      '現在賣出會比投入金額多拿或少拿多少（鏈上程式算出的投資價值 − 投入金額）：已扣賣出手續費、借款費與應付資金費。不含部分投資獲利時另收的 10% 績效費；資金費以最後一次結算為準；不含虧損超過投入金額時的補貼。',
   },
 
   fills: {
     column: {
       type: '類型',
-      asset: '標的',
+      asset: '資產',
       side: '方向',
       price: '價格',
-      pnl: 'PnL',
-      tx: '交易',
+      pnl: '損益',
+      tx: '紀錄',
     },
     kind: {
-      opened: '開倉',
-      closed: '平倉',
-      liquidated: '已清算',
+      opened: '買進',
+      closed: '賣出',
+      liquidated: '已自動結清',
     },
-    loading: '讀取鏈上成交…',
-    empty: '近期無成交紀錄',
-    readError: '無法讀取鏈上成交紀錄',
-    long: '做多',
-    short: '做空',
+    loading: '讀取鏈上買賣紀錄…',
+    empty: '近期無買賣紀錄',
+    readError: '無法讀取鏈上買賣紀錄',
+    long: '看漲',
+    short: '看跌',
   },
 
   funding: {
     column: {
-      asset: '標的',
+      asset: '資產',
       rate: '費率（{interval}）',
-      longOi: '多方未平倉',
-      shortOi: '空方未平倉',
+      longOi: '看漲持有總額',
+      shortOi: '看跌持有總額',
       lastSettled: '上次結算',
     },
-    empty: '無 funding 資料',
+    empty: '無資金費率資料',
 
     /** 結算週期的單位（#196）：秒數取能整除的最大單位，28800 → 8 小時、300 → 5 分鐘。 */
     intervalUnit: {
@@ -219,7 +219,7 @@ export const terminal = {
     agoHours: '{n}h 前',
 
     canSettle: '可結算',
-    note: '僅列出鏈上已註冊 funding 的標的。正值代表多方付給空方。',
+    note: '僅列出鏈上已設定資金費率的資產。正值代表看漲方付給看跌方。',
   },
 
   /** 市場活動面板（取代原本的交易所盤口）。 */
@@ -229,22 +229,22 @@ export const terminal = {
 
     column: {
       side: '方向',
-      margin: '保證金',
-      entry: '進場價',
+      margin: '投入金額',
+      entry: '買進價',
       time: '時間',
-      pnl: 'PnL',
+      pnl: '損益',
     },
 
-    loading: '讀取鏈上部位…',
-    emptyForAsset: '{asset} 目前無鏈上部位',
+    loading: '讀取鏈上投資…',
+    emptyForAsset: '{asset} 目前沒有鏈上投資',
     /** 標的代號還沒讀到時，`emptyForAsset` 用的代稱。 */
-    thisAsset: '此標的',
+    thisAsset: '此資產',
 
-    long: '做多',
-    short: '做空',
-    openMarker: '未平倉',
+    long: '看漲',
+    short: '看跌',
+    openMarker: '持有中',
 
-    truncated: '只掃描最近的部位，更早的未列出',
+    truncated: '只掃描最近的投資，更早的未列出',
     missed: '{count} 筆因 RPC 限流未讀取，列表可能不完整',
   },
 
@@ -263,7 +263,7 @@ export const terminal = {
     atCapacity: '已達顯示上限',
 
     disclaimer:
-      '圖表為外部公開來源的參考行情，非本平台成交紀錄；開倉 / 平倉 / 清算一律以鏈上標記價結算（指數價＋多空失衡溢價）。',
+      '圖表為外部公開來源的參考行情，非本平台成交紀錄；買進 / 賣出 / 自動結清一律以鏈上標記價結算（指數價＋看漲看跌失衡溢價）。',
 
     error: '無法載入 K 線',
     loading: '載入 K 線…',

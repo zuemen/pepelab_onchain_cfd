@@ -20,6 +20,7 @@ import LinearProgress from '@mui/material/LinearProgress'
 import TableContainer from '@mui/material/TableContainer'
 
 import { t, interpolate } from 'src/locales'
+import { SHOW_DIRECTION, spotTemplate } from 'src/lib/pepefi/legDisplay'
 import { explorerTx } from 'src/lib/pepefi/notify'
 import { useAddressActivity } from 'src/hooks/useAddressActivity'
 import { ASSET_LABEL } from 'src/lib/pepefi/assetMeta'
@@ -77,10 +78,15 @@ function EventDetail({ event }: { event: AddressEvent }) {
       const isLong = d.isLong as boolean
       return (
         <span>
-          <Box component="span" sx={{ fontWeight: 800, color: isLong ? PEPE.long : PEPE.short }}>
-            {sideLabel(isLong)}
-          </Box>{' '}
-          {interpolate(detail.openedTail, {
+          {/* 現貨呈現（SHOW_LEVERAGE 關）時不顯示方向與倍數 */}
+          {SHOW_DIRECTION && (
+            <>
+              <Box component="span" sx={{ fontWeight: 800, color: isLong ? PEPE.long : PEPE.short }}>
+                {sideLabel(isLong)}
+              </Box>{' '}
+            </>
+          )}
+          {interpolate(spotTemplate(detail.openedTail), {
             asset: ASSET_LABEL[d.asset as string] ?? '?',
             leverage: String(d.leverage as bigint),
             price: fUsd(d.entryPrice as bigint),
@@ -193,10 +199,13 @@ export default function TraderActivity({ activity, chainId, mode }: Props) {
             <Table size="small">
               <TableHead>
                 <TableRow sx={{ bgcolor: 'background.neutral' }}>
-                  {(mode === 'simple'
-                    ? Object.values(t.traderProfile.activity.openPositions.columnSimple)
-                    : Object.values(t.traderProfile.activity.openPositions.columnExpert)
-                  ).map(h => (
+                  {Object.entries(mode === 'simple'
+                    ? t.traderProfile.activity.openPositions.columnSimple
+                    : t.traderProfile.activity.openPositions.columnExpert
+                  )
+                    // 現貨呈現（SHOW_LEVERAGE 關）時收掉方向／倍數欄；資料列同步收。
+                    .filter(([key]) => SHOW_DIRECTION || key !== 'side')
+                    .map(([, h]) => (
                     <TableCell key={h} sx={{ color: 'text.secondary', fontWeight: 'bold', whiteSpace: 'nowrap' }}>
                       {h}
                     </TableCell>
@@ -207,9 +216,11 @@ export default function TraderActivity({ activity, chainId, mode }: Props) {
                 {positions.map(p => (
                   <TableRow key={p.id} hover>
                     <TableCell sx={{ fontWeight: 700, whiteSpace: 'nowrap' }}>{p.assetLabel}</TableCell>
-                    <TableCell sx={{ fontWeight: 800, whiteSpace: 'nowrap', color: p.isLong ? PEPE.long : PEPE.short }}>
-                      {sideLabel(p.isLong)} {String(p.leverage)}×
-                    </TableCell>
+                    {SHOW_DIRECTION && (
+                      <TableCell sx={{ fontWeight: 800, whiteSpace: 'nowrap', color: p.isLong ? PEPE.long : PEPE.short }}>
+                        {sideLabel(p.isLong)} {String(p.leverage)}×
+                      </TableCell>
+                    )}
                     {mode === 'expert' && (
                       <TableCell sx={{ fontFamily: MONO, color: 'text.secondary', whiteSpace: 'nowrap' }}>
                         {fUsd(p.entryPrice)}

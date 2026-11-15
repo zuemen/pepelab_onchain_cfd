@@ -18,7 +18,7 @@ COPY_SYNC_RPC_URL=<RPC> COPY_SYNC_NOTIFY_WEBHOOK=http://127.0.0.1:8402/webhook \
   npm run copy-sync -- --once --notify-only --followers 0xFollower
 ```
 
-輸出：`① 收到新版通知`、`② x402 付費買訊號（tx）`、`③ 確認版號`、`④ 同步（tx）`。
+輸出：`① 收到新版通知`、`② x402 付費買最新策略資料（紀錄）`、`③ 確認版本`、`④ 調整投資（紀錄）`。
 
 | 變數 | 用途 |
 |---|---|

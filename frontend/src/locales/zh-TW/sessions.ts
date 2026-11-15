@@ -5,19 +5,19 @@
  * 設定檔，但它本身是給人讀的句子而不是語法，所以進 catalog。
  */
 export const sessions = {
-  title: '🤖 AI Agent 委任',
+  title: '🤖 AI 代理額度',
   viewOn: '在 {explorer} 查看 ↗',
 
   prereq: {
-    title: 'Agent 下單前要先準備三件事',
-    margin: '切到專家模式，到「專業終端」把 USDC 存進交易帳戶；session 不會動用你錢包裡的 USDC。',
-    eth: 'Agent 地址要有少量 ETH，付手續費與每次開倉的執行費。',
-    kyc: '要交易股票、債券類標的，你的錢包要先完成 KYC。',
+    title: 'AI 代理幫你投資前要先準備三件事',
+    margin: '切到專家模式，到「進階投資工具」把 USDC 存進投資帳戶；AI 代理額度不會動用你錢包裡的 USDC。',
+    eth: 'AI 代理的地址要有少量 ETH，付網路手續費與每次買進的執行費。',
+    kyc: '要投資股票、債券類標的，你的錢包要先完成 KYC。',
   },
   ssi: {
     detailsToggle: '給開發者：技術細節',
     title: 'SSI 三角：你的錢包就是信任根',
-    flow: '流程：連錢包 → 設限額建 session → 簽發授權 VC → 匯出 agent 設定 → 之後只下口頭交易意圖。',
+    flow: '流程：連錢包 → 設限額建 session → 簽發授權 VC → 匯出 agent 設定 → 之後用一句話說出投資意圖。',
   },
 
   wrongNetwork: {
@@ -26,24 +26,24 @@ export const sessions = {
   },
 
   create: {
-    title: '建立 Session',
-    agentAddress: 'Agent 地址（session key）',
+    title: '建立 AI 代理額度',
+    agentAddress: 'AI 代理地址',
     agentPlaceholder: '0x… 或按右側「產生 agent 金鑰」',
     generateKey: '產生 agent 金鑰',
     maxPerTrade: '單筆上限（USDC）',
     totalBudget: '總預算（USDC）',
-    maxLeverage: '最大槓桿',
+    maxLeverage: '價格變動放大上限',
     validFor: '有效期限（小時）',
     creating: '建立中…',
-    cta: '建立 Session',
-    done: 'Session 已建立 ✓',
-    allowedAssets: '允許交易的標的',
-    allowedAssetsHint: 'agent 只能在這些標的上開倉（鏈上白名單，createSessionWithAssets）。至少選一檔。',
-    noAssetSelected: '請至少選擇一檔允許交易的標的。',
+    cta: '建立 AI 代理額度',
+    done: 'AI 代理額度已建立 ✓',
+    allowedAssets: '允許投資的標的',
+    allowedAssetsHint: 'AI 代理只能買進這些標的，名單記在鏈上。至少選一檔。',
+    noAssetSelected: '請至少選擇一檔允許投資的標的。',
     invalidAgent: 'Agent 地址格式不對，請貼上 0x 開頭的地址，或按「產生 agent 金鑰」。',
     invalidAmounts: '單筆上限與總預算都要大於 0。',
     perTradeOverBudget: '單筆上限不能大於總預算。',
-    invalidLeverage: '最大槓桿要是 1 到 5 的整數。',
+    invalidLeverage: '價格變動放大上限要是 1 到 5 的整數。',
     invalidHours: '時數要大於 0。',
   },
 
@@ -64,17 +64,17 @@ export const sessions = {
   },
 
   list: {
-    title: '我的 Session',
+    title: '我的 AI 代理額度',
     refresh: '↺ 重新整理',
     loading: '載入中…',
-    empty: '尚無 session。建立一個來授權 agent。',
+    empty: '還沒有 AI 代理額度。建立一個來授權 AI 代理。',
 
     column: {
       id: '#',
       agent: 'Agent',
       spent: '花費 / 預算',
       maxPerTrade: '單筆上限',
-      leverage: '槓桿',
+      leverage: '放大上限',
       expiry: '到期',
       status: '狀態',
       credential: '憑證',
@@ -93,22 +93,22 @@ export const sessions = {
     issueVcHint: 'MetaMask 簽發授權 VC',
     issueVcNeedsWallet: '需連接錢包簽署（訪客模式不支援）',
     revoke: '撤銷',
-    revoked: 'Session 已撤銷 ✓',
+    revoked: 'AI 代理額度已撤銷 ✓',
     credentialIssued: '憑證已簽發 ✓',
     needsRealWallet: '需連接錢包以簽署 VC（訪客模式不支援簽章）',
     vcExpires: 'VC 到期 {date}',
     vcExpired: 'VC 已過期，請重新簽發',
     vcValidity: 'VC 效期（天）',
-    vcValidityHint: '新簽發的憑證在這麼多天後到期，且不會晚於 session 到期（預設 {days} 天）。',
+    vcValidityHint: '新簽發的憑證在這麼多天後到期，且不會晚於 AI 代理額度到期（預設 {days} 天）。',
   },
 
   /** 匯出對話框。 */
   export: {
-    title: '🔌 連接你的 Agent — Session #{id}',
+    title: '🔌 連接你的 AI 代理 — 額度 #{id}',
     close: '關閉',
     closeAria: '關閉',
     intro:
-      '把以下兩份貼進你本機的 agent client，之後只需下「口頭交易意圖」，agent 會在 session 限額內憑 VC 代你下單：',
+      '把以下兩份貼進你本機的 agent client，之後只要用一句話說出投資意圖，AI 代理會在額度內憑 VC 代你下單：',
 
     mcpTitle: 'MCP 設定（Claude Desktop / Code）',
     vcTitle: '授權 VC（下單驗證用）',
@@ -129,10 +129,10 @@ export const sessions = {
     open: '委託憑證 v3',
     title: '委託授權憑證 v3（W3C VC 2.0）',
     intro:
-      '把這個 session 的額度、資產白名單與 x402 付費上限簽成一張可驗證憑證，用來證明「誰授權了這個代理人、授權到哪裡」（Know Your Agent）。部署了錨定合約的環境可以再錨定到鏈上；目前的部署只能簽發憑證，尚未啟用鏈上錨定與付費 API 檢查。',
+      '把這個 AI 代理額度的上限、資產白名單與 x402 付費上限簽成一張可驗證憑證，用來證明「誰授權了這個代理人、授權到哪裡」（Know Your Agent）。部署了錨定程式的環境可以再錨定到鏈上；目前的部署只能簽發憑證，尚未啟用鏈上錨定與付費 API 檢查。',
     agentDid: '代理人 DID（holder）',
     issuerDid: '簽發者 DID（你）',
-    sessionTerms: 'Session 額度（與鏈上逐欄一致）',
+    sessionTerms: 'AI 代理額度（與鏈上逐欄一致）',
     assetsAll: '不限資產',
     assetsCount: '{n} 種資產',
     x402Title: 'x402 付費上限',
@@ -153,7 +153,7 @@ export const sessions = {
     statusActive: '有效',
     statusRevoked: '已撤銷（狀態清單）',
     statusExpired: '已過期',
-    statusSessionRevoked: '鏈上 session 已撤銷',
+    statusSessionRevoked: '鏈上的 AI 代理額度已撤銷',
     credentialHash: '憑證雜湊（錨定值）',
     spendTitle: 'x402 花費（signal-api 依憑證累計）',
     spendTotal: '總額 {spent} / {cap} USDC',
@@ -163,9 +163,9 @@ export const sessions = {
     hideJson: '收起 JSON',
     download: '下載憑證 .json',
     revoke: '撤銷這張憑證',
-    revokeUnavailable: '這個站沒設定憑證狀態清單，讀不到目前發佈的那一份：撤銷前請先在下面匯入目前發佈中的清單（.json），或確認從來沒發佈過（第一次撤銷）。簽好的新清單會下載，請交給驗證方。要立刻停止授權，撤銷 session 即可，鏈上立即生效。',
-    revokeCredentialInPanel: 'Session 已撤銷，鏈上立即生效。這個 session 的委託憑證還沒撤銷：請在列表按這個 session 的「委託憑證 v3」，在對話框裡匯入目前的撤銷清單（或確認是第一次撤銷）後按撤銷，簽好的清單會下載，請交給驗證方。',
-    revokeListSkipped: 'Session 已撤銷，鏈上立即生效。憑證的撤銷清單這次沒有簽署完成，不影響 session 的撤銷；要補上憑證撤銷，請到這個 session 的委託憑證區塊再按一次撤銷（可匯入目前的清單）。',
+    revokeUnavailable: '這個站沒設定憑證狀態清單，讀不到目前發佈的那一份：撤銷前請先在下面匯入目前發佈中的清單（.json），或確認從來沒發佈過（第一次撤銷）。簽好的新清單會下載，請交給驗證方。要立刻停止授權，撤銷 AI 代理額度即可，鏈上立即生效。',
+    revokeCredentialInPanel: 'AI 代理額度已撤銷，鏈上立即生效。這個額度的委託憑證還沒撤銷：請在列表按這個額度的「委託憑證 v3」，在對話框裡匯入目前的撤銷清單（或確認是第一次撤銷）後按撤銷，簽好的清單會下載，請交給驗證方。',
+    revokeListSkipped: 'AI 代理額度已撤銷，鏈上立即生效。憑證的撤銷清單這次沒有簽署完成，不影響額度的撤銷；要補上憑證撤銷，請到這個額度的委託憑證區塊再按一次撤銷（可匯入目前的清單）。',
     revoking: '撤銷中…',
     revokedDownloaded: '已簽好撤銷清單（sequence {seq}），但尚未確認發佈（已下載）；請交給營運方發佈（npm run vc-status install），發佈後按「確認已發佈」。在那之前憑證仍有效。',
     revokedPublished: '已簽好撤銷清單（sequence {seq}），並確認已發佈到狀態清單目錄。',
@@ -173,7 +173,7 @@ export const sessions = {
       '無法取得目前已發佈的狀態清單（{reason}），所以沒有簽署：撤銷清單必須接在已發佈的那份之後，否則驗證端會拒收、撤銷不會生效。請設定 VITE_VC_STATUS_URL，或匯入目前的清單後再試。',
     statusRevokePending: '撤銷待發佈（sequence {seq}，尚未生效）',
     revokedDownloadedNoStatus: '已簽好撤銷清單（sequence {seq}）並下載；請交給驗證方。這個站沒設定憑證狀態清單，無法在這裡確認驗證方是否已採用。',
-    revokePendingNoteNoStatus: '撤銷清單已簽好並下載，但這個站沒設定憑證狀態清單，無法確認驗證方是否已採用；在驗證方換上新清單之前，這張憑證仍可能被接受。要立刻停止授權，撤銷 session 即可，鏈上立即生效。',
+    revokePendingNoteNoStatus: '撤銷清單已簽好並下載，但這個站沒設定憑證狀態清單，無法確認驗證方是否已採用；在驗證方換上新清單之前，這張憑證仍可能被接受。要立刻停止授權，撤銷 AI 代理額度即可，鏈上立即生效。',
     revokePendingNote: '撤銷清單已簽好，但還沒確認發佈：在驗證端看到新清單之前，這張憑證仍然有效。要立即擋下付費 API，可以先「解除錨定」。',
     revokeAgain: '重新簽署撤銷清單',
     confirmPublished: '確認已發佈',
@@ -191,11 +191,11 @@ export const sessions = {
     unanchoring: '解除中…',
     unanchoredToast: '已解除錨定：要求錨定的付費 API 會立即拒收這張憑證',
     anchorProblem: {
-      anchor_no_code: '設定的錨定位址在這條鏈上沒有合約，交易不會送出。',
-      anchor_wrong_manager: '錨定合約綁定的 session manager 與這張憑證不同，交易不會送出。',
-      anchor_unreadable: '無法讀取錨定合約，交易不會送出。',
+      anchor_no_code: '設定的錨定位址在這條鏈上沒有鏈上程式，不會送出任何鏈上紀錄。',
+      anchor_wrong_manager: '錨定程式綁定的 session manager 與這張憑證不同，不會送出任何鏈上紀錄。',
+      anchor_unreadable: '無法讀取錨定程式，不會送出任何鏈上紀錄。',
     },
-    revokeWithSession: '同時撤銷這個 session 的 v3 委託憑證？會再請錢包簽一次狀態清單。',
+    revokeWithSession: '同時撤銷這個 AI 代理額度的 v3 委託憑證？會再請錢包簽一次狀態清單。',
     issuedToast: 'v3 委託憑證已簽發',
     anchoredToast: '憑證已錨定到鏈上',
     close: '關閉',
@@ -204,7 +204,7 @@ export const sessions = {
       bad_period: '期間必須大於 0 小時',
       period_over_total: '每期間上限不可大於總額上限',
       no_endpoints: '至少要允許一個付費端點',
-      session_expired: 'session 已到期，無法簽發',
+      session_expired: 'AI 代理額度已到期，無法簽發',
     },
   },
 
@@ -216,7 +216,7 @@ export const sessions = {
   /** #36：十段句中夾標記的說明，各自拆成標記前後的片段。 */
   markup: {
     introBefore:
-      '讓 AI 幫你下單，但只能照你設的上限：每筆多少、總共多少、最高幾倍、哪些資產、到什麼時候。主錢包私鑰不會交給它，隨時可撤銷。',
+      '讓 AI 幫你下單，但只能照你設的上限：每筆多少、總共多少、哪些資產、到什麼時候。主錢包私鑰不會交給它，隨時可撤銷。',
     introTech: '每個 agent 有 ',
     introMid: ' 身分，授權可憑證化為 ',
     introAfter: '，下單前會先驗簽。',
@@ -228,22 +228,22 @@ export const sessions = {
     roleHolderBold: 'Holder＝agent',
     roleHolderAfter: '：持 VC + session key 代你下單',
     roleVerifierBefore: '✅ ',
-    roleVerifierBold: 'Verifier＝MCP/合約',
-    roleVerifierAfter: '：下單前驗簽 + 鏈上 session 交叉比對',
+    roleVerifierBold: 'Verifier＝MCP/鏈上程式',
+    roleVerifierAfter: '：下單前驗簽 + 和鏈上的 AI 代理額度交叉比對',
 
-    wrongNetBefore: 'AI Agent Sessions 部署在 ',
+    wrongNetBefore: 'AI 代理額度功能部署在 ',
     wrongNetMid: '。你目前連到的是',
     wrongNetAfter: '，請在 MetaMask 切換到 Base Sepolia 後重整本頁。',
 
-    keyNoteBold1: 'agent 用一把獨立的 session key，不是你的主錢包',
+    keyNoteBold1: 'AI 代理用一把獨立的鑰匙，不是你的主錢包',
     keyNoteMid1: '：',
     keyNoteBold2: '地址',
-    keyNoteMid2: ' → 拿來授權下面這個 session；',
+    keyNoteMid2: ' → 拿來授權下面這個 AI 代理額度；',
     keyNoteBold3: '私鑰',
     keyNoteAfter:
       ' → 放進 agent 的 MCP 設定 + 一點 ETH 付 gas。 沒有現成的就按「產生 agent 金鑰」在瀏覽器產生一把全新 burner。',
 
-    burnerWarnBefore: '這是一把獨立的 burner 金鑰，只受你下面設的 session 限額拘束。請存到本機 agent 設定，',
+    burnerWarnBefore: '這是一把獨立的 burner 金鑰，只受你下面設的 AI 代理額度拘束。請存到本機 agent 設定，',
     burnerWarnBold: '別放主錢包資產',
     burnerWarnAfter: '。本頁只顯示這一次，且不會上傳或寫入伺服器。',
 
@@ -258,7 +258,7 @@ export const sessions = {
     step2Mid2: ' 指向它（或 MCP ',
     step2Mid3: ' 的 ',
     step2After: '）。',
-    step3: '完成後直接對 agent 說：「幫我用 3x 槓桿做多 BTC、保證金 200」即可，無需再報帳號/位址。',
+    step3: '完成後直接對 AI 代理說：「幫我用 200 USDC 買進 BTC」即可，無需再報帳號/位址。',
 
     addrKeyBold1: '地址',
     addrKeyMid1: '（',
@@ -272,7 +272,7 @@ export const sessions = {
     /** 嵌入私鑰的風險說明：預設不嵌入，勾選前後都看得到。 */
     includeKeyRiskTitle: '預設不嵌入私鑰',
     includeKeyRisk:
-      '匯出的設定檔預設只放佔位字串。勾選後，下方 JSON 會含這把 agent 的明文私鑰：任何拿到這個檔案（或看到你螢幕、剪貼簿、雲端同步資料夾）的人，都能在 session 的額度與期限內以你的授權下單。只在你自己的機器上使用，不要貼進聊天、工單或版本控制；外流時請立即撤銷 session。',
+      '匯出的設定檔預設只放佔位字串。勾選後，下方 JSON 會含這把 agent 的明文私鑰：任何拿到這個檔案（或看到你螢幕、剪貼簿、雲端同步資料夾）的人，都能在 AI 代理額度與期限內以你的授權下單。只在你自己的機器上使用，不要貼進聊天、工單或版本控制；外流時請立即撤銷這個額度。',
     includeKeyOnWarning: '目前的設定檔含明文私鑰。複製或下載後請妥善保管，用完即刪。',
 
     placeholderAfter:

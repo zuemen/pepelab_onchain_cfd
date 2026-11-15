@@ -21,7 +21,7 @@ export const common: Catalog['common'] = {
     installMetamask: 'Install the MetaMask extension ↗',
 
     mockTitle: 'Pepe Guest Channel (no wallet)',
-    mockDesc: 'No wallet needed — jump straight in, switch Pepe avatars, and try copy trading',
+    mockDesc: 'No wallet needed — jump straight in, switch Pepe avatars, and try copy investing',
 
     error: {
       notDetected: 'MetaMask not detected — please install the extension.',
@@ -32,8 +32,8 @@ export const common: Catalog['common'] = {
 
     connectPrompt: {
       marketplace: 'Connect wallet to browse the marketplace.',
-      stake: 'Connect wallet to manage your stake.',
-      sessions: 'Connect wallet to manage agent sessions.',
+      stake: 'Connect wallet to manage your performance deposit.',
+      sessions: 'Connect wallet to manage AI agent allowances.',
       feed: 'Connect wallet to see the on-chain feed.',
     },
   },
@@ -53,8 +53,8 @@ export const common: Catalog['common'] = {
   paperTrading: {
     tooltip:
       "This platform runs on a testnet — every asset and balance is simulated, no real money involved. Equivalent to TradingView's Paper Trading mode.",
-    compactLabel: 'PAPER TRADING',
-    label: 'PAPER TRADING · Simulated testnet trading',
+    compactLabel: 'SIMULATED',
+    label: 'SIMULATED · Simulated testnet investing',
   },
 
   shell: {
@@ -116,9 +116,9 @@ export const common: Catalog['common'] = {
     unreadable: 'read failed',
     noPrice: 'no valid price',
     stale: 'price stale',
-    unreadableHint: 'This position’s contract data could not be read this time (node timeout or error). It does not mean there is no PnL — refresh to try again.',
-    noPriceHint: 'The oracle has no valid price for this asset right now (price is 0), so the contract cannot value the position and no PnL is shown.',
-    staleHint: 'The oracle price is older than the contract allows; the contract will not accept a close right now, so no PnL is shown.',
+    unreadableHint: 'This investment’s on-chain data could not be read this time (node timeout or error). It does not mean there is no PnL — refresh to try again.',
+    noPriceHint: 'The price source has no valid price for this asset right now (price is 0), so its sale value cannot be estimated and no PnL is shown.',
+    staleHint: 'The price source is older than the on-chain program allows; selling is not possible right now, so no PnL is shown.',
   },
 
   avatarPicker: {
@@ -141,18 +141,18 @@ export const common: Catalog['common'] = {
       mid: '. The chain this app is deployed on is ',
       primaryBefore: 'Base Sepolia (',
       primaryAfter: ')',
-      after: ' — trading, agent sessions, and x402 only work there.',
+      after: ' — buying and selling, AI agent allowances, and x402 only work there.',
       sepoliaExtra: ' Sepolia is kept around as a comparison showcase for tokenized assets and the vault.',
     },
   },
 
   disclosure: {
     title: 'Important disclosure: testnet research prototype — no real assets',
-    summary: 'Every asset, balance and trade on this site is simulated on a testnet and has no real-world value.',
+    summary: 'Every asset, balance and buy/sell record on this site is simulated on a testnet and has no real-world value.',
     prototype:
-      'This site is a research prototype deployed on the Base Sepolia testnet. All tokens, funds and trades are simulated; no real assets or money are involved.',
+      'This site is a research prototype deployed on the Base Sepolia testnet. All tokens, funds and buy/sell records are simulated; no real assets or money are involved.',
     synthetic:
-      'Every synthetic token on this site — equities (e.g. AAPL, TSLA, NVDA), bonds (BGRN), gold (XAU), crypto (BTC, ETH) and ETFs (ICLN, ESGU) — is an under-collateralized synthetic exposure issued by the AssetVault. Each tracks its underlying through an oracle price only; the platform holds none of the underlying assets and keeps no one-to-one reserve. Holders have no shareholder, creditor or fund-holder rights (including voting, dividend or coupon rights) and no claim against any issuer or physical asset; redemption depends on the liquidity of the AssetVault.',
+      'Every synthetic token on this site — equities (e.g. AAPL, TSLA, NVDA), bonds (BGRN), gold (XAU), crypto (BTC, ETH) and ETFs (ICLN, ESGU) — is an under-collateralized synthetic exposure issued by the AssetVault. Each only tracks the price of its underlying, using a price source; the platform holds none of the underlying assets and keeps no one-to-one reserve. Holders have no shareholder, creditor or fund-holder rights (including voting, dividend or coupon rights) and no claim against any issuer or physical asset; redemption depends on the liquidity of the AssetVault.',
     noAdvice: 'Nothing on this site constitutes investment advice, an offer, or a solicitation.',
     operatedBy: 'This site is operated by {operator}.',
     expand: 'Expand',
@@ -161,9 +161,9 @@ export const common: Catalog['common'] = {
 
   tenant: {
     assetNotEnabled:
-      'This platform does not offer new trades in this asset; existing holdings can still be sold or closed.',
+      'This platform does not offer buying this asset; what you already hold can still be sold.',
     perpetualsNotAuthorized:
-      'This platform does not offer new perpetual positions; existing positions can still be closed from the Positions tab.',
+      'This platform does not offer new buys of this kind of advanced investment; what you already hold can still be sold from your holdings list.',
     footer: {
       support: 'Support',
       legal: 'Legal',
@@ -197,7 +197,7 @@ export const common: Catalog['common'] = {
    * 再翻出第二份說明，所以就是單一個字。
    */
   rankPrefix: 'Reputation',
-  rankTooltip: 'From the stake and slashing record: stake ÷ (stake + slashed amount × 5) × 100, so a trader never slashed scores 100. Currently {tier} tier. Not a measure of performance.',
+  rankTooltip: 'From the performance deposit and deduction record: deposit ÷ (deposit + deducted amount × 5) × 100, so a strategy sharer never penalized scores 100. Currently {tier} tier. Not a measure of performance.',
   rankUnknown: '—',
 
   tier: {

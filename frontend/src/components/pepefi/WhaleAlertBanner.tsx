@@ -7,6 +7,7 @@ import IconButton from '@mui/material/IconButton';
 import type { WhaleAlert } from 'src/hooks/useWhaleAlerts';
 
 import { t } from 'src/locales';
+import { SHOW_DIRECTION } from 'src/lib/pepefi/legDisplay';
 import { shortAddr } from 'src/components/pepefi/brandKit';
 import { timeAgo, fCompact, sideLabel } from 'src/lib/pepefi/whale';
 
@@ -87,16 +88,19 @@ export default function WhaleAlertBanner({ alerts }: Props) {
         <Typography component="span" variant="caption" sx={{ color: 'text.secondary', mx: 0.5 }}>
           {t.whale.feed.openedVerb}
         </Typography>
-        <Typography
-          component="span"
-          variant="caption"
-          sx={{
-            fontWeight: 'bold',
-            color: a.isLong ? 'success.main' : 'error.main',
-          }}
-        >
-          {sideLabel(a.isLong)}
-        </Typography>
+        {/* 現貨呈現（SHOW_LEVERAGE 關）時不顯示方向 */}
+        {SHOW_DIRECTION && (
+          <Typography
+            component="span"
+            variant="caption"
+            sx={{
+              fontWeight: 'bold',
+              color: a.isLong ? 'success.main' : 'error.main',
+            }}
+          >
+            {sideLabel(a.isLong)}
+          </Typography>
+        )}
         <Typography component="span" variant="caption" sx={{ color: 'text.secondary', mx: 0.5 }}>
           {a.assetLabel} —
         </Typography>

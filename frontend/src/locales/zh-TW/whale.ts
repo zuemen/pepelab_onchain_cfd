@@ -14,19 +14,19 @@ export const whale = {
   },
 
   /** feed 上點名一筆交易的原因。 */
-  side: { long: '做多', short: '做空' },
+  side: { long: '看漲', short: '看跌' },
   tag: {
     mega: '巨額',
-    megaHint: '名義價值超過 {threshold}',
-    highLeverage: '{leverage}× 槓桿',
-    highLeverageHint: '價格小幅逆向波動即可能觸發清算',
+    megaHint: '投資規模超過 {threshold}',
+    highLeverage: '高風險',
+    highLeverageHint: '投資規模遠大於投入金額，價格小幅反向變動就可能被自動結清',
     newFace: '新面孔',
     newFaceHint: '此地址在掃描區間內首次出現活動',
   },
 
   page: {
     title: '🐋 鯨魚追蹤',
-    subtitle: '大額交易即時追蹤 · 即時未平倉量 · 帳面最大部位',
+    subtitle: '大額投資即時追蹤 · 目前持有總額 · 規模最大的投資',
 
     window: '視窗 · {label}',
     windowHint: '早於此視窗的事件不列入計算',
@@ -45,73 +45,73 @@ export const whale = {
     threshold: '鯨魚門檻',
     refresh: '↺ 重新整理',
 
-    lookupPlaceholder: '0x… 查詢任一交易者',
-    lookupAria: '交易者地址',
+    lookupPlaceholder: '0x… 查詢任一投資人',
+    lookupAria: '投資人地址',
     lookupInvalid: '不是有效的 Ethereum 地址',
     viewProfile: '查看個人頁',
 
     notAvailable:
-      '此網路無法使用交易所功能——請連接 Base Sepolia 錢包以查看鯨魚活動。上方的地址查詢功能仍可正常使用。',
+      '此網路無法使用投資功能——請連接 Base Sepolia 錢包以查看鯨魚活動。上方的地址查詢功能仍可正常使用。',
     retry: '重試',
 
     /** feed 空掉時的原因，四種各自是完整的一句話。 */
-    emptyDisconnected: '連接 Base Sepolia 錢包以掃描交易所。',
+    emptyDisconnected: '連接 Base Sepolia 錢包以掃描鏈上投資紀錄。',
     emptyScanFailed: '掃描未完成，這不是最終結果——請點擊上方重試。',
-    emptyBelowThreshold: '此視窗內共 {count} 筆交易，皆未達 {threshold} 門檻。請嘗試調低門檻。',
-    emptyNoTrades: '區塊 {range} 內完全沒有開倉紀錄。',
+    emptyBelowThreshold: '此視窗內共 {count} 筆投資，皆未達 {threshold} 門檻。請嘗試調低門檻。',
+    emptyNoTrades: '區塊 {range} 內完全沒有買進紀錄。',
 
     footer:
-      '動態消息與成交量涵蓋區塊 {range}（{window}）。未平倉量則即時從交易所讀取，涵蓋所有部位，包括更早期的部位。',
+      '動態消息與成交量涵蓋區塊 {range}（{window}）。目前持有總額則即時從鏈上讀取，涵蓋所有持有中的投資，包括更早買進的。',
     footerPending: '掃描範圍計算中',
   },
 
   kpi: {
-    whaleTrades: '鯨魚交易',
-    whaleTradesSub: '名義價值 ≥ {threshold} · {window}',
+    whaleTrades: '鯨魚投資',
+    whaleTradesSub: '投資規模 ≥ {threshold} · {window}',
     volume: '成交量',
-    volumeSub: '共 {count} 筆開倉 · {window}',
-    openInterest: '未平倉量',
+    volumeSub: '共 {count} 筆買進 · {window}',
+    openInterest: '目前持有總額',
     openInterestSub: '即時 · 涵蓋所有市場、所有時間',
   },
 
   feed: {
     title: '🐋 鯨魚動態',
     scanning: '掃描中 {done}/{total}',
-    trades: '{count} 筆交易',
+    trades: '{count} 筆投資',
 
     /**
      * simple 模式把一筆交易寫成一句話，每個片段之間本來就用明確的
      * `{' '}` 隔開，不是靠 JSX 折疊換行空白，所以直接搬進 catalog 不會漏空格。
      */
-    openedVerb: '開倉',
+    openedVerb: '買進',
     forPreposition: '金額為',
-    emptyTitle: '此範圍內無鯨魚交易',
+    emptyTitle: '此範圍內無鯨魚投資',
     emptyTitleFailed: '⚠️',
-    emptyDescription: '掃描範圍內沒有名義價值超過 $5k 的交易。',
+    emptyDescription: '掃描範圍內沒有投資規模超過 $5k 的投資。',
 
-    copy: '⭐ 跟單',
-    copyHint: '已註冊策略——可在交易市集跟單此交易者',
+    copy: '⭐ 跟著投資',
+    copyHint: '已註冊策略——可在策略市集跟著這位策略分享者投資',
     estimatedTime: '依平均出塊時間估算',
-    txAria: '在區塊瀏覽器查看交易',
+    txAria: '在區塊瀏覽器查看鏈上紀錄',
 
     column: {
       time: '時間',
-      trader: '交易者',
+      trader: '投資人',
       market: '市場',
-      side: '方向',
-      notional: '名義價值',
-      entry: '進場價',
-      tx: '交易',
+      side: '看漲／看跌',
+      notional: '投資規模',
+      entry: '買進價',
+      tx: '紀錄',
     },
   },
 
   sentiment: {
-    title: '多空對比',
-    subtitle: '未平倉量 · 即時',
+    title: '看漲看跌對比',
+    subtitle: '目前持有總額 · 即時',
     unavailable: '此網路無法使用。',
-    empty: '所有市場皆無未平倉部位。',
-    long: '做多 {pct}%',
-    short: '{pct}% 做空',
+    empty: '所有市場皆無持有中的投資。',
+    long: '看漲 {pct}%',
+    short: '{pct}% 看跌',
 
     /**
      * 「橫跨 N 個市場」的單複數寫成兩條完整的句子——catalog 沒有複數引擎，
@@ -121,7 +121,7 @@ export const whale = {
     acrossOne: '橫跨 {count} 個市場',
     acrossMany: '橫跨 {count} 個市場',
 
-    rowTooltip: '多 {long} · 空 {short}',
+    rowTooltip: '看漲 {long} · 看跌 {short}',
     missingOne: '{count} 個市場無法讀取——RPC 節點可能正在限速。',
     missingMany: '{count} 個市場無法讀取——RPC 節點可能正在限速。',
   },
@@ -137,24 +137,24 @@ export const whale = {
   },
 
   largest: {
-    title: '最大未平倉部位',
+    title: '規模最大的持有中投資',
     top: '前 {count} 名',
     unavailable: '此網路無法使用。',
-    empty: '掃描範圍內無未平倉部位。',
+    empty: '掃描範圍內無持有中的投資。',
 
     column: {
       market: '市場',
-      trader: '交易者',
-      side: '方向',
-      entry: '進場價',
-      mark: '標記價',
-      notional: '名義價值',
-      pnl: 'PnL',
+      trader: '投資人',
+      side: '看漲／看跌',
+      entry: '買進價',
+      mark: '目前價格',
+      notional: '投資規模',
+      pnl: '損益',
     },
 
-    markUnread: '標記價無法讀取',
-    pnlUnread: '未實現 PnL 無法讀取',
-    missingOne: '{count} 筆部位無法讀取——RPC 節點可能正在限速。',
-    missingMany: '{count} 筆部位無法讀取——RPC 節點可能正在限速。',
+    markUnread: '目前價格無法讀取',
+    pnlUnread: '未實現損益無法讀取',
+    missingOne: '{count} 筆投資無法讀取——RPC 節點可能正在限速。',
+    missingMany: '{count} 筆投資無法讀取——RPC 節點可能正在限速。',
   },
 };

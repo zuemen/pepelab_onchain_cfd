@@ -2,18 +2,18 @@
  * LP Vault（保險金庫）。
  */
 export const vault = {
-  connectWallet: '連接錢包以使用 LP 保險金庫。',
+  connectWallet: '連接錢包以使用風險準備金。',
   viewOnEtherscan: '在 Etherscan 查看 ↗',
 
   /** #151：對齊 /tokens 的 Simple/Expert Mode 標題模式——Expert 講機制
    *  （保險），Simple 拿掉那個字。 */
-  title: '保險金庫',
-  titleSimple: '金庫',
-  subtitle: '存入 USDC 賺取協議手續費。金庫要吸收交易者的極端虧損，份額價值可能下跌。',
+  title: '風險準備金',
+  titleSimple: '風險準備金',
+  subtitle: '存入 USDC 分得平台手續費。風險準備金要吸收投資人的極端虧損，份額價值可能下跌。',
 
   /** #151：Simple Mode 版的做市收益提示——不講 bps、不講機制，只講結果。
    *  Expert 版仍用下面 markup.mmActiveLabel 那三句。 */
-  simpleYieldActive: '此金庫正在賺取交易手續費收益。',
+  simpleYieldActive: '風險準備金目前正在分得手續費收益。',
 
   stat: {
     totalAssets: '總資產',
@@ -23,14 +23,14 @@ export const vault = {
   },
 
   position: {
-    title: '你的部位',
+    title: '你的存款',
     shares: '持有 pIV',
     value: 'USDC 價值',
   },
 
   deposit: {
     title: '存入 USDC',
-    description: '依目前資金池規模按比例獲得 pIV 份額，賺取協議手續費收益。',
+    description: '依目前資金規模按比例取得 pIV 份額，分得平台手續費收益。',
     placeholder: 'USDC 金額',
     cta: '存入',
     estimate: '≈ {shares} pIV',
@@ -51,14 +51,14 @@ export const vault = {
   activity: {
     title: '近期活動',
     emptyTitle: '尚無活動',
-    emptyDescription: '存入 USDC 即可開始累積協議手續費收益；金庫要吸收極端虧損，份額價值可能下跌。',
+    emptyDescription: '存入 USDC 即可開始分得平台手續費收益；風險準備金要吸收極端虧損，份額價值可能下跌。',
     readFailedTitle: '讀取失敗',
-    readFailedDescription: '金庫的鏈上事件讀取失敗，這裡的空白不代表沒有活動。請稍後重新整理。',
+    readFailedDescription: '風險準備金的鏈上事件讀取失敗，這裡的空白不代表沒有活動。請稍後重新整理。',
     partial: '部分區塊範圍讀取失敗，下方活動可能不完整。',
-    deposited: 'LP 存入',
-    withdrawn: 'LP 提領',
-    protocolDeposit: '協議手續費',
-    bailout: '已支付紓困金',
+    deposited: '存入',
+    withdrawn: '提領',
+    protocolDeposit: '平台手續費',
+    bailout: '已支付補貼',
     block: '#{block}',
   },
 
@@ -67,25 +67,25 @@ export const vault = {
 
   /** #36：三句句中夾標記的說明，各自拆成標記前後的片段。 */
   markup: {
-    mmActiveLabel: '做市收益已啟動：',
-    mmPctRouted: '每筆交易手續費中的 {pct}% 分配給 LP——',
+    mmActiveLabel: '手續費分配已啟動：',
+    mmPctRouted: '每筆投資手續費中的 {pct}% 分配給存入者——',
     mmAmount: '{amount} USDC',
     mmRoutedToDate: '累計已分配。',
 
     howItWorksLabel: '運作方式：',
     howItWorksBody:
-      ' LP 存入 USDC 並獲得 pIV 份額。金庫透過 FeeRouter 賺取所有跟單與績效手續費的 10%。清算時金庫僅收取',
+      ' 存入 USDC 的人會拿到 pIV 份額。風險準備金透過手續費分配程式（FeeRouter）取得所有跟著投資與績效手續費的 10%。投資被自動結清時，風險準備金只收取',
     /** 跟單旗標關閉時的說法：收入來源講 FeeRouter 的費用，不點名跟單。 */
     howItWorksBodyNoCopy:
-      ' LP 存入 USDC 並獲得 pIV 份額。金庫透過 FeeRouter 賺取平台交易與績效手續費的 10%。清算時金庫僅收取',
-    liquidationPenaltyLabel: '清算罰金',
+      ' 存入 USDC 的人會拿到 pIV 份額。風險準備金透過手續費分配程式（FeeRouter）取得平台手續費與績效手續費的 10%。投資被自動結清時，風險準備金只收取',
+    liquidationPenaltyLabel: '自動結清罰金',
     howItWorksCodeWrap: '（',
     howItWorksTail:
-      '），加上清算人的獎勵——部位持有者會拿回扣除虧損、手續費與罰金後剩餘的保證金，因此清算不再是 100% 沒收。',
+      '），加上執行結清者的獎勵——投資人會拿回扣除虧損、手續費與罰金後剩餘的投入金額，因此自動結清不是全部沒收。',
 
     badDebtBefore:
-      '當交易者的虧損超過其保證金（極端事件）時，金庫會直接支付 10% 紓困底線給該交易者。若虧損超出金庫可承擔的範圍，短缺部分會以 ',
-    badDebtMid: ' 事件形式發出，金庫需透過 ',
-    badDebtAfter: ' 補足資金。LP 承擔此風險以換取收益。',
+      '當投資人的虧損超過投入金額（極端情況）時，風險準備金會直接付給該投資人 10% 的補貼底線。若虧損超出風險準備金可承擔的範圍，短缺部分會以 ',
+    badDebtMid: ' 事件記錄在鏈上，需透過 ',
+    badDebtAfter: ' 補足資金。存入者承擔這個風險以換取收益。',
   },
 };

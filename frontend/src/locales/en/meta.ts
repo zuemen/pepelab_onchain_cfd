@@ -9,10 +9,10 @@ import type { Catalog } from '../zh-TW';
  * 而編譯通過。標在這裡才會擋，而且錯誤會指在多出來的那一行上。
  */
 export const meta: Catalog['meta'] = {
-  title: '{brand} · Web3 Social Trading',
+  title: '{brand} · Digital-asset investing for everyone',
   description:
-    '{brand} — Web3 social trading on Base: invest alongside traders whose every move is on-chain. Social copy trading, third-party ESG ratings with carbon tiers, and GameFi.',
+    '{brand} — a digital-asset platform that helps ordinary people invest: stocks, bonds, gold and more as tokens on Base. Use copy investing to follow strategy sharers whose records are public, plus third-party ESG ratings with carbon tiers and a Pepe game.',
   titleNoCopy: '{brand} · Agent-Native Tokenized RWA',
   descriptionNoCopy:
-    '{brand} — an agent-native tokenized-asset engine on Base. Mint and redeem synthetic equities, bonds, gold and crypto on-chain + x402 paid signals + bounded agent sessions.',
+    '{brand} — a tokenized-asset platform on Base. Buy and redeem tokens that track equities, bonds, gold and crypto on-chain + x402 paid signals + capped AI agent allowances.',
 };

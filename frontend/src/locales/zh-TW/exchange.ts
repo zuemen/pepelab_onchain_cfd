@@ -14,11 +14,11 @@
  *    畫面上本來就有那個空格。搬移階段要求逐字相同，就得連它一起搬——不是筆誤。
  */
 export const exchange = {
-  connectWallet: '連接錢包以使用交易所。',
+  connectWallet: '連接錢包以使用入金與兌換。',
   loadingChainData: '載入區塊鏈資料中…',
 
   /** 全域交易覆蓋層上，標題底下那句固定的說明。 */
-  confirmInWallet: '請在錢包中確認交易，並等待區塊確認。',
+  confirmInWallet: '請在錢包中確認，並等待區塊確認。',
 
   /** 送出交易前後對使用者說的話。 */
   tx: {
@@ -30,24 +30,24 @@ export const exchange = {
      * StaleOraclePrice，等使用者付完 gas 才知道是最糟的順序。
      */
     ammStale:
-      '兌換池的參考預言機報價已過期，合約會拒絕兌換（StaleOraclePrice）。請等 keeper 更新價格後再試。',
+      '兌換池的參考價格來源已過期，鏈上程式會拒絕兌換（StaleOraclePrice）。請等價格更新後再試。',
 
     /**
      * #215：送出前以 eth_call 模擬兌換，必定失敗就不送——包含 approve。兩句話分開，
      * 因為「沒有送出任何交易」和「批准已經送了」對使用者是兩種不同的處境。
      */
-    preflightBlocked: '預檢未通過，沒有送出任何交易：{reason}',
-    preflightBlockedAfterApprove: '批准已完成，但兌換預檢未通過，沒有送出兌換交易：{reason}',
+    preflightBlocked: '預檢未通過，這次什麼都沒有送出：{reason}',
+    preflightBlockedAfterApprove: '批准已完成，但兌換預檢未通過，兌換沒有送出：{reason}',
     /**
      * #220：即時報價低於畫面上顯示、使用者確認過的「最低收到數量」。不換成新價成交，
      * 停下來讓使用者看過新報價再按一次。
      */
     priceMoved:
-      '價格已變動：目前報價 {quoted} {token}，低於你確認的最低收到數量 {minOut} {token}。沒有送出任何交易，請確認新報價後再按一次。',
+      '價格已變動：目前報價 {quoted} {token}，低於你確認的最低收到數量 {minOut} {token}。這次什麼都沒有送出，請確認新報價後再按一次。',
     /** 金額太小：報價打 0.5% 之後最低收到數量是 0，等於沒有滑點保護，不送。 */
-    zeroMinOut: '金額太小，最低收到數量會是 0（沒有滑點保護），沒有送出兌換交易。請提高金額。',
+    zeroMinOut: '金額太小，最低收到數量會是 0（沒有滑點保護），兌換沒有送出。請提高金額。',
     priceMovedAfterApprove:
-      '批准已完成，但價格已變動：目前報價 {quoted} {token}，低於你確認的最低收到數量 {minOut} {token}。沒有送出兌換交易，請確認新報價後再按一次（不必再批准）。',
+      '批准已完成，但價格已變動：目前報價 {quoted} {token}，低於你確認的最低收到數量 {minOut} {token}。兌換沒有送出，請確認新報價後再按一次（不必再批准）。',
 
     approving: '批准 {token} 中…',
     swappedEthForToken: '已用 {amount} ETH 兌換約 {received} {token} ✓',
@@ -62,7 +62,7 @@ export const exchange = {
 
   /** 全域交易覆蓋層上的字，依當下進行中的動作切換。 */
   loading: {
-    fallback: '處理交易中…',
+    fallback: '處理中…',
     swapEthToToken: '兌換 ETH 為 {token} 中…',
     swapTokenToEth: '兌換 {token} 為 ETH 中…',
     faucetStable: '領取 {token} 中…',
@@ -109,7 +109,7 @@ export const exchange = {
     title: '兌換',
     poolBadge: '● 恆定乘積池 · 有滑點',
     /** #165：線上舊版 PepeAMM 依 oracle 報價成交，掛恆定乘積徽章是錯的。 */
-    oracleFixedBadge: '● 預言機定價 · 無滑點',
+    oracleFixedBadge: '● 依價格來源定價 · 無滑點',
     notDeployed: '本網路未部署兌換池（PepeAMM）。請切換到 Base Sepolia。',
 
     youPay: '你支付',
@@ -121,14 +121,14 @@ export const exchange = {
      * 它們分岔超過 maxOracleDeviationBps 時合約就會擋下兌換。
      */
     poolPrice: '池內現價',
-    oracleRef: 'Oracle 參考價',
+    oracleRef: '價格來源參考價',
     poolReserves: '池內儲備量',
 
     /**
      * #165：線上 PepeAMM 是較早的版本（依 oracle 報價固定定價），它的 getPrice() 是
      * oracle 報價而不是儲備比例。那一版用這兩條 label，不再把 oracle 價標成池內現價。
      */
-    oracleRate: '兌換價（依 Oracle 定價）',
+    oracleRate: '兌換價（依價格來源定價）',
     poolInventory: '池內可兌出庫存',
     /** 讀取失敗時的那一格。不是「—」也不是 0：兩者都會被讀成一個數字。 */
     unavailable: '無法取得',
@@ -136,12 +136,12 @@ export const exchange = {
     loadingValue: '讀取中…',
     smallPoolNote: '兌換池目前規模很小，單筆金額太大會被價格護欄退回，請先用小額試。',
     oracleFixedNote:
-      '這個兌換池依預言機報價定價（扣 0.3% 手續費、無滑點），不是恆定乘積池。儲備量只代表可兌出的庫存，不決定價格。',
-    noOracleRefNote: '這個兌換池不另外顯示預言機參考價。',
+      '這個兌換池依價格來源的報價定價（扣 0.3% 手續費、無滑點），不是恆定乘積池。儲備量只代表可兌出的庫存，不決定價格。',
+    noOracleRefNote: '這個兌換池不另外顯示價格來源參考價。',
     unknownVersionNote:
-      '無法確認線上合約版本，暫不顯示價格與價格衝擊；實際兌換數量仍以合約即時報價為準。',
+      '無法確認線上兌換池的版本，暫不顯示價格與價格衝擊；實際兌換數量仍以鏈上即時報價為準。',
     /** 版本探測還沒回來時的說明——不可以先說「無法確認」。 */
-    checkingVersionNote: '正在確認線上合約版本…',
+    checkingVersionNote: '正在確認線上兌換池的版本…',
     /**
      * #215：舊版合約的報價不看庫存，金額一大就會報出池子付不出來的數字。按鈕上的短句，
      * 與下面那句完整的說明。
@@ -156,7 +156,7 @@ export const exchange = {
       '恆定乘積 (x·y=k) 池：金額越大滑點越高。報價已含 0.3% 手續費，minOut 以即時 quote 為基準。',
 
     swapping: '兌換中…',
-    oracleStale: '⛔ 預言機報價過期，暫停兌換',
+    oracleStale: '⛔ 價格來源的報價過期，暫停兌換',
     enterAmount: '請輸入金額',
     /** #220：金額或方向剛改、新報價還沒回來——按鈕停用，不拿上一個金額的報價送出。 */
     quoting: '取得報價中…',
@@ -199,16 +199,16 @@ export const exchange = {
 
     ethBalanceBefore: 'ETH 餘額：',
     /** 這一頁沒有開倉,ETH 只用來付 gas。 */
-    ethBalanceAfterSpot: '（鏈上交易需少量 ETH 付手續費）',
+    ethBalanceAfterSpot: '（每次上鏈需少量 ETH 付手續費）',
     noEth: '你的錢包沒有 ETH，領幣和買進都付不了網路手續費。請先到 Base Sepolia 水龍頭領一點。',
     noEthCta: '查看水龍頭 ↗',
 
-    faucetLimit: '🔑 每個錢包 24 小時可領一次。智慧合約錢包（Safe 等）不能領，請用一般錢包。',
+    faucetLimit: '🔑 每個錢包 24 小時可領一次。由程式控制的錢包（Safe 等）不能領，請用一般錢包。',
 
     priceImpactBefore: '⚠ 這筆兌換的價格衝擊高達 ',
-    priceImpactAfter: '，等於用遠差於市價的價格成交。 建議分批換小額；金額太大時合約還會以 ',
+    priceImpactAfter: '，等於用遠差於市價的價格成交。 建議分批換小額；金額太大時鏈上程式還會以 ',
     priceImpactCode: 'PriceOutOfBand',
-    priceImpactLine2After: ' 直接拒絕（池價被推離 oracle 太遠）。',
+    priceImpactLine2After: ' 直接拒絕（池價被推離價格來源太遠）。',
 
 
 

@@ -12,6 +12,7 @@ import { TableSkeleton } from 'src/components/pepefi/Skeleton'
 import EmptyState from 'src/components/pepefi/EmptyState'
 import { ASSET_LABEL } from 'src/lib/pepefi/assetMeta'
 import { t, interpolate } from 'src/locales'
+import { SHOW_DIRECTION } from 'src/lib/pepefi/legDisplay'
 import { mapLimit, withRetry, RPC_CONCURRENCY } from 'src/lib/pepefi/rpcBatch'
 import {
   canLoadOlder,
@@ -523,6 +524,10 @@ function renderDetails(e: ChainEvent): ReactNode {
       const label   = ASSET_LABEL[d.asset as string] ?? '?'
       const side    = (d.isLong as boolean) ? t.history.detail.sideLong : t.history.detail.sideShort
       const sideCol = (d.isLong as boolean) ? 'success.main' : 'error.main'
+      // 現貨呈現（SHOW_LEVERAGE 關）時不顯示方向與倍數
+      if (!SHOW_DIRECTION) {
+        return <span>{label} @ {fPrice18(d.entryPrice as bigint)} | {t.history.detail.marginLabel} {f18(d.margin as bigint)} USDC</span>
+      }
       return <span><Box component="span" sx={{ fontWeight: 'bold', color: sideCol }}>{side}</Box> {label} {String(d.leverage as bigint)}× @ {fPrice18(d.entryPrice as bigint)} | {t.history.detail.marginLabel} {f18(d.margin as bigint)} USDC</span>
     }
 

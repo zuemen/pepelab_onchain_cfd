@@ -21,6 +21,7 @@ import { useRegisteredTraders } from 'src/hooks/useRegisteredTraders'
 import { useLargestOpenPositions } from 'src/hooks/useLargestOpenPositions'
 
 import { t, interpolate } from 'src/locales'
+import { SHOW_DIRECTION } from 'src/lib/pepefi/legDisplay'
 import { MONO } from 'src/components/pepefi/brandKit'
 import { WHALE_THRESHOLD, WHALE_THRESHOLD_OPTIONS } from 'src/lib/pepefi/whale'
 import WhaleFeed from 'src/components/pepefi/whale/WhaleFeed'
@@ -278,7 +279,8 @@ export default function WhaleTrackerPage() {
 
         <Grid size={{ xs: 12, md: 4 }}>
           <Stack spacing={3}>
-            <MarketSentimentBar sentiment={sentiment} mode={mode} ready={ready} />
+            {/* 多空比例：現貨呈現（SHOW_LEVERAGE 關）時不顯示 */}
+            {SHOW_DIRECTION && <MarketSentimentBar sentiment={sentiment} mode={mode} ready={ready} />}
             {/* 未平倉部位來自鏈上事件掃描；掃描還沒跑完前不能說「沒有部位」，先顯示載入中。 */}
             <LargestOpenPositions
               data={{

@@ -56,7 +56,7 @@ export const pepe = {
     },
     'skin-12': {
       name: '酷炫霓虹派對 DJ 蛙',
-      desc: '在巨型霓虹電音派對上打碟的潮流DJ，它的節奏掌控力就跟交易滑點一樣精準完美。',
+      desc: '在巨型霓虹電音派對上打碟的潮流DJ，它的節奏掌控力就跟成交價一樣精準完美。',
     },
     'skin-13': {
       name: '狂戰士維京青蛙',
@@ -180,8 +180,8 @@ export const pepe = {
 
   /** issue #101：成就由持有時間、組合碳足跡、分散度、未操作天數解鎖，不再由買了多少決定。 */
   achievement: {
-    ach_hold_30: { title: '持有滿月', desc: '同一個部位持有滿 30 天' },
-    ach_hold_90: { title: '一季不動', desc: '同一個部位持有滿 90 天' },
+    ach_hold_30: { title: '持有滿月', desc: '同一筆投資持有滿 30 天' },
+    ach_hold_90: { title: '一季不動', desc: '同一筆投資持有滿 90 天' },
     ach_low_carbon: { title: '低碳組合', desc: '投資組合的加權碳強度低於 1 tCO2e／百萬美元營收' },
     ach_diversified: { title: '分散配置', desc: '持倉分散度達 0.7 以上' },
     ach_steady: { title: '穩定的手', desc: '連續 30 天沒有任何買賣操作' },

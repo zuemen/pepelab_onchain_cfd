@@ -5,28 +5,28 @@ import type { Catalog } from '../zh-TW';
  */
 export const x402: Catalog['x402'] = {
   docs: {
-    title: 'x402: let your AI assistant pay for trading data on its own',
+    title: 'x402: let your AI assistant pay for investing data on its own',
     testnetChip: 'Base Sepolia · paid in Circle USDC',
-    lead: 'When your AI trading assistant needs data, there is no account to sign up for and no monthly subscription — each time it wants one piece, it pays a small fee from its own wallet (from $0.005) and gets the data on the spot.',
+    lead: 'When your AI investing assistant needs data, there is no account to sign up for and no monthly subscription — each time it wants one piece, it pays a small fee from its own wallet (from $0.005) and gets the data on the spot.',
 
     benefits: {
       payPerUse: {
         title: 'Pay only for what you use',
-        body: 'A trader signal costs $0.01 and a live market snapshot $0.005. No monthly fee, no minimum spend.',
+        body: 'A strategy sharer signal costs $0.01 and a live market snapshot $0.005. No monthly fee, no minimum spend.',
       },
       autonomous: {
         title: 'Your assistant handles it',
-        body: 'Paying, fetching the data and deciding whether to trade all happen automatically. When a signal is too weak, the assistant can choose not to trade and only spends the data fee.',
+        body: 'Paying, fetching the data and deciding whether to buy all happen automatically. When a signal is too weak, the assistant can choose not to buy and only spends the data fee.',
       },
       transparent: {
         title: 'Where the money goes is public',
-        body: 'Of every payment, 70% goes to the trader who provided the signal, 20% to the platform and 10% to the insurance vault. The split is recorded on-chain for anyone to check.',
+        body: 'Of every payment, 70% goes to the strategy sharer who provided the signal, 20% to the platform and 10% to the risk reserve. The split is recorded on-chain for anyone to check.',
       },
     },
 
     how: {
       heading: 'How one purchase works',
-      ask: { title: 'The assistant asks', body: 'Your assistant asks {brand} for a piece of data, such as a trader’s record and latest strategy.' },
+      ask: { title: 'The assistant asks', body: 'Your assistant asks {brand} for a piece of data, such as a strategy sharer’s record and latest strategy.' },
       quote: { title: '{brand} quotes a price', body: 'The service replies: "This one is $0.01, payable in Circle USDC."' },
       pay: {
         title: 'It pays and gets the data',
@@ -37,11 +37,11 @@ export const x402: Catalog['x402'] = {
     product: {
       heading: 'What you can buy',
       perCall: '/ call',
-      signalsName: 'Trader signal',
-      signals: 'Pick a trader and get their latest strategy version and allocation (asset, direction, weight, leverage), performance, and a funding-aware position reference.',
+      signalsName: 'Strategy sharer signal',
+      signals: 'Pick a strategy sharer and get their latest strategy version and allocation (assets, weights and more), performance, and a reference for when to buy.',
       oracleName: 'Live market snapshot',
-      oracle: 'An asset’s current index price, mark price and funding rate.',
-      copyFlow: 'An agent can use it like this: on a notice that a trader published a new version, buy the trader signal, confirm the version matches the notice, then sync the follower’s positions. The sync only happens if the follower turned on auto-sync beforehand, the cooldown has passed and the contract simulation succeeds; otherwise no transaction is sent and the follower handles it themselves.',
+      oracle: 'An asset’s current reference price and related rates.',
+      copyFlow: 'An AI agent can use it like this: on a notice that a strategy sharer published a new version, buy the strategy sharer signal, confirm the version matches the notice, then sync the follower’s holdings. The sync only happens if the follower turned on auto-sync beforehand, the cooldown has passed and the on-chain program simulation succeeds; otherwise nothing is sent on-chain and the follower handles it themselves.',
     },
 
     split: {
@@ -49,9 +49,9 @@ export const x402: Catalog['x402'] = {
       accrued: 'On-chain accrued revenue',
       calls: 'Purchases: {count}',
       callsUnknown: 'purchase count not tracked on-chain',
-      traders: 'Traders',
+      traders: 'Strategy sharers',
       platform: 'Platform',
-      vault: 'Insurance vault',
+      vault: 'Risk reserve',
       /** 圖例是「名稱 + 百分比」，百分比是資料不是文字，所以只留名稱。 */
       share: '{label} {pct}%',
     },
@@ -99,11 +99,11 @@ export const x402: Catalog['x402'] = {
       },
       trade: {
         q: 'Will my assistant trade for me?',
-        a: 'It can be set up to. Trades use your margin on the exchange and stay within limits you authorise in advance: a per-trade cap, a total budget, a leverage cap and an expiry date, all enforced by the contract. Anything beyond them is rejected.',
+        a: 'It can be set up to. Orders use the money in your platform investing account and stay within limits you authorise in advance, such as a per-order cap, a total budget and an expiry date, all enforced by public on-chain rules. Anything beyond them is rejected.',
       },
       real: {
         q: 'Which token pays for data?',
-        a: 'Circle USDC, settled on Base Sepolia. The USDC used as platform margin cannot pay for x402.',
+        a: 'Circle USDC, settled on Base Sepolia. The USDC in your platform investing account cannot pay for x402.',
       },
     },
 

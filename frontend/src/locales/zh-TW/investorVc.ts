@@ -12,9 +12,9 @@ export const investorVc = {
   disabled: '此部署尚未啟用 VC 准入。RWA 市場的資格仍由現行 KYC 流程審核。',
   /** 未啟用時補充：設計是什麼、這個網站現在哪裡用得到 VC。 */
   disabledDetail: [
-    '設計：發證機構（例如券商）審核後簽發「合格投資人」憑證，你在這裡本地驗證後送上鏈登記；鏈上只記地址、資格類型、到期日與憑證雜湊，不含姓名等個人資料，到期或被撤銷就自動失效。這套登錄合約已寫好，還沒有切換到目前的部署。',
+    '設計：發證機構（例如券商）審核後簽發「合格投資人」憑證，你在這裡本地驗證後送上鏈登記；鏈上只記地址、資格類型、到期日與憑證雜湊，不含姓名等個人資料，到期或被撤銷就自動失效。這套登錄用的鏈上程式已寫好，還沒有切換到目前的部署。',
     '現在：用的是自助版 KYC（在投資組合頁送出即通過），一樣能開 AAPL 等 RWA 市場。',
-    '本站實際用到 VC 的地方是左側選單的「Agent 委任」：你可以簽一張授權證明交給 AI agent，沒有它 agent 程式會拒絕下單；要收回授權就撤銷那個 session，鏈上立即生效。',
+    '本站實際用到 VC 的地方是左側選單的「AI 代理額度」：你可以簽一張授權證明交給 AI agent，沒有它 agent 程式會拒絕下單；要收回授權就撤銷那個 AI 代理額度，鏈上立即生效。',
   ],
   checking: '正在確認這個部署的 KYC 登錄是否為 VC 准入登錄…',
   probeFailed: '無法確認這個部署的 KYC 登錄種類（RPC 讀取失敗）。請稍後重新整理。',
@@ -23,7 +23,7 @@ export const investorVc = {
   checkingShort: '確認 KYC 方式中…',
   unknownRetry: '無法確認 KYC 方式，請重試',
   intro:
-    'RWA 市場（例如 AAPL）開倉需要有效的合格投資人資格。上傳發證機構給你的憑證（VC），驗證後送上鏈登記。鏈上只記錄地址、類型、到期日與憑證雜湊，不含任何個人資料。',
+    'RWA 市場（例如 AAPL）買進需要有效的合格投資人資格。上傳發證機構給你的憑證（VC），驗證後送上鏈登記。鏈上只記錄地址、類型、到期日與憑證雜湊，不含任何個人資料。',
   mineVerified: '你的錢包已具 RWA 市場資格（要求：{type}）；憑證到期：{date}',
   mineNotVerified: '你的錢包目前沒有有效的 RWA 市場資格（要求：{type}；未登記、已到期或已撤銷）。',
   upload: '上傳 VC 檔案',
@@ -45,7 +45,7 @@ export const investorVc = {
   validity: '有效期：{from} → {to}（送出期限 {deadline}）',
   submit: '送出資格證明上鏈',
   submitting: '送出中…',
-  tx: '交易：{hash}',
+  tx: '鏈上紀錄：{hash}',
   status: {
     notJson: '不是合法的 JSON',
     listInvalid: '狀態清單驗不過（{code}）：{reason}',
@@ -60,7 +60,7 @@ export const investorVc = {
   },
   blocker: {
     wrongChain: '請切換到 chainId {chainId}',
-    untrusted: '發證者不在此登錄的受信任清單（合約會以 UntrustedIssuer 拒絕）',
+    untrusted: '發證者不在此登錄的受信任清單（鏈上程式會以 UntrustedIssuer 拒絕）',
     revokedOnChain: '這張憑證已在鏈上撤銷',
     submitted: '這張憑證已經登記過',
     nonce: '憑證的 nonce（{vc}）不等於鏈上目前值（{chain}），請發證者重新簽發',

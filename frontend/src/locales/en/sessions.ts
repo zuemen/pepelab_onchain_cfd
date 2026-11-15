@@ -4,19 +4,19 @@ import type { Catalog } from '../zh-TW';
  * 見 `../zh-TW/sessions.ts`。
  */
 export const sessions: Catalog['sessions'] = {
-  title: '🤖 AI Agent Sessions',
+  title: '🤖 AI Agent Allowances',
   viewOn: 'View on {explorer} ↗',
 
   prereq: {
-    title: 'Three things to prepare before the agent can trade',
-    margin: 'Switch to Expert mode and deposit USDC into your trading account in the Pro Terminal. A session never touches the USDC in your wallet.',
-    eth: 'The agent address needs a little ETH for network fees and each execution fee.',
-    kyc: 'To trade stock or bond markets, your wallet must complete KYC first.',
+    title: 'Three things to prepare before the AI agent can invest for you',
+    margin: 'Switch to Expert mode and deposit USDC into your investing account in the advanced investing tools. An AI agent allowance never touches the USDC in your wallet.',
+    eth: 'The AI agent address needs a little ETH for network fees and the execution fee on each purchase.',
+    kyc: 'To invest in stocks or bonds, your wallet must complete KYC first.',
   },
   ssi: {
     detailsToggle: 'For developers: technical details',
     title: 'The SSI triangle: your wallet is the root of trust',
-    flow: 'Flow: connect wallet → set limits and create a session → issue an authorization VC → export the agent config → from then on, just state trade intent verbally.',
+    flow: 'Flow: connect wallet → set limits and create a session → issue an authorization VC → export the agent config → from then on, just say what you want to invest in, in one sentence.',
   },
 
   wrongNetwork: {
@@ -25,24 +25,24 @@ export const sessions: Catalog['sessions'] = {
   },
 
   create: {
-    title: 'Create Session',
-    agentAddress: 'Agent address (session key)',
+    title: 'Create AI agent allowance',
+    agentAddress: 'AI agent address',
     agentPlaceholder: '0x… or click Generate agent key on the right',
     generateKey: 'Generate agent key',
     maxPerTrade: 'Max / trade (USDC)',
     totalBudget: 'Total budget (USDC)',
-    maxLeverage: 'Max leverage',
+    maxLeverage: 'Max price-move multiplier',
     validFor: 'Valid for (hours)',
     creating: 'Creating…',
-    cta: 'Create Session',
-    done: 'Session created ✓',
+    cta: 'Create AI agent allowance',
+    done: 'AI agent allowance created ✓',
     allowedAssets: 'Allowed assets',
-    allowedAssetsHint: 'The agent can open positions only in these assets (on-chain allow-list via createSessionWithAssets). Pick at least one.',
+    allowedAssetsHint: 'The AI agent can buy only these assets; the list is kept on-chain. Pick at least one.',
     noAssetSelected: 'Select at least one allowed asset.',
     invalidAgent: 'That agent address is not valid. Paste a 0x address, or generate an agent key.',
     invalidAmounts: 'The per-trade cap and total budget must both be above 0.',
     perTradeOverBudget: 'The per-trade cap cannot exceed the total budget.',
-    invalidLeverage: 'Max leverage must be a whole number from 1 to 5.',
+    invalidLeverage: 'The max price-move multiplier must be a whole number from 1 to 5.',
     invalidHours: 'Hours must be above 0.',
   },
 
@@ -63,17 +63,17 @@ export const sessions: Catalog['sessions'] = {
   },
 
   list: {
-    title: 'My Sessions',
+    title: 'My AI agent allowances',
     refresh: '↺ Refresh',
     loading: 'Loading…',
-    empty: 'No sessions yet. Create one to authorize an agent.',
+    empty: 'No AI agent allowances yet. Create one to authorize an AI agent.',
 
     column: {
       id: '#',
       agent: 'Agent',
       spent: 'Spent / Budget',
       maxPerTrade: 'Max/trade',
-      leverage: 'Lev',
+      leverage: 'Multiplier',
       expiry: 'Expiry',
       status: 'Status',
       credential: 'Credential',
@@ -92,22 +92,22 @@ export const sessions: Catalog['sessions'] = {
     issueVcHint: 'Sign the authorization VC with MetaMask',
     issueVcNeedsWallet: 'Requires a connected wallet to sign (not supported in guest mode)',
     revoke: 'Revoke',
-    revoked: 'Session revoked ✓',
+    revoked: 'AI agent allowance revoked ✓',
     credentialIssued: 'Credential issued ✓',
     needsRealWallet: "Connect a wallet to sign the VC (guest mode doesn't support signing)",
     vcExpires: 'VC expires {date}',
     vcExpired: 'VC expired — re-issue',
     vcValidity: 'VC validity (days)',
-    vcValidityHint: 'New credentials expire after this many days, never later than the session expiry (default {days}).',
+    vcValidityHint: 'New credentials expire after this many days, never later than the AI agent allowance expiry (default {days}).',
   },
 
   /** 匯出對話框。 */
   export: {
-    title: '🔌 Connect your Agent — Session #{id}',
+    title: '🔌 Connect your AI agent — allowance #{id}',
     close: 'Close',
     closeAria: 'close',
     intro:
-      'Paste both of the following into your local agent client. From then on, just state a "trade intent" verbally — the agent will place orders on your behalf within the session limits, using the VC:',
+      'Paste both of the following into your local agent client. From then on, just say what you want to invest in — the AI agent will place orders on your behalf within the allowance, using the VC:',
 
     mcpTitle: 'MCP config (Claude Desktop / Code)',
     vcTitle: 'Authorization VC (for order verification)',
@@ -129,10 +129,10 @@ export const sessions: Catalog['sessions'] = {
     open: 'Delegation VC v3',
     title: 'Delegation credential v3 (W3C VC 2.0)',
     intro:
-      "Sign this session's limits, asset allow-list and x402 spending caps into a verifiable credential that shows who authorized this agent and for what (Know Your Agent). Deployments with an anchor contract can also anchor it on chain; the current deployment can only issue credentials and does not yet run on-chain anchoring or paid-API checks.",
+      "Sign this AI agent allowance's limits, asset allow-list and x402 spending caps into a verifiable credential that shows who authorized this agent and for what (Know Your Agent). Deployments with an anchor program can also anchor it on chain; the current deployment can only issue credentials and does not yet run on-chain anchoring or paid-API checks.",
     agentDid: 'Agent DID (holder)',
     issuerDid: 'Issuer DID (you)',
-    sessionTerms: 'Session limits (match the chain field by field)',
+    sessionTerms: 'AI agent allowance limits (match the chain field by field)',
     assetsAll: 'Any asset',
     assetsCount: '{n} assets',
     x402Title: 'x402 spending caps',
@@ -153,7 +153,7 @@ export const sessions: Catalog['sessions'] = {
     statusActive: 'Active',
     statusRevoked: 'Revoked (status list)',
     statusExpired: 'Expired',
-    statusSessionRevoked: 'On-chain session revoked',
+    statusSessionRevoked: 'On-chain AI agent allowance revoked',
     credentialHash: 'Credential hash (anchored value)',
     spendTitle: 'x402 spend (accumulated per credential by signal-api)',
     spendTotal: 'Total {spent} / {cap} USDC',
@@ -163,9 +163,9 @@ export const sessions: Catalog['sessions'] = {
     hideJson: 'Hide JSON',
     download: 'Download credential .json',
     revoke: 'Revoke this credential',
-    revokeUnavailable: 'This site has no credential status list configured, so the published list cannot be read. Before revoking, import the list that is currently published (.json) below, or confirm that none was ever published (first revocation). The newly signed list will be downloaded; give it to verifiers. To stop the authorization right away, revoke the session: it takes effect on-chain immediately.',
-    revokeCredentialInPanel: 'Session revoked: it takes effect on-chain right away. Its delegation credential is not revoked yet. In the list, press "Delegation VC v3" for this session, then in the dialog import the current status list (or confirm this is the first revocation) and press Revoke. The signed list will be downloaded; give it to verifiers.',
-    revokeListSkipped: 'Session revoked: it takes effect on-chain right away. The credential status list was not signed this time, which does not affect the session revocation. To finish revoking the credential, use Revoke again in the delegation credential panel for this session (you can import the current list there).',
+    revokeUnavailable: 'This site has no credential status list configured, so the published list cannot be read. Before revoking, import the list that is currently published (.json) below, or confirm that none was ever published (first revocation). The newly signed list will be downloaded; give it to verifiers. To stop the authorization right away, revoke the AI agent allowance: it takes effect on-chain immediately.',
+    revokeCredentialInPanel: 'AI agent allowance revoked: it takes effect on-chain right away. Its delegation credential is not revoked yet. In the list, press "Delegation VC v3" for this allowance, then in the dialog import the current status list (or confirm this is the first revocation) and press Revoke. The signed list will be downloaded; give it to verifiers.',
+    revokeListSkipped: 'AI agent allowance revoked: it takes effect on-chain right away. The credential status list was not signed this time, which does not affect revoking the allowance. To finish revoking the credential, use Revoke again in the delegation credential panel for this allowance (you can import the current list there).',
     revoking: 'Revoking…',
     revokedDownloaded: 'Revocation list signed (sequence {seq}) but not confirmed published (downloaded); hand it to the operator (npm run vc-status install), then press Confirm published. Until then the credential is still valid.',
     revokedPublished: 'Revocation list signed (sequence {seq}) and confirmed in the status directory.',
@@ -173,7 +173,7 @@ export const sessions: Catalog['sessions'] = {
       "Could not read the currently published status list ({reason}), so nothing was signed: a revocation list must build on the published one, or verifiers reject it and the revocation does not take effect. Set VITE_VC_STATUS_URL, or import the current list and try again.",
     statusRevokePending: 'Revocation pending (sequence {seq}, not in effect yet)',
     revokedDownloadedNoStatus: 'Revocation list signed (sequence {seq}) and downloaded; give it to verifiers. This site has no credential status list configured, so it cannot confirm here whether verifiers have adopted it.',
-    revokePendingNoteNoStatus: 'The revocation list is signed and downloaded, but this site has no credential status list configured, so it cannot confirm whether verifiers have adopted it; until they switch to the new list, this credential may still be accepted. To stop the authorization right away, revoke the session: it takes effect on-chain immediately.',
+    revokePendingNoteNoStatus: 'The revocation list is signed and downloaded, but this site has no credential status list configured, so it cannot confirm whether verifiers have adopted it; until they switch to the new list, this credential may still be accepted. To stop the authorization right away, revoke the AI agent allowance: it takes effect on-chain immediately.',
     revokePendingNote: 'The revocation list is signed but not confirmed published: until verifiers see it, this credential is still valid. To stop paid APIs right away, unanchor it first.',
     revokeAgain: 'Sign the revocation list again',
     confirmPublished: 'Confirm published',
@@ -191,11 +191,11 @@ export const sessions: Catalog['sessions'] = {
     unanchoring: 'Unanchoring…',
     unanchoredToast: 'Unanchored: paid APIs that require the anchor now refuse this credential',
     anchorProblem: {
-      anchor_no_code: 'The configured anchor address has no contract on this chain; nothing was sent.',
-      anchor_wrong_manager: 'The anchor contract is bound to a different session manager than this credential; nothing was sent.',
-      anchor_unreadable: 'Could not read the anchor contract; nothing was sent.',
+      anchor_no_code: 'The configured anchor address has no on-chain program on this chain; nothing was sent.',
+      anchor_wrong_manager: 'The anchor program is bound to a different session manager than this credential; nothing was sent.',
+      anchor_unreadable: 'Could not read the anchor program; nothing was sent.',
     },
-    revokeWithSession: "Also revoke this session's v3 delegation credential? Your wallet will sign a status list once more.",
+    revokeWithSession: "Also revoke this AI agent allowance's v3 delegation credential? Your wallet will sign a status list once more.",
     issuedToast: 'v3 delegation credential issued',
     anchoredToast: 'Credential anchored on chain',
     close: 'Close',
@@ -204,7 +204,7 @@ export const sessions: Catalog['sessions'] = {
       bad_period: 'The period must be more than 0 hours',
       period_over_total: 'The per-period cap cannot exceed the total cap',
       no_endpoints: 'Allow at least one paid endpoint',
-      session_expired: 'The session has expired; cannot issue',
+      session_expired: 'The AI agent allowance has expired; cannot issue',
     },
   },
 
@@ -216,7 +216,7 @@ export const sessions: Catalog['sessions'] = {
   /** #36：十段句中夾標記的說明，各自拆成標記前後的片段。 */
   markup: {
     introBefore:
-      'Let an AI agent trade for you, only within limits you set: per-trade amount, total budget, maximum leverage, allowed assets and an end date. It never gets your main wallet\'s private key, and you can revoke access at any time.',
+      'Let an AI agent invest for you, only within limits you set: per-order amount, total budget, allowed assets and an end date. It never gets your main wallet\'s private key, and you can revoke access at any time.',
     introTech: 'Each agent has a ',
     introMid: ' identity, and the authorization can be credentialed as a ',
     introAfter:
@@ -229,23 +229,23 @@ export const sessions: Catalog['sessions'] = {
     roleHolderBold: 'Holder=agent',
     roleHolderAfter: ': holds the VC + session key to place orders on your behalf',
     roleVerifierBefore: '✅ ',
-    roleVerifierBold: 'Verifier=MCP/contract',
-    roleVerifierAfter: ': verifies the signature before the order + cross-checks the on-chain session',
+    roleVerifierBold: 'Verifier=MCP/on-chain program',
+    roleVerifierAfter: ': verifies the signature before the order + cross-checks the on-chain AI agent allowance',
 
-    wrongNetBefore: 'AI Agent Sessions is deployed on ',
+    wrongNetBefore: 'AI agent allowances are deployed on ',
     wrongNetMid: '. You are currently connected to',
     wrongNetAfter: ' — please switch to Base Sepolia in MetaMask and reload this page.',
 
-    keyNoteBold1: 'The agent uses a separate session key, not your main wallet',
+    keyNoteBold1: 'The AI agent uses a separate key, not your main wallet',
     keyNoteMid1: ': ',
     keyNoteBold2: 'Address',
-    keyNoteMid2: ' → used to authorize the session below; ',
+    keyNoteMid2: ' → used to authorize the AI agent allowance below; ',
     keyNoteBold3: 'Private key',
     keyNoteAfter:
       " → goes into the agent's MCP config, plus a little ETH for gas. If you don't have one yet, click \"Generate agent key\" to create a new burner in the browser.",
 
     burnerWarnBefore:
-      'This is a separate burner key, bound only by the session limits you set below. Save it to your local agent config — ',
+      'This is a separate burner key, bound only by the AI agent allowance you set below. Save it to your local agent config — ',
     burnerWarnBold: "don't fund it like your main wallet",
     burnerWarnAfter: '. This page shows it only once, and it is never uploaded or written to a server.',
 
@@ -261,7 +261,7 @@ export const sessions: Catalog['sessions'] = {
     step2Mid3: "'s ",
     step2After: ').',
     step3:
-      'Once that\'s done, just tell the agent: "Open a 3x long on BTC with 200 margin" — no need to give an account or address.',
+      'Once that\'s done, just tell the AI agent: "Buy BTC with 200 USDC" — no need to give an account or address.',
 
     addrKeyBold1: 'Address',
     addrKeyMid1: ' (',
@@ -274,7 +274,7 @@ export const sessions: Catalog['sessions'] = {
     includeKeyAfter: ' (contains the real key — use only on your own machine)',
     includeKeyRiskTitle: 'The private key is not embedded by default',
     includeKeyRisk:
-      'The exported config contains only a placeholder by default. If you tick the box, the JSON below will contain this agent’s private key in plain text: anyone who gets the file (or sees your screen, clipboard or a cloud-synced folder) can trade under your authorization within the session’s limits and expiry. Use it only on your own machine; never paste it into chat, tickets or version control. If it leaks, revoke the session immediately.',
+      'The exported config contains only a placeholder by default. If you tick the box, the JSON below will contain this agent’s private key in plain text: anyone who gets the file (or sees your screen, clipboard or a cloud-synced folder) can place orders under your authorization within the AI agent allowance and its expiry. Use it only on your own machine; never paste it into chat, tickets or version control. If it leaks, revoke the allowance immediately.',
     includeKeyOnWarning: 'This config now contains a plain-text private key. Store it carefully after copying or downloading, and delete it when done.',
 
     placeholderAfter:

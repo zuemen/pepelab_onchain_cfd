@@ -10,7 +10,7 @@ export const freshness = {
   /** 價格來源的短標籤（顯示在價格旁）。'none' = 兩個來源都讀不到，畫面顯示「—」。 */
   priceSource: {
     coingecko: 'CoinGecko',
-    oracle: '鏈上 oracle',
+    oracle: '鏈上價格來源',
     none: '無價格',
   },
 
@@ -23,12 +23,12 @@ export const freshness = {
 
   notice: {
     unknownWithAsset:
-      '⛔ 無法確認{asset} 的鏈上指數價的更新時間（{age}）。在確認之前不送單，避免鏈上以 StalePrice 拒絕後白付 gas。',
+      '⛔ 無法確認{asset} 的鏈上價格的更新時間（{age}）。確認之前先不送出，避免被鏈上拒絕（StalePrice）卻白付手續費。',
     unknownNoAsset:
-      '⛔ 無法確認鏈上指數價的更新時間（{age}）。在確認之前不送單，避免鏈上以 StalePrice 拒絕後白付 gas。',
+      '⛔ 無法確認鏈上價格的更新時間（{age}）。確認之前先不送出，避免被鏈上拒絕（StalePrice）卻白付手續費。',
     staleWithAsset:
-      '⛔ {asset} 的鏈上指數價已超過合約的 maxPriceAge（最後更新：{age}）。此時開倉／平倉都會被 StalePrice revert，請等 keeper 更新後再試。',
+      '⛔ {asset} 的鏈上價格已經太久沒更新（最後更新：{age}）。此時買進或賣出都會被鏈上拒絕（StalePrice），請等價格更新後再試。',
     staleNoAsset:
-      '⛔ 鏈上指數價已超過合約的 maxPriceAge（最後更新：{age}）。此時開倉／平倉都會被 StalePrice revert，請等 keeper 更新後再試。',
+      '⛔ 鏈上價格已經太久沒更新（最後更新：{age}）。此時買進或賣出都會被鏈上拒絕（StalePrice），請等價格更新後再試。',
   },
 };

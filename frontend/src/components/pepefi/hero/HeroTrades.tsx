@@ -15,6 +15,7 @@ import Typography from '@mui/material/Typography';
 import TableContainer from '@mui/material/TableContainer';
 
 import { t, interpolate } from 'src/locales';
+import { SHOW_DIRECTION } from 'src/lib/pepefi/legDisplay';
 import { MONO } from 'src/components/pepefi/brandKit';
 import { fUsd, type HeroDetail, type HeroTrade } from 'src/lib/pepefi/heroData';
 
@@ -82,7 +83,8 @@ export default function HeroTrades({ hero, provider, chainId }: Props) {
         <TableHead>
           <TableRow>
             <TableCell>{L.colAsset}</TableCell>
-            <TableCell>{L.colSide}</TableCell>
+            {/* 現貨呈現（SHOW_LEVERAGE 關）時不顯示方向／倍數這一欄 */}
+            {SHOW_DIRECTION && <TableCell>{L.colSide}</TableCell>}
             <TableCell align="right">{L.colMargin}</TableCell>
             <TableCell align="right">{L.colOpen}</TableCell>
             <TableCell align="right">{L.colClose}</TableCell>
@@ -94,9 +96,11 @@ export default function HeroTrades({ hero, provider, chainId }: Props) {
           {rows.map((trade) => (
             <TableRow key={trade.positionId} hover>
               <TableCell sx={{ fontWeight: 600 }}>{trade.asset}</TableCell>
-              <TableCell sx={{ color: trade.isLong ? 'success.main' : 'error.main', whiteSpace: 'nowrap' }}>
-                {trade.isLong ? L.long : L.short} {trade.leverage}×
-              </TableCell>
+              {SHOW_DIRECTION && (
+                <TableCell sx={{ color: trade.isLong ? 'success.main' : 'error.main', whiteSpace: 'nowrap' }}>
+                  {trade.isLong ? L.long : L.short} {trade.leverage}×
+                </TableCell>
+              )}
               <TableCell align="right" sx={{ fontFamily: MONO }}>{fUsd(trade.marginUsd)}</TableCell>
               <TableCell align="right" sx={{ fontFamily: MONO, whiteSpace: 'nowrap' }}>
                 {fUsd(trade.openPrice)}
