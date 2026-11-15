@@ -36,9 +36,9 @@ export const exchange: Catalog['exchange'] = {
     swappedEthForToken: 'Swapped {amount} ETH for ~{received} {token} ✓',
     swappedTokenForEth: 'Swapped {amount} {token} for ~{received} ETH ✓',
 
-    faucetStable: 'Claimed test {token} ✓ — buy tokenized assets with it on the Assets page',
-    faucetAltStable: 'Claimed test {alt} ✓ — hold or swap it; use {token} to buy assets',
-    faucetPepe: 'Claimed test PEPE ✓',
+    faucetStable: 'Claimed {token} ✓ — buy tokenized assets with it on the Assets page',
+    faucetAltStable: 'Claimed {alt} ✓ — hold or swap it; use {token} to buy assets',
+    faucetPepe: 'Claimed PEPE ✓',
 
 
   },
@@ -48,8 +48,8 @@ export const exchange: Catalog['exchange'] = {
     fallback: 'Processing transaction...',
     swapEthToToken: 'Swapping ETH to {token}…',
     swapTokenToEth: 'Swapping {token} to ETH…',
-    faucetStable: 'Claiming test {token}…',
-    faucetPepe: 'Claiming test PEPE…',
+    faucetStable: 'Claiming {token}…',
+    faucetPepe: 'Claiming PEPE…',
   },
 
   /**
@@ -62,13 +62,13 @@ export const exchange: Catalog['exchange'] = {
 
   /** 水龍頭區塊。三種代幣共用同一組「領取中／領取 X／尚未部署」的字。 */
   faucet: {
-    title: '🚰 Get Test Tokens',
+    title: '🚰 Get Tokens',
     intro:
-      'PEPE is the platform token (testnet mock) — claim it free from the faucet. {stable} is the mock stablecoin for buying assets and swaps. x402 payments settle in {x402Stable}.',
-    introNoPepe: '{stable} is the mock stablecoin for buying assets and swaps. x402 payments settle in {x402Stable}.',
+      'PEPE is the platform token — claim it free from the faucet. {stable} is used for buying assets and swaps. x402 payments settle in {x402Stable}.',
+    introNoPepe: '{stable} is used for buying assets and swaps. x402 payments settle in {x402Stable}.',
 
-    stableNote: '· Mock stablecoin (buy assets / swap)',
-    altStableNote: '· Mock stablecoin (hold / swap)',
+    stableNote: '· For buying assets / swaps',
+    altStableNote: '· Hold / swap',
     pepeNote: '· Platform token',
 
     balance: 'Balance: {amount}',
@@ -107,7 +107,7 @@ export const exchange: Catalog['exchange'] = {
     poolInventory: 'Pool inventory',
     unavailable: 'Unavailable',
     loadingValue: 'Loading…',
-    smallPoolNote: 'This testnet pool is small, so large swaps get rejected by the price guard. Start with a small amount.',
+    smallPoolNote: 'The swap pool is small right now, so large swaps get rejected by the price guard. Start with a small amount.',
     oracleFixedNote:
       'This swap pool uses the oracle price (minus a 0.3% fee, no slippage), not a constant-product curve. Reserves are only the inventory available to swap and do not set the price.',
     noOracleRefNote: 'This pool does not show a separate oracle reference price.',
@@ -152,24 +152,24 @@ export const exchange: Catalog['exchange'] = {
    * 組出來的句子會黏成一個字。
    */
   markup: {
-    lead: 'Claim free test tokens here. They have no real value. Then buy on the Assets page. Without test ETH you cannot pay network fees, so get a little from a Base Sepolia faucet first.',
+    lead: 'Claim free tokens here, then buy on the Assets page. Without ETH you cannot pay network fees, so get a little from a Base Sepolia faucet first.',
     stepBuyLabel: 'Buy assets:',
     stepBuyBody: 'Go to the Assets page and buy tokenized equities, bonds, gold, and crypto with {token} — the tokens land directly in your wallet.',
     stepPortfolioLabel: 'Check your allocation:',
     stepPortfolioBody: 'Go to Portfolio: the share and value of all four classes are there. Spot holdings have no on-chain cost basis, so profit and loss is not calculated.',
 
     stepGetTokensLabel: 'Get tokens:',
-    stepGetTokensBody: 'Claim test {token} (and PEPE) from the faucet — no swap needed.',
+    stepGetTokensBody: 'Claim {token} (and PEPE) from the faucet — no swap needed.',
 
     currencyNoteLine1Before: '💱 Currency: buying assets and swaps use ',
-    currencyNoteLine1After: ' (testnet mock — free from the Faucet); ',
+    currencyNoteLine1After: ' (free from the Faucet); ',
     currencyNoteLine2After: ' payments settle in ',
     currencyNoteLine2End:
-      " (EIP-3009, a testnet token, not real money). The two serve different purposes — don't mix them up.",
+      " (EIP-3009). The two serve different purposes — don't mix them up.",
 
     ethBalanceBefore: 'ETH balance: ',
     ethBalanceAfterSpot: ' (on-chain transactions need a little ETH for gas)',
-    noEth: 'Your wallet has no test ETH, so it cannot pay network fees for claiming or buying. Get a little from a Base Sepolia faucet first.',
+    noEth: 'Your wallet has no ETH, so it cannot pay network fees for claiming or buying. Get a little from a Base Sepolia faucet first.',
     noEthCta: 'See faucets ↗',
 
     faucetLimit: '🔑 Each wallet can claim once every 24 hours. Smart contract wallets (Safe and the like) cannot claim, so use a regular wallet.',

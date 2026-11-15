@@ -69,7 +69,7 @@ export const rwa: Catalog['rwa'] = {
       unknown: 'Cannot tell (read failed)',
     },
     kycNote:
-      "Derived from the exchange's kyc() and rwaAsset(); checked only when opening, never when closing. The live KYC registry is the older version: submission and approval are not separated, so this is a demo gate, not identity verification.",
+      "Derived from the exchange's kyc() and rwaAsset(); checked only when opening, never when closing. The live KYC registry is the older version: submission and approval are not separated, so it is not identity verification.",
     priceSource: 'Reference price source',
     priceSourceValue: 'The keeper reads {source} ({ticker}) and writes it to MockOracle, which the exchange reads',
     keeperSchedule:
@@ -142,14 +142,14 @@ export const rwa: Catalog['rwa'] = {
     title: 'Compliance & positioning disclosures',
     items: {
       prototype:
-        'This project is a research prototype on the Base Sepolia testnet. It is not a live financial service and holds no financial-services licence.',
+        'This project is not a licensed financial service and holds no financial-services licence.',
       synthetic:
         'What it offers is a cash-settled synthetic derivative that references real-asset prices (perpetual / contract-for-difference style), not a tokenized security.',
       noUnderlying:
         'The platform does not issue, hold or custody any underlying asset; holders get no shareholder rights, dividends or claim on the underlying.',
-      settlement: 'Settlement uses MockUSDC, a test token anyone can mint, with no real value.',
+      settlement: 'Settlement uses MockUSDC, a platform contract anyone can claim from the faucet; it is not Circle-issued USDC.',
       regulated:
-        'In Taiwan, contracts for difference are regulated leveraged trading that requires a licence from the regulator; this prototype is only suitable for an internal PoC at a licensed institution or a regulatory sandbox — to be confirmed by compliance.',
+        'In Taiwan, contracts for difference are regulated leveraged trading that requires a licence from the regulator; this project is only suitable for an internal PoC at a licensed institution or a regulatory sandbox — to be confirmed by compliance.',
       unaudited: 'The contracts have not had a third-party security audit.',
     },
     lawsTitle: 'Related regulations (sources in docs/DESIGN_BESU.md §5, checked 2026-10-05)',
@@ -194,7 +194,7 @@ export const rwa: Catalog['rwa'] = {
     offchainLoading: 'Loading off-chain reference prices…',
     offchainFrom:
       "Off-chain reference prices come from signal-api's free read-only endpoint /reference-prices (60 s cache, generated {at}).",
-    licenseNote: 'Commercial licensing of each upstream source has not been verified; this is a sanity check for a testnet prototype.',
+    licenseNote: 'Commercial licensing of each upstream source has not been verified; this is a sanity check only.',
     deviationLevel: {
       ok: 'consistent',
       warn: 'deviating',
@@ -208,7 +208,7 @@ export const rwa: Catalog['rwa'] = {
     subtitle:
       "Does the platform have enough money to pay everyone? Live pool numbers are shown here, and full payment is not guaranteed in every situation. The exchange's pool, the insurance vault and the tokenized vault's reserve ratio, all live on-chain reads. This page shows whether counterparty solvency can be checked; it is not a proof of reserve for the underlying assets.",
     notPoR:
-      'The platform holds no underlying assets, so there is no — and no need for a — proof of reserve for them. The reserves here are MockUSDC test tokens, not a proof of reserve for the underlying.',
+      'The platform holds no underlying assets, so there is no — and no need for a — proof of reserve for them. The reserves here are MockUSDC, not a proof of reserve for the underlying.',
     exchangeTitle: 'Perpetual exchange',
     exchangeBalance: 'Exchange USDC balance (the pool)',
     totalMargin: 'Margin of open positions',
@@ -233,7 +233,7 @@ export const rwa: Catalog['rwa'] = {
     ratioOk: 'Every asset is priced.',
     mintingHalted: 'Minting halted (the ratio crossed below the minimum)',
     notFullyBacked:
-      "The vault is not fully collateralized: it is the counterparty to every long and limits exposure with a minimum ratio, per-asset caps and pausing, not 1:1 backing. Today's ratio is high only because the liability is small and the reserve is a large amount of test tokens; it cannot be used to claim over-collateralization.",
+      "The vault is not fully collateralized: it is the counterparty to every long and limits exposure with a minimum ratio, per-asset caps and pausing, not 1:1 backing. Today's ratio is high only because the liability is small and the reserve is a large amount of MockUSDC; it cannot be used to claim over-collateralization.",
     historyTitle: 'Reserve ratio history (ReserveObserved events)',
     historyWindow: 'Last ~{span} (blocks {from}–{to}, ≤ {chunk} blocks per query)',
     historyLoading: 'Scanning on-chain events…',

@@ -38,7 +38,7 @@ export const pepelab = {
 
   header: {
     title: 'Pepe 養成中心',
-    subtitle: '用 PEPE 幣喝藥水、抽造型，養成你的 Pepe。這是遊戲區，只用測試幣，和投資主線分開。',
+    subtitle: '用 PEPE 幣喝藥水、抽造型，養成你的 Pepe。這是遊戲區，只用 PEPE，和投資主線分開。',
     balance: '💰 餘額: {amount} PEPE',
     /** 餘額旁的入口：PEPE 是在 /rewards 用平台功能賺的。 */
     earn: '賺 PEPE →',

@@ -28,7 +28,7 @@ export const tokens: Catalog['tokens'] = {
 
   title: 'Tokenized Assets',
   titleSimple: 'Assets',
-  subtitle: 'Use test money to buy synthetic tokens and practice allocating across stocks, gold and crypto. The tokens only track prices; you never own the real asset. Higher-carbon assets cost more to buy: check the carbon tier, then press Buy.',
+  subtitle: 'Use USDC to buy synthetic tokens and allocate across stocks, gold and crypto. The tokens only track prices; you never own the real asset. Higher-carbon assets cost more to buy: check the carbon tier, then press Buy.',
 
   notDeployed: 'Tokenized assets are not enabled on this network (AssetVault not deployed).',
 
@@ -46,24 +46,24 @@ export const tokens: Catalog['tokens'] = {
   buyFlow: {
     title: 'How buying works',
     steps: [
-      { title: 'Have USDC ready', body: 'Everything settles in USDC. This is a testnet, so it is test money, not real money.' },
+      { title: 'Have USDC ready', body: 'Everything settles in USDC.' },
       { title: 'Check the carbon tier', body: "Every asset has a carbon tier, and the tier sets its buy fee." },
       { title: 'Buy', body: 'The fee comes off first; the rest converts to tokens at the current price and lands in your wallet.' },
       { title: 'Redeem', body: "When you want out, you start the redemption and get USDC back at the current price. The fee ignores carbon tier. If the vault runs short of USDC, it can't complete for a while." },
     ],
     highOrUnrated: 'High / Unrated',
     carbonTitle: 'Fees and carbon retirement',
-    simulatedChip: 'Simulated credits',
+    simulatedChip: 'Platform-minted credits',
     chainRest: ['Buys carbon credits', 'Burned on the spot'],
     linked: {
       chainStart: '{share} of the buy fee',
       body: 'A higher carbon tier means a higher buy fee and more sent to retirement. On the same 100 USDC buy, Low sends {low} USDC and High sends {high} USDC. The share is fixed in the contract, and every retirement is publicly verifiable.',
-      note: 'The credits are simulated testnet tokens and represent no real emission reduction.',
+      note: 'The credits are minted by the platform, not issued by any carbon-credit registry, and represent no real emission reduction.',
     },
     unlinked: {
       chainStart: '5% of platform fees',
       body: 'The share is fixed in the contracts, nobody can redirect it, and every retirement is publicly verifiable.',
-      note: "Retirement is currently funded by the platform's other fees; the buy fee here stays in the vault and isn't connected to retirement yet. The credits are simulated testnet tokens and represent no real emission reduction.",
+      note: "Retirement is currently funded by the platform's other fees; the buy fee here stays in the vault and isn't connected to retirement yet. The credits are minted by the platform, not issued by any carbon-credit registry, and represent no real emission reduction.",
     },
   },
 
@@ -281,7 +281,7 @@ export const tokens: Catalog['tokens'] = {
       'The contracts have only had several rounds of internal team review and no third-party audit; fix records are in docs/, and every deployed address is verifiable on a block explorer.',
     disclosureTitle: 'Honest disclosure',
     disclosure:
-      "In this demo the carbon attestations are arranged by the project team and are not yet institutional independence. Multi-party attestation and visible dispersion mitigate — but do not solve — whether the underlying data is truthful.",
+      "Currently the carbon attestations are arranged by the project team and are not yet institutional independence. Multi-party attestation and visible dispersion mitigate — but do not solve — whether the underlying data is truthful.",
   },
 
   /** #36：四段句中夾標記的說明，各自拆成標記前後的片段。 */

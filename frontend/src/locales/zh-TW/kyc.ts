@@ -19,16 +19,16 @@ export const kyc = {
     '送出後會在鏈上留下一筆待審申請（KYCSubmitted），需由審核人員核准（approveKYC）才會通過。核准前仍無法交易受管制標的。',
   noticeTitleSelfService: '此部署為自助驗證：送出即通過',
   noticeBodySelfService:
-    '目前部署在這條鏈上的 KYCRegistry 是展示用的舊版：送出後鏈上立即記為已驗證（isVerified），沒有人工審核。',
+    '目前部署在這條鏈上的 KYCRegistry 是舊版：送出後鏈上立即記為已驗證（isVerified），沒有人工審核。',
   noticeTitleVerified: '✅ 已通過 KYC，可以交易受管制標的',
   noticeBodyVerified:
-    '鏈上已記錄你的 KYC（isVerified = true）。目前部署的 KYCRegistry 是展示用的自助驗證版本，送出即通過、不經人工審核。關掉這個視窗後即可下單。',
+    '鏈上已記錄你的 KYC（isVerified = true）。目前部署的 KYCRegistry 是自助驗證版本，送出即通過、不經人工審核。關掉這個視窗後即可下單。',
   noticeBodyAwaitingReview:
     '你的 KYC 申請已上鏈記錄（KYCSubmitted）。審核人員核准（approveKYC）後，受管制標的才會解鎖；在那之前下單仍會被合約擋下（NotKycVerified）。可以先關掉這個視窗，稍後回來重新整理查看狀態。',
 
-  demoTitle: '⚠️ 這是學術展示系統',
+  demoTitle: '⚠️ 隱私說明：資料只以加鹽雜湊上鏈',
   demoBody:
-    '這不是真的合規流程。送出時姓名與國籍不會以明文上鏈：前端會產生隨機 salt，只把 keccak256(salt ‖ 姓名) 與 keccak256(salt ‖ 國籍) 兩個雜湊寫進公開合約。salt 與原始資料只留在你這一端，審核員需要你線下出示才能比對。仍建議填假名。',
+    '送出時姓名與國籍不會以明文上鏈：前端會產生隨機 salt，只把 keccak256(salt ‖ 姓名) 與 keccak256(salt ‖ 國籍) 兩個雜湊寫進公開合約。salt 與原始資料只留在你這一端，審核員需要你線下出示才能比對。仍建議填假名。此流程不等於正式的合規審查。',
 
   nameLabel: '姓名（只以加鹽雜湊上鏈，建議填假名）',
   namePlaceholder: '例如：路人甲',

@@ -10,7 +10,7 @@ export const sessions: Catalog['sessions'] = {
   prereq: {
     title: 'Three things to prepare before the agent can trade',
     margin: 'Switch to Expert mode and deposit USDC into your trading account in the Pro Terminal. A session never touches the USDC in your wallet.',
-    eth: 'The agent address needs a little test ETH for network fees and each execution fee.',
+    eth: 'The agent address needs a little ETH for network fees and each execution fee.',
     kyc: 'To trade stock or bond markets, your wallet must complete KYC first.',
   },
   ssi: {
@@ -90,11 +90,11 @@ export const sessions: Catalog['sessions'] = {
     issueVc: 'Issue VC',
     signing: 'Signing…',
     issueVcHint: 'Sign the authorization VC with MetaMask',
-    issueVcNeedsWallet: 'Requires a real wallet to sign (not supported in mock mode)',
+    issueVcNeedsWallet: 'Requires a connected wallet to sign (not supported in guest mode)',
     revoke: 'Revoke',
     revoked: 'Session revoked ✓',
     credentialIssued: 'Credential issued ✓',
-    needsRealWallet: "Connect a real wallet to sign the VC (mock mode doesn't support signing)",
+    needsRealWallet: "Connect a wallet to sign the VC (guest mode doesn't support signing)",
     vcExpires: 'VC expires {date}',
     vcExpired: 'VC expired — re-issue',
     vcValidity: 'VC validity (days)',
@@ -129,7 +129,7 @@ export const sessions: Catalog['sessions'] = {
     open: 'Delegation VC v3',
     title: 'Delegation credential v3 (W3C VC 2.0)',
     intro:
-      "Sign this session's limits, asset allow-list and x402 spending caps into a verifiable credential that shows who authorized this agent and for what (Know Your Agent). Deployments with an anchor contract can also anchor it on chain; this testnet site can only issue credentials and does not yet run on-chain anchoring or paid-API checks.",
+      "Sign this session's limits, asset allow-list and x402 spending caps into a verifiable credential that shows who authorized this agent and for what (Know Your Agent). Deployments with an anchor contract can also anchor it on chain; the current deployment can only issue credentials and does not yet run on-chain anchoring or paid-API checks.",
     agentDid: 'Agent DID (holder)',
     issuerDid: 'Issuer DID (you)',
     sessionTerms: 'Session limits (match the chain field by field)',
@@ -233,7 +233,7 @@ export const sessions: Catalog['sessions'] = {
     roleVerifierAfter: ': verifies the signature before the order + cross-checks the on-chain session',
 
     wrongNetBefore: 'AI Agent Sessions is deployed on ',
-    wrongNetMid: ' testnet. You are currently connected to',
+    wrongNetMid: '. You are currently connected to',
     wrongNetAfter: ' — please switch to Base Sepolia in MetaMask and reload this page.',
 
     keyNoteBold1: 'The agent uses a separate session key, not your main wallet',

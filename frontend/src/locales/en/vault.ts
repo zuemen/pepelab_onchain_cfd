@@ -9,7 +9,7 @@ export const vault: Catalog['vault'] = {
 
   title: 'Insurance Vault',
   titleSimple: 'Vault',
-  subtitle: 'Deposit test USDC to earn protocol fees (testnet demo). The vault absorbs traders\' extreme losses, so share value can fall.',
+  subtitle: 'Deposit USDC to earn protocol fees. The vault absorbs traders\' extreme losses, so share value can fall.',
 
   simpleYieldActive: 'This vault is currently earning yield from trading fees.',
 
@@ -50,7 +50,7 @@ export const vault: Catalog['vault'] = {
   activity: {
     title: 'Recent Activity',
     emptyTitle: 'No activity yet',
-    emptyDescription: 'Deposit test USDC to start accruing protocol fees. The vault absorbs extreme losses, so share value can fall.',
+    emptyDescription: 'Deposit USDC to start accruing protocol fees. The vault absorbs extreme losses, so share value can fall.',
     readFailedTitle: 'Read failed',
     readFailedDescription: "The vault's on-chain events could not be read — an empty list here does not mean there was no activity. Please refresh later.",
     partial: 'Some block ranges could not be read; the activity below may be incomplete.',

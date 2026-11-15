@@ -35,8 +35,8 @@ export const copy: Catalog['copy'] = {
   /** #333: before copying, how many simulated credits this copy will lead the platform to retire. The tonnes are the platform's (carbonWording.test.ts). */
   retirementEstimate: {
     title: 'Carbon retirement this copy leads to (estimate)',
-    value: 'About {tonnes} t of simulated carbon credits',
-    body: 'Of the {fee} copy fee, {carbon} of the platform’s {platform} share goes to the retirement budget, leading the platform to retire about {tonnes} t of simulated carbon credits. The tonnes belong to the platform, not to you; retirement is paid from the platform’s own revenue and costs you nothing extra.',
+    value: 'About {tonnes} t of platform-minted carbon credits',
+    body: 'Of the {fee} copy fee, {carbon} of the platform’s {platform} share goes to the retirement budget, leading the platform to retire about {tonnes} t of platform-minted carbon credits (not issued by any carbon-credit registry). The tonnes belong to the platform, not to you; retirement is paid from the platform’s own revenue and costs you nothing extra.',
     note: 'An estimate: it counts the copy fee only; the performance fee on profitable copied positions later goes the same way. Ratios and price are read from the contracts; the retirement records are on the ESG page.',
   },
 
@@ -87,15 +87,15 @@ export const copy: Catalog['copy'] = {
     approveStep: 'Approve {token} to CopyTracker',
     followStep: 'Follow Trader',
     lead: 'Enter an amount, then confirm twice: first allow the contract to use this USDC, then start copying. Your positions appear in your portfolio, and you can cancel at any time.',
-    notEnoughUsdc: 'Your wallet holds {balance} {token}, which is less than this amount. Lower the amount or claim test tokens first. Opening positions also needs a little test ETH for the execution fee.',
-    notEnoughUsdcCta: 'Claim test tokens',
+    notEnoughUsdc: 'Your wallet holds {balance} {token}, which is less than this amount. Lower the amount or claim {token} first. Opening positions also needs a little ETH for the execution fee.',
+    notEnoughUsdcCta: 'Claim tokens',
 
     staleTitle: 'Price stale — copying paused',
     staleExplain:
       "Copying opens {count} positions in one transaction — if even one asset's price is stale, the whole thing gets rejected, and the gas for {count} execution fees is already spent.",
 
     kycRequired:
-      '🔒 This strategy includes stock / bond assets and requires KYC before you can copy it (testnet demo: approved as soon as you submit, with no manual review).',
+      '🔒 This strategy includes stock / bond assets and requires KYC before you can copy it (approved as soon as you submit, with no manual review).',
     kycSubmit: 'Submit KYC Application',
 
     approving: 'Approving…',

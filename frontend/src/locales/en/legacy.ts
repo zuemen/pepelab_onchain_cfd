@@ -8,7 +8,7 @@ export const legacy: Catalog['legacy'] = {
   subtitle:
     'The trading contract has been redeployed several times. The retired contracts still hold the margin and open positions you had at the time. This page reads only the retired contract addresses published by the platform, so you can check and recover them.',
   connectPrompt: 'Connect your wallet to look up your assets on the retired contracts.',
-  demoWallet: 'Demo mode has no on-chain data. Connect a real wallet.',
+  demoWallet: 'Guest mode has no on-chain data. Connect a wallet.',
   loading: 'Reading retired contracts…',
   refresh: 'Refresh',
   noneOnChain: 'There are no retired trading contracts on {chain}.',

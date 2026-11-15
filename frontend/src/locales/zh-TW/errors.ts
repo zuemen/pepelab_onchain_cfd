@@ -18,10 +18,10 @@ export const errors = {
     '0xbb723368': '此資產為 RWA 市場，需先完成 KYC 驗證才能交易',
     '0x4f402872': '這個標的目前休市或暫停（鏈上模式「只能減倉」或「暫停」），不能開新倉。「只能減倉」時既有部位可以平倉；「暫停」時要等解除才能平倉',
     '0xbb90b0d9': '需要先批准 USDC 給 Swap Router，請點擊 Approve',
-    '0xe450d38c': '您的 Web3 錢包 USDC 餘額不足，請先到【入金與兌換】頁面用水龍頭免費領取 USDC 測試幣 🚰',
+    '0xe450d38c': '您的 Web3 錢包 USDC 餘額不足，請先到【入金與兌換】頁面用水龍頭免費領取 USDC 🚰',
     // Keyword matches (case-insensitive)
     ERC20InsufficientBalance:
-      '您的 Web3 錢包 USDC 餘額不足，請先到【入金與兌換】頁面用水龍頭免費領取 USDC 測試幣 🚰',
+      '您的 Web3 錢包 USDC 餘額不足，請先到【入金與兌換】頁面用水龍頭免費領取 USDC 🚰',
     'no strategies': '該交易者目前尚未發布任何跟單策略！',
     FaucetCooldown: '水龍頭 24 小時內只能領一次，請稍後再試',
     NoStrategyPublished: '此交易者尚未發布策略',
@@ -98,7 +98,7 @@ export const errors = {
     FaucetCallerMustBeEOA:
       '水龍頭只開放一般錢包（EOA）領取。你目前是用合約錢包（Safe / ERC-4337 smart account）呼叫，請改用一般 EOA 錢包，或請管理員直接轉幣給你',
     NotMinter:
-      'mint 只有合約 owner 或已註冊的 swapRouter 能呼叫。一般使用者請改用水龍頭 faucet() 領取測試幣',
+      'mint 只有合約 owner 或已註冊的 swapRouter 能呼叫。一般使用者請改用水龍頭 faucet() 領幣',
 
     // ── KYCRegistry（審核制）─────────────────────────────────────────────────
     NoSubmission: '這個地址還沒送出 KYC 申請，無法審核',
@@ -150,8 +150,8 @@ export const errors = {
     'user rejected': '你拒絕了交易',
     'User rejected': '你拒絕了交易',
     ACTION_REJECTED: '你拒絕了交易',
-    'insufficient funds': '測試 ETH 不夠付手續費，請先到公開的 Base Sepolia 水龍頭領一點',
-    OutOfFunds: 'ETH 餘額不足以支付執行費（開倉需附 ETH），請先到公開的 Base Sepolia 水龍頭領少量測試 ETH',
+    'insufficient funds': 'ETH 不夠付手續費，請先到公開的 Base Sepolia 水龍頭領一點',
+    OutOfFunds: 'ETH 餘額不足以支付執行費（開倉需附 ETH），請先到公開的 Base Sepolia 水龍頭領少量 ETH',
     'nonce too low': 'Nonce 太低，請重試',
   },
 

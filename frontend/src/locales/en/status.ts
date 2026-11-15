@@ -12,7 +12,7 @@ export const status: Catalog['status'] = {
       open: 'Market open',
       closed: 'Market closed',
       closedNoStop:
-        'Market closed (this testnet deployment has no closed-market order stop; orders fill at the last close)',
+        'Market closed (this deployment has no closed-market order stop; orders fill at the last close)',
       closedActive:
         'Market closed (the closed-market order stop is not active yet; orders fill at the last close)',
       reduceOnly: 'Reduce-only',
@@ -35,7 +35,7 @@ export const status: Catalog['status'] = {
     confirm: {
       title: 'Market closed',
       bodyNoStop:
-        '{asset} is closed. This testnet deployment has no closed-market order stop, so this order fills at the last close; the price can gap at the open and your exit may be far from today’s price.',
+        '{asset} is closed. This deployment has no closed-market order stop, so this order fills at the last close; the price can gap at the open and your exit may be far from today’s price.',
       bodyActive:
         '{asset} is closed, but the exchange’s closed-market order stop is not active yet, so this order fills at the last close; the price can gap at the open and your exit may be far from today’s price.',
       note: 'This is a reminder only; it does not block the order.',

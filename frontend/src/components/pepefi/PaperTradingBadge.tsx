@@ -1,4 +1,5 @@
 import { t } from 'src/locales';
+import { SHOW_DEMO_DISCLOSURE } from 'src/lib/pepefi/featureFlags';
 
 import Chip from '@mui/material/Chip';
 import Tooltip from '@mui/material/Tooltip';
@@ -15,6 +16,7 @@ interface Props {
  * of the demo, not a caveat to bury.
  */
 export default function PaperTradingBadge({ compact = false }: Props) {
+  if (!SHOW_DEMO_DISCLOSURE) return null;
   return (
     <Tooltip
       arrow

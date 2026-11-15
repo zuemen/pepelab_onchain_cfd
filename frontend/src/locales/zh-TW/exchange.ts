@@ -53,9 +53,9 @@ export const exchange = {
     swappedEthForToken: '已用 {amount} ETH 兌換約 {received} {token} ✓',
     swappedTokenForEth: '已用 {amount} {token} 兌換約 {received} ETH ✓',
 
-    faucetStable: '已領取測試 {token} ✓ — 可到「資產」頁買進代幣化資產',
-    faucetAltStable: '已領取測試 {alt} ✓ — 可持有與兌換；買進資產請用 {token}',
-    faucetPepe: '已領取測試 PEPE ✓',
+    faucetStable: '已領取 {token} ✓ — 可到「資產」頁買進代幣化資產',
+    faucetAltStable: '已領取 {alt} ✓ — 可持有與兌換；買進資產請用 {token}',
+    faucetPepe: '已領取 PEPE ✓',
 
 
   },
@@ -65,8 +65,8 @@ export const exchange = {
     fallback: '處理交易中…',
     swapEthToToken: '兌換 ETH 為 {token} 中…',
     swapTokenToEth: '兌換 {token} 為 ETH 中…',
-    faucetStable: '領取測試 {token} 中…',
-    faucetPepe: '領取測試 PEPE 中…',
+    faucetStable: '領取 {token} 中…',
+    faucetPepe: '領取 PEPE 中…',
   },
 
   /**
@@ -80,15 +80,15 @@ export const exchange = {
 
   /** 水龍頭區塊。三種代幣共用同一組「領取中／領取 X／尚未部署」的字。 */
   faucet: {
-    title: '🚰 取得測試代幣',
+    title: '🚰 取得代幣',
     intro:
-      'PEPE 是平台幣（測試網模擬），用水龍頭免費領取；{stable} 為模擬穩定幣，用來買進資產與兌換；x402 付費用 {x402Stable}。',
+      'PEPE 是平台幣，用水龍頭免費領取；{stable} 用來買進資產與兌換；x402 付費用 {x402Stable}。',
 
     /** PEPE 獎勵旗標關閉時（商業版預設）的說明，不提平台幣。 */
-    introNoPepe: '{stable} 為模擬穩定幣，用來買進資產與兌換；x402 付費用 {x402Stable}。',
+    introNoPepe: '{stable} 用來買進資產與兌換；x402 付費用 {x402Stable}。',
 
-    stableNote: '· 模擬穩定幣（買資產／兌換）',
-    altStableNote: '· 模擬穩定幣（持有／兌換）',
+    stableNote: '· 買資產／兌換用',
+    altStableNote: '· 可持有／兌換',
     pepeNote: '· 平台幣',
 
     balance: '餘額：{amount}',
@@ -134,7 +134,7 @@ export const exchange = {
     unavailable: '無法取得',
     /** 還沒讀完的那一格。和「無法取得」分開：前者再等一下就有，後者是讀失敗了。 */
     loadingValue: '讀取中…',
-    smallPoolNote: '測試網兌換池很小，單筆金額太大會被價格護欄退回，請先用小額試。',
+    smallPoolNote: '兌換池目前規模很小，單筆金額太大會被價格護欄退回，請先用小額試。',
     oracleFixedNote:
       '這個兌換池依預言機報價定價（扣 0.3% 手續費、無滑點），不是恆定乘積池。儲備量只代表可兌出的庫存，不決定價格。',
     noOracleRefNote: '這個兌換池不另外顯示預言機參考價。',
@@ -183,24 +183,24 @@ export const exchange = {
    * 這樣拆過幾句，實測畫面上少了空格，才改成現在這個規則。
    */
   markup: {
-    lead: '這裡領免費測試幣，沒有真實價值。領完到「資產」買進。沒有測試 ETH 就付不了手續費，請先到 Base Sepolia 水龍頭領一點。',
+    lead: '這裡可以免費領幣，領完到「資產」買進。沒有 ETH 就付不了手續費，請先到 Base Sepolia 水龍頭領一點。',
     stepBuyLabel: '買入資產：',
     stepBuyBody: '到「資產」頁，用 {token} 買進代幣化的股、債、金、幣——代幣會直接進到你的錢包。',
     stepPortfolioLabel: '看配置：',
     stepPortfolioBody: '回「投資組合」頁，四大類的佔比與市值都在那裡；現貨沒有鏈上買入成本，不計算損益。',
 
     stepGetTokensLabel: '取得代幣：',
-    stepGetTokensBody: '從水龍頭領取測試用 {token}（以及 PEPE）——不需要兌換。',
+    stepGetTokensBody: '從水龍頭領取 {token}（以及 PEPE）——不需要兌換。',
 
     currencyNoteLine1Before: '💱 幣別：買進資產與兌換用 ',
-    currencyNoteLine1After: '（測試網模擬幣，可用 Faucet 免費領）；',
+    currencyNoteLine1After: '（可用 Faucet 免費領）；',
     currencyNoteLine2After: ' 付費 API 結算用 ',
-    currencyNoteLine2End: '（EIP-3009，測試網代幣，不是真錢）。兩者用途不同、勿混用。',
+    currencyNoteLine2End: '（EIP-3009）。兩者用途不同、勿混用。',
 
     ethBalanceBefore: 'ETH 餘額：',
     /** 這一頁沒有開倉,ETH 只用來付 gas。 */
     ethBalanceAfterSpot: '（鏈上交易需少量 ETH 付手續費）',
-    noEth: '你的錢包沒有測試 ETH，領幣和買進都付不了網路手續費。請先到 Base Sepolia 水龍頭領一點。',
+    noEth: '你的錢包沒有 ETH，領幣和買進都付不了網路手續費。請先到 Base Sepolia 水龍頭領一點。',
     noEthCta: '查看水龍頭 ↗',
 
     faucetLimit: '🔑 每個錢包 24 小時可領一次。智慧合約錢包（Safe 等）不能領，請用一般錢包。',

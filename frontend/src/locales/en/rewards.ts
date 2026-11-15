@@ -8,7 +8,7 @@ export const rewards: Catalog['rewards'] = {
   connectTitle: '🎁 Rewards',
 
   title: '🎁 {brand} Rewards',
-  subtitle: 'Trade and copy to earn PEPE (a testnet game token with no real value). Daily check-ins add achievement points.',
+  subtitle: 'Trade and copy to earn PEPE (the platform game token). Daily check-ins add achievement points.',
 
   /** 合約沒部署在這條鏈上時，四個領取動作共用的同一句話。 */
   offline:
@@ -112,7 +112,7 @@ export const rewards: Catalog['rewards'] = {
   /** PEPE 餘額與空投領取卡（PepeTokenCard，從舊版首頁搬到這一頁）。 */
   pepeToken: {
     label: '🐸 PEPE Token',
-    subtitle: 'Platform game token (testnet, no real value) · claim the airdrop once KYC is done',
+    subtitle: 'Platform game token · claim the airdrop once KYC is done',
     addToWallet: 'Add to wallet',
     reloadAria: 'Reload PEPE balance',
     notAvailable: 'PEPE is not available on this network (contracts not deployed here).',

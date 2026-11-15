@@ -12,7 +12,7 @@ export const adopt: Catalog['adopt'] = {
   connectWallet: 'Connect a wallet to browse Allocations.',
   notDeployed: 'Spot tokens are not enabled on this network yet, so Allocations cannot be adopted here.',
   notConnected: 'This connection cannot read on-chain data right now. Reconnect your wallet and try again.',
-  mockWallet: 'The mock wallet cannot read on-chain data. Connect a real wallet to browse and adopt Allocations.',
+  mockWallet: 'Guest mode cannot read on-chain data. Connect a wallet to browse and adopt Allocations.',
   loadFailed: 'Could not load Allocations:',
   refreshAria: 'Refresh Allocations',
   listSeparator: ', ',

@@ -56,8 +56,8 @@ describe('retirement wording', () => {
   it('the estimate says the tonnes are the platform’s and that it is an estimate', () => {
     const zh = Object.values(LOCALES['zh-TW'].catalog.copy.retirementEstimate).join('\n');
     const en = Object.values(LOCALES.en.catalog.copy.retirementEstimate).join('\n');
-    for (const must of ['平台', '估算', '模擬碳權']) expect(zh).toContain(must);
-    for (const must of ['platform', 'estimate', 'simulated']) expect(en.toLowerCase()).toContain(must);
+    for (const must of ['平台', '估算', '平台自鑄碳權', '不是碳權登錄機構核發']) expect(zh).toContain(must);
+    for (const must of ['platform', 'estimate', 'platform-minted', 'not issued by any carbon-credit registry']) expect(en.toLowerCase()).toContain(must);
   });
 
   it('the exempt disclaimer still says burning the credit offsets nothing (ADR-022)', () => {

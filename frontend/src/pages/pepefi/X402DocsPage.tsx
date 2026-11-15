@@ -15,7 +15,7 @@ import AccordionDetails from '@mui/material/AccordionDetails'
 
 import { t, interpolate } from 'src/locales'
 import { x402FeeRouter } from 'src/contracts/deployment'
-import { FEATURE_COPY_TRADING } from 'src/lib/pepefi/featureFlags'
+import { FEATURE_COPY_TRADING, SHOW_DEMO_DISCLOSURE } from 'src/lib/pepefi/featureFlags'
 import { SIGNAL_API_URL, demoBuySignal } from 'src/lib/pepefi/signalApi'
 import { explorerTx, X402_SETTLEMENT_CHAIN_ID } from 'src/lib/pepefi/explorer'
 import { Mono as Num, LiveDot, PEPE, MONO, hexA } from 'src/components/pepefi/brandKit'
@@ -183,7 +183,7 @@ export default function X402DocsPage() {
     <Container maxWidth="md" sx={{ py: 4, display: 'flex', flexDirection: 'column', gap: 4 }}>
       {/* ── 開頭：這是什麼、對我有什麼用（不捲動就看得到） ── */}
       <Box>
-        <Chip size="small" color="success" variant="outlined" label={docs.testnetChip} sx={{ mb: 1.5 }} />
+        {SHOW_DEMO_DISCLOSURE && <Chip size="small" color="success" variant="outlined" label={docs.testnetChip} sx={{ mb: 1.5 }} />}
         <Typography variant="h3" component="h1" sx={{ fontWeight: 'bold', mb: 1.5, fontSize: { xs: 28, md: 36 } }}>
           {docs.title}
         </Typography>

@@ -12,7 +12,7 @@ export const legacy = {
   subtitle:
     '平台曾數次重新部署交易合約。舊合約仍保存你當時的保證金與未平倉部位，這一頁只讀取平台公布的舊合約位址，幫你確認並取回。',
   connectPrompt: '連接錢包後，才能查詢你在舊合約上的資產。',
-  demoWallet: '展示模式沒有鏈上資料，請連接真實錢包。',
+  demoWallet: '訪客模式沒有鏈上資料，請連接錢包。',
   loading: '正在讀取舊合約…',
   refresh: '重新整理',
   noneOnChain: '{chain} 上沒有任何舊版交易合約。',

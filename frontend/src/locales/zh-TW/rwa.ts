@@ -71,7 +71,7 @@ export const rwa = {
       unknown: '無法判斷（讀取失敗）',
     },
     kycNote:
-      '依交易所的 kyc() 與 rwaAsset() 判斷，只在開倉時檢查，平倉不受影響。現役 KYC 登錄是舊版：送件與核准沒有分離，是示範用閘門，不構成身分審查。',
+      '依交易所的 kyc() 與 rwaAsset() 判斷，只在開倉時檢查，平倉不受影響。現役 KYC 登錄是舊版：送件與核准沒有分離，不構成身分審查。',
     priceSource: '參考價格來源',
     priceSourceValue: 'keeper 從 {source}（{ticker}）取價，寫入交易所讀取的 MockOracle',
     keeperSchedule: 'keeper 由 GitHub Actions 每 15 分鐘排程執行（排程可能延遲）；偏離 ≥ 0.1% 或距上次 ≥ 15 分鐘才寫價。',
@@ -137,11 +137,11 @@ export const rwa = {
   compliance: {
     title: '法遵與定位揭露',
     items: {
-      prototype: '本專案是 Base Sepolia 測試網上的研究原型，不是正式上線的金融服務，沒有任何金融業務許可。',
+      prototype: '本專案不是持牌金融服務，沒有任何金融業務許可。',
       synthetic: '提供的是參照真實資產價格、以現金結算的合成衍生品（永續合約／差價契約型態），不是代幣化證券。',
       noUnderlying: '本平台不發行、不持有、不託管任何標的資產；持有人沒有股東權、股利或對標的的請求權。',
-      settlement: '結算資產是測試用的 MockUSDC（任何人都能鑄造的測試幣），沒有真實價值。',
-      regulated: '台灣的差價契約（CFD）屬受監理的槓桿交易業務，需取得主管機關許可；本原型只適合在持牌機構內部 PoC 或金融監理沙盒中運行，需法遵確認。',
+      settlement: '結算資產是平台合約 MockUSDC（任何人都能從水龍頭領取），不是 Circle 發行的 USDC。',
+      regulated: '台灣的差價契約（CFD）屬受監理的槓桿交易業務，需取得主管機關許可；本專案只適合在持牌機構內部 PoC 或金融監理沙盒中運行，需法遵確認。',
       unaudited: '合約沒有經過第三方安全稽核。',
     },
     lawsTitle: '相關法規（出處見 docs/DESIGN_BESU.md §5，查證 2026-10-05）',
@@ -182,7 +182,7 @@ export const rwa = {
     offchainUnavailable: '鏈下參考價讀取失敗（{reason}），以下只顯示鏈上資料。',
     offchainLoading: '正在讀取鏈下參考價…',
     offchainFrom: '鏈下參考價來自 signal-api 的免費唯讀端點 /reference-prices（60 秒快取，{at} 產生）。',
-    licenseNote: '各上游資料的商業授權未查證，這裡只做測試網原型的合理性比對。',
+    licenseNote: '各上游資料的商業授權未查證，這裡只做合理性比對。',
     deviationLevel: {
       ok: '一致',
       warn: '偏離',
@@ -195,7 +195,7 @@ export const rwa = {
     title: '儲備與償付能力',
     subtitle:
       '平台有沒有足夠的錢支付大家？這頁公開資金池的即時數字，目前不保證任何情況下都能全額支付。交易所的資金池、保險金庫與代幣化金庫的準備率，全部是鏈上即時讀值。這一頁證明的是「對手方償付能力是否可查」，不是標的資產的儲備證明。',
-    notPoR: '本平台不持有標的資產，所以沒有、也不需要標的的儲備證明（Proof of Reserve）。這裡的儲備是測試幣 MockUSDC，不是標的資產的儲備證明。',
+    notPoR: '本平台不持有標的資產，所以沒有、也不需要標的的儲備證明（Proof of Reserve）。這裡的儲備是 MockUSDC，不是標的資產的儲備證明。',
     exchangeTitle: '永續交易所',
     exchangeBalance: '交易所 USDC 餘額（資金池）',
     totalMargin: '未平倉部位的保證金合計',
@@ -220,7 +220,7 @@ export const rwa = {
     ratioOk: '所有資產都有計價。',
     mintingHalted: '鑄造已停止（準備率曾跌破門檻）',
     notFullyBacked:
-      '金庫非足額抵押：它是所有多頭的對手方，靠最低準備率、逐資產上限與暫停來限制曝險，不是 1:1 準備。現在的比率很高，是因為負債很小而儲備是大量測試幣，不能拿來宣稱超額擔保。',
+      '金庫非足額抵押：它是所有多頭的對手方，靠最低準備率、逐資產上限與暫停來限制曝險，不是 1:1 準備。現在的比率很高，是因為負債很小而儲備是大量 MockUSDC，不能拿來宣稱超額擔保。',
     historyTitle: '準備率歷史（ReserveObserved 事件）',
     historyWindow: '最近約 {span}（區塊 {from}–{to}，每段 ≤ {chunk} 塊）',
     historyLoading: '正在掃描鏈上事件…',

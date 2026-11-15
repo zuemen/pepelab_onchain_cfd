@@ -79,7 +79,7 @@ export const admin: Catalog['admin'] = {
       },
 
       dashNote:
-        '"—" means that adapter can\'t provide a trusted price right now, for one of two reasons: (1) no feed exists for this asset (mostly stocks/ETFs — the Chainlink and Pyth testnets only cover mainstream crypto assets); (2) the price is stale or incomplete — the adapter is now fail-closed, so it reverts outright rather than returning a stale price when staleThreshold (1 hour by default) has elapsed without an update, the round is incomplete, or the Pyth confidence interval is too wide. So a row going from a number to "—" means that source degraded, not that its feed was removed.',
+        '"—" means that adapter can\'t provide a trusted price right now, for one of two reasons: (1) no feed exists for this asset (mostly stocks/ETFs — Chainlink and Pyth on Base Sepolia only cover mainstream crypto assets); (2) the price is stale or incomplete — the adapter is now fail-closed, so it reverts outright rather than returning a stale price when staleThreshold (1 hour by default) has elapsed without an update, the round is incomplete, or the Pyth confidence interval is too wide. So a row going from a number to "—" means that source degraded, not that its feed was removed.',
     },
 
     prices: {

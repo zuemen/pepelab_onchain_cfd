@@ -71,14 +71,14 @@ describe('市場狀態徽章 · 三種鏈上狀態', () => {
   })
 
   describe('不支援 assetMode（線上舊 exchange，KNOWN_LIMITATIONS #31）', () => {
-    it('休市：照實寫「此測試網部署未啟用休市停單，下單會以收盤價成交」', () => {
+    it('休市：照實寫「此部署未啟用休市停單，下單會以收盤價成交」', () => {
       const s = marketStatus({ symbol: 'sAAPL', nowSec: SAT, probe: UNSUPPORTED })
       expect(s.kind).toBe('closedNoStop')
-      expect(s.label).toBe('休市中（此測試網部署未啟用休市停單，下單會以收盤價成交）')
+      expect(s.label).toBe('休市中（此部署未啟用休市停單，下單會以收盤價成交）')
       expect(s.tone).toBe('warn')
       expect(s.confirmBeforeOpen).toBe(true)
       expect(interpolate(closedOrderWarning(s.kind)!, { asset: 'sAAPL' })).toMatch(
-        /^sAAPL 目前休市。此測試網部署未啟用休市停單/
+        /^sAAPL 目前休市。此部署未啟用休市停單/
       )
     })
 

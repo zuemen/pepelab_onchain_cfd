@@ -58,7 +58,7 @@ export const feed = {
     unfollow: '今天有 {count} 人取消跟單',
     unfollowOn: '{day} 有 {count} 人取消跟單',
     slash: '質押被罰沒 {amount}',
-    retirement: '退役了 {tonnes} 噸模擬碳權（花費 {amount}），來自平台手續費的碳權份額',
+    retirement: '退役了 {tonnes} 噸平台自鑄碳權（花費 {amount}），來自平台手續費的碳權份額',
     long: '做多',
     short: '做空',
     separator: '；',

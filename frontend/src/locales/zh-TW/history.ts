@@ -7,7 +7,7 @@
  */
 export const history = {
   title: '交易歷史',
-  subtitle: '你在平台上的每一筆操作，都直接讀自 Base Sepolia 測試網，可以點連結自己核對。',
+  subtitle: '你在平台上的每一筆操作，都直接讀自 Base Sepolia 鏈上，可以點連結自己核對。',
   loading: '載入中…',
   /** 部位已顯示、背景還在掃較新的日誌（交易雜湊、入金、手續費等事件）。 */
   scanningLogs: '同步鏈上日誌…',

@@ -11,13 +11,13 @@ export const errors: Catalog['errors'] = {
     // Selectors (0x + 4-byte hex)
     '0xbb90b0d9': 'Click Approve to let the SwapRouter spend your USDC.',
     '0xe450d38c':
-      'Your wallet is short on USDC — grab free test USDC from the faucet on the Funding & Swap page first 🚰',
+      'Your wallet is short on USDC — grab free USDC from the faucet on the Funding & Swap page first 🚰',
     '0xbb723368': 'This asset is an RWA market — complete KYC verification before trading.',
     '0x4f402872':
       'This market is closed or paused (on-chain mode reduce-only or halted): no new positions. In reduce-only you can still close existing positions; in halted mode closing waits until it is lifted.',
     // Keyword matches (case-insensitive)
     ERC20InsufficientBalance:
-      'Your wallet is short on USDC — grab free test USDC from the faucet on the Funding & Swap page first 🚰',
+      'Your wallet is short on USDC — grab free USDC from the faucet on the Funding & Swap page first 🚰',
     'no strategies': "This trader hasn't published a copy-trading strategy yet!",
     FaucetCooldown: 'The faucet only pays out once every 24h — wait for the cooldown to end.',
     NoStrategyPublished: "This trader hasn't published a strategy",
@@ -103,7 +103,7 @@ export const errors: Catalog['errors'] = {
     FaucetCallerMustBeEOA:
       'The faucet only pays out to regular wallets (EOAs). You called it from a contract wallet (Safe / ERC-4337 smart account) — switch to a regular EOA wallet, or ask an admin to send the tokens to you directly.',
     NotMinter:
-      'Only the contract owner or a registered swapRouter can call mint. Regular users should use faucet() to claim test tokens instead.',
+      'Only the contract owner or a registered swapRouter can call mint. Regular users should use faucet() to claim tokens instead.',
 
     // ── KYCRegistry (review-gated) ──────────────────────────────────────────
     NoSubmission: "This address hasn't submitted a KYC application yet — nothing to review.",
@@ -168,9 +168,9 @@ export const errors: Catalog['errors'] = {
     'user rejected': 'You rejected the transaction',
     'User rejected': 'You rejected the transaction',
     ACTION_REJECTED: 'You rejected the transaction',
-    'insufficient funds': 'Not enough test ETH for the network fee. Get a little from a public Base Sepolia faucet first.',
+    'insufficient funds': 'Not enough ETH for the network fee. Get a little from a public Base Sepolia faucet first.',
     OutOfFunds:
-      'Not enough ETH for the execution fee (opening a position needs ETH). Get a little test ETH from a public Base Sepolia faucet first.',
+      'Not enough ETH for the execution fee (opening a position needs ETH). Get a little ETH from a public Base Sepolia faucet first.',
     'nonce too low': 'Nonce too low — try again.',
   },
 

@@ -11,7 +11,7 @@
 export const x402 = {
   docs: {
     title: 'x402：讓 AI 助理自己付費買交易資料',
-    testnetChip: '測試網 · 不花真錢',
+    testnetChip: 'Base Sepolia · Circle USDC 付費',
     lead: '你的 AI 交易助理需要資料時，不用註冊帳號、也不用訂閱月費——它要一筆，就用自己的錢包付一筆小錢（一次 $0.005 起），當場拿到資料。',
 
     benefits: {
@@ -78,12 +78,12 @@ export const x402 = {
       heading: '怎麼開始使用',
       note: '目前第 3 步需要一位會跑程式的朋友或開發者幫忙；在應用內一鍵啟用助理的功能還在規劃中。',
       wallet: {
-        title: '準備一個測試用錢包',
-        body: '安裝 MetaMask 之類的錢包，新增一個全新帳戶，切換到 Base Sepolia 測試網。請不要用存有真實資產的錢包。',
+        title: '準備一個錢包',
+        body: '安裝 MetaMask 之類的錢包，新增一個全新帳戶，切換到 Base Sepolia。建議用獨立的帳戶，不要和存有其他資產的錢包混用。',
       },
       fund: {
-        title: '領免費的測試幣',
-        body: '到 Circle 的測試網水龍頭選 Base Sepolia，領 Circle USDC 用來付資料費；再到任一 Base Sepolia 水龍頭領一點 ETH，用來付鏈上手續費（gas）。',
+        title: '領取 USDC 與 ETH',
+        body: '到 Circle 的水龍頭選 Base Sepolia，領 Circle USDC 用來付資料費；再到任一 Base Sepolia 水龍頭領一點 ETH，用來付鏈上手續費（gas）。',
         link: '前往 Circle 水龍頭 ↗',
       },
       connect: {
@@ -107,8 +107,8 @@ export const x402 = {
         a: '可以設定成會。下單用的是你在交易所的保證金，而且只能在你事先授權的範圍內：單筆上限、總預算、槓桿上限與到期日都由合約強制執行，超過就會被拒絕。',
       },
       real: {
-        q: '這是真錢嗎？',
-        a: '不是。目前在 Base Sepolia 測試網上運作，水龍頭領來的測試幣沒有實際價值。',
+        q: '付資料費用哪一種幣？',
+        a: '用 Circle USDC，在 Base Sepolia 上結算；平台保證金用的 USDC 不能拿來付 x402。',
       },
     },
 
@@ -132,7 +132,7 @@ export const x402 = {
     },
 
     footer:
-      '測試網展示環境（Base Sepolia）；結算金鑰僅供 demo，不涉及真實資產。鏈上分潤數字為即時讀取。付款由公開的 x402.org facilitator 結算並由它支付 gas；本專案未自架 facilitator。',
+      '運行於 Base Sepolia；鏈上分潤數字為即時讀取。付款由公開的 x402.org facilitator 結算並由它支付 gas；本專案未自架 facilitator。',
   },
 
   /** 首頁那張把人帶到文件頁的卡片。 */

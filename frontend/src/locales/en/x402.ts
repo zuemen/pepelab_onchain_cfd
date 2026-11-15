@@ -6,7 +6,7 @@ import type { Catalog } from '../zh-TW';
 export const x402: Catalog['x402'] = {
   docs: {
     title: 'x402: let your AI assistant pay for trading data on its own',
-    testnetChip: 'Testnet · no real money',
+    testnetChip: 'Base Sepolia · paid in Circle USDC',
     lead: 'When your AI trading assistant needs data, there is no account to sign up for and no monthly subscription — each time it wants one piece, it pays a small fee from its own wallet (from $0.005) and gets the data on the spot.',
 
     benefits: {
@@ -73,12 +73,12 @@ export const x402: Catalog['x402'] = {
       heading: 'How to get started',
       note: 'For now, step 3 needs a friend or developer who can run a script; enabling an assistant with one click inside the app is still being planned.',
       wallet: {
-        title: 'Set up a test wallet',
-        body: 'Install a wallet such as MetaMask, create a brand-new account and switch it to the Base Sepolia testnet. Don’t use a wallet that holds real assets.',
+        title: 'Set up a wallet',
+        body: 'Install a wallet such as MetaMask, create a brand-new account and switch it to Base Sepolia. Use a separate account rather than a wallet that holds your other assets.',
       },
       fund: {
-        title: 'Get free test tokens',
-        body: 'At Circle’s testnet faucet, choose Base Sepolia and claim Circle USDC to pay for data. Then claim a little ETH from any Base Sepolia faucet to cover on-chain fees (gas).',
+        title: 'Get USDC and ETH',
+        body: 'At Circle’s faucet, choose Base Sepolia and claim Circle USDC to pay for data. Then claim a little ETH from any Base Sepolia faucet to cover on-chain fees (gas).',
         link: 'Open the Circle faucet ↗',
       },
       connect: {
@@ -102,8 +102,8 @@ export const x402: Catalog['x402'] = {
         a: 'It can be set up to. Trades use your margin on the exchange and stay within limits you authorise in advance: a per-trade cap, a total budget, a leverage cap and an expiry date, all enforced by the contract. Anything beyond them is rejected.',
       },
       real: {
-        q: 'Is this real money?',
-        a: 'No. It runs on the Base Sepolia testnet, and test tokens from a faucet have no real value.',
+        q: 'Which token pays for data?',
+        a: 'Circle USDC, settled on Base Sepolia. The USDC used as platform margin cannot pay for x402.',
       },
     },
 
@@ -127,7 +127,7 @@ export const x402: Catalog['x402'] = {
     },
 
     footer:
-      'Testnet demo environment (Base Sepolia); the settlement key is for demo purposes only and holds no real assets. The on-chain revenue-split figures are read live. Payments are settled by the public x402.org facilitator, which pays that gas; this project does not run its own facilitator.',
+      'Running on Base Sepolia; the on-chain revenue-split figures are read live. Payments are settled by the public x402.org facilitator, which pays that gas; this project does not run its own facilitator.',
   },
 
   /** 首頁那張把人帶到文件頁的卡片。 */
