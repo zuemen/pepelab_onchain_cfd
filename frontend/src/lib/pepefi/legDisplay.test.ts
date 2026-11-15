@@ -23,4 +23,8 @@ describe('spotTemplate', () => {
   it('default 租戶預設不顯示方向（跟 SHOW_LEVERAGE 同一個旗標）', () => {
     expect(SHOW_DIRECTION).toBe(false)
   })
+  it('拿掉方向後不留空括號、括號內不以逗號開頭（動態牆句子）', () => {
+    expect(spotTemplate('新增一筆 {asset} 投資（{side}），總額 {notional}', false)).toBe('新增一筆 {asset} 投資，總額 {notional}')
+    expect(spotTemplate('{asset}（{side}，總額 {notional}）的投資被自動結清', false)).toBe('{asset}（總額 {notional}）的投資被自動結清')
+  })
 })

@@ -28,6 +28,8 @@ export function spotTemplate(template: string, show: boolean = SHOW_LEVERAGE): s
     .replace(/\s*[（(][^（()）]*\{(?:leverage|lev)\}[^（()）]*[)）]/g, '')
     .replace(/\s*[·•]?\s*\{(?:leverage|lev)\}\s*[×x]/g, '')
     .replace(/\{side\}/g, '')
+    .replace(/\s*[（(]\s*[)）]/g, '')
+    .replace(/([（(])\s*[，,]\s*/g, '$1')
     .replace(/[ \t\u00a0]{2,}/g, ' ')
     .replace(/\s+([,，;；)）])/g, '$1')
     .trim();

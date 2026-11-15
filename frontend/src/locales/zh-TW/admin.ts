@@ -196,7 +196,7 @@ export const admin = {
     info: {
       revenueModelLabel: '收益模式：',
       revenueModelBody:
-        '每筆跟單或績效手續費依 70% 交易者 / 20% 平台 / 10% 保險金庫 分配。平台手續費會累積在 FeeRouter，直到此管理員領取為止。',
+        '每筆跟單或績效手續費依 70% 交易者 / 20% 平台 / 10% 風險準備金 分配。平台手續費會累積在 FeeRouter，直到此管理員領取為止。',
       swapNote:
         '領取 USDC 後，可使用上方的兌換功能以模擬匯率（1 ETH = 3000 USDC）轉換為 ETH。正式環境中則會使用真正的 DEX。',
     },

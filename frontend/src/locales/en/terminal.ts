@@ -83,7 +83,7 @@ export const terminal: Catalog['terminal'] = {
 
     enterMargin: 'Enter amount to invest',
     insufficientFreeMargin: 'Not enough available funds — deposit first',
-    opened: '{side} {asset} bought ✓',
+    opened: '{side} {asset} submitted ✓',
 
     /** 受管制標的的三種 KYC 狀態，各自是完整的一句話。 */
     kycUnknown:

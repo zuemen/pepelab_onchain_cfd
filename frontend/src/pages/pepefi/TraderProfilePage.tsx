@@ -486,6 +486,7 @@ function TraderProfileView() {
             {!hasStrategy ? (
               <Typography color="text.secondary">{t.traderProfile.strategy.empty}</Typography>
             ) : (
+              <>
               <Stack direction="row" spacing={1} sx={{ flexWrap: 'wrap', gap: 1 }}>
                 {allocs.map((a, i) => (
                   <Chip
@@ -508,6 +509,10 @@ function TraderProfileView() {
                   />
                 ))}
               </Stack>
+              {!SHOW_DIRECTION && allocs.some((a) => !a.isLong || BigInt(a.leverage) > 1n) && (
+                <Alert severity="warning" sx={{ mt: 2 }}>{t.copy.strategy.nonSpotWarning}</Alert>
+              )}
+              </>
             )}
           </Card>
 

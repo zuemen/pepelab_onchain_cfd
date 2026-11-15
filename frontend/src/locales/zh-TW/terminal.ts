@@ -94,7 +94,7 @@ export const terminal = {
 
     enterMargin: '輸入投入金額',
     insufficientFreeMargin: '可用金額不足——請先存入',
-    opened: '{side} {asset} 買進成功 ✓',
+    opened: '{side} {asset} 已送出 ✓',
 
     /** 受管制標的的三種 KYC 狀態，各自是完整的一句話。 */
     kycUnknown: '⚠ 無法確認 KYC 狀態（鏈上讀取失敗）。為了安全，確認之前 {asset} 暫停買賣。',
@@ -183,8 +183,8 @@ export const terminal = {
       tx: '紀錄',
     },
     kind: {
-      opened: '買進',
-      closed: '賣出',
+      opened: '新增投資',
+      closed: '結束投資',
       liquidated: '已自動結清',
     },
     loading: '讀取鏈上買賣紀錄…',

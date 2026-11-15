@@ -22,7 +22,8 @@ export const copy: Catalog['copy'] = {
     empty: 'No strategy published yet.',
     /** 分配標籤：↑ BTC 50% · 3× */
     chip: '{side} {asset} {weight}% · {leverage}×',
-  },
+
+    nonSpotWarning: '⚠ This strategy includes down-side or multiplied items (advanced feature): losses are amplified when prices move against you, the investment may be settled automatically and you may lose everything you put in; fees are charged on the multiplied total.',  },
 
   amount: {
     title: 'Copy investing amount',

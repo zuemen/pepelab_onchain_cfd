@@ -674,6 +674,9 @@ function CopyPageView() {
             ))}
           </Stack>
         )}
+        {!SHOW_DIRECTION && stratAllocs.some((a) => !a.isLong || a.leverage > 1n) && (
+          <Alert severity="warning" sx={{ mt: 2 }}>{t.copy.strategy.nonSpotWarning}</Alert>
+        )}
       </Card>
 
       {/* 策略各資產目前的市場多空比例（issue #335），只在 Expert；現貨呈現（SHOW_LEVERAGE 關）時不顯示 */}
