@@ -88,7 +88,7 @@ export const admin = {
       },
 
       dashNote:
-        '「—」表示該 adapter 這一刻拿不到可信報價，有兩種原因：(1) 未提供此資產的 feed （多為股票／ETF，Chainlink 與 Pyth 測試網僅涵蓋主流加密資產）；(2) 報價已過期或不完整—— adapter 現在採 fail-closed，staleThreshold（預設 1 小時）內沒更新、round 不完整、 或 Pyth 信賴區間過寬時會直接 revert，不會再回傳舊價。所以同一列從有數字變成「—」 代表該來源劣化了，不是 feed 被移除。',
+        '「—」表示該 adapter 這一刻拿不到可信報價，有兩種原因：(1) 未提供此資產的 feed （多為股票／ETF，Chainlink 與 Pyth 在 Base Sepolia 上僅涵蓋主流加密資產）；(2) 報價已過期或不完整—— adapter 現在採 fail-closed，staleThreshold（預設 1 小時）內沒更新、round 不完整、 或 Pyth 信賴區間過寬時會直接 revert，不會再回傳舊價。所以同一列從有數字變成「—」 代表該來源劣化了，不是 feed 被移除。',
     },
 
     prices: {

@@ -11,7 +11,7 @@ export const landing: Catalog['landing'] = {
   connectHint: 'Connect to browse every feature directly — no account required.',
 
   paperTrading: {
-    title: 'What is Paper Trading?',
+    title: 'How do prices and funds work?',
   },
 
   features: {
@@ -70,8 +70,8 @@ export const landing: Catalog['landing'] = {
 
   steps: {
     heading: 'How to Get Started',
-    one: 'Install MetaMask, switch to the Base Sepolia testnet, and claim a little test ETH from a public faucet for gas',
-    two: 'On the Exchange page, click "Claim USDC" for test funds',
+    one: 'Install MetaMask, switch to Base Sepolia, and claim a little ETH from a public faucet for gas',
+    two: 'On the Exchange page, click "Claim USDC" to get USDC',
     three: 'Go to Assets, buy XAU and BGRN, then check Portfolio for the allocation and value across all four classes',
     four: "Check traders' on-chain records and carbon tier mix on Marketplace, and copy one — or register as a trader on the Trader page",
   },
@@ -85,13 +85,13 @@ export const landing: Catalog['landing'] = {
       'One wallet, four asset classes: tokenized equities, bonds, gold, and crypto. On-chain mint and redeem, an allocation marketplace, benchmark comparison, plus ',
     heroBold: 'x402 paid signals',
     heroAfter: ' — letting AI agents bring their own wallet, pay, and trade autonomously. Fully transparent on-chain.',
-    paperMid: ' for simulated trading, so users can try RWA investing and AI agent trading without spending real money. ',
+    paperMid: ' to settle RWA investing and AI agent trading. ',
   },
 
   oracleDisclosure: 'Prices reference real markets and are written on-chain by the operator (oracle); during market closures they stay at the last price',
 
   /** 首頁最上方的即時 KPI 條（HeroKpiStrip）。網路名稱、chainId 是技術識別碼，不譯。 */
-  liveOn: 'Running on the Base Sepolia testnet · 84532',
+  liveOn: 'Running on Base Sepolia · 84532',
   logoAlt: '{name} logo',
 
   heroKpi: {
@@ -108,14 +108,14 @@ export const landing: Catalog['landing'] = {
       'Pick a trader and see every position, every strategy version and its carbon tier mix before you decide to copy. ',
     heroBold: 'Positions opened by copy trading are in your own name',
     heroAfter:
-      ', and only you can stop copying. Tokenized equities, bonds, gold and crypto — every step checkable on-chain. This is a testnet demo: most traders listed are simulated accounts run by programs, not real people.',
+      ', and only you can stop copying. Tokenized equities, bonds, gold and crypto — every step checkable on-chain. Most traders listed are simulated accounts run by programs, not real people.',
 
     paperBefore: 'This platform uses ',
-    paperBold1: 'testnet tokens',
+    paperBold1: 'on-chain tokens',
     paperMid:
-      ' for simulated trading, letting users try social copy trading, RWA investing, and AI agent trading without spending real money. ',
+      ' to settle social copy trading, RWA investing, and AI agent trading. ',
     paperBold2: 'Prices reference real markets',
     paperAfter:
-      ", and the operator writes them on-chain. The funds are simulated assets and no real money is involved, much like Paper Trading.",
+      ', and the operator writes them on-chain (oracle).',
   },
 };

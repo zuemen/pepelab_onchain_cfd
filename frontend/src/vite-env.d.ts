@@ -16,6 +16,7 @@ interface ImportMetaEnv {
    * 只能在租戶授權範圍內打開（src/tenant/flags.ts）。
    */
   readonly VITE_SHOW_LEVERAGE?: string;
+  readonly VITE_SHOW_DEMO_DISCLOSURE?: string;
   readonly VITE_SHOW_PERPETUALS?: string;
   readonly VITE_FEATURE_GAMEFI?: string;
   readonly VITE_FEATURE_PEPE_REWARDS?: string;

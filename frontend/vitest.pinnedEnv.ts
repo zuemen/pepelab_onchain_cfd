@@ -17,6 +17,7 @@ export const PINNED_ENV = [
   'VITE_LOCALE',
   // 功能旗標：src/lib/pepefi/featureFlags.ts 在載入時解析。
   'VITE_SHOW_LEVERAGE',
+  'VITE_SHOW_DEMO_DISCLOSURE',
   'VITE_SHOW_PERPETUALS',
   'VITE_FEATURE_GAMEFI',
   'VITE_FEATURE_PEPE_REWARDS',

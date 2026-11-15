@@ -153,3 +153,13 @@ export const MOCK_WALLET_ENABLED = mockWalletEnabled(
 );
 
 export const __test__ = { readFlag };
+
+/**
+ * 每頁的「測試網原型」揭露橫幅（SyntheticDisclosure）與「模擬交易」標籤（PaperTradingBadge）要不要顯示。
+ *
+ * default 租戶預設 **關**（2026-11-15 本人決定，依指導者意見：展示時當作正式服務，測試網只在簡報開頭說一次，
+ * 不在每一頁重複）。白標／機構租戶照舊顯示（tenant/disclosure.ts 的核心揭露承諾只對租戶站成立）。
+ * 打開：`VITE_SHOW_DEMO_DISCLOSURE=1`。
+ */
+export const SHOW_DEMO_DISCLOSURE =
+  tenant.id !== 'default' || readFlag(import.meta.env.VITE_SHOW_DEMO_DISCLOSURE, false);

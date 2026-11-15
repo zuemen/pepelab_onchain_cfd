@@ -9,7 +9,7 @@ export const rewards = {
   connectTitle: '🎁 獎勵',
 
   title: '🎁 {brand} 獎勵',
-  subtitle: '交易、跟單可賺 PEPE（測試網遊戲幣，不具真實價值）；每日簽到累積成就點數。',
+  subtitle: '交易、跟單可賺 PEPE（平台遊戲幣）；每日簽到累積成就點數。',
 
   /** 合約沒部署在這條鏈上時，四個領取動作共用的同一句話。 */
   offline: 'PEPE 獎勵系統尚未部署在此網路，暫時無法領取',
@@ -129,7 +129,7 @@ export const rewards = {
   /** PEPE 餘額與空投領取卡（PepeTokenCard，從舊版首頁搬到這一頁）。 */
   pepeToken: {
     label: '🐸 PEPE 代幣',
-    subtitle: '平台遊戲幣（測試網，不具真實價值）· 完成 KYC 可領空投',
+    subtitle: '平台遊戲幣 · 完成 KYC 可領空投',
     addToWallet: '加入錢包',
     reloadAria: '重新載入 PEPE 餘額',
     notAvailable: '此網路無法使用 PEPE（合約尚未部署）。',

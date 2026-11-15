@@ -11,7 +11,7 @@ export const sessions = {
   prereq: {
     title: 'Agent 下單前要先準備三件事',
     margin: '切到專家模式，到「專業終端」把 USDC 存進交易帳戶；session 不會動用你錢包裡的 USDC。',
-    eth: 'Agent 地址要有少量測試 ETH，付手續費與每次開倉的執行費。',
+    eth: 'Agent 地址要有少量 ETH，付手續費與每次開倉的執行費。',
     kyc: '要交易股票、債券類標的，你的錢包要先完成 KYC。',
   },
   ssi: {
@@ -91,11 +91,11 @@ export const sessions = {
     issueVc: '簽發 VC',
     signing: '簽署中…',
     issueVcHint: 'MetaMask 簽發授權 VC',
-    issueVcNeedsWallet: '需真實錢包簽署（mock 模式不支援）',
+    issueVcNeedsWallet: '需連接錢包簽署（訪客模式不支援）',
     revoke: '撤銷',
     revoked: 'Session 已撤銷 ✓',
     credentialIssued: '憑證已簽發 ✓',
-    needsRealWallet: '需連接真實錢包以簽署 VC（mock 模式不支援簽章）',
+    needsRealWallet: '需連接錢包以簽署 VC（訪客模式不支援簽章）',
     vcExpires: 'VC 到期 {date}',
     vcExpired: 'VC 已過期，請重新簽發',
     vcValidity: 'VC 效期（天）',
@@ -129,7 +129,7 @@ export const sessions = {
     open: '委託憑證 v3',
     title: '委託授權憑證 v3（W3C VC 2.0）',
     intro:
-      '把這個 session 的額度、資產白名單與 x402 付費上限簽成一張可驗證憑證，用來證明「誰授權了這個代理人、授權到哪裡」（Know Your Agent）。部署了錨定合約的環境可以再錨定到鏈上；目前的測試站只能簽發憑證，尚未啟用鏈上錨定與付費 API 檢查。',
+      '把這個 session 的額度、資產白名單與 x402 付費上限簽成一張可驗證憑證，用來證明「誰授權了這個代理人、授權到哪裡」（Know Your Agent）。部署了錨定合約的環境可以再錨定到鏈上；目前的部署只能簽發憑證，尚未啟用鏈上錨定與付費 API 檢查。',
     agentDid: '代理人 DID（holder）',
     issuerDid: '簽發者 DID（你）',
     sessionTerms: 'Session 額度（與鏈上逐欄一致）',
@@ -232,7 +232,7 @@ export const sessions = {
     roleVerifierAfter: '：下單前驗簽 + 鏈上 session 交叉比對',
 
     wrongNetBefore: 'AI Agent Sessions 部署在 ',
-    wrongNetMid: ' 測試網。你目前連到的是',
+    wrongNetMid: '。你目前連到的是',
     wrongNetAfter: '，請在 MetaMask 切換到 Base Sepolia 後重整本頁。',
 
     keyNoteBold1: 'agent 用一把獨立的 session key，不是你的主錢包',

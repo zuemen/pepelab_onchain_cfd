@@ -30,12 +30,13 @@ function envNamesReadBySource(): Set<string> {
 // 60 秒上限：不讓機器負載決定結果，真正卡住時仍會失敗。
 const SCAN = { timeout: 60_000 };
 describe('vitest 固定的環境變數', SCAN, () => {
-  it('白名單內容：租戶、語系、五個功能旗標、mock wallet、signal-api 網址、資產前綴、v3 委託憑證的錨定位址與撤銷發佈端點', () => {
+  it('白名單內容：租戶、語系、五個功能旗標、展示揭露旗標、mock wallet、signal-api 網址、資產前綴、v3 委託憑證的錨定位址與撤銷發佈端點', () => {
     expect([...PINNED_ENV].sort()).toEqual(
       [
         'VITE_TENANT',
         'VITE_LOCALE',
         'VITE_SHOW_LEVERAGE',
+        'VITE_SHOW_DEMO_DISCLOSURE',
         'VITE_SHOW_PERPETUALS',
         'VITE_FEATURE_GAMEFI',
         'VITE_FEATURE_PEPE_REWARDS',

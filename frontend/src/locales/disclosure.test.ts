@@ -103,7 +103,7 @@ describe('time-compressed simulated-trader disclosure copy', () => {
   it('zh-TW keeps the simulated-trader facts and adds the issue’s two sentences word for word', () => {
     for (const must of ['模擬交易者', '程式', '真實歷史價格', '不是真人', '鏈上交易', '鏈下']) expect(zh, must).toContain(must);
     expect(zh).toContain('在 Base Sepolia 以壓縮時間回放，未計借款費與資金費率，上鏈時間為回放當天');
-    expect(zh).toContain('測試網展示為送出即通過');
+    expect(zh).toContain('KYC 送出即通過');
     // 內部部署說明不給一般使用者看
     expect(zh).not.toContain('rwa-poc');
   });

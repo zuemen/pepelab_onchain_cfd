@@ -22,8 +22,8 @@ export const common = {
     metamaskDesc: '透過 MetaMask 瀏覽器擴充功能連線 (Base Sepolia)',
     installMetamask: '前往安裝 MetaMask 擴充功能 ↗',
 
-    mockTitle: 'Pepe 簡報測試通道 (模擬 Web3)',
-    mockDesc: '無須錢包即可一鍵進入系統、切換 Pepe 蛙頭像與測試跟單',
+    mockTitle: 'Pepe 訪客通道（免錢包）',
+    mockDesc: '無須錢包即可一鍵進入系統、切換 Pepe 蛙頭像與試用跟單',
 
     /** useWallet 連線失敗的原因。 */
     error: {

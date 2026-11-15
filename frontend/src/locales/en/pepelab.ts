@@ -40,7 +40,7 @@ export const pepelab: Catalog['pepelab'] = {
 
   header: {
     title: 'Pepe Growth Hub',
-    subtitle: 'Spend PEPE on potions and skin draws to raise your Pepe. This is the game area: test tokens only, separate from investing.',
+    subtitle: 'Spend PEPE on potions and skin draws to raise your Pepe. This is the game area: PEPE only, separate from investing.',
     balance: '💰 Balance: {amount} PEPE',
     /** Next to the balance: PEPE is earned on /rewards by using the platform. */
     earn: 'Earn PEPE →',

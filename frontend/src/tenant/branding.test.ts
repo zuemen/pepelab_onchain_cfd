@@ -219,10 +219,10 @@ describe('default tenant is the current production site, unchanged', () => {
     'zh-TW': {
       'meta.title': 'PepeFi · Web3 社交交易',
       'meta.description':
-        'PepeFi — Base 鏈上的 Web3 社交交易平台：跟著鏈上透明的交易者投資。社交跟單、第三方 ESG 評級與碳分級、GameFi（測試網研究原型）。',
+        'PepeFi — Base 鏈上的 Web3 社交交易平台：跟著鏈上透明的交易者投資。社交跟單、第三方 ESG 評級與碳分級、GameFi。',
       'meta.titleNoCopy': 'PepeFi · Agent 原生代幣化 RWA',
       'meta.descriptionNoCopy':
-        'PepeFi — 基於 Base 鏈的 Agent 原生代幣化資產引擎（測試網研究原型）。鏈上鑄造與贖回合成股債金幣 + x402 付費訊號 + agent session 委任。',
+        'PepeFi — 基於 Base 鏈的 Agent 原生代幣化資產引擎。鏈上鑄造與贖回合成股債金幣 + x402 付費訊號 + agent session 委任。',
       'common.wallet.intro': '選擇您的登入通道以進入 PepeFi 鏈上 RWA 平台。',
       'exchange.guide.spotTitle': '在 PepeFi 上買賣代幣化資產',
       'x402.docs.how.ask.body': '助理向 PepeFi 要一筆資料，例如某位交易者的績效與最新策略。',
@@ -237,10 +237,10 @@ describe('default tenant is the current production site, unchanged', () => {
     en: {
       'meta.title': 'PepeFi · Web3 Social Trading',
       'meta.description':
-        'PepeFi — Web3 social trading on Base: invest alongside traders whose every move is on-chain. Social copy trading, third-party ESG ratings with carbon tiers, and GameFi (testnet research prototype).',
+        'PepeFi — Web3 social trading on Base: invest alongside traders whose every move is on-chain. Social copy trading, third-party ESG ratings with carbon tiers, and GameFi.',
       'meta.titleNoCopy': 'PepeFi · Agent-Native Tokenized RWA',
       'meta.descriptionNoCopy':
-        'PepeFi — an agent-native tokenized-asset engine on Base (testnet research prototype). Mint and redeem synthetic equities, bonds, gold and crypto on-chain + x402 paid signals + bounded agent sessions.',
+        'PepeFi — an agent-native tokenized-asset engine on Base. Mint and redeem synthetic equities, bonds, gold and crypto on-chain + x402 paid signals + bounded agent sessions.',
       'common.wallet.intro':
         'Choose your sign-in channel to enter the PepeFi on-chain RWA platform.',
       'exchange.guide.spotTitle': 'How to buy and sell tokenized assets on PepeFi',

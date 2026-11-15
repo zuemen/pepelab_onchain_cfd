@@ -17,16 +17,16 @@ export const kyc: Catalog['kyc'] = {
     "Submitting leaves a pending application on-chain (KYCSubmitted) — approval only happens once a reviewer calls approveKYC. You still can't trade regulated assets before it's approved.",
   noticeTitleSelfService: 'This deployment is self-service: submitting verifies you immediately',
   noticeBodySelfService:
-    'The KYCRegistry deployed on this chain is the older demo version: submitting marks you verified on-chain right away (isVerified), with no manual review.',
+    'The KYCRegistry deployed on this chain is the older version: submitting marks you verified on-chain right away (isVerified), with no manual review.',
   noticeTitleVerified: '✅ KYC verified — regulated assets are unlocked',
   noticeBodyVerified:
-    'Your KYC is recorded on-chain (isVerified = true). The KYCRegistry currently deployed is the self-service demo version: submitting verifies you immediately, with no manual review. Close this dialog and you can place orders.',
+    'Your KYC is recorded on-chain (isVerified = true). The KYCRegistry currently deployed is the self-service version: submitting verifies you immediately, with no manual review. Close this dialog and you can place orders.',
   noticeBodyAwaitingReview:
     'Your KYC application is recorded on-chain (KYCSubmitted). Regulated assets unlock once a reviewer approves it (approveKYC); until then, the contract still blocks your orders (NotKycVerified). You can close this dialog now and come back later — refresh to check the status.',
 
-  demoTitle: '⚠️ This is an academic demo',
+  demoTitle: '⚠️ Privacy: only salted hashes go on-chain',
   demoBody:
-    "This is not a real compliance flow. Your name and nationality are NOT written on-chain in plain text: the app generates a random salt and only writes keccak256(salt ‖ name) and keccak256(salt ‖ nationality) to the public contract. The salt and your raw details stay on your side; a reviewer needs you to present them off-chain to compare. A made-up name is still recommended.",
+    "Your name and nationality are NOT written on-chain in plain text: the app generates a random salt and only writes keccak256(salt ‖ name) and keccak256(salt ‖ nationality) to the public contract. The salt and your raw details stay on your side; a reviewer needs you to present them off-chain to compare. A made-up name is still recommended. This flow is not a formal compliance review.",
 
   nameLabel: 'Name (only a salted hash goes on-chain; a made-up name is recommended)',
   namePlaceholder: 'e.g. Jane Doe',

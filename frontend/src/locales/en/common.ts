@@ -20,7 +20,7 @@ export const common: Catalog['common'] = {
     metamaskDesc: 'Connect via the MetaMask browser extension (Base Sepolia)',
     installMetamask: 'Install the MetaMask extension ↗',
 
-    mockTitle: 'Pepe Demo Channel (Mock Web3)',
+    mockTitle: 'Pepe Guest Channel (no wallet)',
     mockDesc: 'No wallet needed — jump straight in, switch Pepe avatars, and try copy trading',
 
     error: {

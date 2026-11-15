@@ -40,7 +40,7 @@ export const terminal: Catalog['terminal'] = {
 
     vaultBacking: 'Vault backing',
     vaultBackingHint:
-      "The Insurance Vault's current size — the backstop that absorbs losses beyond a liquidated position's margin in extreme markets.\n\n$0 means the vault is deployed but nobody has funded it yet, so the platform has no extra solvency buffer right now. That's the real testnet state, not a display bug.",
+      "The Insurance Vault's current size — the backstop that absorbs losses beyond a liquidated position's margin in extreme markets.\n\n$0 means the vault is deployed but nobody has funded it yet, so the platform has no extra solvency buffer right now. That's the real on-chain state, not a display bug.",
 
     sourceCoingecko: 'display · coingecko',
     sourceOracle: 'display · on-chain oracle',
@@ -91,7 +91,7 @@ export const terminal: Catalog['terminal'] = {
     kycPending:
       '⏳ {asset} requires KYC: application submitted, awaiting reviewer approval — unlocks automatically once approved',
     kycRequired:
-      '🔒 {asset} requires KYC. Submit it from the KYC card on the Portfolio page (testnet demo: approved as soon as you submit).',
+      '🔒 {asset} requires KYC. Submit it from the KYC card on the Portfolio page (approved as soon as you submit).',
     kycGoToPortfolio: 'Go to Portfolio to submit',
     marketModeBlocked: 'This market is closed or paused, so no new positions can be opened.',
     insufficientWithFee: 'Not enough margin after fees',
@@ -99,7 +99,7 @@ export const terminal: Catalog['terminal'] = {
       '🔒 {asset} is an RWA market — opening a position requires a valid qualified-investor credential registered on-chain',
 
     riskNotice:
-      '⚠️ Advanced: trade rises or falls, with optional leverage. Leverage magnifies losses and your position can be force-closed. Test tokens only. Start with 1x. This platform is an oracle-priced perpetual — PnL settles at mark price (including OI imbalance); in extreme one-sided markets, paper profit may be adjusted by ADL auto-deleveraging; margin is a test token.',
+      '⚠️ Advanced: trade rises or falls, with optional leverage. Leverage magnifies losses and your position can be force-closed. Start with 1x. This platform is an oracle-priced perpetual — PnL settles at mark price (including OI imbalance); in extreme one-sided markets, paper profit may be adjusted by ADL auto-deleveraging; margin is in USDC.',
     showRiskNotice: '⚠️ Show risk notice',
 
     submitting: 'Opening…',

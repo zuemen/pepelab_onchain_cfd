@@ -5,7 +5,7 @@ import { tenant, TENANT_SHOWS_MASCOT } from 'src/tenant';
 import WalletButton from 'src/components/pepefi/WalletButton';
 import { LocaleSwitch } from 'src/layouts/components/locale-switch';
 import HeroKpiStrip from 'src/components/pepefi/HeroKpiStrip';
-import { SHOW_PERPETUALS, FEATURE_GAMEFI, FEATURE_COPY_TRADING } from 'src/lib/pepefi/featureFlags';
+import { SHOW_PERPETUALS, FEATURE_GAMEFI, FEATURE_COPY_TRADING, SHOW_DEMO_DISCLOSURE } from 'src/lib/pepefi/featureFlags';
 import { landingFeatureKeys, type LandingFeatureKey } from 'src/lib/pepefi/landingFeatures';
 import { isPublicPath } from 'src/layouts/pepefi/publicPaths';
 import { CustodyExplainer } from 'src/components/pepefi/CustodyExplainer';
@@ -329,7 +329,8 @@ export default function LandingPage() {
           </>
         )}
 
-        {/* ── What is Paper Trading? ── */}
+        {/* ── What is Paper Trading? ──（default 租戶展示時不顯示，見 SHOW_DEMO_DISCLOSURE） */}
+        {SHOW_DEMO_DISCLOSURE && (
         <Box sx={{ py: 5, textAlign: 'center' }}>
           {/* component="h2" while keeping the h4 look. The outline ran
               h1 -> h4 -> h6, so anyone navigating by heading in a screen reader
@@ -346,6 +347,7 @@ export default function LandingPage() {
             {t.landing.markup.paperBefore}<b>{t.landing.markup.paperBold1}</b>{COPY.paperMid}<b>{t.landing.markup.paperBold2}</b>{t.landing.markup.paperAfter}
           </Typography>
         </Box>
+        )}
 
         {/* ── Divider ── */}
         <Divider sx={{ my: 6, opacity: 0.15 }} />

@@ -14,7 +14,7 @@ export const adopt = {
   /** 已部署，但目前這個連線讀不到鏈上資料——跟 notDeployed 是兩種不同原因，不能共用同一句話。 */
   notConnected: '目前連線讀不到鏈上資料，請重新連接錢包後再試。',
   /** 模擬錢包沒有 provider/signer，任何頁面都讀不到鏈上資料——見 CONTEXT.md 的 Mock Wallet 詞條。 */
-  mockWallet: '模擬錢包無法讀取鏈上資料，請改用真實錢包來瀏覽與採用配置。',
+  mockWallet: '訪客模式無法讀取鏈上資料，請連接錢包來瀏覽與採用配置。',
   loadFailed: '載入配置失敗：',
   refreshAria: '重新整理配置',
   /** 結果訊息裡列資產名稱時的分隔符號。 */

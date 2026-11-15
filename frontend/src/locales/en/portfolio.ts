@@ -167,19 +167,19 @@ export const portfolio: Catalog['portfolio'] = {
     connectedTo: 'Connected to ',
     connectedToAfter: '.',
     switchTo: 'Please switch to ',
-    switchToAfter: ' testnet.',
+    switchToAfter: '.',
     unknownChain: 'unknown',
     chainNumber: 'Chain {id}',
 
-    demoTitle: 'Demo mode — no live chain data',
+    demoTitle: 'Guest mode — no live chain data',
     demoDescription:
-      "You're on the presentation walkthrough, which has no wallet connection to read real balances or positions from. Connect a real wallet to see your actual portfolio.",
+      "You're in guest mode, which has no wallet connection to read real balances or positions from. Connect a real wallet to see your actual portfolio.",
 
     emptyTitle: 'Your portfolio is empty',
     emptyDescription:
-      'Start by claiming test {token}, then buy gold, stock and other tokenized assets on the Assets page. To copy a trader, go to the Marketplace.',
+      'Start by claiming {token}, then buy gold, stock and other tokenized assets on the Assets page. To copy a trader, go to the Marketplace.',
     emptyDescriptionNoCopy:
-      'Start by getting test {token}, then buy tokenized assets on the Assets page or browse published allocations on the marketplace.',
+      'Start by getting {token}, then buy tokenized assets on the Assets page or browse published allocations on the marketplace.',
     emptyCta: 'Get {token}',
 
     side: {

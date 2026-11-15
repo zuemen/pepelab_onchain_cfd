@@ -59,7 +59,7 @@ export const feed: Catalog['feed'] = {
     unfollow: '{count} stopped copying today',
     unfollowOn: '{count} stopped copying on {day}',
     slash: 'had {amount} of stake slashed',
-    retirement: 'retired {tonnes} t of simulated carbon credits ({amount}), paid from the platform fee’s carbon share',
+    retirement: 'retired {tonnes} t of platform-minted carbon credits ({amount}), paid from the platform fee’s carbon share',
     long: 'long',
     short: 'short',
     separator: '; ',

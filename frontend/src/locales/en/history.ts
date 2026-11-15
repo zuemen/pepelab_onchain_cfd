@@ -5,7 +5,7 @@ import type { Catalog } from '../zh-TW';
  */
 export const history: Catalog['history'] = {
   title: 'Transaction History',
-  subtitle: 'Everything you did on the platform, read directly from the Base Sepolia testnet. Follow the links to check it yourself.',
+  subtitle: 'Everything you did on the platform, read directly from Base Sepolia. Follow the links to check it yourself.',
   loading: 'Loading…',
   scanningLogs: 'Syncing chain logs…',
   refresh: '↺ Refresh',

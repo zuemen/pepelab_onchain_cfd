@@ -209,18 +209,18 @@ export const portfolio = {
     connectedTo: '目前連線於 ',
     connectedToAfter: '。',
     switchTo: '請切換到 ',
-    switchToAfter: ' 測試網。',
+    switchToAfter: '。',
     unknownChain: '未知',
     chainNumber: '鏈 {id}',
 
-    demoTitle: '示範模式 — 無即時鏈上資料',
+    demoTitle: '訪客模式 — 無即時鏈上資料',
     demoDescription:
-      '你目前在展示導覽模式，沒有連接錢包，因此無法讀取真實餘額或部位。請連接真實錢包以查看你的實際投資組合。',
+      '你目前在訪客模式，沒有連接錢包，因此無法讀取真實餘額或部位。請連接真實錢包以查看你的實際投資組合。',
 
     emptyTitle: '你的投資組合是空的',
-    emptyDescription: '先領測試用 {token}，再到「資產」頁買進黃金、股票等代幣化資產；想跟單，到「交易市集」挑交易者。',
+    emptyDescription: '先領取 {token}，再到「資產」頁買進黃金、股票等代幣化資產；想跟單，到「交易市集」挑交易者。',
     /** 跟單旗標關閉時。 */
-    emptyDescriptionNoCopy: '先取得測試用 {token}，接著到「資產」頁買進代幣化資產，或到配置市集參考他人發布的配置。',
+    emptyDescriptionNoCopy: '先取得 {token}，接著到「資產」頁買進代幣化資產，或到配置市集參考他人發布的配置。',
     emptyCta: '取得 {token}',
 
     side: {

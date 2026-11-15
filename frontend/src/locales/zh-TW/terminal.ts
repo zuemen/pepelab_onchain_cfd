@@ -49,7 +49,7 @@ export const terminal = {
 
     vaultBacking: '金庫後盾',
     vaultBackingHint:
-      '保險金庫目前的資金規模——極端行情下用來吸收穿倉損失的後盾。\n\n顯示 $0 代表金庫已部署但還沒有人存入資金，此時平台沒有額外的償付緩衝。這是測試網的真實狀態，不是顯示錯誤。',
+      '保險金庫目前的資金規模——極端行情下用來吸收穿倉損失的後盾。\n\n顯示 $0 代表金庫已部署但還沒有人存入資金，此時平台沒有額外的償付緩衝。這是鏈上的真實狀態，不是顯示錯誤。',
 
     sourceCoingecko: '參考 · coingecko',
     sourceOracle: '參考 · 鏈上 oracle',
@@ -99,14 +99,14 @@ export const terminal = {
     /** 受管制標的的三種 KYC 狀態，各自是完整的一句話。 */
     kycUnknown: '⚠ 無法確認 KYC 狀態（鏈上讀取失敗）。合規閘門採 fail-closed，{asset} 暫停交易。',
     kycPending: '⏳ {asset} 需 KYC：申請已送出，等待審核人員核准中，核准後自動解鎖',
-    kycRequired: '🔒 {asset} 需 KYC，請到「投資組合」頁的 KYC 卡片送出申請（測試網展示：送出即通過）',
+    kycRequired: '🔒 {asset} 需 KYC，請到「投資組合」頁的 KYC 卡片送出申請（送出即通過）',
     kycGoToPortfolio: '前往投資組合送出申請',
     marketModeBlocked: '這個標的目前休市或暫停，不能開新倉。',
     insufficientWithFee: '含手續費後保證金不足',
     kycRequiredVc: '🔒 {asset} 是 RWA 市場，開倉需要有效的合格投資人資格（可驗證憑證登記上鏈）',
 
     riskNotice:
-      '⚠️ 進階功能：可以買漲或買跌，也可以放大倍數，虧損會放大，部位可能被強制平倉。只用測試幣，第一次請選 1 倍。本平台為 oracle 計價永續，損益以 mark 價（含 OI 失衡）結算；極端單邊行情下帳面利潤可能因 ADL 自動減倉而調整；保證金為測試代幣。',
+      '⚠️ 進階功能：可以買漲或買跌，也可以放大倍數，虧損會放大，部位可能被強制平倉。第一次請選 1 倍。本平台為 oracle 計價永續，損益以 mark 價（含 OI 失衡）結算；極端單邊行情下帳面利潤可能因 ADL 自動減倉而調整；保證金以 USDC 計。',
     showRiskNotice: '⚠️ 顯示風險提示',
 
     submitting: '開倉中…',

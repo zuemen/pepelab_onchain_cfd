@@ -34,8 +34,8 @@ export const copy = {
   /** #333：跟單前看到這次跟單會促成平台退役多少模擬碳權。噸數歸屬平台（carbonWording.test.ts）。 */
   retirementEstimate: {
     title: '這次跟單促成的碳權退役（估算）',
-    value: '約 {tonnes} 公噸模擬碳權',
-    body: '跟單手續費 {fee} 中，平台份額 {platform} 裡有 {carbon} 會撥入退役預算，促成平台退役約 {tonnes} 公噸模擬碳權。噸數歸屬平台，不是你個人的減碳；退役用的是平台自己的收入，不向你多收任何費用。',
+    value: '約 {tonnes} 公噸平台自鑄碳權',
+    body: '跟單手續費 {fee} 中，平台份額 {platform} 裡有 {carbon} 會撥入退役預算，促成平台退役約 {tonnes} 公噸平台自行鑄造的碳權（不是碳權登錄機構核發的）。噸數歸屬平台，不是你個人的減碳；退役用的是平台自己的收入，不向你多收任何費用。',
     note: '估算：只算跟單手續費；跟單部位日後的績效費也會照同樣比例撥入。比例與價格讀自鏈上合約，退役紀錄在 ESG 頁。',
   },
 
@@ -85,15 +85,15 @@ export const copy = {
     approveStep: '批准 {token} 給 CopyTracker',
     followStep: '跟隨交易者',
     lead: '輸入金額，再按兩次確認：第一次同意合約動用這筆 USDC，第二次才真正跟單。完成後部位會出現在投資組合，可隨時取消。',
-    notEnoughUsdc: '錢包只有 {balance} {token}，不夠這次跟單的金額。請調低金額，或先領測試幣；開倉另需少量測試 ETH 付執行費。',
-    notEnoughUsdcCta: '去領測試幣',
+    notEnoughUsdc: '錢包只有 {balance} {token}，不夠這次跟單的金額。請調低金額，或先領取 {token}；開倉另需少量 ETH 付執行費。',
+    notEnoughUsdcCta: '去領幣',
 
     staleTitle: '價格過期 — 暫停跟單',
     staleExplain:
       '跟單是一筆交易開 {count} 個倉位，只要有一檔過期整筆都會被拒絕，而 {count} 份 execution fee 的 gas 已經付出去了。',
 
     kycRequired:
-      '🔒 此策略包含股票 / 債券資產，需通過 KYC 才能跟單（測試網展示：送出申請後立即通過，沒有人工審核）。',
+      '🔒 此策略包含股票 / 債券資產，需通過 KYC 才能跟單（送出申請後立即通過，沒有人工審核）。',
     kycSubmit: '送出 KYC 申請',
 
     approving: '批准中…',

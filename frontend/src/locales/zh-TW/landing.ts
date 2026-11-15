@@ -15,7 +15,7 @@ export const landing = {
   connectHint: '連線後可直接瀏覽所有功能，無需註冊帳號',
 
   paperTrading: {
-    title: '什麼是 Paper Trading？',
+    title: '價格與資金怎麼運作？',
   },
 
   /**
@@ -72,8 +72,8 @@ export const landing = {
 
   steps: {
     heading: '如何開始',
-    one: '安裝 MetaMask，切換到 Base Sepolia 測試網，並先從公開水龍頭領少量測試 ETH 付手續費',
-    two: '到「入金與兌換」按「領取 USDC」取得測試資金',
+    one: '安裝 MetaMask，切換到 Base Sepolia，並先從公開水龍頭領少量 ETH 付手續費',
+    two: '到「入金與兌換」按「領取 USDC」取得 USDC',
     three: '到「資產」頁買進黃金、債券，回「投資組合」看四類資產的配置與市值',
     four: '到「交易市集」看交易者的鏈上紀錄與碳分級組成，挑一位跟單；或到「交易者主頁」登記成為交易者',
   },
@@ -87,13 +87,13 @@ export const landing = {
     heroBefore: '一個錢包，配置股、債、金、幣四大類代幣化資產。鏈上鑄造與贖回、配置市集、大盤對照，外加 ',
     heroBold: 'x402 付費訊號',
     heroAfter: '——讓 AI agent 自帶錢包、付費、自主下單。全程透明上鏈。',
-    paperMid: '進行模擬交易，讓使用者不花真錢體驗 RWA 投資與 AI 代理交易。',
+    paperMid: '結算 RWA 投資與 AI 代理交易。',
   },
 
   oracleDisclosure: '價格參考真實市場，由營運方程式寫入鏈上（預言機），休市時停在最後一筆',
 
   /** 首頁徽章。網路名稱與 chainId 是技術識別碼，不譯。 */
-  liveOn: '運行於 Base Sepolia 測試網 · 84532',
+  liveOn: '運行於 Base Sepolia · 84532',
   /** 主視覺 logo 的替代文字；{name} 是租戶的品牌名稱。 */
   logoAlt: '{name} 標誌',
 
@@ -110,12 +110,12 @@ export const landing = {
   markup: {
     heroBefore: '挑一位交易者，先看清對方的每一筆部位、每一版策略與碳分級組成，再決定要不要跟單。',
     heroBold: '跟單開出的部位在你自己名下',
-    heroAfter: '，只有你能取消；股、債、金、幣四大類代幣化資產，全程鏈上可查。目前在測試網展示，清單裡多數交易者是程式模擬的帳戶，不是真人。',
+    heroAfter: '，只有你能取消；股、債、金、幣四大類代幣化資產，全程鏈上可查。清單裡多數交易者是程式模擬的帳戶，不是真人。',
 
     paperBefore: '本平台使用',
-    paperBold1: '測試網代幣',
-    paperMid: '進行模擬交易，讓使用者不花真錢體驗社交跟單、RWA 投資與 AI 代理交易。',
+    paperBold1: '鏈上代幣',
+    paperMid: '結算社交跟單、RWA 投資與 AI 代理交易。',
     paperBold2: '價格參考真實市場',
-    paperAfter: '，由營運方程式寫入鏈上；資金為模擬資產，不涉及真實金錢，類似 Paper Trading 模式。',
+    paperAfter: '，由營運方程式寫入鏈上（預言機）。',
   },
 };

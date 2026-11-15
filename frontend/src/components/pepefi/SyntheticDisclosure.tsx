@@ -11,6 +11,7 @@ import AlertTitle from '@mui/material/AlertTitle';
 import { tenant } from 'src/tenant';
 import { t, locale } from 'src/locales';
 import { tenantDisclosureAdditions } from 'src/tenant/disclosure';
+import { SHOW_DEMO_DISCLOSURE } from 'src/lib/pepefi/featureFlags';
 
 // ----------------------------------------------------------------------
 
@@ -67,7 +68,13 @@ function useMarkSeenWhenVisible() {
  * 「不可忽略、可收合」：沒有關閉按鈕，標題與一句摘要永遠顯示；收合只收起條列細節。
  * 第一次看到的人一定看得到完整內容；看過之後預設收合，不再佔掉交易頁的首屏。
  */
-export function SyntheticDisclosure({ sx }: { sx?: SxProps<Theme> }) {
+export function SyntheticDisclosure(props: { sx?: SxProps<Theme> }) {
+  // default 租戶展示時不顯示（featureFlags.SHOW_DEMO_DISCLOSURE）；租戶站照舊。
+  if (!SHOW_DEMO_DISCLOSURE) return null;
+  return <SyntheticDisclosureBody {...props} />;
+}
+
+function SyntheticDisclosureBody({ sx }: { sx?: SxProps<Theme> }) {
   const [collapsed, setCollapsed] = useState(initialCollapsed);
   const seenRef = useMarkSeenWhenVisible();
   const d = t.common.disclosure;

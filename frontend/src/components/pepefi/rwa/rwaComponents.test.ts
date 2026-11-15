@@ -294,7 +294,7 @@ describe('Solvency 元件', () => {
     vault: ok(vaultValue),
   }
 
-  it('SolvencyView：照實標示「非足額抵押」「儲備是測試幣，不是標的資產的儲備證明」', () => {
+  it('SolvencyView：照實標示「非足額抵押」「儲備是 MockUSDC，不是標的資產的儲備證明」', () => {
     const raw = render(createElement(SolvencyView, { snapshot: snap, loading: false, history: null, historyLoading: true, chainId: 84532, source: 'public' }))
     const s = text(raw)
     expect(s).toContain(t.rwa.solvency.notPoR)

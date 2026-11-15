@@ -92,21 +92,23 @@ describe('讀取失敗與模擬旗標', () => {
 })
 
 describe('誠實聲明（issue #105：被銷毀的代幣是模擬的，必須寫在畫面上）', () => {
-  it('中文聲明明說「模擬碳權」、不對應真實減碳、款項沒有流向真實專案', () => {
-    expect(esgZh.retirement.simulatedChip).toBe('模擬碳權')
-    expect(esgZh.retirement.disclaimerTitle).toContain('模擬碳權')
-    expect(esgZh.retirement.disclaimer).toContain('模擬碳權')
+  it('中文聲明明說「平台自鑄碳權」、不是登錄機構核發、不對應真實減碳、款項沒有流向真實專案', () => {
+    expect(esgZh.retirement.simulatedChip).toBe('平台自鑄碳權')
+    expect(esgZh.retirement.disclaimerTitle).toContain('平台自鑄碳權')
+    expect(esgZh.retirement.disclaimer).toContain('本平台自行鑄造的碳權')
+    expect(esgZh.retirement.disclaimer).toContain('不是任何碳權登錄機構核發的碳權')
     expect(esgZh.retirement.disclaimer).toContain('不對應任何真實的減碳')
-    expect(esgZh.retirement.disclaimer).toContain('模擬賣方')
-    expect(esgZh.retirement.totalTonnes).toContain('模擬')
-    expect(esgZh.retirement.column.tonnes).toContain('模擬')
+    expect(esgZh.retirement.disclaimer).toContain('本平台控制的賣方地址')
+    expect(esgZh.retirement.totalTonnes).toContain('平台自鑄')
+    expect(esgZh.retirement.column.tonnes).toContain('平台自鑄')
   })
 
-  it('英文聲明同樣明說 simulated', () => {
-    expect(esgEn.retirement.simulatedChip.toLowerCase()).toContain('simulated')
-    expect(esgEn.retirement.disclaimerTitle.toLowerCase()).toContain('simulated')
-    expect(esgEn.retirement.disclaimer.toLowerCase()).toContain('simulated')
-    expect(esgEn.retirement.totalTonnes.toLowerCase()).toContain('simulated')
+  it('英文聲明同樣明說 platform-minted、不是登錄機構核發', () => {
+    expect(esgEn.retirement.simulatedChip.toLowerCase()).toContain('platform-minted')
+    expect(esgEn.retirement.disclaimerTitle.toLowerCase()).toContain('platform-minted')
+    expect(esgEn.retirement.disclaimer.toLowerCase()).toContain('minted by this platform')
+    expect(esgEn.retirement.disclaimer).toContain('not issued by any carbon-credit registry')
+    expect(esgEn.retirement.totalTonnes.toLowerCase()).toContain('platform-minted')
   })
 })
 
