@@ -84,7 +84,7 @@ export const guide: Catalog['guide'] = {
       { title: 'Check your results', text: 'Allocation and P&L are in your portfolio.', to: '/portfolio' },
     ],
     expert: [
-      { title: 'Advanced investing tools', text: 'Decide yourself whether a price will rise or fall, and set the amount invested.', to: '/terminal' },
+      { title: 'Advanced investing tools', text: 'Pick assets and set the amount invested.', to: '/terminal' },
       { title: 'AI agent allowances', text: 'Set limits and let an AI buy and sell for you.', to: '/sessions' },
       { title: 'Become a strategy sharer', text: 'Place a performance deposit, publish a strategy, earn a share.', to: '/stake' },
       { title: 'x402 paid signals', text: 'See how an AI pays for its own data.', to: '/x402' },

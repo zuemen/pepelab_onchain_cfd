@@ -131,7 +131,7 @@ export const ASSET_META: Record<string, AssetMeta> = {
     category:  'crypto',
     regulated: false,
     provenance: {
-      referenceId: 'ETH · Ethereum mainnet (proof-of-stake)',
+      referenceId: 'ETH · Ethereum mainnet',
       priceFeed:   'coingecko',
       priceSymbol: 'ethereum',
     },

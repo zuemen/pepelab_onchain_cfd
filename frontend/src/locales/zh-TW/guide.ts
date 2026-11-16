@@ -86,7 +86,7 @@ export const guide = {
       { title: '回來看成果', text: '配置、損益都在投資組合。', to: '/portfolio' },
     ],
     expert: [
-      { title: '進階投資工具', text: '自己決定看漲或看跌，設定投入金額。', to: '/terminal' },
+      { title: '進階投資工具', text: '自己挑資產、設定投入金額。', to: '/terminal' },
       { title: 'AI 代理額度', text: '設好額度，讓 AI 代你買賣。', to: '/sessions' },
       { title: '成為策略分享者', text: '繳履約押金，發布策略賺分潤。', to: '/stake' },
       { title: 'x402 付費訊號', text: '看 AI 怎麼自己付費買資料。', to: '/x402' },
