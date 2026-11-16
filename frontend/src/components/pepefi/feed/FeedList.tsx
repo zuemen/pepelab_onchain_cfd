@@ -15,6 +15,7 @@ import { fUsd } from 'src/lib/pepefi/heroData';
 import { fCompact, timeAgo } from 'src/lib/pepefi/whale';
 import { ASSET_LABEL } from 'src/lib/pepefi/assetMeta';
 import { FEATURE_COPY_TRADING } from 'src/lib/pepefi/featureFlags';
+import { SHOW_DIRECTION, spotTemplate } from 'src/lib/pepefi/legDisplay';
 import { type FeedItem, type FeedType } from 'src/lib/pepefi/feed';
 
 import { MONO } from 'src/components/pepefi/brandKit';
@@ -27,7 +28,9 @@ import TxProof from 'src/components/pepefi/hero/TxProof';
 const L = t.feed;
 
 const label = (asset: string | null) => (asset ? ASSET_LABEL[asset] ?? '?' : '?');
-const side = (isLong: boolean | null) => (isLong === null ? '' : isLong ? L.sentence.long : L.sentence.short);
+// 現貨呈現（SHOW_LEVERAGE 關）時句子裡不出現做多／做空與倍數：樣板先經 spotTemplate 拿掉 {side}／{leverage}×。
+const side = (isLong: boolean | null) => (!SHOW_DIRECTION || isLong === null ? '' : isLong ? L.sentence.long : L.sentence.short);
+const tpl = (template: string) => spotTemplate(template);
 const pct = (bps: number) => (bps / 100).toFixed(0);
 const signedUsd = (v: bigint) => `${v >= 0n ? '+' : ''}${fCompact(v)}`;
 
@@ -37,32 +40,33 @@ export function describeFeedItem(item: FeedItem, today: string): string {
   switch (item.type) {
     case 'strategy': {
       if (item.first && item.legs) {
-        const legs = item.legs.map((l) => interpolate(S.leg, { asset: label(l.asset), side: side(l.isLong), weight: pct(l.weightBps) }));
+        const legs = item.legs.map((l) => interpolate(tpl(S.leg), { asset: label(l.asset), side: side(l.isLong), weight: pct(l.weightBps) }));
         return interpolate(S.strategyFirst, { legs: legs.join(S.separator) });
       }
       if (!item.diff) return interpolate(S.strategyUnknown, { version: item.versionId + 1 });
       const d = item.diff;
       const changes = [
-        ...d.added.map((a) => interpolate(S.added, { asset: label(a.asset), side: side(a.isLong), weight: pct(a.weightBps) })),
+        ...d.added.map((a) => interpolate(tpl(S.added), { asset: label(a.asset), side: side(a.isLong), weight: pct(a.weightBps) })),
         ...d.removed.map((r) => interpolate(S.removed, { asset: label(r.asset) })),
-        ...d.flipped.map((f) => interpolate(S.flipped, { asset: label(f.asset), side: side(f.isLong) })),
+        // 「改為做多／做空」整句只描述方向，現貨呈現時不列。
+        ...(SHOW_DIRECTION ? d.flipped.map((f) => interpolate(S.flipped, { asset: label(f.asset), side: side(f.isLong) })) : []),
         ...d.reweighted.map((w) => interpolate(S.reweighted, { asset: label(w.asset), from: pct(w.fromBps), to: pct(w.toBps) })),
       ];
       if (changes.length === 0) return interpolate(S.strategySame, { version: item.versionId + 1 });
       return interpolate(S.strategyChanged, { version: item.versionId + 1, changes: changes.join(S.separator) });
     }
     case 'bigOpen':
-      return interpolate(S.bigOpen, {
+      return interpolate(tpl(S.bigOpen), {
         asset: label(item.asset), side: side(item.isLong), leverage: String(item.leverage), notional: fCompact(item.notional),
       });
     case 'bigClose':
-      return interpolate(S.bigClose, {
+      return interpolate(tpl(S.bigClose), {
         asset: label(item.asset), side: side(item.isLong), notional: fCompact(item.notional), pnl: signedUsd(item.pnl),
       });
     case 'liquidation':
       return item.notional === null
         ? interpolate(S.liquidationUnknown, { pnl: signedUsd(item.pnl) })
-        : interpolate(S.liquidation, {
+        : interpolate(tpl(S.liquidation), {
             asset: label(item.asset), side: side(item.isLong), notional: fCompact(item.notional), pnl: signedUsd(item.pnl),
           });
     case 'follow':

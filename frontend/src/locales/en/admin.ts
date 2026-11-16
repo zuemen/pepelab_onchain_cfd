@@ -325,7 +325,7 @@ export const admin: Catalog['admin'] = {
 
     kpi: {
       chain: 'Chain',
-      activeSessions: 'Active sessions',
+      activeSessions: 'Active AI agent allowances',
       staleFeeds: 'Stale feeds',
       vaultAssets: 'Vault assets (USDC)',
       vaultPrice: 'Vault px (USDC/pIV)',
@@ -338,7 +338,7 @@ export const admin: Catalog['admin'] = {
       wrongNetwork:
         'Switch to Base Sepolia (chainId 84532) to view agent sessions. Current network: {chain}.',
       notConnected: 'Not connected',
-      empty: 'No sessions yet.',
+      empty: 'No AI agent allowances yet.',
 
       column: {
         id: '#',
@@ -386,9 +386,9 @@ export const admin: Catalog['admin'] = {
       fetch: 'Fetch',
       failed: 'Failed to connect to signal-api ({error}). Run npm run signal-api first.',
       callsTotal: 'Calls / Total',
-      traderShare: 'Trader 70%',
+      traderShare: 'Strategy sharer 70%',
       platformShare: 'Platform 20%',
-      vaultShare: 'Vault 10%',
+      vaultShare: 'Risk reserve 10%',
       topBeneficiaries: 'Top beneficiaries (70% share)',
       loading: 'Loading…',
     },

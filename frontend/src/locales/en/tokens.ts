@@ -39,7 +39,7 @@ export const tokens: Catalog['tokens'] = {
     buyStopped: 'The vault reserve is below the floor. New buying is paused; redemption is unaffected.',
     /** This chain runs the original implementation, without these protections — no version number named. */
     notHardened:
-      "The vault on this network has no SafeERC20, reserve-ratio protection, or pause mechanism yet. A deployed contract's bytecode can't be changed; these protections are already live on other deployments, and when this network catches up is the operator's call.",
+      "The vault on this network has no SafeERC20, reserve-ratio protection, or pause mechanism yet. A deployed on-chain program can't be changed; these protections are already live on other deployments, and when this network catches up is the operator's call.",
     simpleNotConnected: "This chain's vault reserve isn't hooked up to automated verification yet.",
   },
 
@@ -57,18 +57,18 @@ export const tokens: Catalog['tokens'] = {
     chainRest: ['Buys carbon credits', 'Burned on the spot'],
     linked: {
       chainStart: '{share} of the buy fee',
-      body: 'A higher carbon tier means a higher buy fee and more sent to retirement. On the same 100 USDC buy, Low sends {low} USDC and High sends {high} USDC. The share is fixed in the contract, and every retirement is publicly verifiable.',
+      body: 'A higher carbon tier means a higher buy fee and more sent to retirement. On the same 100 USDC buy, Low sends {low} USDC and High sends {high} USDC. The share is fixed in the public on-chain program, and every retirement is publicly verifiable.',
       note: 'The credits are minted by the platform, not issued by any carbon-credit registry, and represent no real emission reduction.',
     },
     unlinked: {
       chainStart: '5% of platform fees',
-      body: 'The share is fixed in the contracts, nobody can redirect it, and every retirement is publicly verifiable.',
+      body: 'The share is fixed in the public on-chain program, nobody can redirect it, and every retirement is publicly verifiable.',
       note: "Retirement is currently funded by the platform's other fees; the buy fee here stays in the vault and isn't connected to retirement yet. The credits are minted by the platform, not issued by any carbon-credit registry, and represent no real emission reduction.",
     },
   },
 
   card: {
-    oraclePrice: 'Oracle Price',
+    oraclePrice: 'Current price',
     myBalance: 'My Balance',
     issuedOverCap: 'Issued / Cap',
     capClosed: '0 (closed)',
@@ -160,7 +160,7 @@ export const tokens: Catalog['tokens'] = {
 
     kycTitle: 'Why this needs KYC',
     kycReason:
-      'This asset tracks a security listed on a regulated market. KYC status is checked before a leveraged position is opened; buying and redeeming the token directly is unaffected.',
+      'This asset tracks a security listed on a regulated market, so the platform checks your KYC status first; buying and redeeming the token directly on this page is unaffected.',
     kycNotGated: 'This asset does not track a regulated security and needs no KYC.',
 
     heldDaysLabel: "You've held",
@@ -245,7 +245,7 @@ export const tokens: Catalog['tokens'] = {
     /** 見 `../zh-TW/tokens.ts`。 */
     transition: {
       title: "Issuer's transition disclosures",
-      note: "What follows restates the issuer's own published data. The platform does not score it, and it does not affect fees or leverage — those read the carbon tier above only.",
+      note: "What follows restates the issuer's own published data. The platform does not score it, and it does not affect fees — fees read the carbon tier above only.",
       readLabel: 'Read on',
       assets: {
         sICLN: {
@@ -278,7 +278,7 @@ export const tokens: Catalog['tokens'] = {
       'The AssetVault operator holds the USDC reserve; the reserve ratio is written to on-chain observation events by a keeper and minting auto-halts if it breaches the floor.',
     auditRole: 'Code audit',
     auditWho:
-      'The contracts have only had several rounds of internal team review and no third-party audit; fix records are in docs/, and every deployed address is verifiable on a block explorer.',
+      'The on-chain programs have only had several rounds of internal team review and no third-party audit; fix records are in docs/, and every deployed address is verifiable on a block explorer.',
     disclosureTitle: 'Honest disclosure',
     disclosure:
       "Currently the carbon attestations are arranged by the project team and are not yet institutional independence. Multi-party attestation and visible dispersion mitigate — but do not solve — whether the underlying data is truthful.",
@@ -293,7 +293,7 @@ export const tokens: Catalog['tokens'] = {
     introMid1Spot: '. Assets bought here arrive as ERC-20 tokens ',
     introBold2: 'right in your wallet',
     introMid2: ', where you can add it to MetaMask or send it to someone else. Trading settles in ',
-    introAfter: ', with prices from the on-chain oracle (no slippage).',
+    introAfter: ', with prices from the on-chain price source (no slippage).',
 
     vaultDryBefore:
       'Note: sells are paid from the vault\'s USDC reserve. If the reserve runs low, you\'ll see "vault dry" — an admin needs to call ',

@@ -9,7 +9,7 @@ export const rewards = {
   connectTitle: '🎁 獎勵',
 
   title: '🎁 {brand} 獎勵',
-  subtitle: '交易、跟單可賺 PEPE（平台遊戲幣）；每日簽到累積成就點數。',
+  subtitle: '投資、跟著投資可賺 PEPE（平台遊戲幣）；每日簽到累積成就點數。',
 
   /** 合約沒部署在這條鏈上時，四個領取動作共用的同一句話。 */
   offline: 'PEPE 獎勵系統尚未部署在此網路，暫時無法領取',
@@ -19,9 +19,9 @@ export const rewards = {
    * 使用者得先按一次、失敗一次，才知道為什麼按了沒反應。標題講結論，內文講
    * 這對他有什麼影響（進度照算、但沒有可做的動作），而不是只丟一個合約名。
    */
-  offlineTitle: '這個網路沒有交易挖礦、等級、跟單與簽到',
+  offlineTitle: '這個網路沒有投資獎勵、等級、跟著投資獎勵與簽到',
   offlineBody:
-    '這四項的合約不在這條鏈上，所以既領不到、也讀不到你的進度。下面顯示的 0 是「讀不到」，不是「你真的沒有累積」。切換到有這些功能的網路就能正常使用。上方的 PEPE 代幣與空投是另一組合約，不受影響。',
+    '這四項的鏈上程式不在這條鏈上，所以既領不到、也讀不到你的進度。下面顯示的 0 是「讀不到」，不是「你真的沒有累積」。切換到有這些功能的網路就能正常使用。上方的 PEPE 代幣與空投是另一組鏈上程式，不受影響。',
 
   /**
    * #153：每張卡片右上角的狀態。四塊機制原本長得一模一樣，要逐項讀完按鈕才知道
@@ -44,23 +44,23 @@ export const rewards = {
   },
 
   mining: {
-    title: '交易挖礦',
+    title: '投資獎勵',
     // 數值是 PepeIncentives 的 owner 參數，從鏈上讀（incentiveParams.ts）；讀不到時用 descriptionGeneric。
-    description: '每筆開倉可領一次。獎勵 = 名義價值 × {pct}%，封頂 {cap} PEPE。',
-    descriptionGeneric: '每筆開倉可領一次，獎勵依名義價值計算。',
-    empty: '找不到未平倉部位。',
-    position: '部位 #{id}',
-    detail: '名義價值：${notional}',
+    description: '每筆買進可領一次。獎勵 = 持有價值 × {pct}%，封頂 {cap} PEPE。',
+    descriptionGeneric: '每筆買進可領一次，獎勵依持有價值計算。',
+    empty: '找不到持有中的投資。',
+    position: '投資 #{id}',
+    detail: '持有價值：${notional}',
     estReward: '預估獎勵：{reward}',
     claimed: '已領取',
     claim: '領取',
-    done: '交易挖礦獎勵已領取！🎉',
+    done: '投資獎勵已領取！🎉',
   },
 
   tierSection: {
     title: '等級獎勵',
-    description: '目前未平倉部位的名義價值達標，即可領取一次性等級獎勵；平倉後這個數字會下降。',
-    cumulative: '目前未平倉名義價值：${amount}',
+    description: '目前持有中投資的持有價值達標，即可領取一次性等級獎勵；賣出後這個數字會下降。',
+    cumulative: '目前持有價值：${amount}',
     reward: '{amount} PEPE',
     required: '需要 ${amount}',
     claimed: '已領取',
@@ -70,14 +70,14 @@ export const rewards = {
   },
 
   copy: {
-    title: '跟單獎勵',
-    description: '跟單成功後，跟隨者與被跟單的交易者各領 {amount} PEPE（每對一次）。',
-    descriptionGeneric: '跟單成功後，跟隨者與被跟單的交易者各領一次 PEPE（每對一次）。',
-    empty: '找不到進行中的跟單。',
+    title: '跟著投資獎勵',
+    description: '開始跟著投資後，跟隨者與被跟隨的策略分享者各領 {amount} PEPE（每對一次）。',
+    descriptionGeneric: '開始跟著投資後，跟隨者與被跟隨的策略分享者各領一次 PEPE（每對一次）。',
+    empty: '找不到進行中的跟著投資。',
     claimed: '已領取',
     claim: '{amount} PEPE',
     claimGeneric: '領取',
-    done: '跟單獎勵已領取！🐸',
+    done: '跟著投資獎勵已領取！🐸',
   },
 
   checkIn: {
@@ -104,7 +104,7 @@ export const rewards = {
      * 所以不說「領」（沒有東西進錢包）,說「記入」。
      */
     points: {
-      description: '每日簽到記入 50 成就點數，連續簽到每天 +10，7 天封頂 110。點數記在合約內、不可轉讓，不是 PEPE。',
+      description: '每日簽到記入 50 成就點數，連續簽到每天 +10，7 天封頂 110。點數記在鏈上程式內、不可轉讓，不是 PEPE。',
       todayReward: '今日記入：{reward} 成就點數',
       checkIn: '🐸 簽到 +{reward} 成就點數',
       comeBack: '明天再來！明日記入：{reward} 成就點數',
@@ -116,7 +116,7 @@ export const rewards = {
      * 數字不帶單位——寫哪一個都可能不實（PR #219 複審 B1）。
      */
     unknown: {
-      description: '每日簽到，連續簽到天數越多，每次記得越多。正在向合約確認這次簽到記入的內容。',
+      description: '每日簽到，連續簽到天數越多，每次記得越多。正在向鏈上程式確認這次簽到記入的內容。',
       todayReward: '今日：+{reward}',
       checkIn: '🐸 簽到 +{reward}',
       comeBack: '明天再來！',
@@ -132,7 +132,7 @@ export const rewards = {
     subtitle: '平台遊戲幣 · 完成 KYC 可領空投',
     addToWallet: '加入錢包',
     reloadAria: '重新載入 PEPE 餘額',
-    notAvailable: '此網路無法使用 PEPE（合約尚未部署）。',
+    notAvailable: '此網路無法使用 PEPE（鏈上程式尚未部署）。',
 
     balance: '餘額',
     airdrop: '空投',

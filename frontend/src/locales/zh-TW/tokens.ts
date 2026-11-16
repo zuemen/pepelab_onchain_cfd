@@ -54,7 +54,7 @@ export const tokens = {
     buyStopped: '金庫儲備低於下限，新的買進已暫停，贖回不受影響。',
     /** 這條鏈上跑的是尚未加上這些防護的原始實作，不點名版本編號。 */
     notHardened:
-      '這條鏈上的金庫尚未包含 SafeERC20、儲備率保護與暫停機制。已部署合約的 bytecode 無法修改；這些防護已經在其他部署上線，此網路何時跟上由營運方決定。',
+      '這條鏈上的金庫尚未包含 SafeERC20、儲備率保護與暫停機制。已部署的鏈上程式無法修改；這些防護已經在其他部署上線，此網路何時跟上由營運方決定。',
     simpleNotConnected: '這條鏈的金庫儲備尚未接上自動驗證機制。',
   },
 
@@ -73,18 +73,18 @@ export const tokens = {
     chainRest: ['買入碳權', '當場銷毀'],
     linked: {
       chainStart: '買入手續費的 {share}',
-      body: '碳分級越高，買入費率越高，撥去退役的金額也越多。同樣買 100 USDC，低碳撥 {low} USDC，高碳撥 {high} USDC。比例寫死在合約裡，每一筆都查得到。',
+      body: '碳分級越高，買入費率越高，撥去退役的金額也越多。同樣買 100 USDC，低碳撥 {low} USDC，高碳撥 {high} USDC。比例寫死在公開的鏈上程式裡，每一筆都查得到。',
       note: '退役的是平台自行鑄造的碳權，不是碳權登錄機構核發的，不對應任何真實減碳。',
     },
     unlinked: {
       chainStart: '平台手續費的 5%',
-      body: '合約寫死的比例，沒有人能改去向，每一筆退役都查得到。',
+      body: '比例寫死在公開的鏈上程式裡，沒有人能改去向，每一筆退役都查得到。',
       note: '目前退役資金來自平台其他手續費，這裡的買入手續費留在金庫，還沒有接上退役。退役的是平台自行鑄造的碳權，不是碳權登錄機構核發的，不對應任何真實減碳。',
     },
   },
 
   card: {
-    oraclePrice: 'Oracle 價格',
+    oraclePrice: '目前價格',
     myBalance: '我的餘額',
     issuedOverCap: '發行量 / 上限',
     capClosed: '0（已關閉）',
@@ -185,7 +185,7 @@ export const tokens = {
     caveatLabel: '已知限制',
 
     kycTitle: '為什麼需要 KYC',
-    kycReason: '這個資產追蹤在受監管市場掛牌的證券。開立槓桿部位前會檢查 KYC 狀態；直接買進與贖回代幣不受影響。',
+    kycReason: '這個資產追蹤在受監管市場掛牌的證券，所以平台會先確認你的 KYC 狀態；在這一頁直接買進與贖回代幣不受影響。',
     kycNotGated: '這個資產不追蹤受監管證券，不需要 KYC。',
 
     heldDaysLabel: '你已持有',
@@ -265,7 +265,7 @@ export const tokens = {
      */
     transition: {
       title: '發行方的轉型揭露',
-      note: '以下轉述發行方自己公布的資料，平台不另外評分，也不影響費率或槓桿——費率與槓桿只看上面的碳分級。',
+      note: '以下轉述發行方自己公布的資料，平台不另外評分，也不影響費率——費率只看上面的碳分級。',
       readLabel: '讀取日',
       assets: {
         sICLN: {
@@ -295,7 +295,7 @@ export const tokens = {
     reserveRole: '儲備營運',
     reserveWho: 'AssetVault 營運方持有 USDC 儲備；儲備率由 keeper 定期寫成鏈上觀測事件，跌破門檻自動暫停鑄造。',
     auditRole: '程式稽核',
-    auditWho: '合約只經過團隊內部多輪審查，沒有第三方稽核；修補紀錄見 docs/，所有部署位址可在區塊瀏覽器查證。',
+    auditWho: '鏈上程式只經過團隊內部多輪審查，沒有第三方稽核；修補紀錄見 docs/，所有部署位址可在區塊瀏覽器查證。',
     disclosureTitle: '誠實聲明',
     disclosure: '目前的碳見證由專案團隊自行安排，尚非機構獨立性。多方見證與歧見可見減輕但不解決「資料本身是否屬實」。',
   },
@@ -313,7 +313,7 @@ export const tokens = {
     introMid1Spot: '。買入的資產會以 ERC-20 token 形式',
     introBold2: '出現在你的錢包中',
     introMid2: '，可加入 MetaMask 檢視、可轉帳給他人。 買賣以 ',
-    introAfter: ' 結算，價格取自鏈上預言機（無滑價）。',
+    introAfter: ' 結算，價格取自鏈上的價格來源（無滑價）。',
 
     vaultDryBefore: '提示：賣出由金庫的 USDC 儲備支付。若儲備不足會顯示「vault dry」， 需由管理者呼叫 ',
     vaultDryAfter: ' 補充。',

@@ -1,6 +1,7 @@
 import type { Mode } from 'src/contexts/mode-context'
 
 import { t } from 'src/locales'
+import { SHOW_LEVERAGE } from 'src/lib/pepefi/featureFlags'
 
 // Open Positions 在 expert 模式下是一張交易桌——entry/oracle/live/margin/
 // leverage/funding 全部攤開。simple 模式的原則跟 nav（navDataForMode）一樣：只回答「我有什麼、現在好不好」，不回答「怎麼算的」。
@@ -20,8 +21,13 @@ const EXPERT_COLUMNS: OpenPositionColumnKey[] = [
 
 const SIMPLE_COLUMNS: OpenPositionColumnKey[] = ['asset', 'side', 'value', 'unrealizedPnl']
 
-export function openPositionColumnsForMode(mode: Mode): OpenPositionColumnKey[] {
-  return mode === 'simple' ? SIMPLE_COLUMNS : EXPERT_COLUMNS
+/**
+ * `showLeverage` 為 false（現貨呈現，2026-11-15 指導者：資產一律以 RWA 代幣現貨呈現）時
+ * 收掉方向與槓桿兩欄；既有部位照樣列出、照樣能平倉，只是不顯示倍數與做多／做空。
+ */
+export function openPositionColumnsForMode(mode: Mode, showLeverage: boolean = SHOW_LEVERAGE): OpenPositionColumnKey[] {
+  const cols = mode === 'simple' ? SIMPLE_COLUMNS : EXPERT_COLUMNS
+  return showLeverage ? cols : cols.filter((k) => k !== 'side' && k !== 'leverage')
 }
 
 // issue #100 ② / #101 — Simple Mode 換掉交易桌的用字。這裡本來刻意不動用字，

@@ -8,7 +8,8 @@
 //
 // 白標：每個旗標的有效值 = 租戶授權（allowed）且 readFlag(env, 租戶預設)。環境變數可以
 // 把功能關掉，但打不開租戶未授權的功能。default 租戶五個旗標都是 allowed: true；
-// 預設開的是 gamefi（2026-10-12 恢復）、pepeRewards（GameFi 的 PEPE 來源，2026-10-20）、copyTrading（#331）與 showLeverage／showPerpetuals（#344）。
+// 預設開的是 gamefi（2026-10-12 恢復）、pepeRewards（GameFi 的 PEPE 來源，2026-10-20）與 copyTrading（#331）；
+// showLeverage／showPerpetuals 2026-11-15 改回預設關（指導者：資產一律以 RWA 代幣現貨呈現），allowed 仍是 true。
 // 規則在 src/tenant/flags.ts（vite.config.ts 也要用，不能碰 import.meta.env）。
 import { tenant } from 'src/tenant';
 import { resolveFeatureFlag } from 'src/tenant/flags';
@@ -18,9 +19,9 @@ import { readFlag } from './flagParse';
 /**
  * 下單面板要不要露出槓桿選擇器。
  *
- * default 租戶預設 **開**（#344，2026-10-16 決定）：評審上公開站看模擬交易者，其中有槓桿交易者，
- * 跟單會開槓桿部位，畫面要看得到。以前預設關，理由是一進站就看到 5× 按鈕像炒幣平台；
- * 機構租戶（demo-bank、rwa-poc）照舊關。關閉：`VITE_SHOW_LEVERAGE=0`。
+ * default 租戶預設 **關**（2026-11-15 指導者：資產一律以 RWA 代幣現貨呈現；取代 #344 的預設開）。
+ * 關閉時槓桿倍數與策略腿／部位的多空方向都不顯示（見 legDisplay.ts），發布策略一律 1× 做多、
+ * 建立 Session 的最大槓桿送 FIXED_LEVERAGE。機構租戶（demo-bank、rwa-poc）照舊關。打開：`VITE_SHOW_LEVERAGE=1`。
  */
 export const SHOW_LEVERAGE = resolveFeatureFlag(
   tenant.features.showLeverage,
@@ -33,7 +34,7 @@ export const FIXED_LEVERAGE = 1;
 /**
  * 要不要露出永續合約的**入口**。
  *
- * default 租戶預設 **開**（#344）：模擬交易者與跟單都在永續交易所上，公開站要有入口。
+ * default 租戶預設 **關**（2026-11-15 指導者：資產一律以 RWA 代幣現貨呈現；#344 曾改為預設開）。
  * 機構租戶照舊關（平台呈現的主要動作是在 /tokens 用 USDC 買賣代幣化的股債金幣）。旗標關閉時
  * 收起來的是三個入口：側邊欄的專業終端、首頁的永續功能卡、/exchange 的開倉面板。
  *
@@ -43,7 +44,7 @@ export const FIXED_LEVERAGE = 1;
  * （前端路由本來就攔不住），卻會擋到照著舊連結進來的正常使用者，而且會讓已經
  * 開著的部位無法平倉——那比多一個入口糟得多。
  *
- * 合約完全沒有改動。關閉：`VITE_SHOW_PERPETUALS=0`。
+ * 合約完全沒有改動。打開：`VITE_SHOW_PERPETUALS=1`。
  */
 export const SHOW_PERPETUALS = resolveFeatureFlag(
   tenant.features.showPerpetuals,

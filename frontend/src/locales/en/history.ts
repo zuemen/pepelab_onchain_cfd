@@ -4,7 +4,7 @@ import type { Catalog } from '../zh-TW';
  * 見 `../zh-TW/history.ts`。
  */
 export const history: Catalog['history'] = {
-  title: 'Transaction History',
+  title: 'Activity History',
   subtitle: 'Everything you did on the platform, read directly from Base Sepolia. Follow the links to check it yourself.',
   loading: 'Loading…',
   scanningLogs: 'Syncing chain logs…',
@@ -13,9 +13,9 @@ export const history: Catalog['history'] = {
   proofNote: {
     intro:
       'All activity is read directly from the Base Sepolia blockchain — no backend and no server-side database, just the immutable ledger.',
-    positionsComplete: 'Positions are complete',
+    positionsComplete: 'Investments are complete',
     positionsCompleteRest:
-      '— every one you have ever opened is read from contract storage, however long ago. Swaps, margin moves, fees and stakes exist only as event logs, which the RPC serves in a limited block window, so those build up from what this browser has already seen.',
+      '— every one you have ever bought is read from the on-chain program’s storage, however long ago. Swaps, changes to the amount invested, fees and performance deposits exist only as event logs, which the RPC serves in a limited block window, so those build up from what this browser has already seen.',
     clickToVerify: 'Click',
     clickToVerifyRest: 'to verify a row on BaseScan.',
   },
@@ -30,13 +30,13 @@ export const history: Catalog['history'] = {
     all: 'All',
     swap: 'Swap',
     asset: 'Tokenized assets',
-    vault: 'Insurance vault',
-    position: 'Positions',
-    margin: 'Margin',
+    vault: 'Risk reserve',
+    position: 'Investments',
+    margin: 'Amount invested',
     social: 'Social',
     fee: 'Fees',
-    price: 'Oracle',
-    stake: 'Stake',
+    price: 'Price source',
+    stake: 'Performance deposit',
     /** 篩選中且有結果時：Swap (12) */
     countedLabel: '{label} ({count})',
   },
@@ -55,7 +55,7 @@ export const history: Catalog['history'] = {
     user: 'User',
     details: 'Details',
     block: 'Block',
-    tx: 'Tx',
+    tx: 'On-chain record',
   },
 
   eventType: {
@@ -64,24 +64,24 @@ export const history: Catalog['history'] = {
     ammSwap: 'Swap (AMM)',
     mint: 'Mint',
     redeem: 'Redeem',
-    vaultDeposit: 'Vault deposit',
-    vaultWithdraw: 'Vault withdraw',
+    vaultDeposit: 'Risk reserve deposit',
+    vaultWithdraw: 'Risk reserve withdrawal',
     opened: 'Opened',
     closed: 'Closed',
     deposit: 'Deposit',
     withdraw: 'Withdraw',
     follow: 'Follow',
-    unfollow: 'Unfollow',
-    copyFee: 'Copy Fee',
+    unfollow: 'Stop following',
+    copyFee: 'Copy investing fee',
     priceUpdated: 'Price ↺',
-    stake: 'Stake',
-    slash: 'Slash',
+    stake: 'Performance deposit',
+    slash: 'Deduction',
   },
 
   legacySwapTooltip: 'Legacy MockSwapRouter swap (the router has been superseded by PepeAMM; kept for reference).',
   storageTooltip:
-    'Read from contract storage — permanent, but storage does not record which transaction wrote it. Once the matching transaction is found in the logs, this becomes its hash and a BaseScan link. You can also verify with getPosition() on BaseScan.',
-  storageLabel: 'contract storage',
+    'Read from the on-chain program’s storage — permanent, but storage does not record which on-chain record wrote it. Once the matching record is found in the logs, this becomes its ID and a BaseScan link. You can also check it yourself on BaseScan.',
+  storageLabel: 'on-chain program storage',
 
   loadOlder: {
     scanning: 'Scanning older blocks…',
@@ -92,7 +92,7 @@ export const history: Catalog['history'] = {
   footer: {
     eventOne: '{count} event displayed',
     eventMany: '{count} events displayed',
-    positionsFull: 'Positions read in full from contract storage',
+    positionsFull: 'Investments read in full from on-chain program storage',
     scannedBackTo: '· logs scanned back to block #{block}',
     cacheNote:
       '· Log rows are cached in this browser only; clearing site data resets them, but the chain keeps everything.',
@@ -101,13 +101,13 @@ export const history: Catalog['history'] = {
   /** 掃描不完整時的說明——缺口不該被誤讀成「沒有資料」。 */
   scanIssue: {
     failedChunkOne:
-      '{count} block-range query failed (event logs — swaps, mint/redeem, margin, vault, fees and stakes — may be incomplete)',
+      '{count} block-range query failed (event logs — swaps, mint/redeem, amounts invested, risk reserve, fees and performance deposits — may be incomplete)',
     failedChunkMany:
-      '{count} block-range queries failed (event logs — swaps, mint/redeem, margin, vault, fees and stakes — may be incomplete)',
+      '{count} block-range queries failed (event logs — swaps, mint/redeem, amounts invested, risk reserve, fees and performance deposits — may be incomplete)',
     positionIndexUnreadable:
-      'the position index could not be read — positions below may be missing',
-    missedPositionOne: '{count} position could not be read',
-    missedPositionMany: '{count} positions could not be read',
+      'the investment index could not be read — investments below may be missing',
+    missedPositionOne: '{count} investment could not be read',
+    missedPositionMany: '{count} investments could not be read',
     refreshToRetry: '{notes}. Refresh to retry.',
   },
 
@@ -123,18 +123,18 @@ export const history: Catalog['history'] = {
 
   /** 每一種事件明細的敘述。 */
   detail: {
-    marginLabel: 'Margin:',
-    pnlLabel: 'PnL:',
+    marginLabel: 'Amount invested:',
+    pnlLabel: 'Gain/loss:',
     receivedSuffix: ' | Received: {amount}',
     following: 'Following',
-    unfollowed: 'Unfollowed',
+    unfollowed: 'Stopped following',
     earned: 'Earned:',
     feeSuffix: ' (fee: {fee})',
-    staked: 'Staked',
-    slashed: 'Slashed',
+    staked: 'Performance deposit',
+    slashed: 'Deducted',
     /** 開倉明細行首的方向色塊。 */
-    sideLong: 'LONG',
-    sideShort: 'SHORT',
+    sideLong: 'Rise',
+    sideShort: 'Fall',
     mint: 'Minted {amount} {asset} for {usdc} USDC (fee {fee} USDC)',
     redeem: 'Redeemed {amount} {asset} for {usdc} USDC (fee {fee} USDC)',
     vaultDeposit: 'Deposited {usdc} USDC for {shares} shares',

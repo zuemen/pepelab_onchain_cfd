@@ -37,6 +37,7 @@ import { CHAIN_NAMES } from 'src/contracts/addresses'
 import { isPlatformDeployment } from 'src/contracts/deployment'
 import { oracleRowStale } from 'src/lib/pepefi/priceFreshness'
 import { safeRead } from 'src/lib/pepefi/safeRead'
+import { SHOW_LEVERAGE } from 'src/lib/pepefi/featureFlags'
 import { SIGNAL_API_URL } from 'src/lib/pepefi/signalApi'
 import { type SolvencyFlags, readSolvencyFlags, solvencyDisclosure } from 'src/lib/pepefi/solvencyFlags'
 
@@ -342,7 +343,7 @@ export default function AgentMonitorPage() {
                     t.admin.agent.sessions.column.user,
                     t.admin.agent.sessions.column.agent,
                     t.admin.agent.sessions.column.budgetUse,
-                    t.admin.agent.sessions.column.maxLeverage,
+                    ...(SHOW_LEVERAGE ? [t.admin.agent.sessions.column.maxLeverage] : []),
                     t.admin.agent.sessions.column.expiry,
                     t.admin.agent.sessions.column.status,
                   ].map(h => (
@@ -372,7 +373,7 @@ export default function AgentMonitorPage() {
                           </Typography>
                         </Box>
                       </TableCell>
-                      <TableCell sx={{ fontFamily: MONO }}>{Number(s.maxLeverage)}x</TableCell>
+                      {SHOW_LEVERAGE && <TableCell sx={{ fontFamily: MONO }}>{Number(s.maxLeverage)}x</TableCell>}
                       <TableCell sx={{ fontSize: '0.75rem' }}>{fDate(s.expiry)}</TableCell>
                       <TableCell><Chip size="small" label={st.label} color={st.color} variant="outlined" /></TableCell>
                     </TableRow>

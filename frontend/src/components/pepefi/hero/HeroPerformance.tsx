@@ -8,6 +8,7 @@ import { useTheme } from '@mui/material/styles';
 import { Bar, Cell, Line, XAxis, YAxis, Tooltip, BarChart, LineChart, CartesianGrid, ResponsiveContainer } from 'recharts';
 
 import { t, interpolate } from 'src/locales';
+import { SHOW_DIRECTION } from 'src/lib/pepefi/legDisplay';
 import StatCard from 'src/components/pepefi/StatCard';
 import { MONO } from 'src/components/pepefi/brandKit';
 import { fUsd, fRatio, fDrawdown, fSignedPct, type HeroDetail } from 'src/lib/pepefi/heroData';
@@ -122,18 +123,21 @@ export default function HeroPerformance({ hero }: { hero: HeroDetail }) {
               <Box key={leg.asset}>
                 <Stack direction="row" alignItems="center" spacing={1}>
                   <Typography variant="body2" sx={{ fontWeight: 600, minWidth: 64 }}>{leg.asset}</Typography>
-                  <Chip
-                    size="small"
-                    variant="outlined"
-                    color={leg.isLong ? 'success' : 'error'}
-                    label={`${leg.isLong ? L.long : L.short} ${leg.leverage}×`}
-                    sx={{ height: 20, fontSize: '0.6875rem' }}
-                  />
+                  {/* 現貨呈現（SHOW_LEVERAGE 關）時不顯示方向與倍數 */}
+                  {SHOW_DIRECTION && (
+                    <Chip
+                      size="small"
+                      variant="outlined"
+                      color={leg.isLong ? 'success' : 'error'}
+                      label={`${leg.isLong ? L.long : L.short} ${leg.leverage}×`}
+                      sx={{ height: 20, fontSize: '0.6875rem' }}
+                    />
+                  )}
                   <Box sx={{ flex: 1 }} />
                   <Typography variant="body2" sx={{ fontFamily: MONO }}>{leg.weightPct.toFixed(0)}%</Typography>
                 </Stack>
                 <Box sx={{ mt: 0.5, height: 4, borderRadius: 2, bgcolor: 'action.hover', overflow: 'hidden' }}>
-                  <Box sx={{ width: `${leg.weightPct}%`, height: '100%', bgcolor: leg.isLong ? up : down }} />
+                  <Box sx={{ width: `${leg.weightPct}%`, height: '100%', bgcolor: leg.isLong || !SHOW_DIRECTION ? up : down }} />
                 </Box>
               </Box>
             ))}

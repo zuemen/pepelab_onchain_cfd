@@ -5,11 +5,15 @@ import Tooltip from '@mui/material/Tooltip';
 import { t, interpolate } from 'src/locales';
 import { ASSET_LABEL } from 'src/lib/pepefi/assetMeta';
 import AssetIcon from 'src/components/pepefi/AssetIcon';
+import { SHOW_DIRECTION, spotTemplate } from 'src/lib/pepefi/legDisplay';
 import type { RawAlloc } from 'src/lib/pepefi/leaderboardMetrics';
 
-/** 單一配置籌碼的標籤文字:↑BTC 50% 3×。表格 chip 與領獎台卡片共用同一個格式。 */
+/**
+ * 單一配置籌碼的標籤文字:↑BTC 50% 3×。表格 chip 與領獎台卡片共用同一個格式。
+ * 現貨呈現（SHOW_LEVERAGE 關）時只剩 BTC 50%（見 legDisplay.spotTemplate）。
+ */
 export const allocLabel = (a: RawAlloc): string =>
-  interpolate(t.marketplace.card.allocChip, {
+  interpolate(spotTemplate(t.marketplace.card.allocChip), {
     side: a.isLong ? '↑' : '↓',
     asset: ASSET_LABEL[a.asset] ?? '?',
     weight: (Number(a.weight) / 100).toFixed(0),
@@ -56,7 +60,8 @@ export default function AllocationRow({ allocs, hasStrategy, size = 22 }: Props)
               lineHeight: 0,
               borderRadius: '50%',
               border: '2px solid',
-              borderColor: a.isLong ? 'success.main' : 'error.main',
+              // 方向不顯示時一律用中性的綠邊，不用紅綠暗示多空。
+              borderColor: a.isLong || !SHOW_DIRECTION ? 'success.main' : 'error.main',
             }}
           >
             <AssetIcon symbol={ASSET_LABEL[a.asset] ?? '?'} size={size} />

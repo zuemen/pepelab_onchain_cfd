@@ -138,6 +138,8 @@ describe('ResyncConfirmDialog', () => {
   });
   const props = {
     open: true, onClose: noop, loading: false, error: null, version: 2n, preview, currentMaxLeverage: 2, busy: false, onConfirm: noop,
+    // 下面幾條驗的是槓桿顯示打開時的內容；預設跟著 SHOW_LEVERAGE（default 租戶 2026-11-15 起預設關）。
+    showLeverage: true,
   };
 
   it('shows every leg of the new version with the leverage that will be used, before anything is sent', () => {
@@ -161,6 +163,18 @@ describe('ResyncConfirmDialog', () => {
     expect(out).toContain(C.perfFee);
     expect(out).toContain(interpolate(C.approx, { amount: '10.00', token: 'USDC' }));
     expect(out).toContain(C.tradingFee);
+  });
+
+  it('現貨呈現（showLeverage=false）不顯示方向、倍數與槓桿提醒，權重照列', () => {
+    // 2026-11-15 指導者：資產一律以 RWA 代幣現貨呈現
+    const out = html(createElement(ResyncConfirmContent, { ...props, showLeverage: false }));
+    expect(out).toContain('60.00%');
+    expect(out).not.toContain('5× → <b>2×</b>');
+    expect(out).not.toContain(C.colSide);
+    expect(out).not.toContain(C.colLeverage);
+    expect(out).not.toContain(C.noCap);
+    expect(out).not.toContain(interpolate(C.leverageRaised, { to: 4, from: 2 }));
+    expect(out).toContain(C.closeAll);
   });
 
   it('cannot be confirmed while loading or after a failed read', () => {

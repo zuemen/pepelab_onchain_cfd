@@ -14,9 +14,9 @@ export const portfolio = {
      */
     titleTooltip: '各項依目前價格估算後加總，不是現在就能全部領出的金額。各項的流動性與風險不同，滑到下方各欄的標題可以看說明。',
     liquid: '可立即動用',
-    liquidTooltip: '錢包的 USDC ＋ 交易帳戶的可用保證金：不必平倉、解除質押或贖回就能動用。不含部位鎖住的保證金、質押、LP 保險金庫與代幣化資產。',
+    liquidTooltip: '錢包的 USDC ＋ 投資帳戶的可提領餘額：不必賣出、領回押金或贖回就能動用。不含已投入的金額、履約押金、風險準備金存款與代幣化資產。',
     unrealisedPnl: '未實現損益',
-    unrealisedPnlTooltip: '未平倉部位現在平倉的淨損益：依合約標記價計算，已扣手續費與資金費，與交易終端機的持倉表同一個算法。不含部分部位獲利時另收的 10% 績效費；資金費以最後一次結算為準；不含穿倉補貼。有部位讀不到數字時，這裡顯示「—」並標成總額不完整',
+    unrealisedPnlTooltip: '你目前的投資如果現在賣出的淨損益：依鏈上結算價計算，已扣手續費與資金費，與進階投資工具的持有表同一個算法。不含部分投資獲利時另收的 10% 績效費；資金費以最後一次結算為準；不含風險準備金的補貼。有投資讀不到數字時，這裡顯示「—」並標成總額不完整',
 
     /**
      * 單複數寫成兩條完整的句子。catalog 沒有複數引擎，而把 'balance' / 'balances'
@@ -29,29 +29,29 @@ export const portfolio = {
     part: {
       spot: '代幣化資產',
       wallet: '錢包',
-      trading: '交易帳戶',
-      staked: '已質押',
-      lpVault: '保險金庫存款',
+      trading: '投資帳戶',
+      staked: '履約押金',
+      lpVault: '風險準備金存款',
     },
 
     /** 每一欄的流動性與風險說明，滑過欄位標題時出現。 */
     risk: {
-      spot: '依預言機價格估算，不是市場成交價；標的休市時價格可能停在最後一筆。贖回時以當下預言機價格換回 USDC，而且資產金庫要有足夠的 USDC 準備才贖得到。這些是合成代幣，不能換成真正的股票或商品。',
+      spot: '依價格來源估算，不是市場成交價；標的休市時價格可能停在最後一筆。贖回時以當下價格換回 USDC，而且資產金庫要有足夠的 USDC 準備才贖得到。這些代幣只追蹤標的價格，不能換成真正的股票或商品。',
       wallet: '你的 Web3 錢包裡的 USDC，隨時可以動用。價值取決於穩定幣能否維持 1 美元。',
-      trading: '可用保證金隨時可以提領；部位鎖住的保證金要平倉才拿得回來。槓桿部位虧損到維持保證金時會被強制平倉。這一欄不含未實現 PnL，PnL 另外列在淨資產旁邊。',
-      staked: '質押在 TraderStake 的 USDC。申請解除質押後要等 1 天才能領回。跟你下單的跟隨者虧損 30% 以上退出時，你的質押會被罰沒該筆虧損的一半，最多罰到質押的 50%。',
+      trading: '可提領餘額隨時可以領回；已投入的金額要賣出後才拿得回來。虧損達到一定程度時，這筆投資會被自動結清。這一欄不含未實現損益，損益另外列在淨資產旁邊。',
+      staked: '你存入的履約押金（USDC）。申請領回後要等 1 天才能拿到。跟著你投資的跟隨者虧損 30% 以上退出時，會從你的押金扣罰該筆虧損的一半，最多扣到押金的 50%。',
       /** 跟單旗標關閉的租戶用這一句：不提跟單，只講罰沒上限。 */
-      stakedNoCopy: '質押在 TraderStake 的 USDC。申請解除質押後要等 1 天才能領回。合約的罰沒規則觸發時會被扣除，單次最多扣質押的 50%。',
-      lpVault: 'LP 保險金庫在交易者穿倉時負責補貼，補貼會讓份額價值下降。這裡顯示的是依目前份額價格估算可贖回的 USDC，金庫準備不足時無法全額贖回。',
+      stakedNoCopy: '你存入的履約押金（USDC）。申請領回後要等 1 天才能拿到。公開的扣罰規則觸發時會被扣除，單次最多扣押金的 50%。',
+      lpVault: '投資人的虧損超過投入金額時，由風險準備金補上，補貼會讓份額價值下降。這裡顯示的是依目前份額價格估算可領回的 USDC，準備金不足時無法全額領回。',
     },
 
     /** 某一項讀不到時的說明（Unread Balance，見 CONTEXT.md）。 */
     unread: {
       spot: '部分代幣化資產的餘額或價格無法讀取',
       wallet: '錢包餘額無法讀取',
-      trading: '交易帳戶無法讀取',
-      staked: '質押金額無法讀取',
-      lpVault: 'LP 保險金庫無法讀取',
+      trading: '投資帳戶無法讀取',
+      staked: '履約押金無法讀取',
+      lpVault: '風險準備金無法讀取',
     },
   },
 
@@ -62,16 +62,16 @@ export const portfolio = {
    */
   allocation: {
     title: '我的資產配置',
-    subtitle: '持有的代幣化資產市值 ＋ 未平倉部位保證金；不含錢包現金、質押與 LP 金庫——不是淨資產的配置。',
+    subtitle: '持有的代幣化資產市值 ＋ 投資帳戶裡的投入金額；不含錢包現金、履約押金與風險準備金——不是淨資產的配置。',
     /**
      * SHOW_PERPETUALS 關閉時的版本。仍然要提到部位保證金——帳戶裡可能還有旗標
      * 打開前開的舊部位，說「只算持倉」就是錯的；但把它寫成附帶條件，而不是與
      * 持倉並列的主角。
      */
-    subtitleSpot: '持有的代幣化資產市值（帳戶若仍有交易部位，其保證金一併計入）；不含錢包現金、質押與 LP 金庫——不是淨資產的配置。',
+    subtitleSpot: '持有的代幣化資產市值（投資帳戶若仍有投資，投入金額一併計入）；不含錢包現金、履約押金與風險準備金——不是淨資產的配置。',
     noPositions: '尚無持倉',
     /** 只有現貨持倉、沒有任何部位時的說明——那一欄的損益是「—」而不是 $0。 */
-    holdingsOnlyNote: '損益欄只涵蓋交易部位；現貨持倉沒有鏈上成本基礎可算。',
+    holdingsOnlyNote: '損益欄只涵蓋投資帳戶裡的投資；直接持有的代幣化資產沒有鏈上成本可算。',
 
     /**
      * 對照指數（Benchmark，見 CONTEXT.md）——刻意不叫「指數」，避免跟永續
@@ -108,7 +108,7 @@ export const portfolio = {
      */
     comparison: {
       heading: '你 vs 大盤',
-      since: '自 {date}（你最早持倉的開倉日）起 · {days} 天',
+      since: '自 {date}（你最早一筆投資的買進日）起 · {days} 天',
       /** 分母只算真的拿到報酬率的指數,見 beatCountOf。 */
       beatSummary: '在 {total} 個對照指數中領先 {beat} 個',
       beatSummaryNone: '尚無可比較的指數資料',
@@ -121,20 +121,20 @@ export const portfolio = {
        */
       aheadBy: '領先 {pp} 百分點',
       behindBy: '落後 {pp} 百分點',
-      youLabel: '你（去槓桿）',
+      youLabel: '你（依名目金額）',
       youHint:
-        '未實現損益 ÷ 名目——已去除槓桿倍數，才能跟未槓桿的指數公平比較。上方配置環的分母是保證金，這裡不同，是刻意的。',
+        '未實現損益 ÷ 名目金額——用投資的完整金額當基準，才能跟指數公平比較。上方配置環的分母是投入金額，這裡不同，是刻意的。',
       noPositions: '尚無持倉',
     },
   },
 
   quickAction: {
-    trade: '交易',
-    copyTrader: '跟單交易者',
+    trade: '投資',
+    copyTrader: '跟著投資',
     /** 跟單旗標關閉時同一顆按鈕的說法（仍連到 /marketplace 的配置市集）。 */
     marketplace: '瀏覽配置市集',
     history: '歷史記錄',
-    proTerminal: '專業交易終端',
+    proTerminal: '進階投資工具',
   },
 
   /**
@@ -144,14 +144,14 @@ export const portfolio = {
   column: {
     asset: '標的',
     carbonTier: '碳分級',
-    side: '方向',
-    entry: '進場價',
-    oracle: '預言機',
+    side: '看法',
+    entry: '買進價',
+    oracle: '鏈上價格',
     liveMarket: '即時市價',
-    margin: '保證金',
-    leverage: '槓桿',
-    copiedFrom: '跟單來源',
-    unrealizedPnl: '未實現 PnL',
+    margin: '投入金額',
+    leverage: '放大比例',
+    copiedFrom: '跟隨的策略分享者',
+    unrealizedPnl: '未實現損益',
     accruedFunding: '累計資金費',
     value: '價值',
   },
@@ -169,28 +169,28 @@ export const portfolio = {
 
   /** 欄位的 tooltip。只有會被誤讀的欄位需要——兩個價格擺在一起且幾乎不相等。 */
   columnHint: {
-    entry: '你的開倉價格',
-    oracle: '合約結算依據的鏈上價格——未實現 PnL 以這個價格（加上 OI 溢價後的標記價）計算',
-    liveMarket: '鏈下報價來源，變動會早於預言機，因此出現落差是正常現象',
-    unrealizedPnl: '現在平倉會比投入的保證金多拿或少拿多少：依合約標記價計算，已扣平倉手續費、借貸費與應付資金費（合約 getPositionValue − 保證金）。不含部分部位獲利時另收的 10% 績效費；資金費以最後一次結算為準；不含穿倉補貼',
+    entry: '你的買進價格',
+    oracle: '鏈上程式結算依據的價格——未實現損益以這個價格（加上市場熱度溢價後的結算價）計算',
+    liveMarket: '鏈下報價來源，變動會早於鏈上價格，因此出現落差是正常現象',
+    unrealizedPnl: '現在賣出會比投入金額多拿或少拿多少：依鏈上結算價計算，已扣賣出手續費、借貸費與應付資金費。不含部分投資獲利時另收的 10% 績效費；資金費以最後一次結算為準；不含風險準備金的補貼',
   },
 
   /** 部位頁籤的平倉按鈕（見 lib/pepefi/closeGuard.ts）。 */
   close: {
     column: '操作',
-    button: '平倉',
-    closing: '平倉中…',
-    closed: '已平倉',
-    halted: '{asset} 市場目前暫停（Halted），暫時無法平倉。',
-    copyManaged: '此部位屬於進行中的跟單，請在上方「跟單部位」取消跟單以一併平倉。',
+    button: '賣出',
+    closing: '賣出中…',
+    closed: '已賣出',
+    halted: '{asset} 市場目前暫停，暫時無法賣出。',
+    copyManaged: '這筆投資屬於你正在跟隨的策略，請在上方「跟著投資」按「停止跟隨」，會一併賣出。',
     /** 平倉欄的短標籤；完整說明（copyManaged）放在滑鼠移上去的提示。 */
-    copyManagedShort: '跟單中',
-    leftover: '此為先前跟單留下的部位，可直接平倉。',
+    copyManagedShort: '跟隨中',
+    leftover: '這筆是先前跟隨策略分享者時留下的投資，可直接賣出。',
   },
 
   page: {
     /** 審查 L5：getPosition 讀不到的部位不會出現在表格裡，要明講。 */
-    positionsUnread: '有 {count} 個部位這次讀取失敗，下表與合計不完整。重新整理後再看。',
+    positionsUnread: '有 {count} 筆投資這次讀取失敗，下表與合計不完整。重新整理後再看。',
     title: '我的投資組合',
     refresh: '重新整理',
 
@@ -200,8 +200,8 @@ export const portfolio = {
      * 槓桿持倉的固定講法，不用「合約」。
      */
     tab: {
-      spot:      '現貨',
-      positions: '部位',
+      spot:      '持有資產',
+      positions: '投資帳戶',
     },
     connectWallet: '連接錢包以查看你的投資組合。',
 
@@ -215,63 +215,63 @@ export const portfolio = {
 
     demoTitle: '訪客模式 — 無即時鏈上資料',
     demoDescription:
-      '你目前在訪客模式，沒有連接錢包，因此無法讀取真實餘額或部位。請連接真實錢包以查看你的實際投資組合。',
+      '你目前在訪客模式，沒有連接錢包，因此無法讀取真實餘額或投資。請連接真實錢包以查看你的實際投資組合。',
 
     emptyTitle: '你的投資組合是空的',
-    emptyDescription: '先領取 {token}，再到「資產」頁買進黃金、股票等代幣化資產；想跟單，到「交易市集」挑交易者。',
+    emptyDescription: '先領取 {token}，再到「資產」頁買進黃金、股票等代幣化資產；想跟著投資，到「策略市集」挑一位策略分享者。',
     /** 跟單旗標關閉時。 */
     emptyDescriptionNoCopy: '先取得 {token}，接著到「資產」頁買進代幣化資產，或到配置市集參考他人發布的配置。',
     emptyCta: '取得 {token}',
 
     side: {
-      long: '做多 ↑',
-      short: '做空 ↓',
+      long: '看漲 ↑',
+      short: '看跌 ↓',
     },
 
-    activeCopies: '進行中的跟單',
-    traderFollowedOne: '已跟隨的交易者',
-    traderFollowedMany: '已跟隨的交易者',
-    totalCopyPnl: '跟單總損益',
-    noCopyPositions: '無跟單部位',
+    activeCopies: '正在跟隨',
+    traderFollowedOne: '已跟隨的策略分享者',
+    traderFollowedMany: '已跟隨的策略分享者',
+    totalCopyPnl: '跟著投資總損益',
+    noCopyPositions: '沒有跟著投資的持有',
 
-    copyPositions: '跟單部位',
+    copyPositions: '跟著投資',
     copyOutdated: '策略已更新',
-    copyOutdatedHint: '交易者發布了新版策略。你的跟單仍是舊版，不會自動調整。',
+    copyOutdatedHint: '策略分享者發布了新版策略。你跟隨的仍是舊版，不會自動調整。',
     copyRefresh: '更新到最新版',
     copyRefreshing: '更新中…',
-    copyRefreshStep: '取消舊的跟單、把取回的 {amount} USDC 提回錢包，接著到跟單頁用同樣金額跟最新版。',
+    copyRefreshStep: '停止跟隨舊版、把取回的 {amount} USDC 提回錢包，接著到跟著投資頁用同樣金額跟隨最新版。',
     stopLossNone: '不提醒',
     stopLossOption: '虧 {pct}%',
     stopLossReached: '已達停損',
-    stopLossHint: '停損提醒只存在這個瀏覽器，不會自動平倉；到了請自己按「取消跟單」。',
-    notCopyingAnyone: '你尚未跟單任何人。',
-    browseTraders: '瀏覽交易者 →',
+    stopLossHint: '停損提醒只存在這個瀏覽器，不會自動賣出；到了請自己按「停止跟隨」。',
+    notCopyingAnyone: '你還沒有跟隨任何策略分享者。',
+    browseTraders: '瀏覽策略分享者 →',
     copyColumn: {
-      trader: '交易者',
-      copiedAt: '跟單時間',
+      trader: '策略分享者',
+      copiedAt: '開始跟隨時間',
       initial: '初始金額',
       current: '目前金額',
       return: '報酬率',
       stopLoss: '停損提醒',
       actions: '操作',
     },
-    unfollow: '取消跟單',
+    unfollow: '停止跟隨',
     unfollowStale: '價格過期',
-    unfollowedOk: '已取消跟單並平倉所有部位 ✓',
+    unfollowedOk: '已停止跟隨並賣出所有相關投資 ✓',
 
-    openPositions: '未平倉部位',
-    openCount: '{count} 筆未平倉 · 手動 + 跟單',
-    openCountNoCopy: '{count} 筆未平倉',
-    noOpenPositions: '無未平倉部位。',
+    openPositions: '目前的投資',
+    openCount: '{count} 筆投資 · 自己買進 + 跟隨策略分享者',
+    openCountNoCopy: '{count} 筆投資',
+    noOpenPositions: '目前沒有投資。',
     /** 未平倉部位上方總計卡片的標題，label 是欄位名稱（價值、未實現 PnL…）。 */
     totalOf: '{label}總計',
 
     // issue #101：Simple Mode 的說法。這些部位是既有的（可能在 Expert 開的），
     // Simple Mode 仍要能看到、平掉它們，只是不用交易桌的字。
-    openPositionsSimple: '我的部位',
-    openCountSimple: '{count} 個部位',
+    openPositionsSimple: '我的投資',
+    openCountSimple: '{count} 筆投資',
 
-    freeMargin: '可用保證金',
+    freeMargin: '可提領餘額',
     /** issue #100 ②：Simple Mode 不出現「保證金」。這是可以提領回錢包的餘額。 */
     freeMarginSimple: '可提領餘額',
     amountPlaceholder: '金額',
@@ -279,7 +279,7 @@ export const portfolio = {
     withdrawnOk: '已提領 {amount} {token} ✓',
     enterValidAmount: '請輸入有效金額',
 
-    copyPerformance: '跟單績效',
+    copyPerformance: '跟著投資績效',
     chart: {
       deposited: '已存入',
       now: '目前',
@@ -294,12 +294,12 @@ export const portfolio = {
    * 收不到 webhook，部位停在舊版時只能靠這裡知道。與下面的 autoSync 一樣刻意不寫「跟單」與槓桿。
    */
   syncNotice: {
-    behind: '交易者發布了新版策略：你有 {count} 筆還停在舊版。',
+    behind: '策略分享者發布了新版策略：你有 {count} 筆還停在舊版。',
     needsYou: '其中 {count} 筆要你處理（{reasons}），不會自己更新。',
     waitingOnly: '自動同步開著，冷卻結束、有執行者送出後就會更新。',
     reasonSeparator: '、',
     reasons: {
-      feeAboveCap: '交易所調高了執行費，要重新同意',
+      feeAboveCap: '平台調高了執行費，要重新同意',
       needsGas: '自動同步油箱不足',
       manual: '沒有開啟自動同步',
       snapshot: '要更新到最新版',
@@ -320,26 +320,26 @@ export const portfolio = {
     on: '自動同步：開',
     off: '自動同步：關',
     syncCount: '已同步 {count} 次',
-    followerClosed: '你自己平過其中一檔：之後的結果不再計入交易者的罰沒評分。',
+    followerClosed: '你自己賣出過其中一檔：之後的結果不再計入策略分享者的扣罰評分。',
     status: {
       upToDate: '已是最新版',
       /** Simple 模式、自動同步關著：開啟的入口只在專家模式（與跟單頁的說法一致）。 */
       upToDateSimpleOff: '已是最新版。要開啟自動同步，請切換到專家模式',
       /**
-       * 已是最新版、開著自動同步，但交易所的執行費已高於你同意的費率：現在沒有東西要同步，交易者下次發版時
+       * 已是最新版、開著自動同步，但平台的執行費已高於你同意的費率：現在沒有東西要同步，策略分享者下次發版時
        * 別人卻不能代為同步（合約 ExecutionFeeAboveCap）。提早說，不要等到落後才發現。
        */
-      consentStale: '已是最新版。但交易所調高了執行費，超過你同意的費率：交易者下次發版時，別人不能代為同步。按「設定」看過新費率後重新儲存即可恢復',
-      consentStaleSimple: '已是最新版。但交易所調高了執行費，超過你同意的費率：交易者下次發版時，別人不能代為同步。切換到專家模式看過新費率後重新同意即可恢復',
+      consentStale: '已是最新版。但平台調高了執行費，超過你同意的費率：策略分享者下次發版時，別人不能代為同步。按「設定」看過新費率後重新儲存即可恢復',
+      consentStaleSimple: '已是最新版。但平台調高了執行費，超過你同意的費率：策略分享者下次發版時，別人不能代為同步。切換到專家模式看過新費率後重新同意即可恢復',
       manual: '有新版：按「立即同步」更新，或開啟自動同步',
       /**
        * Simple 模式不提供「立即同步」與自動同步設定：同步會依新版開新部位（含槓桿），是交易桌的入口，
        * 不是退出；要先在專家模式檢視新版內容。取消與關閉自動同步仍在。
        */
       manualSimple: '有新版：切換到專家模式檢視新版內容後再同步',
-      feeAboveCap: '交易所調高了執行費，超過你開啟自動同步時同意的費率：別人暫時不能代為同步。按「設定」重新儲存即同意新費率，或按「立即同步」自己同步',
+      feeAboveCap: '平台調高了執行費，超過你開啟自動同步時同意的費率：別人暫時不能代為同步。按「設定」重新儲存即同意新費率，或按「立即同步」自己同步',
       /** 同上，Simple 模式：「設定」與「立即同步」只在專家模式，不能叫人去按看不到的按鈕。 */
-      feeAboveCapSimple: '交易所調高了執行費，超過你開啟自動同步時同意的費率：別人暫時不能代為同步。切換到專家模式可以看過新費率後重新同意，或自己同步',
+      feeAboveCapSimple: '平台調高了執行費，超過你開啟自動同步時同意的費率：別人暫時不能代為同步。切換到專家模式可以看過新費率後重新同意，或自己同步',
       /** 冷卻結束不會自動同步，要等執行者送出：不能讓人以為時間一到就會更新。 */
       cooldown: '冷卻中，{time} 之後執行者才能代為同步，實際時間可能更晚。要馬上更新可按「立即同步」',
       cooldownSimple: '冷卻中，{time} 之後執行者才能代為同步，實際時間可能更晚。要馬上更新，請切換到專家模式',
@@ -350,13 +350,13 @@ export const portfolio = {
       waitingExecutorSimple: '等你指定的執行者送出同步。要馬上更新，請切換到專家模式',
       unknown: '讀不到同步狀態',
     },
-    outdatedHint: '交易者發布了新版策略。按「立即同步」先檢視新版內容，確認後就地換成最新版（不必取消再重來），或開啟自動同步。',
-    outdatedHintSimple: '交易者發布了新版策略。切換到專家模式可以檢視新版內容後同步。',
+    outdatedHint: '策略分享者發布了新版策略。按「立即同步」先檢視新版內容，確認後就地換成最新版（不必停止再重來），或開啟自動同步。',
+    outdatedHintSimple: '策略分享者發布了新版策略。切換到專家模式可以檢視新版內容後同步。',
     /** 指定執行者（合約 setSyncExecutor）。 */
     executorChip: '限定執行者 {addr}',
-    executorTip: '只有這個地址（與你本人）能代為同步，其他人會被合約拒絕。要改或解除，到「設定」。',
+    executorTip: '只有這個地址（與你本人）能代為同步，其他人會被鏈上程式拒絕。要改或解除，到「設定」。',
     /** 同上，Simple 模式沒有「設定」鈕。 */
-    executorTipSimple: '只有這個地址（與你本人）能代為同步，其他人會被合約拒絕。要改或解除，請切換到專家模式，按「設定」。',
+    executorTipSimple: '只有這個地址（與你本人）能代為同步，其他人會被鏈上程式拒絕。要改或解除，請切換到專家模式，按「設定」。',
     executorSaved: '已更新指定執行者 ✓',
     executorFailed: '自動同步設定已儲存，但指定執行者沒有送成功，請再試一次。',
     /** 「立即同步」的確認視窗：送出前先看新版的內容與費用（resyncAtVersion 釘住這裡顯示的那一版）。 */
@@ -365,27 +365,27 @@ export const portfolio = {
       loading: '讀取新版內容…',
       loadFailed: '讀不到新版內容，請稍後再試。',
       intro:
-        '送出前請先看清楚新版的內容。這筆交易釘住第 {version} 版：交易者在你送出前又發一版，交易會整筆退回，不會換成你沒看過的那一版。',
+        '送出前請先看清楚新版的內容。這次送出會釘住第 {version} 版：策略分享者在你送出前又發一版，會整筆退回，不會換成你沒看過的那一版。',
       colAsset: '資產',
-      colSide: '方向',
+      colSide: '看法',
       colWeight: '比重',
-      colLeverage: '槓桿（新版 → 實際）',
-      long: '做多',
-      short: '做空',
-      capped: '已被上限夾住',
+      colLeverage: '放大比例（新版 → 實際）',
+      long: '看漲',
+      short: '看跌',
+      capped: '已被上限限制',
       noCap:
-        '這一列沒有設定槓桿上限：會照新版的槓桿開倉（只受交易所的資產上限約束）。想設上限，先到「設定」儲存一次（可以不開啟自動同步）。',
-      leverageRaised: '這次會用到的最高槓桿（{to}×）高於目前部位的最高槓桿（{from}×）。',
+        '這一列沒有設定放大比例上限：會照新版的比例買進（只受平台的資產上限約束）。想設上限，先到「設定」儲存一次（可以不開啟自動同步）。',
+      leverageRaised: '這次會用到的最高放大比例（{to}×）高於目前投資的最高比例（{from}×）。',
       closeAll:
-        '同步會先平掉這一列的全部部位，再用平倉釋出的保證金依新版開倉；任何一檔開不起來（未通過 KYC、休市、未平倉量上限）整筆取消、部位維持原狀。',
+        '同步會先賣出這一列的全部投資，再用賣出取回的投入金額依新版買進；任何一檔買不進（未通過 KYC、休市、平台總量上限）整筆取消、投資維持原狀。',
       execFee: '執行費（從油箱扣）',
-      topUp: '油箱不夠，這筆交易會附上 {eth} ETH 存進油箱',
-      released: '預計釋出的保證金',
-      perfFee: '獲利部位的績效費（10%，給交易者）',
-      tradingFee: '依新版開倉的交易費',
+      topUp: '油箱不夠，這次會附上 {eth} ETH 存進油箱',
+      released: '預計取回的投入金額',
+      perfFee: '獲利投資的績效費（10%，給策略分享者）',
+      tradingFee: '依新版買進的手續費',
       approx: '約 {amount} {token}',
       unknown: '—',
-      estimateNote: '金額依目前價格估算，實際以上鏈結果為準。平倉的交易費、借款費與資金費已算在目前價值裡。',
+      estimateNote: '金額依目前價格估算，實際以上鏈結果為準。賣出的手續費、借款費與資金費已算在目前價值裡。',
       cancel: '取消',
       cta: '確認同步',
     },
@@ -402,29 +402,29 @@ export const portfolio = {
       title: '自動同步油箱',
       balance: '{eth} ETH',
       estimate: '約可代為同步 {count} 次',
-      /** 交易所的執行費高於跟隨者同意的費率：油箱再多，別人也不能代為同步（合約 ExecutionFeeAboveCap）。 */
+      /** 平台的執行費高於跟隨者同意的費率：油箱再多，別人也不能代為同步（合約 ExecutionFeeAboveCap）。 */
       consentBlocked: '重新同意新的執行費之前，別人不能代為同步',
       deposit: '存入',
       withdraw: '提領',
       deposited: '已存入 {eth} ETH ✓',
       withdrawn: '已提領 {eth} ETH ✓',
-      note: '油箱裡的 ETH 只用來付同步的執行費與小費，記在合約裡你自己的名下，只有你能提領。',
+      note: '油箱裡的 ETH 只用來付同步的執行費與小費，記在鏈上程式裡你自己的名下，只有你能提領。',
     },
     dialog: {
       settingsTitle: '自動同步設定',
       enabled: '開啟自動同步',
       /**
-       * 開關打開時，儲存＝以交易所現行的每檔執行費簽名同意（setAutoSync 的 maxExecFeePerLeg）。
+       * 開關打開時，儲存＝以平台現行的每檔執行費簽名同意（setAutoSync 的 maxExecFeePerLeg）。
        * 費率和之前同意的不同時，兩個數字都列出來：不能讓人在看不到數字的情況下簽下調高後的上限。
        */
-      consentLine: '儲存後，你簽名同意：別人代為同步時，每檔最多從油箱扣 {fee} ETH 執行費（交易所現行費率）。',
-      consentChanged: '交易所的執行費現在是每檔 {fee} ETH，你之前同意的是 {old} ETH。儲存就是同意新的費率。',
+      consentLine: '儲存後，你簽名同意：別人代為同步時，每檔最多從油箱扣 {fee} ETH 執行費（平台現行費率）。',
+      consentChanged: '平台的執行費現在是每檔 {fee} ETH，你之前同意的是 {old} ETH。儲存就是同意新的費率。',
       /** 設定與費率都沒變：儲存不會送出 setAutoSync，只說目前同意的。 */
-      consentCurrent: '你目前同意：別人代為同步時，每檔最多從油箱扣 {fee} ETH 執行費（與交易所現行費率相同）。',
+      consentCurrent: '你目前同意：別人代為同步時，每檔最多從油箱扣 {fee} ETH 執行費（與平台現行費率相同）。',
       /** 費率調低：不必重新同意也能同步；儲存會把上限一起降下去。 */
-      consentLowered: '交易所的執行費調低為每檔 {fee} ETH（你之前同意 {old} ETH）。不必重新同意也能同步；儲存的話，你同意的上限會一起降到 {fee} ETH，之後交易所調回去時要再同意一次。',
-      /** 讀不到現行費率：不能說出「交易所現行費率」，開著時也不能儲存。 */
-      consentUnknownFee: '讀不到交易所現行的執行費，無法確認你要同意的費率，請稍後再試。在那之前不能改設定；關閉自動同步、只改指定執行者不受影響。',
+      consentLowered: '平台的執行費調低為每檔 {fee} ETH（你之前同意 {old} ETH）。不必重新同意也能同步；儲存的話，你同意的上限會一起降到 {fee} ETH，之後平台調回去時要再同意一次。',
+      /** 讀不到現行費率：不能說出「平台現行費率」，開著時也不能儲存。 */
+      consentUnknownFee: '讀不到平台現行的執行費，無法確認你要同意的費率，請稍後再試。在那之前不能改設定；關閉自動同步、只改指定執行者不受影響。',
       gasTitle: '自動同步油箱',
       amount: '金額（ETH）',
       max: '全部',
@@ -434,7 +434,7 @@ export const portfolio = {
       withdrawCta: '提領到錢包',
       invalidAmount: '請輸入有效的 ETH 金額。',
       overBalance: '超過油箱餘額。',
-      offNote: '自動同步關閉時，這裡的槓桿上限仍會套用在你自己按「立即同步」的時候；指定的執行者在重新開啟後仍然有效。冷卻與小費只在開啟時有作用。',
+      offNote: '自動同步關閉時，這裡的放大比例上限仍會套用在你自己按「立即同步」的時候；指定的執行者在重新開啟後仍然有效。冷卻與小費只在開啟時有作用。',
     },
   },
 

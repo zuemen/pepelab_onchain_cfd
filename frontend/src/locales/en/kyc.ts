@@ -7,14 +7,14 @@ export const kyc: Catalog['kyc'] = {
   title: 'Submit KYC Application',
   titleAwaitingReview: 'KYC Application Under Review',
   titleVerified: 'KYC Verified',
-  subtitle: 'Required before opening leveraged stock or bond positions. Buying or redeeming tokens does not need it.',
+  subtitle: 'Required before investing in stocks or bonds with the advanced investing tools. Buying or redeeming tokens does not need it.',
   closeAria: 'Close',
 
   /** 這個視窗最重要的一句話：送出 ≠ 通過，所以兩種狀態各自是完整的一段。 */
   noticeTitle: 'This is "submitting an application," not instant approval',
   noticeTitleAwaitingReview: '✅ Application submitted, awaiting review',
   noticeBody:
-    "Submitting leaves a pending application on-chain (KYCSubmitted) — approval only happens once a reviewer calls approveKYC. You still can't trade regulated assets before it's approved.",
+    "Submitting leaves a pending application on-chain (KYCSubmitted) — approval only happens once a reviewer calls approveKYC. You still can't invest in regulated assets before it's approved.",
   noticeTitleSelfService: 'This deployment is self-service: submitting verifies you immediately',
   noticeBodySelfService:
     'The KYCRegistry deployed on this chain is the older version: submitting marks you verified on-chain right away (isVerified), with no manual review.',
@@ -22,11 +22,11 @@ export const kyc: Catalog['kyc'] = {
   noticeBodyVerified:
     'Your KYC is recorded on-chain (isVerified = true). The KYCRegistry currently deployed is the self-service version: submitting verifies you immediately, with no manual review. Close this dialog and you can place orders.',
   noticeBodyAwaitingReview:
-    'Your KYC application is recorded on-chain (KYCSubmitted). Regulated assets unlock once a reviewer approves it (approveKYC); until then, the contract still blocks your orders (NotKycVerified). You can close this dialog now and come back later — refresh to check the status.',
+    'Your KYC application is recorded on-chain (KYCSubmitted). Regulated assets unlock once a reviewer approves it (approveKYC); until then, the on-chain program still blocks your orders (NotKycVerified). You can close this dialog now and come back later — refresh to check the status.',
 
   demoTitle: '⚠️ Privacy: only salted hashes go on-chain',
   demoBody:
-    "Your name and nationality are NOT written on-chain in plain text: the app generates a random salt and only writes keccak256(salt ‖ name) and keccak256(salt ‖ nationality) to the public contract. The salt and your raw details stay on your side; a reviewer needs you to present them off-chain to compare. A made-up name is still recommended. This flow is not a formal compliance review.",
+    "Your name and nationality are NOT written on-chain in plain text: the app generates a random salt and only writes keccak256(salt ‖ name) and keccak256(salt ‖ nationality) to the public on-chain program. The salt and your raw details stay on your side; a reviewer needs you to present them off-chain to compare. A made-up name is still recommended. This flow is not a formal compliance review.",
 
   nameLabel: 'Name (only a salted hash goes on-chain; a made-up name is recommended)',
   namePlaceholder: 'e.g. Jane Doe',
@@ -47,11 +47,11 @@ export const kyc: Catalog['kyc'] = {
     salt: 'Salt (keep private)',
     nameHash: 'Name hash (on-chain)',
     nationalityHash: 'Nationality hash (on-chain)',
-    txHash: 'Transaction hash',
-    confirmFailed: 'The transaction was sent, but waiting for confirmation failed — it may already be on-chain. The receipt has been kept; check the transaction hash on a block explorer before resubmitting.',
+    txHash: 'On-chain record ID',
+    confirmFailed: 'Your application was sent, but waiting for confirmation failed — it may already be on-chain. The receipt has been kept; check the on-chain record ID on a block explorer before resubmitting.',
     hideMine: 'Hide receipt',
     viewMineCount: 'View my receipts ({count})',
-    pendingStoredAt: 'Saved at {time} before sending, but no transaction hash was obtained (it may not have been sent — check a block explorer):',
+    pendingStoredAt: 'Saved at {time} before sending, but no on-chain record ID was obtained (it may not have been sent — check a block explorer):',
     storedAt: 'Receipt saved in this browser at {time} (salt and hashes only, no name or nationality):',
     scheme: 'Hash scheme: keccak256(salt ‖ normalized value); normalized name "{name}", nationality code "{code}".',
   },
@@ -62,10 +62,10 @@ export const kyc: Catalog['kyc'] = {
   submitting: 'Submitting…',
 
   prevTx: {
-    checking: 'Checking the status of your previous KYC transaction…',
-    unconfirmed: 'Your previous KYC transaction has no confirmed result yet, so resubmitting is disabled. Check its hash (in your receipt) on a block explorer first.',
+    checking: 'Checking the status of your previous KYC application…',
+    unconfirmed: 'Your previous KYC application has no confirmed result yet, so resubmitting is disabled. Check its on-chain record ID (in your receipt) on a block explorer first.',
     underReview: 'Your previous KYC application is on-chain and awaiting review — no need to resubmit.',
-    checkFailed: "Couldn't confirm the status of your previous KYC transaction (RPC read failed); submitting is disabled to avoid a duplicate.",
+    checkFailed: "Couldn't confirm the status of your previous KYC application (reading on-chain data failed); submitting is disabled to avoid a duplicate.",
     retry: 'Retry',
   },
 
@@ -73,14 +73,14 @@ export const kyc: Catalog['kyc'] = {
   status: {
     cardTitle: 'KYC Verification Status',
     verifiedTitle: 'Verified',
-    verifiedBody: 'You can open leveraged positions on stocks and bonds (e.g. AAPL, TSLA).',
+    verifiedBody: 'You can invest in stocks and bonds with the advanced investing tools (e.g. AAPL, TSLA).',
     pendingTitle: 'Under review',
     pendingBody: 'Your application has been submitted and is awaiting reviewer approval — no need to resubmit.',
     unverifiedTitle: 'Not verified',
-    unverifiedBody: 'You don\'t need verification to buy or redeem tokens, only to open leveraged stock or bond positions (e.g. AAPL, TSLA).',
+    unverifiedBody: 'You don\'t need verification to buy or redeem tokens, only to invest in stocks or bonds with the advanced investing tools (e.g. AAPL, TSLA).',
     unverifiedAction: 'Submit KYC Application',
     notRequiredTitle: 'No verification required on this chain',
-    notRequiredBody: 'This chain has no KYC gate deployed — no verification is needed to trade any asset.',
+    notRequiredBody: 'This chain has no KYC gate deployed — no verification is needed to invest in any asset.',
     unknownTitle: 'Cannot confirm',
     unknownBody: "Reading your on-chain verification status failed. This doesn't mean you're unverified — please try again.",
     unknownAction: 'Retry',

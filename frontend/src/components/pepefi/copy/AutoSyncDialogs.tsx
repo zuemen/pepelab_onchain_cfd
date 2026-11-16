@@ -22,6 +22,7 @@ import FormControlLabel from '@mui/material/FormControlLabel';
 import { t, interpolate } from 'src/locales';
 import { ASSET_LABEL } from 'src/lib/pepefi/assetMeta';
 import { STABLE_LABEL } from 'src/lib/pepefi/tokenLabel';
+import { SHOW_LEVERAGE } from 'src/lib/pepefi/featureFlags';
 import { formatEth, formatEthExact } from 'src/hooks/useExecutionFee';
 import {
   versionLabel,
@@ -359,6 +360,11 @@ interface ResyncConfirmProps {
   currentMaxLeverage: number;
   busy: boolean;
   onConfirm: () => void;
+  /**
+   * 顯示方向、槓桿欄與槓桿相關的提醒。預設跟著 SHOW_LEVERAGE；現貨呈現（關）時只列資產與權重，
+   * 同步本身照舊用鏈上的槓桿（不改鏈上行為）。
+   */
+  showLeverage?: boolean;
 }
 
 const C = P.confirm;
@@ -388,6 +394,7 @@ export function ResyncConfirmContent({
   currentMaxLeverage,
   busy,
   onConfirm,
+  showLeverage = SHOW_LEVERAGE,
 }: ResyncConfirmProps) {
   const label = version === null ? '—' : versionLabel(version);
   const ready = !loading && !error && preview !== null && version !== null;
@@ -404,29 +411,33 @@ export function ResyncConfirmContent({
               <TableHead>
                 <TableRow>
                   <TableCell>{C.colAsset}</TableCell>
-                  <TableCell>{C.colSide}</TableCell>
+                  {showLeverage && <TableCell>{C.colSide}</TableCell>}
                   <TableCell align="right">{C.colWeight}</TableCell>
-                  <TableCell align="right">{C.colLeverage}</TableCell>
+                  {showLeverage && <TableCell align="right">{C.colLeverage}</TableCell>}
                 </TableRow>
               </TableHead>
               <TableBody>
                 {preview.legs.map((leg, i) => (
                   <TableRow key={`${leg.asset}-${i}`}>
                     <TableCell sx={{ fontFamily: MONO, fontWeight: 'bold' }}>{ASSET_LABEL[leg.asset] ?? leg.asset.slice(0, 10)}</TableCell>
-                    <TableCell sx={{ color: leg.isLong ? 'success.main' : 'error.main', fontWeight: 'bold' }}>
-                      {leg.isLong ? C.long : C.short}
-                    </TableCell>
+                    {showLeverage && (
+                      <TableCell sx={{ color: leg.isLong ? 'success.main' : 'error.main', fontWeight: 'bold' }}>
+                        {leg.isLong ? C.long : C.short}
+                      </TableCell>
+                    )}
                     <TableCell align="right" sx={{ fontFamily: MONO }}>{(Number(leg.weight) / 100).toFixed(2)}%</TableCell>
-                    <TableCell align="right" sx={{ fontFamily: MONO, whiteSpace: 'nowrap' }}>
-                      {leg.strategyLeverage}× → <b>{leg.leverage}×</b>
-                      {leg.capped && <Chip size="small" label={C.capped} sx={{ ml: 0.75, height: 18, fontSize: '0.6875rem' }} />}
-                    </TableCell>
+                    {showLeverage && (
+                      <TableCell align="right" sx={{ fontFamily: MONO, whiteSpace: 'nowrap' }}>
+                        {leg.strategyLeverage}× → <b>{leg.leverage}×</b>
+                        {leg.capped && <Chip size="small" label={C.capped} sx={{ ml: 0.75, height: 18, fontSize: '0.6875rem' }} />}
+                      </TableCell>
+                    )}
                   </TableRow>
                 ))}
               </TableBody>
             </Table>
-            {preview.noFollowerCap && <Alert severity="warning">{C.noCap}</Alert>}
-            {preview.leverageRaised && (
+            {showLeverage && preview.noFollowerCap && <Alert severity="warning">{C.noCap}</Alert>}
+            {showLeverage && preview.leverageRaised && (
               <Alert severity="warning">
                 {interpolate(C.leverageRaised, {
                   to: preview.legs.reduce((m, l) => Math.max(m, l.leverage), 0),

@@ -53,7 +53,7 @@ import StatCard from 'src/components/pepefi/StatCard';
 import NetWorthHero from 'src/components/pepefi/dashboard/NetWorthHero';
 import RwaAllocation from 'src/components/pepefi/dashboard/RwaAllocation';
 import { useSynthHoldings } from 'src/hooks/useSynthHoldings';
-import { SHOW_PERPETUALS, FEATURE_COPY_TRADING } from 'src/lib/pepefi/featureFlags';
+import { SHOW_PERPETUALS, SHOW_LEVERAGE, FEATURE_COPY_TRADING } from 'src/lib/pepefi/featureFlags';
 import { copyDeskVisibility } from 'src/lib/pepefi/copyDeskVisibility';
 import { readAssetMode, isPriceTracked, closeBlockReason, closeAvailability, readOracleFreshness } from 'src/lib/pepefi/closeGuard';
 import { SwitchChainButton } from 'src/components/pepefi/SwitchChainButton';
@@ -976,7 +976,7 @@ export default function PortfolioPage() {
         consentedFee={syncSettingsFor?.rec.execFeeCap ?? null}
         legs={syncSettingsFor?.rec.latestLegs ?? syncSettingsFor?.rec.positionIds.length ?? 0}
         tankBalance={syncGas}
-        showLeverage={mode === 'expert'}
+        showLeverage={SHOW_LEVERAGE && mode === 'expert'}
         busy={syncSettingsFor !== null && !!busy[`autosync_${syncSettingsFor.rec.index}`]}
         executor={autoSync.executorLock && mode === 'expert'
           ? { initial: syncSettingsFor?.rec.executor ?? '', follower: wallet.address ?? null }
@@ -1621,12 +1621,13 @@ export default function PortfolioPage() {
                   {([
                     [t.portfolio.column.asset, ''],
                     [t.portfolio.column.carbonTier, ''],
-                    [t.portfolio.column.side, ''],
+                    // 現貨呈現（SHOW_LEVERAGE 關）時收掉方向與槓桿兩欄；資料列同步收。
+                    ...(SHOW_LEVERAGE ? [[t.portfolio.column.side, ''] as const] : []),
                     [t.portfolio.column.entry, t.portfolio.columnHint.entry],
                     [t.portfolio.column.oracle, t.portfolio.columnHint.oracle],
                     [t.portfolio.column.liveMarket, t.portfolio.columnHint.liveMarket],
                     [t.portfolio.column.margin, ''],
-                    [t.portfolio.column.leverage, ''],
+                    ...(SHOW_LEVERAGE ? [[t.portfolio.column.leverage, ''] as const] : []),
                     ...(showCopiedFrom ? [[t.portfolio.column.copiedFrom, ''] as const] : []),
                     [t.portfolio.column.unrealizedPnl, t.portfolio.columnHint.unrealizedPnl],
                     [t.portfolio.column.accruedFunding, ''],
@@ -1661,6 +1662,7 @@ export default function PortfolioPage() {
                       {/* #383：原本是平台自評的 ESG 徽章，改成交易所定價用的碳分級——它直接決定這個部位的手續費與槓桿。 */}
                       <PricingTierCell tier={pricingTiers.tierOf(row.asset)} />
                     </TableCell>
+                    {SHOW_LEVERAGE && (
                     <TableCell>
                       <Chip
                         label={row.isLong ? t.portfolio.page.side.long : t.portfolio.page.side.short}
@@ -1675,6 +1677,7 @@ export default function PortfolioPage() {
                         }}
                       />
                     </TableCell>
+                    )}
                     <TableCell sx={{ fontFamily: MONO, fontSize: '0.8125rem' }}>{fUsd(row.entryPrice)}</TableCell>
                     <TableCell sx={{ fontFamily: MONO, fontSize: '0.8125rem' }}>{row.currentPrice === null ? '—' : fUsd(row.currentPrice)}</TableCell>
                     <TableCell sx={{ fontFamily: MONO, fontSize: '0.8125rem' }}>
@@ -1697,7 +1700,7 @@ export default function PortfolioPage() {
                       })()}
                     </TableCell>
                     <TableCell sx={{ fontFamily: MONO, fontSize: '0.8125rem' }}>{f18(row.margin)}</TableCell>
-                    <TableCell sx={{ fontSize: '0.8125rem' }}>{String(row.leverage)}×</TableCell>
+                    {SHOW_LEVERAGE && <TableCell sx={{ fontSize: '0.8125rem' }}>{String(row.leverage)}×</TableCell>}
                     {showCopiedFrom && (
                     <TableCell sx={{ fontFamily: MONO, fontSize: '0.75rem', color: 'text.secondary' }}>
                       {row.copiedFrom === '0x0000000000000000000000000000000000000000' ? (

@@ -16,6 +16,7 @@ import TableContainer from '@mui/material/TableContainer'
 import { PepeIdentity } from 'src/components/pepefi/PepeIdentity'
 import { TableSkeleton } from 'src/components/pepefi/Skeleton'
 import { t, interpolate } from 'src/locales'
+import { SHOW_DIRECTION } from 'src/lib/pepefi/legDisplay'
 import { MONO, PEPE } from 'src/components/pepefi/brandKit'
 import { fUsd, fCompact, sideLabel, fSignedUsd } from 'src/lib/pepefi/whale'
 
@@ -42,10 +43,12 @@ export default function LargestOpenPositions({ data, mode, ready }: Props) {
   const { rows, missing, loading, error } = data
 
   const col = t.whale.largest.column
+  // 現貨呈現（SHOW_LEVERAGE 關）時收掉方向／倍數欄；資料列同步收。
+  const side = SHOW_DIRECTION ? [col.side] : []
   const columns =
     mode === 'simple'
-      ? [col.market, col.trader, col.side, col.notional, col.pnl]
-      : [col.market, col.trader, col.side, col.entry, col.mark, col.notional, col.pnl]
+      ? [col.market, col.trader, ...side, col.notional, col.pnl]
+      : [col.market, col.trader, ...side, col.entry, col.mark, col.notional, col.pnl]
 
   return (
     <Card>
@@ -113,15 +116,17 @@ export default function LargestOpenPositions({ data, mode, ready }: Props) {
                     {mode === 'simple' && <WhaleTagChips tags={r.tags} />}
                   </TableCell>
 
-                  <TableCell
-                    sx={{
-                      fontWeight: 800,
-                      whiteSpace: 'nowrap',
-                      color: r.isLong ? PEPE.long : PEPE.short,
-                    }}
-                  >
-                    {sideLabel(r.isLong)} {String(r.leverage)}×
-                  </TableCell>
+                  {SHOW_DIRECTION && (
+                    <TableCell
+                      sx={{
+                        fontWeight: 800,
+                        whiteSpace: 'nowrap',
+                        color: r.isLong ? PEPE.long : PEPE.short,
+                      }}
+                    >
+                      {sideLabel(r.isLong)} {String(r.leverage)}×
+                    </TableCell>
+                  )}
 
                   {mode === 'expert' && (
                     <TableCell sx={{ fontFamily: MONO, color: 'text.secondary', whiteSpace: 'nowrap' }}>

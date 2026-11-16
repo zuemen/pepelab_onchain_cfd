@@ -12,10 +12,10 @@ export const pepelab: Catalog['pepelab'] = {
   },
 
   toast: {
-    insufficientPepe: 'Not enough PEPE. Check in on the Rewards page, or earn more there from trade mining, tier and other platform rewards.',
-    insufficientPepeUnknown: 'Not enough PEPE. Earn more on the Rewards page from trade mining, tier and other platform rewards.',
-    insufficientPepeNoCheckIn: 'Not enough PEPE. Earn more on the Rewards page from trade mining, tier and other platform rewards (daily check-in now records achievement points, not PEPE).',
-    txCancelled: 'The on-chain transaction was cancelled or failed — no PEPE was deducted.',
+    insufficientPepe: 'Not enough PEPE. Check in on the Rewards page, or earn more there from investing, tier and other platform rewards.',
+    insufficientPepeUnknown: 'Not enough PEPE. Earn more on the Rewards page from investing, tier and other platform rewards.',
+    insufficientPepeNoCheckIn: 'Not enough PEPE. Earn more on the Rewards page from investing, tier and other platform rewards (daily check-in now records achievement points, not PEPE).',
+    txCancelled: 'The on-chain request was cancelled or failed — no PEPE was deducted.',
     mountLocked: "This mount unlocks at Pepe level Lv.{level} — you're currently Lv.{current}.",
     gachaInsufficientPepe: 'Not enough PEPE — one draw costs {cost} PEPE.',
     stageInProgress: 'Skins for the {stage} stage are still in the works — stay tuned.',

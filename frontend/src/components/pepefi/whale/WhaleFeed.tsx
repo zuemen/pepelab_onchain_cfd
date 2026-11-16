@@ -24,6 +24,7 @@ import { t, interpolate } from 'src/locales'
 import { MONO, PEPE } from 'src/components/pepefi/brandKit'
 import { explorerTx } from 'src/lib/pepefi/notify'
 import { FEATURE_COPY_TRADING } from 'src/lib/pepefi/featureFlags'
+import { SHOW_DIRECTION } from 'src/lib/pepefi/legDisplay'
 import { timeAgo, fCompact, sideLabel, positionProfile } from 'src/lib/pepefi/whale'
 
 import WhaleTagChips from './WhaleTagChips'
@@ -206,9 +207,14 @@ export default function WhaleFeed({ trades, mode, chainId, loading, progress, re
               <Box sx={{ flexGrow: 1, minWidth: 200 }}>
                 <Typography variant="body2" sx={{ color: 'text.primary' }}>
                   {t.whale.feed.openedVerb}{' '}
-                  <Box component="span" sx={{ fontWeight: 800, color: sideColor(trade.isLong) }}>
-                    {String(trade.leverage)}× {sideLabel(trade.isLong)}
-                  </Box>{' '}
+                  {/* 現貨呈現（SHOW_LEVERAGE 關）時不顯示倍數與方向 */}
+                  {SHOW_DIRECTION && (
+                    <>
+                      <Box component="span" sx={{ fontWeight: 800, color: sideColor(trade.isLong) }}>
+                        {String(trade.leverage)}× {sideLabel(trade.isLong)}
+                      </Box>{' '}
+                    </>
+                  )}
                   <Box component="span" sx={{ fontWeight: 700 }}>{trade.assetLabel}</Box>{' '}
                   {t.whale.feed.forPreposition}{' '}
                   <Box component="span" sx={{ fontFamily: MONO, fontWeight: 800 }}>
@@ -241,7 +247,7 @@ export default function WhaleFeed({ trades, mode, chainId, loading, progress, re
                   t.whale.feed.column.time,
                   t.whale.feed.column.trader,
                   t.whale.feed.column.market,
-                  t.whale.feed.column.side,
+                  ...(SHOW_DIRECTION ? [t.whale.feed.column.side] : []),
                   t.whale.feed.column.notional,
                   t.whale.feed.column.entry,
                   t.whale.feed.column.tx,
@@ -283,9 +289,11 @@ export default function WhaleFeed({ trades, mode, chainId, loading, progress, re
                     </Stack>
                   </TableCell>
                   <TableCell sx={{ fontWeight: 700, whiteSpace: 'nowrap' }}>{t.assetLabel}</TableCell>
-                  <TableCell sx={{ fontWeight: 800, color: sideColor(t.isLong), whiteSpace: 'nowrap' }}>
-                    {sideLabel(t.isLong)} {String(t.leverage)}×
-                  </TableCell>
+                  {SHOW_DIRECTION && (
+                    <TableCell sx={{ fontWeight: 800, color: sideColor(t.isLong), whiteSpace: 'nowrap' }}>
+                      {sideLabel(t.isLong)} {String(t.leverage)}×
+                    </TableCell>
+                  )}
                   <TableCell sx={{ fontFamily: MONO, fontWeight: 700, whiteSpace: 'nowrap' }}>
                     {fCompact(t.notional)}
                   </TableCell>

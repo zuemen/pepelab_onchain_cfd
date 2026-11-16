@@ -4,11 +4,11 @@ import type { Catalog } from '../zh-TW';
  * 見 `../zh-TW/exchange.ts`。
  */
 export const exchange: Catalog['exchange'] = {
-  connectWallet: 'Connect wallet to access the exchange.',
+  connectWallet: 'Connect wallet to use Funding & Swap.',
   loadingChainData: 'Loading blockchain data...',
 
   /** 全域交易覆蓋層上，標題底下那句固定的說明。 */
-  confirmInWallet: 'Please confirm the transaction in your wallet and wait for block confirmation.',
+  confirmInWallet: 'Please confirm in your wallet and wait for block confirmation.',
 
   /** 送出交易前後對使用者說的話。 */
   tx: {
@@ -20,13 +20,13 @@ export const exchange: Catalog['exchange'] = {
      * StaleOraclePrice，等使用者付完 gas 才知道是最糟的順序。
      */
     ammStale:
-      "The swap pool's reference oracle price is stale — the contract will reject the swap (StaleOraclePrice). Wait for the keeper to update the price and try again.",
+      "The swap pool's reference price source is stale — the on-chain program will reject the swap (StaleOraclePrice). Wait for the price to update and try again.",
 
-    preflightBlocked: 'Pre-flight check failed — no transaction was sent: {reason}',
+    preflightBlocked: 'Pre-flight check failed — nothing was sent: {reason}',
     preflightBlockedAfterApprove:
       'The approval went through, but the swap failed its pre-flight check — the swap was not sent: {reason}',
     priceMoved:
-      'The price moved: the live quote is {quoted} {token}, below the minimum received you confirmed ({minOut} {token}). No transaction was sent — review the new quote and press again.',
+      'The price moved: the live quote is {quoted} {token}, below the minimum received you confirmed ({minOut} {token}). Nothing was sent — review the new quote and press again.',
     zeroMinOut:
       'Amount too small: the minimum received would be 0 (no slippage protection), so the swap was not sent. Increase the amount.',
     priceMovedAfterApprove:
@@ -45,7 +45,7 @@ export const exchange: Catalog['exchange'] = {
 
   /** 全域交易覆蓋層上的字，依當下進行中的動作切換。 */
   loading: {
-    fallback: 'Processing transaction...',
+    fallback: 'Processing…',
     swapEthToToken: 'Swapping ETH to {token}…',
     swapTokenToEth: 'Swapping {token} to ETH…',
     faucetStable: 'Claiming {token}…',
@@ -88,7 +88,7 @@ export const exchange: Catalog['exchange'] = {
   swap: {
     title: 'Swap',
     poolBadge: '● Constant-product pool · Slippage applies',
-    oracleFixedBadge: '● Oracle-priced · No slippage',
+    oracleFixedBadge: '● Priced by price source · No slippage',
     notDeployed: "The swap pool (PepeAMM) isn't deployed on this network. Switch to Base Sepolia.",
 
     youPay: 'You pay',
@@ -100,20 +100,20 @@ export const exchange: Catalog['exchange'] = {
      * 它們分岔超過 maxOracleDeviationBps 時合約就會擋下兌換。
      */
     poolPrice: 'Pool price',
-    oracleRef: 'Oracle ref.',
+    oracleRef: 'Price source ref.',
     poolReserves: 'Pool reserves',
 
-    oracleRate: 'Swap rate (oracle-priced)',
+    oracleRate: 'Swap rate (from price source)',
     poolInventory: 'Pool inventory',
     unavailable: 'Unavailable',
     loadingValue: 'Loading…',
     smallPoolNote: 'The swap pool is small right now, so large swaps get rejected by the price guard. Start with a small amount.',
     oracleFixedNote:
-      'This swap pool uses the oracle price (minus a 0.3% fee, no slippage), not a constant-product curve. Reserves are only the inventory available to swap and do not set the price.',
-    noOracleRefNote: 'This pool does not show a separate oracle reference price.',
+      'This swap pool uses the price-source quote (minus a 0.3% fee, no slippage), not a constant-product curve. Reserves are only the inventory available to swap and do not set the price.',
+    noOracleRefNote: 'This pool does not show a separate price-source reference price.',
     unknownVersionNote:
-      'Could not identify the live contract version, so prices and price impact are hidden; the amount you receive still follows the live contract quote.',
-    checkingVersionNote: 'Checking the live contract version…',
+      'Could not identify the live swap pool version, so prices and price impact are hidden; the amount you receive still follows the live on-chain quote.',
+    checkingVersionNote: 'Checking the live swap pool version…',
     exceedsInventory: 'Exceeds pool inventory',
     exceedsInventoryDetail:
       'This swap would pay out {needed} {token}, more than the pool has available ({available} {token}), so it is certain to fail. Reduce the amount.',
@@ -124,7 +124,7 @@ export const exchange: Catalog['exchange'] = {
       'Constant-product (x·y=k) pool — the bigger the amount, the higher the slippage. The quote already includes a 0.3% fee; minOut is based on the live quote.',
 
     swapping: 'Swapping…',
-    oracleStale: '⛔ Oracle price is stale — swaps paused',
+    oracleStale: '⛔ Price source is stale — swaps paused',
     enterAmount: 'Enter an amount',
     quoting: 'Fetching quote…',
     quoteUnavailable: 'Quote unavailable',
@@ -168,17 +168,17 @@ export const exchange: Catalog['exchange'] = {
       " (EIP-3009). The two serve different purposes — don't mix them up.",
 
     ethBalanceBefore: 'ETH balance: ',
-    ethBalanceAfterSpot: ' (on-chain transactions need a little ETH for gas)',
+    ethBalanceAfterSpot: ' (each on-chain action needs a little ETH for network fees)',
     noEth: 'Your wallet has no ETH, so it cannot pay network fees for claiming or buying. Get a little from a Base Sepolia faucet first.',
     noEthCta: 'See faucets ↗',
 
-    faucetLimit: '🔑 Each wallet can claim once every 24 hours. Smart contract wallets (Safe and the like) cannot claim, so use a regular wallet.',
+    faucetLimit: '🔑 Each wallet can claim once every 24 hours. Program-controlled wallets (Safe and the like) cannot claim, so use a regular wallet.',
 
     priceImpactBefore: '⚠ This swap has a price impact as high as ',
     priceImpactAfter:
-      " — that's filling far off the market price. Consider splitting into smaller swaps; too large an amount and the contract will reject it outright with ",
+      " — that's filling far off the market price. Consider splitting into smaller swaps; too large an amount and the on-chain program will reject it outright with ",
     priceImpactCode: 'PriceOutOfBand',
-    priceImpactLine2After: ' (the pool price would be pushed too far from the oracle).',
+    priceImpactLine2After: ' (the pool price would be pushed too far from the price source).',
 
 
 

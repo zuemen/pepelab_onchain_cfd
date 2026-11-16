@@ -26,11 +26,11 @@ export const esg: Catalog['esg'] = {
   /** 見 `../zh-TW/esg.ts`。 */
   retirement: {
     title: 'Carbon Credit Retirements',
-    lead: 'A fixed share of the platform fee, hard-coded in the contract, is routed to the retirement contract, which buys carbon credits and burns them in the same transaction. Every retirement is an irreversible record anyone can check on chain.',
+    lead: 'A fixed share of the platform fee, hard-coded in a public on-chain program, is routed to the retirement program, which buys carbon credits and burns them in the same on-chain record. Every retirement is an irreversible record anyone can check on chain.',
     simulatedChip: 'Platform-minted credits',
     disclaimerTitle: 'Platform-minted carbon credits: not registry-issued, no real carbon removed',
     disclaimer:
-      'The credits retired here (mtCO2e) are minted by this platform. They were not issued by any carbon-credit registry, correspond to no real reduction or removal, and burning them offsets no real greenhouse-gas emissions. The purchase price is paid to a seller address the platform controls and reaches no real carbon project. Only the mechanism is real: fees are routed at a ratio fixed in the contract, and a retirement cannot be undone.',
+      'The credits retired here (mtCO2e) are minted by this platform. They were not issued by any carbon-credit registry, correspond to no real reduction or removal, and burning them offsets no real greenhouse-gas emissions. The purchase price is paid to a seller address the platform controls and reaches no real carbon project. Only the mechanism is real: fees are routed at a ratio fixed in the on-chain program, and a retirement cannot be undone.',
     totalTonnes: 'Retired to date (platform-minted)',
     tonnesUnit: '{n} t CO₂e',
     totalSpent: 'Spent on credits to date',
@@ -41,7 +41,7 @@ export const esg: Catalog['esg'] = {
       time: 'Time',
       tonnes: 'Amount (platform-minted)',
       amount: 'Cost',
-      tx: 'On-chain tx',
+      tx: 'On-chain record',
     },
     empty: 'No retirements yet.',
     failed: 'Could not read the retirement records — cannot confirm right now. This does not mean "nothing retired".',
@@ -49,14 +49,14 @@ export const esg: Catalog['esg'] = {
     /** #333: the beneficiary rule — one tonne can be claimed by one party only. */
     beneficiaryTitle: 'The platform is the beneficiary',
     beneficiary:
-      'A tonne can be claimed by one party only. The tonnes retired here belong to the platform, not to any individual user: your trades helped bring the retirement about, but these tonnes cannot be counted as a reduction of your own emissions.',
+      'A tonne can be claimed by one party only. The tonnes retired here belong to the platform, not to any individual user: your investing helped bring the retirement about, but these tonnes cannot be counted as a reduction of your own emissions.',
     fundingTitle: 'Where the money comes from',
     funding:
-      'Of the fee revenue the platform receives, {carbon}% of the platform’s {platform}% share goes to the retirement budget automatically — {total}% of the fee. The ratio is fixed in the contract (immutable) and the platform cannot change it; changing it takes a new deployment, which is itself visible on chain. Anyone can trigger the split and the retirement; whoever triggers it decides only when, the contract decides where the money goes.',
+      'Of the fee revenue the platform receives, {carbon}% of the platform’s {platform}% share goes to the retirement budget automatically — {total}% of the fee. The ratio is fixed in the on-chain program (immutable) and the platform cannot change it; changing it takes a new deployment, which is itself visible on chain. Anyone can trigger the split and the retirement; whoever triggers it decides only when, the on-chain program decides where the money goes.',
     /** Rendered only when the copy-trading flag is on (allow-listed in copyWording.test.ts). */
     fundingCopy:
-      'The revenue on this path is the copy fee (0.3% of the copied amount) and the performance fee on profitable copied positions; ordinary trading fees do not pass through it. Retirement is paid from the platform’s own revenue — users pay nothing extra.',
-    viewTx: 'View tx',
+      'The revenue on this path is the copy investing fee (0.3% of the amount that follows a strategy) and the performance fee when copy investing makes a profit; ordinary buying and selling fees do not pass through it. Retirement is paid from the platform’s own revenue — users pay nothing extra.',
+    viewTx: 'View on-chain record',
     shownOf: 'Showing the latest {shown} of {count}',
     more: 'Show earlier retirements',
   },
@@ -67,9 +67,9 @@ export const esg: Catalog['esg'] = {
     tierLead: 'How much of the holdings sits in each carbon tier. Carbon intensities of different assets have different units and cannot be added up into one tonnage, so only tiers are compared here.',
     /** Low / mid / high / unrated reuse tokens.provenance.carbonTier (one set of tiers); only the failed-read bucket lives here. */
     tierUnknown: 'Unknown (read failed)',
-    tierSource: 'Tiers are read from the on-chain attestations the exchange prices on; assets that cannot be read are shown as unknown, never as low carbon.',
-    traderSource: 'Weighted by this trader’s currently published strategy, read from chain.',
-    portfolioSource: 'Weighted by the market value of your current positions.',
+    tierSource: 'Tiers are read from the on-chain attestations the platform prices on; assets that cannot be read are shown as unknown, never as low carbon.',
+    traderSource: 'Weighted by this strategy sharer’s currently published strategy, read from chain.',
+    portfolioSource: 'Weighted by the market value of your current holdings.',
     empty: 'No holdings to calculate from.',
     pct: '{pct}%',
   },
@@ -87,7 +87,7 @@ export const esg: Catalog['esg'] = {
       scoreOnly: 'Agencies that publish only a score with no groups of their own (LSEG, S&P Global) are shown as the number, uncoloured; the platform does not draw thresholds for them.',
       noAverage: 'Every agency uses a different method, scale and direction (lower is better for Sustainalytics, higher for the others), so ratings are never added up, averaged or used to rank assets.',
       carbonTier:
-        'The carbon tier column is not a rating; it is about emissions. Stocks and ETFs use scope 1+2 emissions per US$1M of revenue: below 1 tonne is Low, 1–8 is Mid, above 8 is High. Crypto uses annual network emissions, gold an industry benchmark for mining emissions per ounce, and the green bond ETF is judged by instrument type; those are tiered by the attestor, not by the tonne thresholds. The tier sets the trading fee and leverage cap. So a fund with a decent ESG rating can still be High carbon: about 45% of the clean energy ETF (ICLN) is power producers, and iShares reports a weighted average carbon intensity of 241.74 tonnes per US$1M of revenue.',
+        'The carbon tier column is not a rating; it is about emissions. Stocks and ETFs use scope 1+2 emissions per US$1M of revenue: below 1 tonne is Low, 1–8 is Mid, above 8 is High. Crypto uses annual network emissions, gold an industry benchmark for mining emissions per ounce, and the green bond ETF is judged by instrument type; those are tiered by the attestor, not by the tonne thresholds. The tier sets the fee. So a fund with a decent ESG rating can still be High carbon: about 45% of the clean energy ETF (ICLN) is power producers, and iShares reports a weighted average carbon intensity of 241.74 tonnes per US$1M of revenue.',
     },
     column: {
       asset: 'Asset',
@@ -205,7 +205,7 @@ export const esg: Catalog['esg'] = {
       rawLead: 'Figures and their sources only — never converted into a score or a colour.',
       carbonTierTitle: 'Carbon tier (platform risk policy)',
       carbonTierNote:
-        'The carbon tier applies fixed thresholds to published emissions data and sets this asset’s trading fee and leverage cap on the exchange. It is the platform’s risk policy, not an ESG rating.',
+        'The carbon tier applies fixed thresholds to published emissions data and sets this asset’s fee on the platform. It is the platform’s risk policy, not an ESG rating.',
     },
     method: {
       title: 'Why it is shown this way',

@@ -20,8 +20,8 @@ describe('市場狀態徽章 · 三種鏈上狀態', () => {
       for (const ts of [SAT, MON_OPEN]) {
         const s = marketStatus({ symbol: 'sAAPL', nowSec: ts, probe: supported(ASSET_MODE.ReduceOnly) })
         expect(s.kind).toBe('reduceOnly')
-        expect(s.label).toBe('只能減倉')
-        expect(s.short).toBe('只能減倉')
+        expect(s.label).toBe('只能賣出')
+        expect(s.short).toBe('只能賣出')
         expect(s.confirmBeforeOpen).toBe(false) // 鏈上會擋開倉，不必再提示
       }
     })
@@ -74,11 +74,11 @@ describe('市場狀態徽章 · 三種鏈上狀態', () => {
     it('休市：照實寫「此部署未啟用休市停單，下單會以收盤價成交」', () => {
       const s = marketStatus({ symbol: 'sAAPL', nowSec: SAT, probe: UNSUPPORTED })
       expect(s.kind).toBe('closedNoStop')
-      expect(s.label).toBe('休市中（此部署未啟用休市停單，下單會以收盤價成交）')
+      expect(s.label).toBe('休市中（此站未啟用休市停單，送出會以收盤價成交）')
       expect(s.tone).toBe('warn')
       expect(s.confirmBeforeOpen).toBe(true)
       expect(interpolate(closedOrderWarning(s.kind)!, { asset: 'sAAPL' })).toMatch(
-        /^sAAPL 目前休市。此部署未啟用休市停單/
+        /^sAAPL 目前休市。此站未啟用休市停單/
       )
     })
 
@@ -91,7 +91,7 @@ describe('市場狀態徽章 · 三種鏈上狀態', () => {
 
     it('開盤時就是開盤中；加密資產 24/7', () => {
       expect(marketStatus({ symbol: 'sAAPL', nowSec: MON_OPEN, probe: UNSUPPORTED }).kind).toBe('open')
-      expect(marketStatus({ symbol: 'sBTC', nowSec: SAT, probe: UNSUPPORTED }).label).toBe('24/7 交易')
+      expect(marketStatus({ symbol: 'sBTC', nowSec: SAT, probe: UNSUPPORTED }).label).toBe('24/7 可投資')
     })
   })
 

@@ -15,9 +15,11 @@ import { LOCALES } from './catalogs';
  * 在旗標關閉時看不到（或為什麼看得到是正當的）。新增一句提到跟單的文案而沒有處理
  * 旗標，這個測試就會失敗、逼人做決定。
  */
-const ZH = /跟單|跟隨者/;
+// 2026-11-15 指導者要求白話用字：跟單→跟著投資、取消跟單→停止跟隨、交易者→策略分享者。
+// 正規式跟著擴大；排除「跟隨系統」（主題設定）與「跟著變大／放大」這類一般用法。
+const ZH = /跟單|跟隨(?!系統)|跟著投資|跟著這位|跟著你投資|跟著自己投資|跟著策略分享者/;
 const EN =
-  /copy[- ]?trad|copy a trader|copy this trader|copier|copied (?:position|from)|\+ copied|follower|unfollow|copy fee|copy position|copy record|social copy|copying (?:a|the|trader)/i;
+  /copy[- ]?trad|copy[- ]?invest|copy a trader|copy this trader|copier|copied (?:position|from)|\+ copied|follower|unfollow|stop(?:ped)? following|follow(?:ing|ed)?(?: by)? (?:this |a |any )?strategy sharer|strategy sharers? followed|^follow(?:ing|ed by)?\b|copy fee|copy position|copy record|social copy|copying (?:a|the|trader)/i;
 
 // 白名單一律寫**精確 key**，只有「整條路由或整個元件都被旗標收起」的例外用前綴（ROUTE_PREFIXES）。
 // 萬用前綴（例如 portfolio.page.）會讓同一區塊新加的跟單文案悄悄過關。
@@ -66,6 +68,7 @@ const ALLOWED: ReadonlyArray<{ key: string; why: string }> = [
   { key: 'landing.steps.four', why: '旗標關閉時改用 landing.copyOff.stepFour' },
   { key: 'landing.markup.heroBefore', why: '旗標關閉時改用 landing.copyOff.heroBefore' },
   { key: 'landing.markup.heroBold', why: '旗標關閉時改用 landing.copyOff.heroBold' },
+  { key: 'landing.markup.heroAfter', why: '旗標關閉時改用 landing.copyOff.heroAfter' },
   { key: 'landing.markup.paperMid', why: '旗標關閉時改用 landing.copyOff.paperMid' },
   { key: 'meta.description', why: 'vite.config.ts 在旗標關閉時改用 meta.descriptionNoCopy' },
   { key: 'custody.expert.facts.copy', why: 'custodyContent 在旗標關閉時不取這一句（custody.test.ts 釘住）' },
@@ -83,6 +86,8 @@ const ALLOWED: ReadonlyArray<{ key: string; why: string }> = [
   // ── 只在使用者真的有跟單資料時出現（既有部位不能被旗標藏起來） ──
   { key: 'portfolio.page.activeCopies', why: '跟單統計卡：copyDeskVisibility，旗標關閉時不顯示' },
   { key: 'portfolio.page.totalCopyPnl', why: '同上' },
+  { key: 'portfolio.page.traderFollowedOne', why: '同上（跟著投資統計卡的「已跟隨的策略分享者」）' },
+  { key: 'portfolio.page.traderFollowedMany', why: '同上' },
   { key: 'portfolio.page.noCopyPositions', why: '同上' },
   { key: 'portfolio.page.copyPositions', why: '跟單部位卡：只在已有跟單紀錄時顯示' },
   { key: 'portfolio.page.notCopyingAnyone', why: '跟單部位卡的空狀態：旗標關閉時零筆不顯示整張卡' },
@@ -98,7 +103,9 @@ const ALLOWED: ReadonlyArray<{ key: string; why: string }> = [
   { key: 'portfolio.close.leftover', why: '只在該列是跟單留下的部位時出現' },
   { key: 'portfolio.column.copiedFrom', why: '旗標關閉時只在有跟單留下的部位時才顯示此欄' },
   { key: 'history.eventType.copyFee', why: '鏈上歷史事件，只在使用者真的有這類事件時出現' },
+  { key: 'history.eventType.follow', why: '同上（開始跟隨的鏈上事件）' },
   { key: 'history.eventType.unfollow', why: '同上' },
+  { key: 'history.detail.following', why: '同上' },
   { key: 'history.detail.unfollowed', why: '同上' },
   { key: 'traderProfile.activity.timeline.kind.following', why: '交易者鏈上活動時間軸，只在真的有跟單事件時出現' },
   { key: 'traderProfile.activity.timeline.kind.followedBy', why: '同上' },
@@ -106,6 +113,8 @@ const ALLOWED: ReadonlyArray<{ key: string; why: string }> = [
   { key: 'traderProfile.activity.timeline.detail.followedByAfter', why: '同上' },
   { key: 'errors.contract.no strategies', why: '合約錯誤對應，只在觸發該錯誤時出現' },
   { key: 'errors.contract.NotSyncExecutor', why: '同上' },
+  { key: 'errors.contract.NotCopyTracker', why: '同上（只有跟著投資的鏈上程式能呼叫）' },
+  { key: 'errors.contract.CopyTrackerNotSet', why: '同上' },
   { key: 'terminal.positions.copyManaged', why: '部位帶 copiedFrom 才顯示；旗標關閉時不會有跟單部位' },
   { key: 'terminal.positions.copyManagedTip', why: '同上' },
   { key: 'errors.contract.TradingFeeExceedsMargin', why: '同上' },

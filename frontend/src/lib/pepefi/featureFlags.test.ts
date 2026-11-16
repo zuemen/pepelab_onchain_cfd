@@ -96,11 +96,12 @@ describe('FIXED_LEVERAGE', () => {
 })
 
 describe('預設值', () => {
-  it('default 租戶的槓桿與永續入口預設是開的（#344）', () => {
-    // 這兩個預設值是產品定位，不是實作細節。2026-10-16 的決定（#344）：評審上公開站看模擬交易者、
-    // 跟單槓桿交易者，永續與槓桿要看得到。以前預設關（一進站就看到 5× 像炒幣平台）；要再改回去
-    // 必須是一個有意識的決定。
-    expect(SHOW_LEVERAGE).toBe(true)
-    expect(SHOW_PERPETUALS).toBe(true)
+  it('default 租戶的槓桿與永續入口預設是關的（2026-11-15）', () => {
+    // 這兩個預設值是產品定位，不是實作細節。
+    // 2026-11-15 指導者：資產一律以 RWA 代幣現貨呈現——不露槓桿倍數、多空方向與永續入口。
+    // 取代 #344（2026-10-16）的預設開；allowed 仍是 true，VITE_SHOW_LEVERAGE=1／VITE_SHOW_PERPETUALS=1
+    // 可以打開。要再改回去必須是一個有意識的決定。
+    expect(SHOW_LEVERAGE).toBe(false)
+    expect(SHOW_PERPETUALS).toBe(false)
   })
 })

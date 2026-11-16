@@ -30,6 +30,7 @@ import TableContainer from '@mui/material/TableContainer';
 import { tenant } from 'src/tenant';
 import { paths } from 'src/routes/paths';
 import { t, interpolate } from 'src/locales';
+import { SHOW_DIRECTION } from 'src/lib/pepefi/legDisplay';
 import { usePepefiWallet } from 'src/layouts/pepefi';
 import { CHAIN_NAMES } from 'src/contracts/addresses';
 import { useLegacyAssets } from 'src/hooks/useLegacyAssets';
@@ -298,9 +299,10 @@ function LegacyExchangeCard({
                   <TableRow>
                     <TableCell>{t.legacy.column.id}</TableCell>
                     <TableCell>{t.legacy.column.asset}</TableCell>
-                    <TableCell>{t.legacy.column.side}</TableCell>
+                    {/* 現貨呈現（SHOW_LEVERAGE 關）時收掉方向與槓桿兩欄；既有部位照樣能平倉 */}
+                    {SHOW_DIRECTION && <TableCell>{t.legacy.column.side}</TableCell>}
                     <TableCell align="right">{t.legacy.column.margin}</TableCell>
-                    <TableCell align="right">{t.legacy.column.leverage}</TableCell>
+                    {SHOW_DIRECTION && <TableCell align="right">{t.legacy.column.leverage}</TableCell>}
                     <TableCell align="right">{t.legacy.column.entryPrice}</TableCell>
                     <TableCell>{t.legacy.column.oracleAge}</TableCell>
                     <TableCell align="right">{t.legacy.column.action}</TableCell>
@@ -314,11 +316,11 @@ function LegacyExchangeCard({
                       <TableRow key={String(p.id)}>
                         <TableCell sx={{ fontFamily: MONO }}>#{String(p.id)}</TableCell>
                         <TableCell>{ASSET_LABEL[p.asset] ?? SHORT(p.asset)}</TableCell>
-                        <TableCell>{p.isLong ? t.legacy.side.long : t.legacy.side.short}</TableCell>
+                        {SHOW_DIRECTION && <TableCell>{p.isLong ? t.legacy.side.long : t.legacy.side.short}</TableCell>}
                         <TableCell align="right" sx={{ fontVariantNumeric: 'tabular-nums' }}>
                           {fmt(p.margin, dec)} {STABLE_LABEL}
                         </TableCell>
-                        <TableCell align="right">{String(p.leverage)}×</TableCell>
+                        {SHOW_DIRECTION && <TableCell align="right">{String(p.leverage)}×</TableCell>}
                         <TableCell align="right" sx={{ fontVariantNumeric: 'tabular-nums' }}>
                           {fmt(p.entryPrice, 18, 4)}
                         </TableCell>

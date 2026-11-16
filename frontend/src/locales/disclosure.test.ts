@@ -75,19 +75,19 @@ describe('simulated-trader disclosure copy', () => {
   const en = LOCALES.en.catalog.marketplace.hero.disclosure;
 
   it('zh-TW states simulated, program-operated, real historical prices, local chain, not a real person, on-chain trades, off-chain stats', () => {
-    for (const must of ['模擬交易者', '程式', '真實歷史價格', '本機鏈', '不是真人', '鏈上交易', '鏈下']) {
+    for (const must of ['模擬策略分享者', '程式', '真實歷史價格', '本機鏈', '不是真人', '鏈上紀錄', '鏈下']) {
       expect(zh, must).toContain(must);
     }
   });
 
   it('en states the same facts', () => {
     for (const must of [
-      'Simulated traders',
+      'Simulated strategy sharers',
       'program',
       'real historical prices',
       'local chain',
       'not the record of a real person',
-      'on-chain transaction',
+      'on-chain record',
       'off-chain',
     ]) {
       expect(en, must).toContain(must);
@@ -101,7 +101,7 @@ describe('time-compressed simulated-trader disclosure copy', () => {
   const en = LOCALES.en.catalog.marketplace.hero.disclosureCompressed;
 
   it('zh-TW keeps the simulated-trader facts and adds the issue’s two sentences word for word', () => {
-    for (const must of ['模擬交易者', '程式', '真實歷史價格', '不是真人', '鏈上交易', '鏈下']) expect(zh, must).toContain(must);
+    for (const must of ['模擬策略分享者', '程式', '真實歷史價格', '不是真人', '鏈上紀錄', '鏈下']) expect(zh, must).toContain(must);
     expect(zh).toContain('在 Base Sepolia 以壓縮時間回放，未計借款費與資金費率，上鏈時間為回放當天');
     expect(zh).toContain('KYC 送出即通過');
     // 內部部署說明不給一般使用者看
@@ -114,8 +114,8 @@ describe('time-compressed simulated-trader disclosure copy', () => {
   });
 
   it('en states the same facts', () => {
-    for (const must of ['Simulated traders', 'program', 'real historical prices', 'not the record of a real person',
-      'on-chain transaction', 'off-chain', 'Base Sepolia', 'compressed time', 'borrow fees and funding are not counted',
+    for (const must of ['Simulated strategy sharers', 'program', 'real historical prices', 'not the record of a real person',
+      'on-chain record', 'off-chain', 'Base Sepolia', 'compressed time', 'borrow fees and funding are not counted',
       'day of the replay', 'KYC']) {
       expect(en, must).toContain(must);
     }

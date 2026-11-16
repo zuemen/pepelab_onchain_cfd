@@ -196,7 +196,7 @@ export const admin = {
     info: {
       revenueModelLabel: '收益模式：',
       revenueModelBody:
-        '每筆跟單或績效手續費依 70% 交易者 / 20% 平台 / 10% 保險金庫 分配。平台手續費會累積在 FeeRouter，直到此管理員領取為止。',
+        '每筆跟單或績效手續費依 70% 交易者 / 20% 平台 / 10% 風險準備金 分配。平台手續費會累積在 FeeRouter，直到此管理員領取為止。',
       swapNote:
         '領取 USDC 後，可使用上方的兌換功能以模擬匯率（1 ETH = 3000 USDC）轉換為 ETH。正式環境中則會使用真正的 DEX。',
     },
@@ -327,7 +327,7 @@ export const admin = {
     connectWallet: '連接錢包以查看 agent 監控。',
     title: '📊 Agent 風險監控',
     live: '即時',
-    subtitle: '監控 AI agent 經濟：委派 session 的限額使用、x402 收入分潤、預言機健康度。唯讀。',
+    subtitle: '監控 AI 代理：額度使用、x402 收入分潤、價格來源健康度。唯讀。',
 
     /**
      * 償付後盾揭露。ADL 與組合保證金是合約上的旗標（adlEnabled / portfolioMarginEnabled），
@@ -345,7 +345,7 @@ export const admin = {
 
     kpi: {
       chain: '鏈',
-      activeSessions: '進行中 session',
+      activeSessions: '使用中的 AI 代理額度',
       staleFeeds: '過期報價',
       vaultAssets: '金庫資產（USDC）',
       vaultPrice: '金庫價格（USDC/pIV）',
@@ -353,12 +353,12 @@ export const admin = {
     },
 
     sessions: {
-      title: '已委任 Session',
+      title: '已給出的 AI 代理額度',
       refresh: '↺ 重新整理',
       wrongNetwork:
         '請切換到 Base Sepolia（chainId 84532）以檢視 agent sessions。目前網路：{chain}。',
       notConnected: '未連線',
-      empty: '尚無 session。',
+      empty: '尚無 AI 代理額度。',
 
       column: {
         id: '#',
@@ -406,9 +406,9 @@ export const admin = {
       fetch: '讀取',
       failed: '無法連到 signal-api（{error}）。請先 npm run signal-api。',
       callsTotal: '呼叫次數 / 總計',
-      traderShare: '交易者 70%',
+      traderShare: '策略分享者 70%',
       platformShare: '平台 20%',
-      vaultShare: '金庫 10%',
+      vaultShare: '風險準備金 10%',
       topBeneficiaries: '主要受益者（70% 分潤）',
       loading: '載入中…',
     },

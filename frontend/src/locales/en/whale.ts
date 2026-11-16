@@ -13,19 +13,19 @@ export const whale: Catalog['whale'] = {
   },
 
   /** feed 上點名一筆交易的原因。 */
-  side: { long: 'Long', short: 'Short' },
+  side: { long: 'Price up', short: 'Price down' },
   tag: {
     mega: 'Mega',
-    megaHint: 'Notional above {threshold}',
-    highLeverage: '{leverage}× leverage',
-    highLeverageHint: 'Liquidates on a small move against the position',
+    megaHint: 'Investment size above {threshold}',
+    highLeverage: 'High risk',
+    highLeverageHint: 'The investment size is far larger than the amount invested, so a small price move the wrong way can settle it automatically',
     newFace: 'New face',
     newFaceHint: 'First activity from this address in the scanned window',
   },
 
   page: {
     title: '🐋 Whale Tracker',
-    subtitle: 'Large trades as they land · live open interest · biggest positions on the book',
+    subtitle: 'Large investments as they land · total currently held · the biggest investments',
 
     window: 'Window · {label}',
     windowHint: 'Events older than this window are not included',
@@ -43,74 +43,74 @@ export const whale: Catalog['whale'] = {
     threshold: 'Whale threshold',
     refresh: '↺ Refresh',
 
-    lookupPlaceholder: '0x… look up any trader',
-    lookupAria: 'Trader address',
+    lookupPlaceholder: '0x… look up any investor',
+    lookupAria: 'Investor address',
     lookupInvalid: 'Not a valid Ethereum address',
     viewProfile: 'View profile',
 
     notAvailable:
-      'The exchange isn’t available on this network — connect a wallet on Base Sepolia to see whale activity. The address lookup above still works.',
+      'Investing isn’t available on this network — connect a wallet on Base Sepolia to see whale activity. The address lookup above still works.',
     retry: 'Retry',
 
     /** feed 空掉時的原因，四種各自是完整的一句話。 */
-    emptyDisconnected: 'Connect a wallet on Base Sepolia to scan the exchange.',
+    emptyDisconnected: 'Connect a wallet on Base Sepolia to scan on-chain investment records.',
     emptyScanFailed: 'The scan did not complete, so this is not an answer — retry above.',
     emptyBelowThreshold:
-      '{count} trades in this window, none at or above {threshold}. Try a lower threshold.',
-    emptyNoTrades: 'No positions opened at all in blocks {range}.',
+      '{count} investments in this window, none at or above {threshold}. Try a lower threshold.',
+    emptyNoTrades: 'No buys at all in blocks {range}.',
 
     footer:
-      'Feed and volume cover blocks {range} ({window}). Open interest is read live from the exchange and covers every position, including older ones.',
+      'Feed and volume cover blocks {range} ({window}). The total currently held is read live from the chain and covers every investment still held, including older ones.',
     footerPending: 'Scan range pending',
   },
 
   kpi: {
-    whaleTrades: 'Whale Trades',
-    whaleTradesSub: '≥ {threshold} notional · {window}',
-    volume: 'Traded Volume',
-    volumeSub: 'all {count} positions opened · {window}',
-    openInterest: 'Open Interest',
+    whaleTrades: 'Whale Investments',
+    whaleTradesSub: '≥ {threshold} investment size · {window}',
+    volume: 'Volume',
+    volumeSub: 'all {count} buys · {window}',
+    openInterest: 'Total Currently Held',
     openInterestSub: 'live · every market, all time',
   },
 
   feed: {
     title: '🐋 Whale Feed',
     scanning: 'Scanning {done}/{total}',
-    trades: '{count} trades',
+    trades: '{count} investments',
 
     /**
      * #36：simple 模式把一筆交易寫成一句話，每個片段之間本來就用明確的
      * `{' '}` 隔開，不是靠 JSX 折疊換行空白，所以直接搬進 catalog 不會漏空格。
      */
-    openedVerb: 'opened',
+    openedVerb: 'bought',
     forPreposition: 'for',
-    emptyTitle: 'No whale trades in range',
+    emptyTitle: 'No whale investments in range',
     emptyTitleFailed: '⚠️',
-    emptyDescription: 'Nothing above the $5k notional threshold in the scanned window.',
+    emptyDescription: 'Nothing above the $5k investment-size threshold in the scanned window.',
 
-    copy: '⭐ Copy',
-    copyHint: 'Registered strategy — copy this trader on the Marketplace',
+    copy: '⭐ Copy investing',
+    copyHint: 'Registered strategy — follow this strategy sharer through copy investing on the Strategy Marketplace',
     estimatedTime: 'Estimated from average block time',
-    txAria: 'View transaction in block explorer',
+    txAria: 'View the on-chain record in the block explorer',
 
     column: {
       time: 'Time',
-      trader: 'Trader',
+      trader: 'Investor',
       market: 'Market',
-      side: 'Side',
-      notional: 'Notional',
-      entry: 'Entry',
-      tx: 'Tx',
+      side: 'Up / Down',
+      notional: 'Size',
+      entry: 'Buy price',
+      tx: 'Record',
     },
   },
 
   sentiment: {
-    title: 'Long vs Short',
-    subtitle: 'open interest · live',
+    title: 'Price Up vs Price Down',
+    subtitle: 'total currently held · live',
     unavailable: 'Unavailable on this network.',
-    empty: 'No open positions in any market.',
-    long: 'LONG {pct}%',
-    short: '{pct}% SHORT',
+    empty: 'No investments held in any market.',
+    long: 'UP {pct}%',
+    short: '{pct}% DOWN',
 
     /**
      * 「橫跨 N 個市場」的單複數寫成兩條完整的句子——catalog 沒有複數引擎，
@@ -119,7 +119,7 @@ export const whale: Catalog['whale'] = {
     acrossOne: 'across {count} market',
     acrossMany: 'across {count} markets',
 
-    rowTooltip: 'Long {long} · Short {short}',
+    rowTooltip: 'Up {long} · Down {short}',
     missingOne: '{count} market could not be read — the RPC node may be rate-limiting.',
     missingMany: '{count} markets could not be read — the RPC node may be rate-limiting.',
   },
@@ -135,24 +135,24 @@ export const whale: Catalog['whale'] = {
   },
 
   largest: {
-    title: 'Largest Open Positions',
+    title: 'Largest Investments Held',
     top: 'top {count}',
     unavailable: 'Unavailable on this network.',
-    empty: 'No open positions in the scanned window.',
+    empty: 'No investments held in the scanned window.',
 
     column: {
       market: 'Market',
-      trader: 'Trader',
-      side: 'Side',
-      entry: 'Entry',
-      mark: 'Mark',
-      notional: 'Notional',
-      pnl: 'PnL',
+      trader: 'Investor',
+      side: 'Up / Down',
+      entry: 'Buy price',
+      mark: 'Current price',
+      notional: 'Size',
+      pnl: 'Profit / loss',
     },
 
-    markUnread: 'Mark price could not be read',
-    pnlUnread: 'Unrealised PnL could not be read',
-    missingOne: '{count} position could not be read — the RPC node may be rate-limiting.',
-    missingMany: '{count} positions could not be read — the RPC node may be rate-limiting.',
+    markUnread: 'Current price could not be read',
+    pnlUnread: 'Unrealised profit / loss could not be read',
+    missingOne: '{count} investment could not be read — the RPC node may be rate-limiting.',
+    missingMany: '{count} investments could not be read — the RPC node may be rate-limiting.',
   },
 };

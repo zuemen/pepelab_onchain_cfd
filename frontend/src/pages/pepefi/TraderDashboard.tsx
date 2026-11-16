@@ -6,7 +6,8 @@ import { usePepefiWallet } from 'src/layouts/pepefi'
 import { ASSET_IDS } from 'src/contracts/addresses'
 import { prettyError } from 'src/lib/pepefi/errorMessages'
 import { validateStrategy, MIN_ALLOCATION_ASSETS, type StrategyIssue } from 'src/lib/pepefi/strategyValidation'
-import { FEATURE_COPY_TRADING } from 'src/lib/pepefi/featureFlags'
+import { FEATURE_COPY_TRADING, SHOW_LEVERAGE, FIXED_LEVERAGE } from 'src/lib/pepefi/featureFlags'
+import { SHOW_DIRECTION } from 'src/lib/pepefi/legDisplay'
 import { TableSkeleton } from 'src/components/pepefi/Skeleton'
 import { ASSETS_LIST, ASSET_LABEL } from 'src/lib/pepefi/assetMeta'
 import { traderAvatarSrc } from 'src/utils/pepefi-assets'
@@ -184,7 +185,7 @@ export default function TraderDashboard() {
     const uid = uidRef.current++
     setRows(prev => [
       ...prev,
-      { uid, asset: ASSET_IDS.sBTC, isLong: true, leverage: 1, weight: '' },
+      { uid, asset: ASSET_IDS.sBTC, isLong: true, leverage: FIXED_LEVERAGE, weight: '' },
     ])
   }
 
@@ -251,11 +252,13 @@ export default function TraderDashboard() {
 
   const doPublish = async () => {
     if (!contracts || !canPublish) return
+    // 現貨呈現（SHOW_LEVERAGE 關）時方向與槓桿選擇器不顯示，一律送 1× 做多——跟 OrderTicket 用
+    // FIXED_LEVERAGE 是同一條規則。旗標打開時照使用者選的值送。
     const allocs = rows.map((r, i) => ({
       asset:    r.asset,
       weight:   BigInt(check.bps[i]),
-      isLong:   r.isLong,
-      leverage: BigInt(r.leverage),
+      isLong:   SHOW_LEVERAGE ? r.isLong : true,
+      leverage: BigInt(SHOW_LEVERAGE ? r.leverage : FIXED_LEVERAGE),
     }))
     setLoad('publish', true)
     try {
@@ -445,8 +448,13 @@ export default function TraderDashboard() {
                 <TableHead>
                   <TableRow>
                     <TableCell sx={{ color: 'text.secondary', fontWeight: 'bold' }}>{t.traderDashboard.publish.column.asset}</TableCell>
-                    <TableCell sx={{ color: 'text.secondary', fontWeight: 'bold' }}>{t.traderDashboard.publish.column.direction}</TableCell>
-                    <TableCell sx={{ color: 'text.secondary', fontWeight: 'bold' }}>{t.traderDashboard.publish.column.leverage}</TableCell>
+                    {/* 現貨呈現（SHOW_LEVERAGE 關）時不顯示方向與槓桿選擇器，發布時固定 1× 做多（見 doPublish） */}
+                    {SHOW_LEVERAGE && (
+                      <>
+                        <TableCell sx={{ color: 'text.secondary', fontWeight: 'bold' }}>{t.traderDashboard.publish.column.direction}</TableCell>
+                        <TableCell sx={{ color: 'text.secondary', fontWeight: 'bold' }}>{t.traderDashboard.publish.column.leverage}</TableCell>
+                      </>
+                    )}
                     <TableCell align="right" sx={{ color: 'text.secondary', fontWeight: 'bold' }}>{t.traderDashboard.publish.column.weight}</TableCell>
                     <TableCell />
                   </TableRow>
@@ -472,53 +480,57 @@ export default function TraderDashboard() {
                           </Select>
                         </TableCell>
 
-                        <TableCell sx={{ minWidth: 160 }}>
-                          <Box sx={{ display: 'flex', borderRadius: 1, border: '1px solid', borderColor: 'divider', overflow: 'hidden', height: 40 }}>
-                            <Button
-                              onClick={() => updateRow(row.uid, { isLong: true })}
-                              sx={{
-                                flexGrow: 1,
-                                borderRadius: 0,
-                                textTransform: 'none',
-                                fontWeight: 'bold',
-                                fontSize: '0.75rem',
-                                bgcolor: row.isLong ? 'success.main' : 'transparent',
-                                color: row.isLong ? 'success.contrastText' : 'text.secondary',
-                                '&:hover': { bgcolor: row.isLong ? 'success.dark' : 'action.hover' }
-                              }}
-                            >
-                              {t.traderDashboard.publish.long}
-                            </Button>
-                            <Button
-                              onClick={() => updateRow(row.uid, { isLong: false })}
-                              sx={{
-                                flexGrow: 1,
-                                borderRadius: 0,
-                                textTransform: 'none',
-                                fontWeight: 'bold',
-                                fontSize: '0.75rem',
-                                bgcolor: !row.isLong ? 'error.main' : 'transparent',
-                                color: !row.isLong ? 'error.contrastText' : 'text.secondary',
-                                '&:hover': { bgcolor: !row.isLong ? 'error.dark' : 'action.hover' }
-                              }}
-                            >
-                              {t.traderDashboard.publish.short}
-                            </Button>
-                          </Box>
-                        </TableCell>
+                        {SHOW_LEVERAGE && (
+                          <>
+                            <TableCell sx={{ minWidth: 160 }}>
+                              <Box sx={{ display: 'flex', borderRadius: 1, border: '1px solid', borderColor: 'divider', overflow: 'hidden', height: 40 }}>
+                                <Button
+                                  onClick={() => updateRow(row.uid, { isLong: true })}
+                                  sx={{
+                                    flexGrow: 1,
+                                    borderRadius: 0,
+                                    textTransform: 'none',
+                                    fontWeight: 'bold',
+                                    fontSize: '0.75rem',
+                                    bgcolor: row.isLong ? 'success.main' : 'transparent',
+                                    color: row.isLong ? 'success.contrastText' : 'text.secondary',
+                                    '&:hover': { bgcolor: row.isLong ? 'success.dark' : 'action.hover' }
+                                  }}
+                                >
+                                  {t.traderDashboard.publish.long}
+                                </Button>
+                                <Button
+                                  onClick={() => updateRow(row.uid, { isLong: false })}
+                                  sx={{
+                                    flexGrow: 1,
+                                    borderRadius: 0,
+                                    textTransform: 'none',
+                                    fontWeight: 'bold',
+                                    fontSize: '0.75rem',
+                                    bgcolor: !row.isLong ? 'error.main' : 'transparent',
+                                    color: !row.isLong ? 'error.contrastText' : 'text.secondary',
+                                    '&:hover': { bgcolor: !row.isLong ? 'error.dark' : 'action.hover' }
+                                  }}
+                                >
+                                  {t.traderDashboard.publish.short}
+                                </Button>
+                              </Box>
+                            </TableCell>
 
-                        <TableCell sx={{ minWidth: 90 }}>
-                          <Select
-                            size="small"
-                            value={row.leverage}
-                            onChange={e => updateRow(row.uid, { leverage: Number(e.target.value) })}
-                            fullWidth
-                          >
-                            {[1, 2, 5].map(lv => (
-                              <MenuItem key={lv} value={lv}>{lv}×</MenuItem>
-                            ))}
-                          </Select>
-                        </TableCell>
+                            <TableCell sx={{ minWidth: 90 }}>
+                              <Select
+                                size="small"
+                                value={row.leverage}
+                                onChange={e => updateRow(row.uid, { leverage: Number(e.target.value) })}
+                                fullWidth
+                              >
+                                {[1, 2, 5].map(lv => (
+                                  <MenuItem key={lv} value={lv}>{lv}×</MenuItem>
+                                ))}
+                              </Select>
+                            </TableCell>
+                          </>
+                        )}
 
                         <TableCell align="right" sx={{ minWidth: 100 }}>
                           <TextField
@@ -717,11 +729,14 @@ export default function TraderDashboard() {
                     <Typography variant="body2" sx={{ fontWeight: 'bold', color: 'text.primary', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                       {ver.allocs
                         .map(a =>
-                          interpolate(t.traderDashboard.history.summaryEntry, {
-                            asset: ASSET_LABEL[a.asset] ?? a.asset.slice(0, 6),
-                            side: a.isLong ? t.traderDashboard.history.long : t.traderDashboard.history.short,
-                            leverage: String(a.leverage),
-                          }),
+                          // 現貨呈現（SHOW_LEVERAGE 關）：不顯示方向與倍數，改帶權重。
+                          SHOW_LEVERAGE
+                            ? interpolate(t.traderDashboard.history.summaryEntry, {
+                                asset: ASSET_LABEL[a.asset] ?? a.asset.slice(0, 6),
+                                side: a.isLong ? t.traderDashboard.history.long : t.traderDashboard.history.short,
+                                leverage: String(a.leverage),
+                              })
+                            : `${ASSET_LABEL[a.asset] ?? a.asset.slice(0, 6)} ${fmtPct(a.weight)}`,
                         )
                         .join('  ·  ')}
                     </Typography>
@@ -744,8 +759,9 @@ export default function TraderDashboard() {
                           <TableRow>
                             {[
                               t.traderDashboard.history.column.asset,
-                              t.traderDashboard.history.column.side,
-                              t.traderDashboard.history.column.leverage,
+                              // 現貨呈現時不顯示方向與槓桿兩欄；表頭與資料列一起收。
+                              ...(SHOW_DIRECTION ? [t.traderDashboard.history.column.side] : []),
+                              ...(SHOW_LEVERAGE ? [t.traderDashboard.history.column.leverage] : []),
                               t.traderDashboard.history.column.weight,
                             ].map(h => (
                               <TableCell key={h} sx={{ color: 'text.secondary', fontWeight: 'bold' }}>{h}</TableCell>
@@ -758,10 +774,12 @@ export default function TraderDashboard() {
                               <TableCell sx={{ fontFamily: MONO, fontWeight: 'bold', color: 'text.primary' }}>
                                 {ASSET_LABEL[a.asset] ?? a.asset.slice(0, 8)}
                               </TableCell>
-                              <TableCell sx={{ fontWeight: 'bold', color: a.isLong ? 'success.main' : 'error.main' }}>
-                                {a.isLong ? t.traderDashboard.history.longLabel : t.traderDashboard.history.shortLabel}
-                              </TableCell>
-                              <TableCell sx={{ fontFamily: MONO }}>{String(a.leverage)}×</TableCell>
+                              {SHOW_DIRECTION && (
+                                <TableCell sx={{ fontWeight: 'bold', color: a.isLong ? 'success.main' : 'error.main' }}>
+                                  {a.isLong ? t.traderDashboard.history.longLabel : t.traderDashboard.history.shortLabel}
+                                </TableCell>
+                              )}
+                              {SHOW_LEVERAGE && <TableCell sx={{ fontFamily: MONO }}>{String(a.leverage)}×</TableCell>}
                               <TableCell align="right" sx={{ fontFamily: MONO, fontWeight: 'bold' }}>
                                 {fmtPct(a.weight)}
                               </TableCell>

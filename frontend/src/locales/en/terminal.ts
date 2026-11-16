@@ -4,46 +4,46 @@ import type { Catalog } from '../zh-TW';
  * 見 `../zh-TW/terminal.ts`。
  */
 export const terminal: Catalog['terminal'] = {
-  connectWallet: 'Connect wallet to open the terminal.',
+  connectWallet: 'Connect wallet to open the advanced investing tools.',
 
   header: {
-    tagline: 'agent-native perps · base sepolia',
+    tagline: 'AI-agent native · digital-asset investing · base sepolia',
     status: 'on-chain · live',
   },
 
   /** 行情列。每個 Stat 的 hint 都是滑鼠提示，`\n\n` 是段落分隔。 */
   stats: {
     closeHintAria: 'Close explanation',
-    perpSuffix: '-PERP',
+    perpSuffix: '',
     displayPrice: 'display price',
 
-    index: 'Index (oracle · settles here)',
+    index: 'Index (price source · used to settle)',
     indexHint:
-      'The on-chain oracle (index) price.\n\nOpening, closing, and liquidation use the mark price: this price plus an open-interest imbalance premium (the two are equal when the premium cap is 0). All of this is independent of the display price and candlestick chart above — those are external market references. The oracle is written on-chain periodically by the keeper, so it lags the market a little.',
+      'The index price written on-chain by the price source.\n\nBuying, selling and automatic settlement use the mark price: this price plus a premium for the up/down imbalance (the two are equal when the premium cap is 0). All of this is independent of the display price and candlestick chart above — those are external market references. The price is written on-chain periodically by the operator\'s program, so it lags the market a little.',
 
-    mark: 'Mark (OI premium)',
+    mark: 'Mark (imbalance premium)',
     markHint:
-      'The index price adjusted by a premium for long/short imbalance.\n\nWhen longs significantly outweigh shorts, mark trades above index, and vice versa. This makes PnL and liquidation reflect the risk of "everyone leaning the same way," not just the raw oracle price.',
+      'The index price adjusted by a premium for the imbalance between price-up and price-down investments.\n\nWhen price-up investments clearly outweigh price-down ones, mark sits above index, and vice versa. This makes profit/loss and automatic settlement reflect the risk of "everyone leaning the same way," not just the raw price-source quote.',
 
     funding: 'Funding',
     fundingHint:
-      'A periodic payment between longs and shorts that pulls the price back toward the index.\n\nPositive = longs pay shorts (longs are crowded); negative is the reverse. While you hold a position, this rate accrues as a cost or a gain.',
+      'A periodic payment between price-up and price-down investments that pulls the price back toward the index.\n\nPositive = the price-up side pays the price-down side (price-up is crowded); negative is the reverse. While you hold an investment, this rate accrues as a cost or a gain.',
 
-    carbon: 'Carbon tier · fee · max leverage',
+    carbon: 'Carbon tier · fee · max amplification',
     carbonHint:
-      "Which carbon-intensity band this asset falls in, and the trading fee and leverage ceiling that follow from it.\n\nThe rule is fixed in the CarbonTiers contract, not a settable parameter: the higher the carbon, the more it costs to hold here and the less leverage it can carry. Unrated (no unexpired attestation) always falls to the most conservative tier — top fee, 1x.",
+      "Which carbon-intensity band this asset falls in, and the fee and amplification ceiling that follow from it.\n\nThe rule is fixed in a public on-chain program (CarbonTiers), not a settable parameter: the higher the carbon, the more it costs to hold here and the less it can be amplified. Unrated (no unexpired attestation) always falls to the most conservative tier — top fee, 1x (no amplification).",
     carbonValue: '{tier} · {fee} bps · ≤{lev}×',
 
-    openInterest: 'Open interest L/S',
+    openInterest: 'Total held up/down',
     openInterestHint:
-      'The notional value of this asset\'s open long / short positions on-chain right now.\n\nThe bigger the gap between the two, the more one-sided the market is, and the funding rate grows with it. A "—" means the on-chain read failed, not that there are no positions.',
+      'The size of this asset\'s price-up / price-down investments held on-chain right now.\n\nThe bigger the gap between the two, the more one-sided the market is, and the funding rate grows with it. A "—" means the on-chain read failed, not that nobody holds any.',
 
-    vaultBacking: 'Vault backing',
+    vaultBacking: 'Risk reserve',
     vaultBackingHint:
-      "The Insurance Vault's current size — the backstop that absorbs losses beyond a liquidated position's margin in extreme markets.\n\n$0 means the vault is deployed but nobody has funded it yet, so the platform has no extra solvency buffer right now. That's the real on-chain state, not a display bug.",
+      "The risk reserve's current size — the backstop that absorbs the part of a loss that goes beyond the amount invested in extreme markets.\n\n$0 means the reserve is deployed but nobody has funded it yet, so the platform has no extra solvency buffer right now. That's the real on-chain state, not a display bug.",
 
     sourceCoingecko: 'display · coingecko',
-    sourceOracle: 'display · on-chain oracle',
+    sourceOracle: 'display · on-chain price source',
     sourceNone: 'no price',
 
     /**
@@ -55,67 +55,67 @@ export const terminal: Catalog['terminal'] = {
 
   /** 下單面板。 */
   ticket: {
-    long: 'LONG',
-    short: 'SHORT',
-    sideLong: 'Long',
-    sideShort: 'Short',
+    long: 'PRICE UP',
+    short: 'PRICE DOWN',
+    sideLong: 'Price up',
+    sideShort: 'Price down',
 
-    leverage: 'Leverage',
-    margin: 'Margin',
+    leverage: 'Amplification',
+    margin: 'Amount invested',
     free: 'free: {amount}',
-    marginAria: 'Margin ({token})',
+    marginAria: 'Amount invested ({token})',
 
-    notional: 'Notional',
-    entryOracle: 'Entry (oracle)',
+    notional: 'Investment size',
+    entryOracle: 'Est. buy price (index)',
     noPriceNotice:
-      "⛔ Can't read the on-chain index price, so entry and liquidation prices can't be computed. Orders are disabled until a price is available.",
-    estLiquidation: 'Est. Liquidation',
-    onLiquidation: 'On liquidation',
-    onLiquidationValue: 'Refunded minus penalty',
+      "⛔ Can't read the on-chain index price, so the buy price and automatic settlement price can't be computed. Nothing can be sent until a price is available.",
+    estLiquidation: 'Est. automatic settlement price',
+    onLiquidation: 'On automatic settlement',
+    onLiquidationValue: 'Remainder refunded minus penalty',
     fundingRate: 'Funding rate ({interval})',
-    tradingParams: 'Trading fee · max leverage',
+    tradingParams: 'Fee · max amplification',
     tradingParamsValue: '{fee} bps · ≤{lev}× · {source}',
     paramsSource: {
       chain: 'source: on-chain',
       static: 'source: static table',
-      pending: 'loading (capped at 1× for now)',
+      pending: 'loading (capped at 1×, no amplification, for now)',
     },
 
-    enterMargin: 'Enter margin',
-    insufficientFreeMargin: 'Insufficient free margin — deposit first',
-    opened: '{side} {asset} opened ✓',
+    enterMargin: 'Enter amount to invest',
+    insufficientFreeMargin: 'Not enough available funds — deposit first',
+    opened: '{side} {asset} submitted ✓',
 
     /** 受管制標的的三種 KYC 狀態，各自是完整的一句話。 */
     kycUnknown:
-      "⚠ Can't confirm KYC status (on-chain read failed). The compliance gate is fail-closed, so trading {asset} is paused.",
+      "⚠ Can't confirm KYC status (on-chain read failed). To stay safe, buying and selling {asset} is paused until it is confirmed.",
     kycPending:
       '⏳ {asset} requires KYC: application submitted, awaiting reviewer approval — unlocks automatically once approved',
     kycRequired:
       '🔒 {asset} requires KYC. Submit it from the KYC card on the Portfolio page (approved as soon as you submit).',
     kycGoToPortfolio: 'Go to Portfolio to submit',
-    marketModeBlocked: 'This market is closed or paused, so no new positions can be opened.',
-    insufficientWithFee: 'Not enough margin after fees',
+    marketModeBlocked: 'This asset is closed or paused, so no new buys are possible.',
+    insufficientWithFee: 'Not enough to invest after fees',
     kycRequiredVc:
-      '🔒 {asset} is an RWA market — opening a position requires a valid qualified-investor credential registered on-chain',
+      '🔒 {asset} is an RWA market — buying requires a valid qualified-investor credential registered on-chain',
 
     riskNotice:
-      '⚠️ Advanced: trade rises or falls, with optional leverage. Leverage magnifies losses and your position can be force-closed. Start with 1x. This platform is an oracle-priced perpetual — PnL settles at mark price (including OI imbalance); in extreme one-sided markets, paper profit may be adjusted by ADL auto-deleveraging; margin is in USDC.',
+      '⚠️ Advanced: you can bet on a rise or a fall, and you can amplify the investment size. Losses are amplified too: if the price moves against you the investment can be settled automatically, and you can lose the whole amount invested. Start with 1x (no amplification). Prices come from the on-chain price source and profit/loss settles at the mark price (including the up/down imbalance); in extreme one-sided markets, paper profit may be adjusted automatically (ADL); amounts invested are in USDC.',
     showRiskNotice: '⚠️ Show risk notice',
 
-    submitting: 'Opening…',
-    insufficientMargin: 'Insufficient margin',
-    ctaOpen: 'Open {side} {asset}',
+    submitting: 'Buying…',
+    insufficientMargin: 'Amount too low',
+    ctaOpen: 'Submit {side} {asset}',
   },
 
   /** 帳戶區。 */
   account: {
-    equity: 'Equity',
-    freeMargin: 'Free Margin',
-    unrealizedPnl: 'Unrealised PnL',
-    pnlPartial: 'Some positions cannot be valued right now (read failed or no usable price), so the total is not shown.',
-    positionsUnread: '{count} position(s) could not be read — the totals are incomplete.',
+    equity: 'Total value',
+    freeMargin: 'Available funds',
+    unrealizedPnl: 'Unrealised profit / loss',
+    pnlPartial: 'Some investments cannot be valued right now (read failed or no usable price), so the total is not shown.',
+    positionsUnread: '{count} investment(s) could not be read — the totals are incomplete.',
     wallet: 'Wallet {token}',
-    marginNote: 'margin settles in USDC · USDT is hold/swap only',
+    marginNote: 'amounts invested settle in USDC · USDT is hold/swap only',
 
     enterAmount: 'Enter amount',
     deposited: 'Deposited {amount} USDC ✓',
@@ -127,39 +127,39 @@ export const terminal: Catalog['terminal'] = {
 
   /** 持倉區的分頁殼。 */
   panel: {
-    tabPositions: 'Positions ({count})',
-    tabFills: 'Fills',
+    tabPositions: 'My investments ({count})',
+    tabFills: 'Buys & sells',
     tabFunding: 'Funding',
     refresh: '↺ refresh',
 
     updatedAt: 'Updated {time}',
     staleData: 'No successful update for over {sec}s — figures may be out of date (last updated {time})',
     readFailed: 'The last read failed — showing data from {time}',
-    neverRead: 'Positions not read yet',
+    neverRead: 'Investments not read yet',
   },
 
   positions: {
     column: {
       asset: 'Asset',
       side: 'Side',
-      entry: 'Entry',
+      entry: 'Buy price',
       mark: 'Mark',
-      margin: 'Margin',
-      leverage: 'Lev',
-      pnl: 'PnL',
+      margin: 'Amount invested',
+      leverage: 'Amplif.',
+      pnl: 'Profit / loss',
     },
-    empty: 'no open positions',
-    long: 'LONG',
-    short: 'SHORT',
-    closed: 'Closed ✓',
-    close: 'Close',
-    copyManaged: 'Copy position',
-    copyManagedTip: 'This position came from copy trading. Closing it alone would put the copy record out of step, so manage it in Portfolio.',
+    empty: 'no investments held',
+    long: 'PRICE UP',
+    short: 'PRICE DOWN',
+    closed: 'Sold ✓',
+    close: 'Sell',
+    copyManaged: 'Copy investing',
+    copyManagedTip: 'This was bought through copy investing. Selling it alone would put the follower record out of step, so manage it in Portfolio.',
     stale: 'Price stale',
     markHint:
-      'Contract getMarkPrice: index price plus the premium from platform-wide long/short imbalance. A position\u2019s own PnL uses the mark with its own notional excluded, so the two can differ when the premium cap is above 0.',
+      'The mark price computed by the on-chain program: index price plus the premium from the platform-wide up/down imbalance. An investment\u2019s own profit/loss uses the mark with its own size excluded, so the two can differ when the premium cap is above 0.',
     pnlHint:
-      'How much more or less than your margin you would get back by closing now (contract getPositionValue − margin), after the close fee, borrow fee and accrued funding. Excludes the 10% performance fee some positions pay on profit; funding as of the last settlement; excludes the bankruptcy bailout.',
+      'How much more or less than the amount invested you would get back by selling now (investment value from the on-chain program − amount invested), after the sell fee, borrow fee and accrued funding. Excludes the 10% performance fee some investments pay on profit; funding as of the last settlement; excludes any cover for losses beyond the amount invested.',
   },
 
   fills: {
@@ -168,27 +168,27 @@ export const terminal: Catalog['terminal'] = {
       asset: 'Asset',
       side: 'Side',
       price: 'Price',
-      pnl: 'PnL',
-      tx: 'Tx',
+      pnl: 'Profit / loss',
+      tx: 'Record',
     },
     kind: {
-      opened: 'Open',
-      closed: 'Close',
-      liquidated: 'Liquidated',
+      opened: 'Buy',
+      closed: 'Sell',
+      liquidated: 'Settled automatically',
     },
-    loading: 'Loading on-chain fills…',
-    empty: 'No recent fills',
-    readError: "Couldn't read on-chain fills",
-    long: 'LONG',
-    short: 'SHORT',
+    loading: 'Loading on-chain buys and sells…',
+    empty: 'No recent buys or sells',
+    readError: "Couldn't read on-chain buys and sells",
+    long: 'PRICE UP',
+    short: 'PRICE DOWN',
   },
 
   funding: {
     column: {
       asset: 'Asset',
       rate: 'Rate ({interval})',
-      longOi: 'Long OI',
-      shortOi: 'Short OI',
+      longOi: 'Held (up)',
+      shortOi: 'Held (down)',
       lastSettled: 'Last settled',
     },
     empty: 'No funding data',
@@ -207,7 +207,7 @@ export const terminal: Catalog['terminal'] = {
     agoHours: '{n}h ago',
 
     canSettle: 'Settleable',
-    note: 'Only lists assets with funding registered on-chain. A positive value means longs pay shorts.',
+    note: 'Only lists assets with a funding rate set on-chain. A positive value means the price-up side pays the price-down side.',
   },
 
   /** 市場活動面板（取代原本的交易所盤口）。 */
@@ -217,22 +217,22 @@ export const terminal: Catalog['terminal'] = {
 
     column: {
       side: 'Side',
-      margin: 'Margin',
-      entry: 'Entry',
+      margin: 'Amount invested',
+      entry: 'Buy price',
       time: 'Time',
-      pnl: 'PnL',
+      pnl: 'Profit / loss',
     },
 
-    loading: 'Loading on-chain positions…',
-    emptyForAsset: 'No on-chain positions for {asset} right now',
+    loading: 'Loading on-chain investments…',
+    emptyForAsset: 'No on-chain investments in {asset} right now',
     /** 標的代號還沒讀到時，`emptyForAsset` 用的代稱。 */
     thisAsset: 'this asset',
 
-    long: 'LONG',
-    short: 'SHORT',
-    openMarker: 'open',
+    long: 'PRICE UP',
+    short: 'PRICE DOWN',
+    openMarker: 'held',
 
-    truncated: "Only scanning the most recent positions — older ones aren't listed",
+    truncated: "Only scanning the most recent investments — older ones aren't listed",
     missed: '{count} entries were not read due to RPC rate limiting — the list may be incomplete',
   },
 
@@ -250,7 +250,7 @@ export const terminal: Catalog['terminal'] = {
     atCapacity: 'Display limit reached',
 
     disclaimer:
-      "The chart is reference pricing from an external public source, not this platform's trade record — opening, closing, and liquidation all settle at the on-chain mark price (index plus the open-interest imbalance premium).",
+      "The chart is reference pricing from an external public source, not this platform's trade record — buying, selling and automatic settlement all settle at the on-chain mark price (index plus the up/down imbalance premium).",
 
     error: "Couldn't load candles",
     loading: 'Loading candles…',

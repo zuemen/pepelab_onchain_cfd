@@ -82,7 +82,7 @@ export function admitNotification(body: unknown, cfg: AgentConfig): Admission {
     return bad("retryAt 必須是時間字串或 null");
   }
   if (p.chainId !== cfg.chainId) return bad(`chainId 與這個 agent 連的鏈（${cfg.chainId}）不同`);
-  if (p.copyTracker.toLowerCase() !== cfg.copyTracker.toLowerCase()) return bad("copyTracker 與這個 agent 連的合約不同");
+  if (p.copyTracker.toLowerCase() !== cfg.copyTracker.toLowerCase()) return bad("copyTracker 與這個 agent 連的鏈上程式不同");
   if (!cfg.followers.includes(follower)) return { kind: "reject", status: 403, reason: "跟隨者不在 --followers 白名單" };
   if (p.kind === "blocked") {
     return { kind: "blocked", notice: { follower, recordIdx: p.recordIdx, trader, category: p.category as RevertCategory } };
@@ -153,15 +153,15 @@ export type DedupeDecision =
 /** 同一 trader＋toVersion 不重複付款；同一筆跟單的同一版不重複同步。 */
 export function dedupeDecision(ledger: Ledger, n: NewVersionNotice): DedupeDecision {
   const sync = ledger.syncs[syncKey(n)];
-  if (sync?.status === "synced") return { action: "skip", reason: `這一版已同步過（tx ${sync.tx}）` };
+  if (sync?.status === "synced") return { action: "skip", reason: `這一版已調整過（紀錄 ${sync.tx}）` };
   if (sync?.status === "unconfirmed") {
-    return { action: "skip", reason: `上次的同步交易還沒確認（tx ${sync.tx}），請先到區塊瀏覽器查；沒上鏈的話本人到投資組合按「立即同步」` };
+    return { action: "skip", reason: `上次的調整還沒確認（紀錄 ${sync.tx}），請先到區塊瀏覽器查；沒上鏈的話本人到投資組合按「立即同步」` };
   }
   const sig = ledger.signals[signalKey(n)];
   if (!sig) return { action: "process", payment: "pay" };
   if (sig.status === "paid") return { action: "process", payment: "reuse" };
   if (sig.status === "mismatch") {
-    return { action: "skip", reason: `這一版先前付費後版號不符（訊號 ${sig.version ?? "無"}、通知 ${n.toVersion}），不重複付款也不同步。${MANUAL_RETRY}` };
+    return { action: "skip", reason: `這一版先前付費後版本不符（策略資料 ${sig.version ?? "無"}、通知 ${n.toVersion}），不重複付款也不調整投資。${MANUAL_RETRY}` };
   }
   return { action: "skip", reason: `這一版的付款狀態不明（曾送出授權但沒看到結算結果），不重複付款；請先查付款錢包的 USDC 紀錄。${MANUAL_RETRY}` };
 }
@@ -192,19 +192,19 @@ const RETRIGGER = "處理好後重新觸發通知（x402-copy-agent.md「重新�
 /** 付費前、送交易前都會跑一次。回傳 null 表示可以往下（接著模擬）。`me` 是執行者位址；dry-run 為 null。 */
 export function gateDecision(n: NewVersionNotice, s: ChainSnapshot, me: string | null): Blocked | null {
   if (!s.record || !s.record.active) {
-    return { code: "no-record", reason: "鏈上沒有這筆進行中的跟單", action: "不需處理；要繼續跟單請重新跟單" };
+    return { code: "no-record", reason: "鏈上沒有這筆進行中的跟著投資紀錄", action: "不需處理；要繼續請重新跟著投資" };
   }
   if (s.record.trader.toLowerCase() !== n.trader) {
-    return { code: "trader-mismatch", reason: "通知的交易者與鏈上跟單紀錄不符", action: "這則通知不可信，請確認是誰送的" };
+    return { code: "trader-mismatch", reason: "通知的策略分享者與鏈上紀錄不符", action: "這則通知不可信，請確認是誰送的" };
   }
   if (s.record.versionId >= BigInt(n.toVersion)) {
-    return { code: "already-synced", reason: `跟單已在 versionId ${s.record.versionId}，不需要同步`, action: "不需處理" };
+    return { code: "already-synced", reason: `投資已在 versionId ${s.record.versionId}，不需要調整`, action: "不需處理" };
   }
   if (s.latest === null || s.latest !== BigInt(n.toVersion)) {
     return {
       code: "stale",
       reason: `鏈上最新是 versionId ${s.latest ?? "無"}，不是通知的 ${n.toVersion}`,
-      action: "resyncFor 只會同步到鏈上最新版，這則通知不算數；等下一則通知",
+      action: "鏈上程式只會調整到最新版，這則通知不算數；等下一則通知",
     };
   }
   if (!n.autoSync || !s.autoSync) {
@@ -240,10 +240,10 @@ const ADVICE: Record<RevertCategory, string> = {
   consent: `執行費被調高了：本人到投資組合重新確認自動同步設定，${RETRIGGER}`,
   kyc: `本人先完成 KYC，${RETRIGGER}`,
   market: `等開盤或市場恢復，${RETRIGGER}`,
-  capacity: "本人到投資組合檢視保證金與未平倉量，必要時自己處理這筆跟單",
-  trader: "交易者目前不符資格，等他恢復；本人可到投資組合檢視這筆跟單",
-  config: "合約授權設定異常，需要合約擁有者處理",
-  unknown: "本人到投資組合檢視，或自己按「立即同步」看合約回應什麼",
+  capacity: "本人到投資組合檢視可用資金與目前持有，必要時自己處理這筆投資",
+  trader: "策略分享者目前不符資格，等他恢復；本人可到投資組合檢視這筆投資",
+  config: "鏈上程式的授權設定異常，需要鏈上程式擁有者處理",
+  unknown: "本人到投資組合檢視，或自己按「立即同步」看鏈上程式回應什麼",
 };
 
 /** copy-sync 分類過的模擬拒絕 → 給本人的建議。 */
@@ -258,14 +258,14 @@ export type SignalCheck = { ok: true; version: number } | { ok: false; version: 
 /** `/signals/:trader` 的回傳：`{ ok, settled, data: { trader, strategyVersion, … } }`。 */
 export function checkSignal(body: unknown, n: Pick<NewVersionNotice, "trader" | "toVersion">): SignalCheck {
   const b = (body ?? {}) as { ok?: unknown; data?: { trader?: unknown; strategyVersion?: unknown } };
-  if (b.ok !== true || !b.data || typeof b.data !== "object") return { ok: false, version: null, reason: "訊號回應不是預期的格式" };
+  if (b.ok !== true || !b.data || typeof b.data !== "object") return { ok: false, version: null, reason: "策略資料回應不是預期的格式" };
   const v = b.data.strategyVersion;
   const version = isVersion(v) ? v : null;
   if (typeof b.data.trader !== "string" || b.data.trader.toLowerCase() !== n.trader) {
-    return { ok: false, version, reason: "訊號的交易者與通知不符" };
+    return { ok: false, version, reason: "策略資料的策略分享者與通知不符" };
   }
-  if (version === null) return { ok: false, version: null, reason: "訊號沒有 strategyVersion" };
-  if (version !== n.toVersion) return { ok: false, version, reason: `訊號是 versionId ${version}，通知是 ${n.toVersion}` };
+  if (version === null) return { ok: false, version: null, reason: "策略資料沒有 strategyVersion" };
+  if (version !== n.toVersion) return { ok: false, version, reason: `策略資料是 versionId ${version}，通知是 ${n.toVersion}` };
   return { ok: true, version };
 }
 
@@ -377,7 +377,7 @@ export async function resolveRejected(
   }
   if (now <= until) return { cls: "uncertain", why: "等不到授權到期" };
   for (const x of list) {
-    if (await d.authUsed(x.from, x.nonce)) return { cls: "uncertain", why: "授權已在鏈上被使用（扣了款但沒拿到訊號）" };
+    if (await d.authUsed(x.from, x.nonce)) return { cls: "uncertain", why: "授權已在鏈上被使用（扣了款但沒拿到策略資料）" };
   }
   return { cls: "not-charged", why: "授權已過期且沒被使用，確定沒扣款" };
 }
@@ -503,15 +503,15 @@ export async function processNotice(d: AgentDeps, n: NewVersionNotice): Promise<
     ...(extra.retryInSec !== undefined ? { retryInSec: extra.retryInSec } : {}),
   });
   const fee = () => {
-    if (paidAtomic > 0n) d.print(`   費用：本次已付 ${formatUsdcAtomic(paidAtomic)} USDC${paymentTx ? `（tx ${paymentTx}）` : "（沒拿到 tx）"}`);
+    if (paidAtomic > 0n) d.print(`   費用：本次已付 ${formatUsdcAtomic(paidAtomic)} USDC${paymentTx ? `（紀錄 ${paymentTx}）` : "（沒拿到紀錄）"}`);
     else if (unsettledAtomic === 0n) {
       const prior = d.ledger.signals[sigKey];
-      d.print(prior?.status === "paid" ? `   費用：本次未付費（這一版訊號先前已付 ${formatUsdcAtomic(BigInt(prior.paidAtomic))} USDC）` : "   費用：本次未付費");
+      d.print(prior?.status === "paid" ? `   費用：本次未付費（這一版策略資料先前已付 ${formatUsdcAtomic(BigInt(prior.paidAtomic))} USDC）` : "   費用：本次未付費");
     }
     if (unsettledAtomic > 0n) d.print(`   費用：${formatUsdcAtomic(unsettledAtomic)} USDC 的授權已送出、沒看到結算（有效期內仍可能被結算）`);
   };
   const stop = (b: Blocked): Outcome => {
-    d.print(`   不同步：${b.reason}`);
+    d.print(`   不調整投資：${b.reason}`);
     d.print(`   本人：${b.action}`);
     fee();
     return done("blocked", { code: b.code, retryInSec: b.retryInSec });
@@ -523,7 +523,7 @@ export async function processNotice(d: AgentDeps, n: NewVersionNotice): Promise<
     return done("error");
   };
 
-  d.print(`① 收到新版通知  交易者 ${short(n.trader)}  ${versionStep(n.fromVersion ?? n.toVersion, n.toVersion)}  跟隨者 ${short(n.follower)}#${n.recordIdx}`);
+  d.print(`① 收到新版通知  策略分享者 ${short(n.trader)}  ${versionStep(n.fromVersion ?? n.toVersion, n.toVersion)}  跟隨者 ${short(n.follower)}#${n.recordIdx}`);
 
   const dedupe = dedupeDecision(d.ledger, n);
   if (dedupe.action === "skip") {
@@ -536,19 +536,19 @@ export async function processNotice(d: AgentDeps, n: NewVersionNotice): Promise<
     const blocked = await evaluate(d, n);
     if (blocked) return stop(blocked);
   } catch (e) {
-    return failure("讀鏈失敗，這次不付費也不同步", e);
+    return failure("讀取鏈上資料失敗，這次不付費也不調整投資", e);
   }
 
   if (d.dryRun) {
-    d.print(`② [dry-run] 模擬同步會成功；本來會付費買 /signals、確認 versionId ${n.toVersion} 後送出 resyncFor。沒有付款，也沒有送交易`);
+    d.print(`② [dry-run] 模擬調整投資會成功；本來會付費買最新策略資料、確認版本 versionId ${n.toVersion} 後送出調整。沒有付款，也沒有送到鏈上`);
     return done("dry-run");
   }
 
   // ② 付費（同一版只付一次）
   if (dedupe.payment === "reuse") {
     const prior = d.ledger.signals[sigKey];
-    d.print(`② x402 這一版訊號已付過，不重複付款（${formatUsdcAtomic(BigInt(prior.paidAtomic))} USDC，tx ${prior.tx ?? "無"}）`);
-    d.print(`③ 確認版號  先前的訊號 versionId ${n.toVersion} = 通知 versionId ${n.toVersion}`);
+    d.print(`② x402 這一版策略資料已付過，不重複付款（${formatUsdcAtomic(BigInt(prior.paidAtomic))} USDC，紀錄 ${prior.tx ?? "無"}）`);
+    d.print(`③ 確認版本  先前買的策略資料 versionId ${n.toVersion} = 通知 versionId ${n.toVersion}`);
   } else {
     // 先記再付：行程在付款途中被砍，重啟後不會再付一次。
     d.ledger.signals[sigKey] = { status: "paying", tx: null, paidAtomic: "0", version: null };
@@ -583,27 +583,27 @@ export async function processNotice(d: AgentDeps, n: NewVersionNotice): Promise<
     if (cls === "uncertain") {
       d.ledger.signals[sigKey] = { status: "uncertain", tx: a.tx, paidAtomic: a.paidAtomic.toString(), version: null };
       d.persist(d.ledger);
-      d.print(`② x402 買訊號失敗：${a.error ?? `HTTP ${a.status}`}${why ? `（${why}）` : ""}。不同步，這一版也不會自動重付`);
-      d.print(`   本人：查付款錢包的 USDC 紀錄；要同步請到投資組合按「立即同步」。${MANUAL_RETRY}`);
+      d.print(`② x402 買策略資料失敗：${a.error ?? `HTTP ${a.status}`}${why ? `（${why}）` : ""}。不調整投資，這一版也不會自動重付`);
+      d.print(`   本人：查付款錢包的 USDC 紀錄；要調整請到投資組合按「立即同步」。${MANUAL_RETRY}`);
       fee();
       return done("payment-failed");
     }
     d.print(cls === "paid"
-      ? `② x402 付費買訊號  ${formatUsdcAtomic(a.paidAtomic)} USDC  tx ${a.tx ?? "（回應沒有結算 tx）"}${a.tx ? `\n   ${d.txLink(a.tx)}` : ""}`
-      : "② x402 伺服器沒有要求付款（免費回應），照常檢查版號");
+      ? `② x402 付費買最新策略資料  ${formatUsdcAtomic(a.paidAtomic)} USDC  紀錄 ${a.tx ?? "（回應沒有付款紀錄）"}${a.tx ? `\n   ${d.txLink(a.tx)}` : ""}`
+      : "② x402 伺服器沒有要求付款（免費回應），照常確認版本");
 
     const check = checkSignal(a.body, n);
     if (!check.ok) {
       d.ledger.signals[sigKey] = { status: "mismatch", tx: a.tx, paidAtomic: a.paidAtomic.toString(), version: check.version };
       d.persist(d.ledger);
-      d.print(`③ 版號不符：${check.reason}。不同步`);
-      d.print("   本人：確認 X402_API_URL 指向與這條鏈相同的部署；要同步請到投資組合檢視新版後按「立即同步」");
+      d.print(`③ 版本不符：${check.reason}。不調整投資`);
+      d.print("   本人：確認 X402_API_URL 指向與這條鏈相同的部署；要調整請到投資組合檢視新版後按「立即同步」");
       fee();
       return done("mismatch", { code: "version-mismatch" });
     }
     d.ledger.signals[sigKey] = { status: "paid", tx: a.tx, paidAtomic: a.paidAtomic.toString(), version: check.version };
     d.persist(d.ledger);
-    d.print(`③ 確認版號  訊號 versionId ${check.version} = 通知 versionId ${n.toVersion}`);
+    d.print(`③ 確認版本  策略資料 versionId ${check.version} = 通知 versionId ${n.toVersion}`);
   }
 
   // ④ 付費前後鏈上可能變了：送之前再檢查、再模擬一次。
@@ -611,7 +611,7 @@ export async function processNotice(d: AgentDeps, n: NewVersionNotice): Promise<
     const blocked = await evaluate(d, n);
     if (blocked) return stop(blocked);
   } catch (e) {
-    return failure("讀鏈失敗，這次不同步", e);
+    return failure("讀取鏈上資料失敗，這次不調整投資", e);
   }
 
   let gasLimit: bigint;
@@ -623,15 +623,15 @@ export async function processNotice(d: AgentDeps, n: NewVersionNotice): Promise<
       const info = classifyRevert(e);
       return stop({ code: `sim-${info.category}`, reason: info.detail, action: adviceFor(info.category) });
     }
-    return failure("估算 gas 失敗，這次不同步", e);
+    return failure("估算手續費（gas）失敗，這次不調整投資", e);
   }
 
   let hash: string;
   try {
     hash = (await d.exec.send(n.follower, n.recordIdx, gasLimit)).hash;
   } catch (e) {
-    d.print(`④ 同步交易送不出去：${errText(e, d.redact)}`);
-    d.print("   本人：確認執行者熱錢包有 gas ETH，再重新觸發通知");
+    d.print(`④ 調整投資送不出去：${errText(e, d.redact)}`);
+    d.print("   本人：確認執行者錢包有手續費（gas ETH），再重新觸發通知");
     fee();
     return done("tx-failed");
   }
@@ -641,12 +641,12 @@ export async function processNotice(d: AgentDeps, n: NewVersionNotice): Promise<
     d.ledger.syncs[syncKey(n)] = { status: "unconfirmed", tx: hash };
     d.exec.resetNonce?.(); // 交易若被丟棄，本機 nonce 會留下缺口：下一筆重新向節點對齊
     d.persist(d.ledger);
-    d.print(`④ 同步交易已送出，還沒等到確認  tx ${hash}\n   ${d.txLink(hash)}`);
+    d.print(`④ 調整投資已送出，還沒等到確認  紀錄 ${hash}\n   ${d.txLink(hash)}`);
     fee();
     return done("unconfirmed", { syncTx: hash });
   }
   if (outcome.status === "reverted") {
-    d.print(`④ 同步交易上鏈但 revert  tx ${hash}（模擬後狀態被改變，部位維持舊版）`);
+    d.print(`④ 調整投資上鏈但被退回  紀錄 ${hash}（模擬後狀態被改變，投資維持舊版）`);
     d.print("   本人：到投資組合檢視，或重新觸發通知");
     fee();
     return done("tx-failed", { syncTx: hash });
@@ -655,17 +655,17 @@ export async function processNotice(d: AgentDeps, n: NewVersionNotice): Promise<
   d.persist(d.ledger);
   const ev = outcome.resynced;
   // resyncFor 沒有版本參數，一律到鏈上最新版；交易者若搶在這之間又發版，照實印出實際到哪一版。
-  const raced = ev && ev.toVersion !== n.toVersion ? `  注意：實際同步到 versionId ${ev.toVersion}，不是確認過的 ${n.toVersion}（交易者剛好又發版）` : "";
-  const detail = ev ? `${versionStep(ev.fromVersion, ev.toVersion)}，${ev.legs} 條腿` : versionStep(n.fromVersion ?? n.toVersion, n.toVersion);
-  d.print(`④ 同步  ${detail}  tx ${hash}\n   ${d.txLink(hash)}${raced}`);
+  const raced = ev && ev.toVersion !== n.toVersion ? `  注意：實際調整到 versionId ${ev.toVersion}，不是確認過的 ${n.toVersion}（策略分享者剛好又發新版）` : "";
+  const detail = ev ? `${versionStep(ev.fromVersion, ev.toVersion)}，${ev.legs} 項資產` : versionStep(n.fromVersion ?? n.toVersion, n.toVersion);
+  d.print(`④ 調整投資  ${detail}  紀錄 ${hash}\n   ${d.txLink(hash)}${raced}`);
   return done("synced", { syncTx: hash });
 }
 
 /** 只用驗證過的欄位與自己的文字，不印通知裡的 message（webhook 內容不可信）。 */
 export function blockedLines(b: BlockedNotice): string[] {
   return [
-    `① 收到被擋通知  交易者 ${short(b.trader)}  跟隨者 ${short(b.follower)}#${b.recordIdx}`,
-    `   不同步：${CATEGORY_LABEL[b.category]}`,
+    `① 收到被擋通知  策略分享者 ${short(b.trader)}  跟隨者 ${short(b.follower)}#${b.recordIdx}`,
+    `   不調整投資：${CATEGORY_LABEL[b.category]}`,
     `   本人：${adviceFor(b.category)}`,
     "   費用：本次未付費",
   ];

@@ -205,9 +205,10 @@ describe('default tenant is the current production site, unchanged', () => {
   it('keeps the original locale, flags and asset list', () => {
     expect(locale).toBe('zh-TW');
     expect(FEATURES).toEqual({ gamefi: true, pepeRewards: true, copyTrading: true });
-    // #344：公開站打開永續與槓桿（評審要看得到模擬交易者的槓桿部位、能跟單）。
-    expect(SHOW_LEVERAGE).toBe(true);
-    expect(SHOW_PERPETUALS).toBe(true);
+    // 2026-11-15 指導者：資產一律以 RWA 代幣現貨呈現——預設關槓桿與永續入口（取代 #344 的預設開）。
+    // 授權不變（allowed: true），env 仍可打開。
+    expect(SHOW_LEVERAGE).toBe(false);
+    expect(SHOW_PERPETUALS).toBe(false);
     expect(PERPETUALS_AUTHORIZED).toBe(true);
     expect(assetPolicy.enabledSymbols).toEqual(Object.keys(ASSET_IDS));
   });
@@ -215,42 +216,37 @@ describe('default tenant is the current production site, unchanged', () => {
   // 改版前寫死在 catalog 裡的原文。{brand}/{brandMark} 代換之後必須逐字相同。
   // #331（ADR-023）改寫了平台站的定位文案：meta.title、meta.description、landing.tagline
   // 換成 Web3 社交交易的說法，舊的標題移到 meta.titleNoCopy（跟單旗標關閉的租戶用）。
+  // 2026-11-15 指導者：改成「幫一般人投資的數位資產平台」的白話用字（交易者→策略分享者、session→AI 代理額度）。
   const ORIGINAL = {
     'zh-TW': {
-      'meta.title': 'PepeFi · Web3 社交交易',
-      'meta.description':
-        'PepeFi — Base 鏈上的 Web3 社交交易平台：跟著鏈上透明的交易者投資。社交跟單、第三方 ESG 評級與碳分級、GameFi。',
+      'meta.title': 'PepeFi · 幫一般人投資的數位資產平台',
+      'meta.description': 'PepeFi — 幫一般人投資的數位資產平台：股票、債券、黃金等資產以代幣形式在 Base 鏈上買賣，可以跟著紀錄公開的策略分享者投資，另有第三方 ESG 評級與碳分級、養成遊戲。',
       'meta.titleNoCopy': 'PepeFi · Agent 原生代幣化 RWA',
-      'meta.descriptionNoCopy':
-        'PepeFi — 基於 Base 鏈的 Agent 原生代幣化資產引擎。鏈上鑄造與贖回合成股債金幣 + x402 付費訊號 + agent session 委任。',
+      'meta.descriptionNoCopy': 'PepeFi — Base 鏈上的代幣化資產平台。在鏈上買進與贖回追蹤股債金幣價格的代幣 + x402 付費訊號 + 有上限的 AI 代理額度。',
       'common.wallet.intro': '選擇您的登入通道以進入 PepeFi 鏈上 RWA 平台。',
       'exchange.guide.spotTitle': '在 PepeFi 上買賣代幣化資產',
-      'x402.docs.how.ask.body': '助理向 PepeFi 要一筆資料，例如某位交易者的績效與最新策略。',
+      'x402.docs.how.ask.body': '助理向 PepeFi 要一筆資料，例如某位策略分享者的績效與最新策略。',
       'x402.docs.how.quote.title': 'PepeFi 報價',
       'nav.section.pepelab': 'PepeFi',
       'rewards.title': '🎁 PepeFi 獎勵',
       'admin.treasury.incentives.title': '🎁 PepeFi 獎勵池補充資金',
-      'landing.tagline': '跟著透明的交易者投資 🐸',
+      'landing.tagline': '跟著透明的策略分享者投資 🐸',
       'landing.enterDashboard': '🐸 進入 Dashboard',
       'landing.copyOff.tagline': 'RWA · 代幣化資產 · Agent 原生 🐸',
     },
     en: {
-      'meta.title': 'PepeFi · Web3 Social Trading',
-      'meta.description':
-        'PepeFi — Web3 social trading on Base: invest alongside traders whose every move is on-chain. Social copy trading, third-party ESG ratings with carbon tiers, and GameFi.',
+      'meta.title': 'PepeFi · Digital-asset investing for everyone',
+      'meta.description': 'PepeFi — a digital-asset platform that helps ordinary people invest: stocks, bonds, gold and more as tokens on Base. Use copy investing to follow strategy sharers whose records are public, plus third-party ESG ratings with carbon tiers and a Pepe game.',
       'meta.titleNoCopy': 'PepeFi · Agent-Native Tokenized RWA',
-      'meta.descriptionNoCopy':
-        'PepeFi — an agent-native tokenized-asset engine on Base. Mint and redeem synthetic equities, bonds, gold and crypto on-chain + x402 paid signals + bounded agent sessions.',
-      'common.wallet.intro':
-        'Choose your sign-in channel to enter the PepeFi on-chain RWA platform.',
+      'meta.descriptionNoCopy': 'PepeFi — a tokenized-asset platform on Base. Buy and redeem tokens that track equities, bonds, gold and crypto on-chain + x402 paid signals + capped AI agent allowances.',
+      'common.wallet.intro': 'Choose your sign-in channel to enter the PepeFi on-chain RWA platform.',
       'exchange.guide.spotTitle': 'How to buy and sell tokenized assets on PepeFi',
-      'x402.docs.how.ask.body':
-        'Your assistant asks PepeFi for a piece of data, such as a trader’s record and latest strategy.',
+      'x402.docs.how.ask.body': 'Your assistant asks PepeFi for a piece of data, such as a strategy sharer’s record and latest strategy.',
       'x402.docs.how.quote.title': 'PepeFi quotes a price',
       'nav.section.pepelab': 'PepeFi',
       'rewards.title': '🎁 PepeFi Rewards',
       'admin.treasury.incentives.title': '🎁 PepeFi Incentives Pool Refill',
-      'landing.tagline': 'Invest alongside transparent traders 🐸',
+      'landing.tagline': 'Invest alongside transparent strategy sharers 🐸',
       'landing.enterDashboard': '🐸 Enter Dashboard',
       'landing.copyOff.tagline': 'RWA · Tokenized Assets · Agent-Native 🐸',
     },
@@ -292,6 +288,7 @@ describe('default tenant is the current production site, unchanged', () => {
       theme: tenant.theme,
       defaultLocale: tenant.defaultLocale,
       enabledSymbols: assetPolicy.enabledSymbols,
+      // 2026-11-15 指導者：資產一律以 RWA 代幣現貨呈現——快照裡 showLeverage／showPerpetuals 改為 false。
       flagsWithNoEnv: resolveTenantFeatures(tenant, {}),
       perpetualsAuthorized: PERPETUALS_AUTHORIZED,
       disclosure: tenantDisclosureAdditions(tenant.compliance, 'zh-TW', 'x {operator}'),

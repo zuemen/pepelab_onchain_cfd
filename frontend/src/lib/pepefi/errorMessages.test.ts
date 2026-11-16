@@ -18,7 +18,7 @@ const revertLike = (name: string) => ({
 describe('prettyError · 解碼後的 custom error 名稱', () => {
   it('PepeAMM 的 oracle 護欄有專屬說明，不會落到通用 fallback', () => {
     const stale = prettyError(revertLike('StaleOraclePrice'))
-    expect(stale).toContain('預言機')
+    expect(stale).toContain('價格來源')
     expect(stale).not.toContain('無法辨識')
 
     const band = prettyError(revertLike('PriceOutOfBand'))
@@ -49,7 +49,7 @@ describe('prettyError · 解碼後的 custom error 名稱', () => {
 
   it('ESG 最短持有期', () => {
     expect(prettyError(revertLike('HoldTooShort'))).toContain('持有')
-    expect(prettyError(revertLike('PositionNotOpen'))).toContain('平倉')
+    expect(prettyError(revertLike('PositionNotOpen'))).toContain('已賣出')
   })
 
   it('tier 獎勵的排序要求', () => {

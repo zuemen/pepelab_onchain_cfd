@@ -50,12 +50,12 @@ export const adopt = {
     insufficientBalance: '錢包的 USDC 餘額不足。',
     vaultPaused: '金庫目前暫停中，暫時無法買進。',
     mintingHalted: '金庫目前暫停鑄造，暫時無法買進。贖回不受影響。',
-    txCount: '接下來錢包會請你確認 {total} 筆交易：1 筆批准 USDC、{legs} 筆買進。',
+    txCount: '接下來錢包會請你確認 {total} 次：1 次批准 USDC、{legs} 次買進。',
     confirm: '確認採用',
     running: '採用中…',
     cancel: '取消',
     close: '關閉',
-    viewTx: '查看交易',
+    viewTx: '查看鏈上紀錄',
   },
 
   status: {
@@ -73,6 +73,6 @@ export const adopt = {
     partial:
       '只完成了一部分：已買進 {bought}；{failed} 買進失敗，之後的沒有送出。已買進的代幣在你的錢包裡，可以到資產頁贖回或自行補買。',
     failed: '採用失敗，沒有買進任何資產。',
-    blocked: '{symbols} 目前無法買進。為了避免只買到一部分，這次沒有送出任何交易。',
+    blocked: '{symbols} 目前無法買進。為了避免只買到一部分，這次沒有送出任何紀錄。',
   },
 };

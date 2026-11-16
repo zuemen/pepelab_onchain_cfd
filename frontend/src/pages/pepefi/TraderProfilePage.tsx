@@ -13,7 +13,8 @@ import { TraderActivityLive } from 'src/components/pepefi/TraderActivity'
 import DeferredSection from 'src/components/pepefi/DeferredSection'
 import SlashHistorySection from 'src/components/pepefi/SlashHistorySection'
 import { useMode } from 'src/contexts/mode-context'
-import { FEATURE_COPY_TRADING } from 'src/lib/pepefi/featureFlags'
+import { FEATURE_COPY_TRADING, SHOW_LEVERAGE } from 'src/lib/pepefi/featureFlags'
+import { SHOW_DIRECTION, spotTemplate } from 'src/lib/pepefi/legDisplay'
 
 // 統計卡：跟單旗標關閉時少了「跟隨者」那張，剩三張各佔三分之一。
 const STAT_SIZE = FEATURE_COPY_TRADING ? { xs: 6, md: 3 } : { xs: 12, sm: 4 }
@@ -239,11 +240,14 @@ function TraderProfileView() {
           <Typography variant="body2" sx={{ fontWeight: 'bold', color: 'text.primary', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {ver.allocs
               .map(a =>
-                interpolate(t.traderProfile.history.summaryEntry, {
-                  asset: ASSET_LABEL[a.asset] ?? '?',
-                  side: a.isLong ? t.traderProfile.history.long : t.traderProfile.history.short,
-                  leverage: String(a.leverage),
-                }),
+                // 現貨呈現（SHOW_LEVERAGE 關）：不顯示方向與倍數，改帶權重，摘要才不會只剩資產名。
+                SHOW_LEVERAGE
+                  ? interpolate(t.traderProfile.history.summaryEntry, {
+                      asset: ASSET_LABEL[a.asset] ?? '?',
+                      side: a.isLong ? t.traderProfile.history.long : t.traderProfile.history.short,
+                      leverage: String(a.leverage),
+                    })
+                  : `${ASSET_LABEL[a.asset] ?? '?'} ${(Number(a.weight) / 100).toFixed(0)}%`,
               )
               .join(' · ')}
           </Typography>
@@ -269,8 +273,9 @@ function TraderProfileView() {
                   {[
                     t.traderProfile.history.column.asset,
                     t.traderProfile.history.column.carbonTier,
-                    t.traderProfile.history.column.side,
-                    t.traderProfile.history.column.leverage,
+                    // 現貨呈現時不顯示方向與槓桿兩欄；表頭與資料列一起收。
+                    ...(SHOW_DIRECTION ? [t.traderProfile.history.column.side] : []),
+                    ...(SHOW_LEVERAGE ? [t.traderProfile.history.column.leverage] : []),
                     t.traderProfile.history.column.weight,
                   ].map(h => (
                     <TableCell key={h} sx={{ color: 'text.secondary', fontWeight: 'bold' }}>{h}</TableCell>
@@ -286,10 +291,12 @@ function TraderProfileView() {
                     <TableCell>
                       <PricingTierCell tier={pricingTiers.tierOf(a.asset)} />
                     </TableCell>
-                    <TableCell sx={{ fontWeight: 'bold', color: a.isLong ? 'success.main' : 'error.main' }}>
-                      {a.isLong ? t.traderProfile.history.longLabel : t.traderProfile.history.shortLabel}
-                    </TableCell>
-                    <TableCell sx={{ fontFamily: MONO }}>{String(a.leverage)}×</TableCell>
+                    {SHOW_DIRECTION && (
+                      <TableCell sx={{ fontWeight: 'bold', color: a.isLong ? 'success.main' : 'error.main' }}>
+                        {a.isLong ? t.traderProfile.history.longLabel : t.traderProfile.history.shortLabel}
+                      </TableCell>
+                    )}
+                    {SHOW_LEVERAGE && <TableCell sx={{ fontFamily: MONO }}>{String(a.leverage)}×</TableCell>}
                     <TableCell align="right" sx={{ fontFamily: MONO, fontWeight: 'bold', color: 'text.primary' }}>
                       {(Number(a.weight) / 100).toFixed(0)}%
                     </TableCell>
@@ -479,11 +486,12 @@ function TraderProfileView() {
             {!hasStrategy ? (
               <Typography color="text.secondary">{t.traderProfile.strategy.empty}</Typography>
             ) : (
+              <>
               <Stack direction="row" spacing={1} sx={{ flexWrap: 'wrap', gap: 1 }}>
                 {allocs.map((a, i) => (
                   <Chip
                     key={i}
-                    label={interpolate(t.traderProfile.strategy.chip, {
+                    label={interpolate(spotTemplate(t.traderProfile.strategy.chip), {
                       side: a.isLong ? '↑' : '↓',
                       asset: ASSET_LABEL[a.asset] ?? '?',
                       weight: (Number(a.weight) / 100).toFixed(0),
@@ -492,7 +500,8 @@ function TraderProfileView() {
                     size="small"
                     sx={{
                       fontWeight: 'bold',
-                      ...(a.isLong
+                      // 方向不顯示時一律用中性的綠色，不用紅綠暗示多空。
+                      ...(a.isLong || !SHOW_DIRECTION
                         ? { bgcolor: 'rgba(34, 197, 94, 0.16)', color: '#22c55e', border: '1px solid', borderColor: 'rgba(34, 197, 94, 0.24)' }
                         : { bgcolor: 'rgba(255, 86, 48, 0.16)', color: '#ff5630', border: '1px solid', borderColor: 'rgba(255, 86, 48, 0.24)' }
                       )
@@ -500,6 +509,10 @@ function TraderProfileView() {
                   />
                 ))}
               </Stack>
+              {!SHOW_DIRECTION && allocs.some((a) => !a.isLong || BigInt(a.leverage) > 1n) && (
+                <Alert severity="warning" sx={{ mt: 2 }}>{t.copy.strategy.nonSpotWarning}</Alert>
+              )}
+              </>
             )}
           </Card>
 
@@ -512,8 +525,8 @@ function TraderProfileView() {
             />
           )}
 
-          {/* 市場多空比例與這位交易者的最近動態（issue #335）：交易桌的資訊，只在 Expert */}
-          {mode === 'expert' && hasStrategy && (
+          {/* 市場多空比例與這位交易者的最近動態（issue #335）：交易桌的資訊，只在 Expert；現貨呈現（SHOW_LEVERAGE 關）時不顯示多空比例 */}
+          {SHOW_DIRECTION && mode === 'expert' && hasStrategy && (
             <StrategySides legs={allocs} exchange={contracts?.exchange ?? null} />
           )}
           {/* 動態、罰沒紀錄、目前部位與時間軸都要逐段掃描事件：收起來，點了才掃（DeferredSection） */}

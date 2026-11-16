@@ -8,10 +8,10 @@
  * 建置進 index.html 的是 `*NoCopy` 那一組，由 vite.config.ts 選用。
  */
 export const meta = {
-  title: '{brand} · Web3 社交交易',
+  title: '{brand} · 幫一般人投資的數位資產平台',
   description:
-    '{brand} — Base 鏈上的 Web3 社交交易平台：跟著鏈上透明的交易者投資。社交跟單、第三方 ESG 評級與碳分級、GameFi。',
+    '{brand} — 幫一般人投資的數位資產平台：股票、債券、黃金等資產以代幣形式在 Base 鏈上買賣，可以跟著紀錄公開的策略分享者投資，另有第三方 ESG 評級與碳分級、養成遊戲。',
   titleNoCopy: '{brand} · Agent 原生代幣化 RWA',
   descriptionNoCopy:
-    '{brand} — 基於 Base 鏈的 Agent 原生代幣化資產引擎。鏈上鑄造與贖回合成股債金幣 + x402 付費訊號 + agent session 委任。',
+    '{brand} — Base 鏈上的代幣化資產平台。在鏈上買進與贖回追蹤股債金幣價格的代幣 + x402 付費訊號 + 有上限的 AI 代理額度。',
 };

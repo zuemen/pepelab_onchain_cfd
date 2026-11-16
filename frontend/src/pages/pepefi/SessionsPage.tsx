@@ -31,7 +31,7 @@ import { usePepefiWallet } from 'src/layouts/pepefi'
 import { t, locale, interpolate } from 'src/locales'
 import { assetPolicy } from 'src/tenant'
 import { sessionAssetsForTenant } from 'src/tenant/assetPolicy'
-import { PERPETUALS_AUTHORIZED } from 'src/lib/pepefi/featureFlags'
+import { PERPETUALS_AUTHORIZED, SHOW_LEVERAGE, FIXED_LEVERAGE } from 'src/lib/pepefi/featureFlags'
 import { pollUntil } from 'src/lib/pepefi/pollUntil'
 import { prettyError } from 'src/lib/pepefi/errorMessages'
 import { agentDid, shortDid } from 'src/lib/pepefi/did'
@@ -144,7 +144,11 @@ export default function SessionsPage() {
   const [agent,    setAgent]    = useState('')
   const [perTrade, setPerTrade] = useState('1000')
   const [budget,   setBudget]   = useState('5000')
-  const [maxLev,   setMaxLev]   = useState('5')
+  // 現貨呈現（SHOW_LEVERAGE 關）時不顯示「最大槓桿」欄位，送出的上限固定 FIXED_LEVERAGE（1×）。
+  // AgentSessionManager 只拒絕 maxLeverage == 0（ZeroLeverage），1 是有效值；這個 session 的 agent
+  // 只能開 1× 部位，等同現貨。
+  const [maxLev,   setMaxLev]   = useState(SHOW_LEVERAGE ? '5' : String(FIXED_LEVERAGE))
+  const effectiveMaxLev = SHOW_LEVERAGE ? maxLev : String(FIXED_LEVERAGE)
   const [hours,    setHours]    = useState('24')
   // agent 可交易的標的白名單（createSessionWithAssets）。預設 sBTC、sETH。
   // 合約把空陣列解讀成「全部允許」，所以 UI 要求至少選一檔——不讓一個沒勾任何
@@ -363,7 +367,7 @@ export default function SessionsPage() {
     const tenantAssets = allowedAssets.filter(a => assetPolicy.canOpen(a))
     if (tenantAssets.length === 0) { notify(t.sessions.create.noAssetSelected, false); return }
     // 送出前逐欄檢查：空白或亂填不該變成錢包跳窗後的「交易失敗」。
-    const fieldProblem = sessionFormProblem({ agent, perTrade, budget, maxLev, hours })
+    const fieldProblem = sessionFormProblem({ agent, perTrade, budget, maxLev: effectiveMaxLev, hours })
     if (fieldProblem) { notify(fieldProblem, false); return }
     try {
       const expiry = Math.floor(Date.now() / 1000) + Math.round(parseFloat(hours) * 3600)
@@ -372,7 +376,7 @@ export default function SessionsPage() {
         agent.trim(),
         parseUnits(perTrade || '0', 18),
         parseUnits(budget || '0', 18),
-        BigInt(maxLev || '0'),
+        BigInt(effectiveMaxLev || '0'),
         BigInt(expiry),
         tenantAssets,
       ))
@@ -600,11 +604,13 @@ export default function SessionsPage() {
               </Labeled>
             </Stack>
             <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
-              <Labeled label={t.sessions.create.maxLeverage}>
-                <TextField type="number" value={maxLev} placeholder="5"
-                  onChange={e => setMaxLev(e.target.value)} size="small" fullWidth
-                  slotProps={{ htmlInput: { min: 1, max: 5 } }} />
-              </Labeled>
+              {SHOW_LEVERAGE && (
+                <Labeled label={t.sessions.create.maxLeverage}>
+                  <TextField type="number" value={maxLev} placeholder="5"
+                    onChange={e => setMaxLev(e.target.value)} size="small" fullWidth
+                    slotProps={{ htmlInput: { min: 1, max: 5 } }} />
+                </Labeled>
+              )}
               <Labeled label={t.sessions.create.validFor}>
                 <TextField type="number" value={hours} placeholder="24"
                   onChange={e => setHours(e.target.value)} size="small" fullWidth />
@@ -692,7 +698,8 @@ export default function SessionsPage() {
                         t.sessions.list.column.agent,
                         t.sessions.list.column.spent,
                         t.sessions.list.column.maxPerTrade,
-                        t.sessions.list.column.leverage,
+                        // 現貨呈現（SHOW_LEVERAGE 關）時不顯示槓桿欄；資料列同步收。
+                        ...(SHOW_LEVERAGE ? [t.sessions.list.column.leverage] : []),
                         t.sessions.list.column.expiry,
                         t.sessions.list.column.status,
                         t.sessions.list.column.credential,
@@ -726,7 +733,7 @@ export default function SessionsPage() {
                           </TableCell>
                           <TableCell sx={{ fontFamily: MONO }}>{fUsdc(s.spentMargin)} / {fUsdc(s.totalMarginBudget)}</TableCell>
                           <TableCell sx={{ fontFamily: MONO }}>{fUsdc(s.maxMarginPerTrade)}</TableCell>
-                          <TableCell sx={{ fontFamily: MONO }}>{Number(s.maxLeverage)}x</TableCell>
+                          {SHOW_LEVERAGE && <TableCell sx={{ fontFamily: MONO }}>{Number(s.maxLeverage)}x</TableCell>}
                           <TableCell sx={{ fontSize: '0.75rem', '&&': { whiteSpace: 'normal' }, minWidth: 88 }}>{fDate(s.expiry)}</TableCell>
                           <TableCell><Chip size="small" label={st.label} color={st.color} variant="outlined" /></TableCell>
                           <TableCell>

@@ -8,16 +8,16 @@ export const rewards: Catalog['rewards'] = {
   connectTitle: '🎁 Rewards',
 
   title: '🎁 {brand} Rewards',
-  subtitle: 'Trade and copy to earn PEPE (the platform game token). Daily check-ins add achievement points.',
+  subtitle: 'Invest and use copy investing to earn PEPE (the platform game token). Daily check-ins add achievement points.',
 
   /** 合約沒部署在這條鏈上時，四個領取動作共用的同一句話。 */
   offline:
     "The PEPE rewards system isn't deployed on this network — claiming is temporarily unavailable.",
 
   /** 見 `../zh-TW/rewards.ts`。 */
-  offlineTitle: 'Trade mining, tiers, copy and check-in are not on this network',
+  offlineTitle: 'Investing rewards, tiers, copy investing rewards and check-in are not on this network',
   offlineBody:
-    "Those four contracts aren't on this chain, so there is nothing to claim and no progress to read — the zeros below mean \"could not read\", not \"you have none\". Switch to a network that runs them. The PEPE token and airdrop above are a separate contract and are unaffected.",
+    "Those four on-chain programs aren't on this chain, so there is nothing to claim and no progress to read — the zeros below mean \"could not read\", not \"you have none\". Switch to a network that runs them. The PEPE token and airdrop above are a separate on-chain program and are unaffected.",
 
   status: {
     loading: 'Reading…',
@@ -35,24 +35,24 @@ export const rewards: Catalog['rewards'] = {
   },
 
   mining: {
-    title: 'Trade Mining',
+    title: 'Investing Reward',
     // Owner-tunable on PepeIncentives, read from the chain (incentiveParams.ts); descriptionGeneric when unreadable.
     description:
-      'Claimable once per position opened. Reward = notional × {pct}%, capped at {cap} PEPE.',
-    descriptionGeneric: 'Claimable once per position opened; the reward scales with notional.',
-    empty: 'No open positions found.',
-    position: 'Position #{id}',
-    detail: 'Notional: ${notional}',
+      'Claimable once per purchase. Reward = holding value × {pct}%, capped at {cap} PEPE.',
+    descriptionGeneric: 'Claimable once per purchase; the reward scales with the holding value.',
+    empty: 'No current investments found.',
+    position: 'Investment #{id}',
+    detail: 'Holding value: ${notional}',
     estReward: 'Est reward: {reward}',
     claimed: 'Claimed',
     claim: 'Claim',
-    done: 'Trade mining claimed! 🎉',
+    done: 'Investing reward claimed! 🎉',
   },
 
   tierSection: {
     title: 'Tier Upgrade',
-    description: 'Claim a one-time tier reward once the notional of your open positions hits the threshold. Closing positions lowers this number.',
-    cumulative: 'Open notional now: ${amount}',
+    description: 'Claim a one-time tier reward once the value of your current holdings hits the threshold. Selling lowers this number.',
+    cumulative: 'Current holding value: ${amount}',
     reward: '{amount} PEPE',
     required: '${amount} required',
     claimed: 'Claimed',
@@ -62,15 +62,15 @@ export const rewards: Catalog['rewards'] = {
   },
 
   copy: {
-    title: 'Copy Reward',
+    title: 'Copy Investing Reward',
     description:
-      'After a successful copy, both the copier and the copied trader each get {amount} PEPE (once per pair).',
-    descriptionGeneric: 'After a successful copy, both the copier and the copied trader get a one-time PEPE reward.',
-    empty: 'No active copy trades found.',
+      'Once you start copy investing, both the follower and the strategy sharer each get {amount} PEPE (once per pair).',
+    descriptionGeneric: 'Once you start copy investing, both the follower and the strategy sharer get a one-time PEPE reward.',
+    empty: 'No active copy investing found.',
     claimed: 'Claimed',
     claim: '{amount} PEPE',
     claimGeneric: 'Claim',
-    done: 'Copy reward claimed! 🐸',
+    done: 'Copy investing reward claimed! 🐸',
   },
 
   checkIn: {
@@ -89,7 +89,7 @@ export const rewards: Catalog['rewards'] = {
     /** 見 `../zh-TW/rewards.ts`。 */
     points: {
       description:
-        'Each daily check-in records 50 achievement points; each consecutive day adds +10, capped at 110 after 7 days. Points are kept in the contract and cannot be transferred. They are not PEPE.',
+        'Each daily check-in records 50 achievement points; each consecutive day adds +10, capped at 110 after 7 days. Points are kept in the on-chain program and cannot be transferred. They are not PEPE.',
       todayReward: 'Recorded today: {reward} achievement points',
       checkIn: '🐸 Check in +{reward} achievement points',
       comeBack: 'Come back tomorrow! Recorded then: {reward} achievement points',
@@ -99,7 +99,7 @@ export const rewards: Catalog['rewards'] = {
     /** 見 `../zh-TW/rewards.ts`。 */
     unknown: {
       description:
-        'Check in daily; consecutive days count for more each time. Confirming with the contract what a check-in records.',
+        'Check in daily; consecutive days count for more each time. Confirming with the on-chain program what a check-in records.',
       todayReward: 'Today: +{reward}',
       checkIn: '🐸 Check in +{reward}',
       comeBack: 'Come back tomorrow!',
@@ -115,7 +115,7 @@ export const rewards: Catalog['rewards'] = {
     subtitle: 'Platform game token · claim the airdrop once KYC is done',
     addToWallet: 'Add to wallet',
     reloadAria: 'Reload PEPE balance',
-    notAvailable: 'PEPE is not available on this network (contracts not deployed here).',
+    notAvailable: 'PEPE is not available on this network (on-chain programs not deployed here).',
 
     balance: 'Balance',
     airdrop: 'Airdrop',

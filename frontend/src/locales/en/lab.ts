@@ -8,7 +8,7 @@ export const lab: Catalog['lab'] = {
   subtitle: 'Try an investing approach on real historical prices: see whether it makes money, how deep it can fall, and where it could land over the next 90 days.',
   steps: { pick: 'Pick a strategy', tune: 'Tune it', read: 'Read the result' },
   disclosure:
-    'Backtests and forecasts do not indicate future performance. Backtests use real historical daily closes, fill at the close, and charge the same fees as this platform: opening and closing fees by carbon tier, an hourly borrow fee on the leveraged part, and liquidation below maintenance margin. Funding rates and slippage are not simulated. The forecast is a simulation based on historical volatility, not a predictive model.',
+    'Backtests and forecasts do not indicate future performance. Backtests use real historical daily closes, fill at the close, and charge the same fees as this platform: buying and selling fees by carbon tier, an hourly borrow fee on the borrowed part when an investment is amplified, and automatic settlement when a loss exceeds what the amount invested can absorb. Funding costs and slippage are not simulated. The forecast is a simulation based on historical volatility, not a predictive model.',
   range: 'Backtest {from} to {to} · capital {capital} USDC',
 
   loading: 'Loading…',
@@ -17,7 +17,7 @@ export const lab: Catalog['lab'] = {
 
   expertOnly: {
     title: 'This page is only available in Expert Mode',
-    body: 'The Strategy Lab compares trading approaches with trading-desk metrics. Switch to Expert Mode to use it.',
+    body: 'The Strategy Lab compares investing approaches with professional performance metrics. Switch to Expert Mode to use it.',
     action: 'Switch to Expert Mode',
   },
 
@@ -26,7 +26,7 @@ export const lab: Catalog['lab'] = {
     params: 'Tune it',
     asset: 'Pick an asset',
     basket: 'Pick a basket',
-    single: 'Per-trade (single asset)',
+    single: 'One at a time (single asset)',
     portfolio: 'Portfolio (basket)',
   },
 
@@ -35,17 +35,17 @@ export const lab: Catalog['lab'] = {
     martingale: {
       name: 'Martingale',
       tagline: 'Add more on every drop, exit on the bounce',
-      description: 'Each round opens with {base}% of the capital; every further drop adds a position a multiple of the last one; once the round reaches its take-profit, everything is closed and a new round starts.',
+      description: 'Each round starts by buying {base}% of the capital; every further drop adds a buy a multiple of the last one; once the round reaches its take-profit, everything is sold and a new round starts.',
     },
-    grid: { name: 'Grid', tagline: 'Buy low, sell high, harvest the swings', description: 'Sets levels below the starting price; buys a level when the price reaches it and sells it one level up. Each level holds at most one position.' },
-    momentum: { name: 'Momentum', tagline: 'Ride what rose the most', description: 'Periodically rotates into the 3 assets that rose the most over the lookback, long and equally weighted.' },
+    grid: { name: 'Grid', tagline: 'Buy low, sell high, harvest the swings', description: 'Sets levels below the starting price; buys a level when the price reaches it and sells it one level up. Each level holds at most one buy at a time.' },
+    momentum: { name: 'Momentum', tagline: 'Ride what rose the most', description: 'Periodically rotates into the 3 assets that rose the most over the lookback, bought in equal weights.' },
     mean_reversion: { name: 'Mean reversion', tagline: 'Pick up what fell the most', description: 'Periodically rotates into the 3 assets that fell the most over the lookback, betting on a rebound.' },
-    trend: { name: 'Moving-average trend', tagline: 'Long above the average, short below', description: 'Holds every asset: long above its moving average, short below it.' },
+    trend: { name: 'Moving-average trend', tagline: 'Price up above the average, price down below', description: 'Holds every asset: bets on a rise above its moving average and on a fall below it (earning when the price drops).' },
   },
 
   params: {
     every_days: 'Frequency',
-    leverage: 'Leverage',
+    leverage: 'Amplification',
     multiplier: 'Add-on multiple',
     drop_pct: 'Add-on step (drop)',
     take_profit_pct: 'Take-profit',
@@ -70,10 +70,10 @@ export const lab: Catalog['lab'] = {
   },
 
   fees: {
-    single: 'Charged: {fee}% to open and again to close ({tier} carbon tier), plus a {borrow}% hourly borrow fee on the leveraged part.',
-    portfolio: 'Charged: each asset’s opening and closing fees by carbon tier, plus the hourly borrow fee on the leveraged part. On each rebalance everything is closed before the new positions open.',
-    leverageCapped: '{asset}’s carbon tier caps leverage at {max}×, so this result uses {max}×.',
-    portfolioLeverage: 'Each asset’s leverage is capped by its carbon tier.',
+    single: 'Charged: {fee}% to buy and again to sell ({tier} carbon tier), plus a {borrow}% hourly borrow fee on the borrowed part of an amplified investment.',
+    portfolio: 'Charged: each asset’s buying and selling fees by carbon tier, plus the hourly borrow fee on the borrowed part of an amplified investment. On each rebalance everything is sold before the new buys.',
+    leverageCapped: '{asset}’s carbon tier caps amplification at {max}×, so this result uses {max}×.',
+    portfolioLeverage: 'Each asset’s amplification is capped by its carbon tier.',
   },
   tiers: { low: 'low', mid: 'mid', high: 'high' },
 
@@ -86,7 +86,7 @@ export const lab: Catalog['lab'] = {
     tie: 'Matched buy-and-hold',
     maxDrawdown: 'Max drawdown',
     riskScore: 'Risk score',
-    trades: 'Trades',
+    trades: 'Buys and sells',
     lossProb: 'Chance of a loss in {days} days',
   },
   tabs: {
@@ -95,11 +95,11 @@ export const lab: Catalog['lab'] = {
   },
   details: {
     metrics: 'All metrics (vs buy-and-hold)',
-    trades: 'Every trade ({count})',
+    trades: 'Every buy and sell ({count})',
   },
   next: {
-    title: 'Want to trade this way?',
-    marketplace: 'See the trader leaderboard',
+    title: 'Want to invest this way?',
+    marketplace: 'See the strategy sharer leaderboard',
     share: 'Copy a link to these settings',
     copied: 'Link copied — anyone who opens it sees the same result',
   },
@@ -112,34 +112,34 @@ export const lab: Catalog['lab'] = {
     maxDrawdown: 'Max drawdown',
     sharpe: 'Sharpe',
     winRate: 'Win rate',
-    trades: 'Trades',
+    trades: 'Buys and sells',
     riskScore: 'Risk score',
-    winRateNote: 'Win rate counts closed positions only',
+    winRateNote: 'Win rate counts investments already sold only',
   },
 
   chart: {
-    title: 'Backtest equity and trades',
+    title: 'Backtest equity with buys and sells',
     strategy: 'Strategy',
     benchmark: 'Buy and hold',
-    open: 'Open',
-    close: 'Close',
-    liquidated: 'Liquidation',
-    note: 'Buy and hold puts all the capital into the same target at 1× on day one (equally weighted for a basket) and never trades again.',
+    open: 'Buy',
+    close: 'Sell',
+    liquidated: 'Automatic settlement',
+    note: 'Buy and hold puts all the capital, unamplified, into the same target on day one (equally weighted for a basket) and never buys or sells again.',
   },
 
   trades: {
-    title: 'Every trade',
+    title: 'Every buy and sell',
     count: '{count} in total',
     date: 'Date',
     asset: 'Asset',
     action: 'Action',
-    side: 'Side',
-    long: 'Long',
-    short: 'Short',
+    side: 'Direction',
+    long: 'Price up',
+    short: 'Price down',
     price: 'Price',
-    margin: 'Margin',
-    pnl: 'Net PnL',
-    empty: 'These parameters made no trades during the backtest.',
+    margin: 'Amount invested',
+    pnl: 'Net profit / loss',
+    empty: 'These parameters made no buys or sells during the backtest.',
   },
 
   forecast: {
@@ -156,15 +156,15 @@ export const lab: Catalog['lab'] = {
   },
 
   similar: {
-    title: 'Simulated traders with a similar approach',
-    body: 'These simulated traders follow the same rule; their profiles show their full performance.',
+    title: 'Simulated strategy sharers with a similar approach',
+    body: 'These simulated strategy sharers use the same rule; their profiles show their full performance.',
     view: 'View profile',
   },
 
   noOrder: {
-    title: 'Why you cannot trade from here',
-    body: 'This is an analysis tool; it does not trade for you. The only thing the contracts can execute on your behalf is a portfolio a trader has published.',
-    copy: 'To trade along with a trader’s portfolio, use copy trading from the trader leaderboard.',
-    single: 'Per-trade strategies (dollar-cost averaging, martingale, grid) would need an agent to execute each trade for you. That is not offered yet, and no simulated trader uses them.',
+    title: 'Why you cannot invest from here',
+    body: 'This is an analysis tool; it does not buy or sell for you. The only thing the public automated rules can carry out on your behalf is a portfolio a strategy sharer has published.',
+    copy: 'To invest along with a strategy sharer’s portfolio, use copy investing from the strategy sharer leaderboard.',
+    single: 'One-at-a-time strategies (dollar-cost averaging, martingale, grid) would need an AI agent to carry out each buy and sell for you. That is not offered yet, and no simulated strategy sharer uses them.',
   },
 };

@@ -9,26 +9,26 @@ export const kyc = {
   titleAwaitingReview: 'KYC 申請審核中',
   /** 線上舊版 KYCRegistry 是自助驗證：送出當下就通過。 */
   titleVerified: 'KYC 已通過',
-  subtitle: '開立股票、債券類的槓桿部位前需要 KYC；只買進或贖回代幣不需要',
+  subtitle: '用進階投資工具投資股票、債券類標的前需要 KYC；只買進或贖回代幣不需要',
   closeAria: '關閉',
 
   /** 這個視窗最重要的一句話：送出 ≠ 通過，所以兩種狀態各自是完整的一段。 */
   noticeTitle: '這是「送出申請」，不是即時通過',
   noticeTitleAwaitingReview: '✅ 申請已送出，等待審核',
   noticeBody:
-    '送出後會在鏈上留下一筆待審申請（KYCSubmitted），需由審核人員核准（approveKYC）才會通過。核准前仍無法交易受管制標的。',
+    '送出後會在鏈上留下一筆待審申請（KYCSubmitted），需由審核人員核准（approveKYC）才會通過。核准前仍無法投資受管制標的。',
   noticeTitleSelfService: '此部署為自助驗證：送出即通過',
   noticeBodySelfService:
     '目前部署在這條鏈上的 KYCRegistry 是舊版：送出後鏈上立即記為已驗證（isVerified），沒有人工審核。',
-  noticeTitleVerified: '✅ 已通過 KYC，可以交易受管制標的',
+  noticeTitleVerified: '✅ 已通過 KYC，可以投資受管制標的',
   noticeBodyVerified:
     '鏈上已記錄你的 KYC（isVerified = true）。目前部署的 KYCRegistry 是自助驗證版本，送出即通過、不經人工審核。關掉這個視窗後即可下單。',
   noticeBodyAwaitingReview:
-    '你的 KYC 申請已上鏈記錄（KYCSubmitted）。審核人員核准（approveKYC）後，受管制標的才會解鎖；在那之前下單仍會被合約擋下（NotKycVerified）。可以先關掉這個視窗，稍後回來重新整理查看狀態。',
+    '你的 KYC 申請已上鏈記錄（KYCSubmitted）。審核人員核准（approveKYC）後，受管制標的才會解鎖；在那之前下單仍會被鏈上程式擋下（NotKycVerified）。可以先關掉這個視窗，稍後回來重新整理查看狀態。',
 
   demoTitle: '⚠️ 隱私說明：資料只以加鹽雜湊上鏈',
   demoBody:
-    '送出時姓名與國籍不會以明文上鏈：前端會產生隨機 salt，只把 keccak256(salt ‖ 姓名) 與 keccak256(salt ‖ 國籍) 兩個雜湊寫進公開合約。salt 與原始資料只留在你這一端，審核員需要你線下出示才能比對。仍建議填假名。此流程不等於正式的合規審查。',
+    '送出時姓名與國籍不會以明文上鏈：前端會產生隨機 salt，只把 keccak256(salt ‖ 姓名) 與 keccak256(salt ‖ 國籍) 兩個雜湊寫進公開的鏈上程式。salt 與原始資料只留在你這一端，審核員需要你線下出示才能比對。仍建議填假名。此流程不等於正式的合規審查。',
 
   nameLabel: '姓名（只以加鹽雜湊上鏈，建議填假名）',
   namePlaceholder: '例如：路人甲',
@@ -51,12 +51,12 @@ export const kyc = {
     salt: 'Salt（請保密）',
     nameHash: '姓名雜湊（已上鏈）',
     nationalityHash: '國籍雜湊（已上鏈）',
-    txHash: '交易 hash',
+    txHash: '鏈上紀錄編號',
     /** tx.wait() 失敗但交易已送出：收據保留。 */
-    confirmFailed: '交易已送出，但等待確認時發生錯誤——交易可能已經上鏈。收據已保留，請用交易 hash 到區塊瀏覽器確認狀態，確認前不要重送。',
+    confirmFailed: '申請已送出，但等待確認時發生錯誤——紀錄可能已經上鏈。收據已保留，請用鏈上紀錄編號到區塊瀏覽器確認狀態，確認前不要重送。',
     hideMine: '收起收據',
     viewMineCount: '查看我的收據（{count}）',
-    pendingStoredAt: '{time} 送出前保存、但沒有拿到交易 hash 的收據（交易可能沒有送出，請到區塊瀏覽器確認）：',
+    pendingStoredAt: '{time} 送出前保存、但沒有拿到鏈上紀錄編號的收據（申請可能沒有送出，請到區塊瀏覽器確認）：',
     storedAt: '這台瀏覽器於 {time} 保存的收據（只有 salt 與雜湊，沒有姓名與國籍明文）：',
     scheme: '雜湊方式：keccak256(salt ‖ 正規化值)；正規化姓名「{name}」，國籍代碼「{code}」。',
   },
@@ -68,10 +68,10 @@ export const kyc = {
 
   /** 開啟時查上一筆送出的交易，決定能不能重送。 */
   prevTx: {
-    checking: '正在確認上一筆 KYC 交易的狀態…',
-    unconfirmed: '上一筆 KYC 交易還沒有確認結果，暫時不能重送。請先用收據裡的交易 hash 到區塊瀏覽器確認。',
+    checking: '正在確認上一筆 KYC 申請的狀態…',
+    unconfirmed: '上一筆 KYC 申請還沒有確認結果，暫時不能重送。請先用收據裡的鏈上紀錄編號到區塊瀏覽器確認。',
     underReview: '上一筆 KYC 申請已上鏈、正在等待審核，不需要重送。',
-    checkFailed: '無法確認上一筆 KYC 交易的狀態（RPC 讀取失敗），為避免重複送出暫時停用。',
+    checkFailed: '無法確認上一筆 KYC 申請的狀態（讀取鏈上資料失敗），為避免重複送出暫時停用。',
     retry: '重試',
   },
 
@@ -83,14 +83,14 @@ export const kyc = {
   status: {
     cardTitle: 'KYC 驗證狀態',
     verifiedTitle: '已通過驗證',
-    verifiedBody: '你可以開立股票、債券類的槓桿部位（如 AAPL、TSLA）。',
+    verifiedBody: '你可以用進階投資工具投資股票、債券類標的（如 AAPL、TSLA）。',
     pendingTitle: '審核中',
     pendingBody: '申請已送出，正在等待審核員核准，無需重新送出。',
     unverifiedTitle: '尚未驗證',
-    unverifiedBody: '只買進或贖回代幣不需要驗證；開立股票、債券類的槓桿部位（如 AAPL、TSLA）前才需要。',
+    unverifiedBody: '只買進或贖回代幣不需要驗證；用進階投資工具投資股票、債券類標的（如 AAPL、TSLA）前才需要。',
     unverifiedAction: '送出 KYC 申請',
     notRequiredTitle: '此鏈無需驗證',
-    notRequiredBody: '目前連線的鏈上沒有部署 KYC 閘門，交易任何標的都不需要驗證。',
+    notRequiredBody: '目前連線的鏈上沒有部署 KYC 閘門，投資任何標的都不需要驗證。',
     unknownTitle: '無法確認',
     unknownBody: '讀取鏈上驗證狀態失敗，暫時無法確認狀態。這不代表「未通過」，請稍後重試。',
     unknownAction: '重新讀取',

@@ -30,6 +30,8 @@ import { fetchHeroIndex, heroByAddress } from 'src/lib/pepefi/heroData'
 import { heroDisclosure } from 'src/lib/pepefi/heroDisclosure'
 import { useMode } from 'src/contexts/mode-context'
 import StrategySides from 'src/components/pepefi/feed/StrategySides'
+import { SHOW_LEVERAGE } from 'src/lib/pepefi/featureFlags'
+import { SHOW_DIRECTION, spotTemplate } from 'src/lib/pepefi/legDisplay'
 import { useCarbonRouting } from 'src/hooks/useCarbonRouting'
 import { copyRetirementEstimate } from 'src/lib/pepefi/carbonRetirement'
 import { useAutoSyncSupport } from 'src/hooks/useAutoSyncSupport'
@@ -653,7 +655,7 @@ function CopyPageView() {
             {stratAllocs.map((a, i) => (
               <Chip
                 key={i}
-                label={interpolate(t.copy.strategy.chip, {
+                label={interpolate(spotTemplate(t.copy.strategy.chip), {
                   side: a.isLong ? '↑' : '↓',
                   asset: ASSET_LABEL[a.asset] ?? '?',
                   weight: (Number(a.weight) / 100).toFixed(0),
@@ -662,7 +664,8 @@ function CopyPageView() {
                 size="small"
                 sx={{
                   fontWeight: 'bold',
-                  ...(a.isLong
+                  // 方向不顯示時一律用中性的綠色，不用紅綠暗示多空。
+                  ...(a.isLong || !SHOW_DIRECTION
                     ? { bgcolor: 'rgba(34, 197, 94, 0.16)', color: '#22c55e', border: '1px solid', borderColor: 'rgba(34, 197, 94, 0.24)' }
                     : { bgcolor: 'rgba(255, 86, 48, 0.16)', color: '#ff5630', border: '1px solid', borderColor: 'rgba(255, 86, 48, 0.24)' }
                   )
@@ -671,10 +674,13 @@ function CopyPageView() {
             ))}
           </Stack>
         )}
+        {!SHOW_DIRECTION && stratAllocs.some((a) => !a.isLong || a.leverage > 1n) && (
+          <Alert severity="warning" sx={{ mt: 2 }}>{t.copy.strategy.nonSpotWarning}</Alert>
+        )}
       </Card>
 
-      {/* 策略各資產目前的市場多空比例（issue #335），只在 Expert */}
-      {mode === 'expert' && stratAllocs.length > 0 && (
+      {/* 策略各資產目前的市場多空比例（issue #335），只在 Expert；現貨呈現（SHOW_LEVERAGE 關）時不顯示 */}
+      {SHOW_DIRECTION && mode === 'expert' && stratAllocs.length > 0 && (
         <StrategySides legs={stratAllocs} exchange={contracts?.exchange ?? null} />
       )}
 
@@ -743,8 +749,9 @@ function CopyPageView() {
                 <TableRow>
                   {[
                     t.copy.preview.column.asset,
-                    t.copy.preview.column.side,
-                    t.copy.preview.column.leverage,
+                    // 現貨呈現（SHOW_LEVERAGE 關）時不顯示方向與槓桿兩欄；表頭與資料列要一起收。
+                    ...(SHOW_DIRECTION ? [t.copy.preview.column.side] : []),
+                    ...(SHOW_LEVERAGE ? [t.copy.preview.column.leverage] : []),
                     t.copy.preview.column.weight,
                     t.copy.preview.column.margin,
                     t.copy.preview.column.notional,
@@ -760,10 +767,12 @@ function CopyPageView() {
                     <TableCell sx={{ fontFamily: MONO, fontWeight: 'bold', color: 'text.primary' }}>
                       {ASSET_LABEL[row.asset] ?? '?'}
                     </TableCell>
-                    <TableCell sx={{ fontWeight: 'bold', color: row.isLong ? 'success.main' : 'error.main' }}>
-                      {row.isLong ? t.copy.preview.long : t.copy.preview.short}
-                    </TableCell>
-                    <TableCell sx={{ fontFamily: MONO }}>{String(row.leverage)}×</TableCell>
+                    {SHOW_DIRECTION && (
+                      <TableCell sx={{ fontWeight: 'bold', color: row.isLong ? 'success.main' : 'error.main' }}>
+                        {row.isLong ? t.copy.preview.long : t.copy.preview.short}
+                      </TableCell>
+                    )}
+                    {SHOW_LEVERAGE && <TableCell sx={{ fontFamily: MONO }}>{String(row.leverage)}×</TableCell>}
                     <TableCell sx={{ fontFamily: MONO }}>{(Number(row.weight) / 100).toFixed(0)}%</TableCell>
                     <TableCell sx={{ fontFamily: MONO }} align="right">
                       {preview && preview.portions[i] !== undefined
@@ -902,7 +911,7 @@ function CopyPageView() {
                     maxTipWei={autoSync.maxTipWei}
                     executionFee={execFee.wei}
                     legs={stratAllocs.length}
-                    showLeverage
+                    showLeverage={SHOW_LEVERAGE}
                     prefund={{ value: prefund, onChange: setPrefund }}
                     executor={autoSync.executorLock
                       ? { value: executorInput, onChange: setExecutorInput, problem: exProblem, extraTxNote: true }
@@ -935,7 +944,7 @@ function CopyPageView() {
 
         <Alert severity="info" variant="outlined">
           {autoSyncActive
-            ? interpolate(t.copy.autoSync.snapshotNoteAuto, { lev: syncSettings.maxLeverage })
+            ? interpolate(spotTemplate(t.copy.autoSync.snapshotNoteAuto), { lev: syncSettings.maxLeverage })
             : autoSync.supported
               ? (syncEntry === 'available' ? t.copy.confirm.snapshotNoteSyncable : t.copy.confirm.snapshotNoteSyncableSimple)
               : t.copy.confirm.snapshotNote}

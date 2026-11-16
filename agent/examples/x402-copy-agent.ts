@@ -19,7 +19,7 @@ import { formatUsdcAtomic, guardViemAccount, meteredFetch, OFFICIAL_USDC_DOMAINS
 import { getAddresses } from "../../frontend/src/contracts/addresses.ts";
 import { followerFootprint, makeChainReads, makeExecutor, supportsAutoSync, supportsSyncExecutor, trackerRegistry } from "../copy-sync/src/chain.ts";
 import { ExecutorWallet } from "../copy-sync/src/guard.ts";
-import { describeKeySource, executorFollowerError, executorKeySpec, keyPolicyError, loadExecutorKey } from "../copy-sync/src/keys.ts";
+import { executorFollowerError, executorKeySpec, keyPolicyError, loadExecutorKey } from "../copy-sync/src/keys.ts";
 import { errText, makeRedactor } from "../copy-sync/src/log.ts";
 import { acquireProcessLock } from "../copy-sync/src/state.ts";
 import { LocalNonceSigner } from "../keeper/nonceSigner.ts";
@@ -152,7 +152,7 @@ async function main(): Promise<void> {
     const why = executorFollowerError({ address: wallet.address, tracker, ...(await followerFootprint(provider, tracker, wallet.address)) });
     if (why) die(why);
     if (wallet.address.toLowerCase() === account.address.toLowerCase()) {
-      console.warn("提醒：付款錢包與執行者熱錢包是同一把；建議分開（執行者只放少量 gas ETH）");
+      console.warn("提醒：付款錢包與執行者錢包是同一個；建議分開（執行者只放少量手續費 ETH）");
     }
     if ((await provider.getBalance(wallet.address)) === 0n) die("執行者熱錢包沒有 gas ETH");
     signer = new LocalNonceSigner(wallet);
@@ -169,8 +169,8 @@ async function main(): Promise<void> {
       resolveX402MaxValue(),
     ) as unknown as typeof fetch;
     pay = makeSignalPayer({ api: api!, payFetch, meter, redact, drainAuthorizations: capture.drain });
-    console.log(`執行者 ${wallet.address}（${describeKeySource(spec.spec)}；只能簽 resyncFor）`);
-    console.log(`付款 ${account.address}  ${api}`);
+    console.log(`執行者 ${wallet.address}（只能代為調整投資）`);
+    console.log(`付款錢包 ${account.address}  策略資料來源 ${api}`);
   }
 
   // ── 狀態（去重）──
@@ -268,8 +268,8 @@ async function main(): Promise<void> {
     die(`無法監聽 127.0.0.1:${port}：${(e as Error).message}${hint}`);
   });
   server.listen(port, "127.0.0.1", () => {
-    print(`監聽 http://127.0.0.1:${port}/webhook  chainId ${chainId}  CopyTracker ${tracker}`);
-    print(`跟隨者白名單 ${followers.length} 位  單筆付費上限 ${formatUsdcAtomic(resolveX402MaxValue())} USDC${dryRun ? "  [dry-run：不付款、不送交易]" : ""}`);
+    print(`等待通知 http://127.0.0.1:${port}/webhook  chainId ${chainId}  鏈上程式 CopyTracker ${tracker}`);
+    print(`服務的跟隨者 ${followers.length} 位  每次付費上限 ${formatUsdcAtomic(resolveX402MaxValue())} USDC${dryRun ? "  [dry-run：不付款、不送到鏈上]" : ""}`);
     print("");
   });
 }

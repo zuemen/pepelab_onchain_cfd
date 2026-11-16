@@ -22,6 +22,7 @@ import Typography from '@mui/material/Typography'
 import LinearProgress from '@mui/material/LinearProgress'
 
 import { t, interpolate } from 'src/locales'
+import { SHOW_LEVERAGE } from 'src/lib/pepefi/featureFlags'
 import { MONO } from 'src/components/pepefi/brandKit'
 import { pollUntil } from 'src/lib/pepefi/pollUntil'
 import { prettyError } from 'src/lib/pepefi/errorMessages'
@@ -357,7 +358,9 @@ export function DelegationCredentialPanel({
       <Box>
         <Typography variant="caption" color="text.secondary">{d.sessionTerms}</Typography>
         <Typography sx={{ fontFamily: MONO, fontSize: 12 }}>
-          #{session.id} · {f18(session.maxMarginPerTrade)} / {f18(session.totalMarginBudget)} · {Number(session.maxLeverage)}x ·{' '}
+          {/* 現貨呈現（SHOW_LEVERAGE 關）時不顯示槓桿上限 */}
+          #{session.id} · {f18(session.maxMarginPerTrade)} / {f18(session.totalMarginBudget)} ·{' '}
+          {SHOW_LEVERAGE && <>{Number(session.maxLeverage)}x ·{' '}</>}
           {assets === null ? '…' : assets.length === 0 ? d.assetsAll : interpolate(d.assetsCount, { n: String(assets.length) })}
         </Typography>
       </Box>
