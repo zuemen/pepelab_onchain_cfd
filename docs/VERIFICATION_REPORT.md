@@ -37,9 +37,22 @@
 | A | 部署 x402 收入路由（官方 USDC） | ✅ **已完成**（見 §4 真實位址 + tx） | DONE |
 | B | signal-api 起服務 | `npm run signal-api`；`curl /` `/revenue` | 200 JSON |
 | C | x402 付費 402→200 | `npm run demo-agent`（填好 .env） | 402 + 付款 tx + 200 訊號 |
-| D | agent 經 session 自主下單 | demo-agent 自動（需 DEMO_SESSION_ID） | open tx + BaseScan + positionId |
+| D | agent 經 session 自主下單 | demo-agent 自動（需 DEMO_SESSION_ID） | ✅ **2026-11-27 已上鏈**（見下方 D 證據） |
 | E | x402 收入真上鏈 70/20/10 | server fire `routeExternalRevenue` | settlement tx + `/revenue.settledOnChain` |
 | F | MCP write tools 受限額 | MCP client 呼叫 `open_position`/`close_position` | tx + 超 budget/expiry 被擋 |
+
+### D 證據：agent 經 session 下單（2026-11-27，AgentSessionManager `0x4875966ACA052A38d80ddD2aaE80995A98EAd2AF`）
+
+使用者 `0x48b0b2eD62c25cae77595891c1202490A173FbA5` 開 session #10 授權 agent `0x497E8D72b60e416875d7E33D0ddfC1a6662864Da`，agent 代下單、平倉，使用者撤銷：
+
+| 步驟 | tx |
+|------|----|
+| createSessionWithAssets（session #10） | [`0x586ca5c551b860665d65fe1a9d6d9b93b7323b03a011ae80ff210c6b5e9e2d96`](https://base-sepolia.blockscout.com/tx/0x586ca5c551b860665d65fe1a9d6d9b93b7323b03a011ae80ff210c6b5e9e2d96) |
+| openPositionForSession（positionId 2747、保證金 10） | [`0x8814812c05e3f8fec62c0b6a34cc3c96e21eb3730b13c738cbdbdfd80da36d4b`](https://base-sepolia.blockscout.com/tx/0x8814812c05e3f8fec62c0b6a34cc3c96e21eb3730b13c738cbdbdfd80da36d4b) |
+| closePositionForSession | [`0x23b5c26e84bd0025bda7741b5df9d5179d6ec16626ea02a9c477eae4c4ea35aa`](https://base-sepolia.blockscout.com/tx/0x23b5c26e84bd0025bda7741b5df9d5179d6ec16626ea02a9c477eae4c4ea35aa) |
+| revokeSession | [`0xcfb96215d313ae696341c2c6894c9a2613c8d6809bdce3b50e3ae5c19f0bc27a`](https://base-sepolia.blockscout.com/tx/0xcfb96215d313ae696341c2c6894c9a2613c8d6809bdce3b50e3ae5c19f0bc27a) |
+
+越權測試（超過單筆上限、資產不在允許清單、撤銷後再下單）都在**送出前模擬**就被合約拒絕（`MarginExceedsPerTradeCap`／`AssetNotAllowed`／`SessionIsRevoked`），所以沒有鏈上失敗交易。同日唯讀讀回 `nextSessionId = 11`；更早還有 2026-10-26（當天讀回 0 是在建 session 之前）、11-07 的 session 下單紀錄。前端畫面驗收（docs/DEPLOY_130_CUTOVER.md §11）仍未勾。
 
 ### B2 核心流程（前端連 Base Sepolia 錢包）
 | 流程 | 怎麼驗 | 狀態 |
