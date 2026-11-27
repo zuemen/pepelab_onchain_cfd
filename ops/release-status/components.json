@@ -511,8 +511,12 @@
       "note": "docs/DEPLOY_130_CUTOVER.md §11 的畫面驗收（開倉、平倉、跟單、agent session 下單）未勾；docs/VERIFICATION_REPORT.md B2 待錢包"
     },
     "AgentSessionManager": {
-      "status": "未驗收",
-      "note": "現行 manager（#344 cutover）上還沒有任何 session（2026-10-26 唯讀讀回 nextSessionId = 0），沒有 agent 實際下單的 tx 紀錄（docs/VERIFICATION_REPORT.md D 項待貼）"
+      "status": "部分驗收",
+      "date": "2026-11-27",
+      "evidence": [
+        "docs/VERIFICATION_REPORT.md"
+      ],
+      "note": "2026-11-27 唯讀讀回 nextSessionId = 11（2026-10-26 讀回 0 已過時）。鏈上有 agent 下單紀錄：2026-11-27 session #10 走完一輪 createSessionWithAssets 0x586ca5c5…2d96 → openPositionForSession 0x8814812c…6d4b（positionId 2747、保證金 10）→ closePositionForSession 0x23b5c26e…35aa → revokeSession 0xcfb96215…c27a；超過單筆上限、資產不在允許清單、撤銷後下單三種越權在送出前模擬就被合約拒絕（MarginExceedsPerTradeCap／AssetNotAllowed／SessionIsRevoked），沒有鏈上失敗交易。另有 2026-10-26（讀回 0 是在當天建 session 之前）、11-07 的 session 下單紀錄。docs/VERIFICATION_REPORT.md D 項與畫面驗收仍未貼"
     },
     "AssetVaultV2": {
       "status": "未驗收",

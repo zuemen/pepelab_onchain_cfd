@@ -13,7 +13,7 @@
 
 | 鏈 | 區塊 | 鏈上＝原始碼 | 原始碼較新（待部署） | 無法比對 | 未部署 | 仍指向外洩地址的元件 | 已驗收／部分驗收 |
 |---|---|---|---|---|---|---|---|
-| Base Sepolia（84532） | 55956062 | 20 | 9 | 0 | 0 | 0 | 1 |
+| Base Sepolia（84532） | 55956062 | 20 | 9 | 0 | 0 | 0 | 2 |
 | Sepolia（11155111） | 12088423 | 3 | 20 | 0 | 0 | 1 | 0 |
 
 外洩地址名單取自 `agent/shared/src/payoutSafety.ts` 的 `COMPROMISED_ADDRESSES`（1 個）；本文件只寫縮寫。
@@ -30,7 +30,7 @@ RPC：https://sepolia.base.org；區塊 55956062。
 | InsuranceVault<br>保險金庫 | #238／`2c87f4a`（2026-10-04） | `0x899263e34107a36a5216499F9CC7fb7a5afc7aaF` | **鏈上＝原始碼**：程式碼一致；只有 CBOR metadata（原始碼文字雜湊）不同（區塊 55956062，2026-11-08） | 未驗收 |
 | FeeRouter<br>平台 FeeRouter（MockUSDC；treasury 為 immutable） | #7／`a795e9f`（2026-08-07） | `0x89Aa6799b2CdAa43FF7985ff706456Ca6F0e5d29` | **鏈上＝原始碼**：程式碼一致；只有 CBOR metadata（原始碼文字雜湊）不同（區塊 55956062，2026-11-08） | 未驗收 |
 | X402FeeRouter<br>x402 FeeRouter（官方 USDC；treasury 為 immutable） | #301／`c7c0b7e`（2026-10-11） | `0x780E18146Bc77E50c3e5EcaED913FC31F62c0f6A` | **鏈上＝原始碼**：程式碼一致；只有 CBOR metadata（原始碼文字雜湊）不同（區塊 55956062，2026-11-08） | 部分驗收（2026-07-15）：`docs/VERIFICATION_REPORT.md`、`docs/COST_MODEL.md`。2026-06-15 部署驗證與 2026-06-15～07-15 四筆 routeExternalRevenue 實際結算 tx（舊的那顆 x402 FeeRouter）；x402 v2 從未實付（docs/ADR-010-x402-v2-migration.md）。現行這顆（#301，2026-10-11）到 2026-10-26 唯讀讀回分潤累計仍為 0，沒有任何結算 |
-| AgentSessionManager<br>agent session（自主交易授權） | （無 PR 編號）／`5deaa6c`（2026-11-07） | `0x4875966ACA052A38d80ddD2aaE80995A98EAd2AF` | **鏈上＝原始碼**：程式碼一致；只有 CBOR metadata（原始碼文字雜湊）不同（區塊 55956062，2026-11-08） | 未驗收（現行 manager（#344 cutover）上還沒有任何 session（2026-10-26 唯讀讀回 nextSessionId = 0），沒有 agent 實際下單的 tx 紀錄（docs/VERIFICATION_REPORT.md D 項待貼）） |
+| AgentSessionManager<br>agent session（自主交易授權） | （無 PR 編號）／`5deaa6c`（2026-11-07） | `0x4875966ACA052A38d80ddD2aaE80995A98EAd2AF` | **鏈上＝原始碼**：程式碼一致；只有 CBOR metadata（原始碼文字雜湊）不同（區塊 55956062，2026-11-08） | 部分驗收（2026-11-27）：`docs/VERIFICATION_REPORT.md`。2026-11-27 唯讀讀回 nextSessionId = 11（2026-10-26 讀回 0 已過時）。鏈上有 agent 下單紀錄：2026-11-27 session #10 走完一輪 createSessionWithAssets 0x586ca5c5…2d96 → openPositionForSession 0x8814812c…6d4b（positionId 2747、保證金 10）→ closePositionForSession 0x23b5c26e…35aa → revokeSession 0xcfb96215…c27a；超過單筆上限、資產不在允許清單、撤銷後下單三種越權在送出前模擬就被合約拒絕（MarginExceedsPerTradeCap／AssetNotAllowed／SessionIsRevoked），沒有鏈上失敗交易。另有 2026-10-26（讀回 0 是在當天建 session 之前）、11-07 的 session 下單紀錄。docs/VERIFICATION_REPORT.md D 項與畫面驗收仍未貼 |
 | TraderStake<br>交易員質押 | #198／`264f1d4`（2026-09-30） | `0x01aEB530bcFc69f036309ffe55acc7eA6C5a28Fe` | **原始碼較新（待部署）**：與原始碼現行版不一致：長度不同（鏈上 3049 B，原始碼 2970 B）（區塊 55956062，2026-11-08） | 未驗收 |
 | CopyTracker<br>跟單 | （無 PR 編號）／`5deaa6c`（2026-11-07） | `0x31297044a7b3A0F57e7CDa7fE619E996da1c64A9` | **鏈上＝原始碼**：程式碼一致；只有 CBOR metadata（原始碼文字雜湊）不同（區塊 55956062，2026-11-08） | 未驗收 |
 | StrategyRegistry<br>策略登錄 | #111／`492594c`（2026-09-02） | `0xe8d807C3BaFB4D3AeCbA094322eE8dD7Ca16C20c` | **鏈上＝原始碼**：程式碼一致；只有 CBOR metadata（原始碼文字雜湊）不同（區塊 55956062，2026-11-08） | 未驗收 |
